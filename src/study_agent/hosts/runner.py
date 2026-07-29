@@ -195,11 +195,6 @@ class TutorHostRunResult:
     def pending(self) -> PendingContinuationDescriptor | None:
         return self.pending_continuation
 
-    @property
-    def presentation(self) -> TutorPresentationReceipt | None:
-        return self.presentation_receipt
-
-
 @dataclass(frozen=True, slots=True)
 class TutorContinuationRecord:
     """The exact host-only material required to resume a suspended action."""

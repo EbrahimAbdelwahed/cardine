@@ -458,26 +458,6 @@ class TutorPresentationReceipt:
             object.__setattr__(self, "response_schema", schema)
 
     @property
-    def presentation_kind(self) -> TutorPresentationKind:
-        return self.kind
-
-    @property
-    def host_context_sequence(self) -> int:
-        return self.observed_host_context_sequence
-
-    @property
-    def observed_sequence(self) -> int:
-        return self.observed_host_context_sequence
-
-    @property
-    def text(self) -> str:
-        return self.content
-
-    @property
-    def learner_visible_content(self) -> str:
-        return self.content
-
-    @property
     def fingerprint(self) -> str:
         return _fingerprint("study-agent-tutor-presentation-receipt-v1", self.to_json())
 

@@ -124,19 +124,6 @@ class TutorPresentationRecord:
         if type(self.course_sequence) is not int or self.course_sequence < 1:
             raise ValueError("course_sequence must be positive")
 
-    @property
-    def host_context_sequence(self) -> int:
-        return self.observed_host_context_sequence
-
-    @property
-    def observed_sequence(self) -> int:
-        return self.observed_host_context_sequence
-
-    @property
-    def learner_visible_content(self) -> str:
-        return self.content
-
-
 @dataclass(frozen=True, slots=True)
 class VerifiedRunOutputRef:
     run_id: RunId
