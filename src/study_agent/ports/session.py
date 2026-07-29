@@ -11,6 +11,7 @@ from study_agent.domain.session import (
     ContinuationSummaryV1,
     InteractionRecord,
     StudySessionRecord,
+    TutorPresentationRecord,
 )
 
 
@@ -54,3 +55,9 @@ class AssistantTurnViewPort(Protocol):
     def turns(
         self, course_id: CourseId, session_id: SessionId
     ) -> tuple[AssistantTurnRecord, ...]: ...
+
+
+class TutorPresentationViewPort(Protocol):
+    def presentations(
+        self, course_id: CourseId, session_id: SessionId
+    ) -> tuple[TutorPresentationRecord, ...]: ...

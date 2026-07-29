@@ -56,6 +56,7 @@ from .session import (
     AssistantTurnViewPort,
     SessionNotFoundError,
     SessionViewPort,
+    TutorPresentationViewPort,
 )
 from .source_input import (
     MAX_SOURCE_BYTES,
@@ -149,6 +150,7 @@ __all__ = [
     "TutorHostActionIdentityPort",
     "TutorHostAuthorityPort",
     "TutorInterruptionToken",
+    "TutorPresentationViewPort",
     "TutorSnapshotPort",
     "VerifiedGeneratedBatchPort",
     "VerifiedGradeOwnerStore",

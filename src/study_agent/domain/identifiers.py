@@ -45,6 +45,12 @@ class InteractionId(Identifier):
     pass
 
 
+class TutorPresentationId(Identifier):
+    """Stable identity of one validated host presentation."""
+
+    pass
+
+
 class StatementId(Identifier):
     pass
 
@@ -504,6 +510,26 @@ def session_turn_event_id_for(
         f"{idempotency_key}\0{event_type}"
     ).encode()
     return EventId(f"event-sha256:{sha256(identity).hexdigest()}")
+
+
+def tutor_presentation_id_for(
+    course_id: CourseId,
+    session_id: SessionId,
+    host_turn_id: str,
+    kind: str,
+) -> TutorPresentationId:
+    """Derive a presentation identity from the trusted host receipt identity."""
+    if not isinstance(course_id, CourseId) or not isinstance(session_id, SessionId):
+        raise TypeError("tutor presentation identity requires typed course and session ids")
+    require_text(host_turn_id, "host_turn_id")
+    require_text(kind, "kind")
+    payload = (
+        f"tutor-presentation@1\0{course_id}\0{session_id}\0"
+        f"{host_turn_id}\0{kind}"
+    ).encode()
+    return TutorPresentationId(
+        f"tutor-presentation-sha256:{sha256(payload).hexdigest()}"
+    )
 
 
 def session_event_id_for(

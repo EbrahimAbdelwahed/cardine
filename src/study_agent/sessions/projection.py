@@ -26,12 +26,14 @@ from .events import (
     SESSION_SCHEMA_VERSION,
     SESSION_STARTED,
     SESSION_SUSPENDED,
+    SESSION_TUTOR_PRESENTATION_RECORDED,
     SessionAnswerRecorded,
     SessionAssistantTurnRecorded,
     SessionInteractionRecorded,
     SessionLifecycleTransition,
     SessionStarted,
     SessionSummaryUpdated,
+    SessionTutorPresentationRecorded,
     decode_answer_recorded,
     decode_assistant_turn_recorded,
     decode_grounded_answer_manifest,
@@ -40,6 +42,7 @@ from .events import (
     decode_session_started,
     decode_summary_manifest,
     decode_summary_updated,
+    decode_tutor_presentation_recorded,
     grounded_answer_manifest,
     summary_payload,
 )
@@ -338,6 +341,92 @@ def reduce_assistant_turn_recorded(
     }
 
 
+def reduce_tutor_presentation_recorded(
+    state: JsonObject,
+    event: DomainEvent,
+    payload: SessionTutorPresentationRecorded,
+) -> Mapping[str, JsonValue]:
+    sessions, interactions, answers = _session_maps(state)
+    session_id, session = _session(sessions, event)
+    _chronological(session, event)
+    _active(session)
+    record = payload.record
+    if record.session_id != event.session_id:
+        raise ValueError("tutor presentation belongs to another session")
+    if record.course_sequence != event.course_sequence:
+        raise ValueError("tutor presentation course sequence must match event")
+    if record.observed_host_context_sequence != event.course_sequence - 1:
+        raise ValueError("tutor presentation must commit at its observed host sequence")
+    if record.in_reply_to_interaction_id is not None:
+        reply = interactions.get(str(record.in_reply_to_interaction_id))
+        if (
+            not isinstance(reply, Mapping)
+            or reply.get("session_id") != session_id
+            or reply.get("kind") != "human"
+        ):
+            raise ValueError("presentation reply target must be human and belong to the session")
+    presentations = dict(
+        _mapping(state.get("session_tutor_presentations", {}), "session_tutor_presentations")
+    )
+    presentation_id = str(record.id)
+    if presentation_id in presentations:
+        raise ValueError("tutor presentation id already exists")
+    for raw in presentations.values():
+        if not isinstance(raw, Mapping):
+            raise ValueError("tutor presentation projection is corrupt")
+        if raw.get("host_turn_id") == record.host_turn_id:
+            raise ValueError("host turn id already belongs to a presentation")
+        if (
+            raw.get("session_id") == session_id
+            and raw.get("idempotency_key") == record.idempotency_key
+        ):
+            raise ValueError("idempotency key already belongs to a presentation")
+    for raw in answers.values():
+        if isinstance(raw, Mapping) and raw.get("session_id") == session_id and raw.get(
+            "idempotency_key"
+        ) == record.idempotency_key:
+            raise ValueError("idempotency key already belongs to a grounded answer")
+    turns = _mapping(state.get("session_assistant_turns", {}), "session_assistant_turns")
+    for raw in turns.values():
+        if isinstance(raw, Mapping) and raw.get("session_id") == session_id and raw.get(
+            "idempotency_key"
+        ) == record.idempotency_key:
+            raise ValueError("idempotency key already belongs to an assistant turn")
+    presentations[presentation_id] = {
+        "session_id": session_id,
+        "presentation_id": presentation_id,
+        "kind": record.kind.value,
+        "content": record.content,
+        "in_reply_to_interaction_id": (
+            str(record.in_reply_to_interaction_id)
+            if record.in_reply_to_interaction_id is not None
+            else None
+        ),
+        "host_turn_id": record.host_turn_id,
+        "observed_host_context_sequence": record.observed_host_context_sequence,
+        "host_context_fingerprint": record.host_context_fingerprint,
+        "decision_fingerprint": record.decision_fingerprint,
+        "receipt_fingerprint": record.receipt_fingerprint,
+        "continuation_fingerprint": record.continuation_fingerprint,
+        "capability_identity": record.capability_identity,
+        "response_schema": record.response_schema,
+        "idempotency_key": record.idempotency_key,
+        "command_fingerprint": record.command_fingerprint,
+        "event_id": str(record.event_id),
+        "course_sequence": record.course_sequence,
+        "occurred_at": _timestamp(record.occurred_at),
+    }
+    session["last_event_at"] = _timestamp(event.occurred_at)
+    sessions[session_id] = session
+    return {
+        **state,
+        "sessions": sessions,
+        "session_interactions": interactions,
+        "session_answers": answers,
+        "session_tutor_presentations": presentations,
+    }
+
+
 def reduce_summary_updated(
     state: JsonObject,
     event: DomainEvent,
@@ -455,6 +544,12 @@ def register_session_events(registry: EventRegistry) -> None:
         SESSION_SCHEMA_VERSION,
         decode_assistant_turn_recorded,
         reduce_assistant_turn_recorded,
+    )
+    registry.register_event(
+        SESSION_TUTOR_PRESENTATION_RECORDED,
+        SESSION_SCHEMA_VERSION,
+        decode_tutor_presentation_recorded,
+        reduce_tutor_presentation_recorded,
     )
     registry.register_event(
         SESSION_CONTINUATION_SUMMARY_UPDATED,

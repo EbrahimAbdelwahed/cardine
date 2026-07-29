@@ -43,6 +43,7 @@ from .identifiers import (
     StatementId,
     SubstrateId,
     SubstrateProductionId,
+    TutorPresentationId,
     answer_id_for,
     artifact_event_id_for,
     assessment_event_id_for,
@@ -64,6 +65,7 @@ from .identifiers import (
     substrate_id_for,
     substrate_production_event_id_for,
     substrate_production_id_for,
+    tutor_presentation_id_for,
 )
 from .provenance import (
     AnswerProvenance,
@@ -79,6 +81,9 @@ from .provenance import (
     VersionPins,
 )
 from .session import (
+    MAX_TUTOR_PRESENTATION_QUESTION,
+    MAX_TUTOR_PRESENTATION_SCHEMA_BYTES,
+    MAX_TUTOR_PRESENTATION_TEXT,
     AnswerRecord,
     AssistantTurnRecord,
     AssistantTurnStatus,
@@ -89,6 +94,8 @@ from .session import (
     StudySession,
     StudySessionRecord,
     SummaryExchange,
+    TutorPresentationKind,
+    TutorPresentationRecord,
     VerifiedRunOutputRef,
 )
 from .source import BlobRef, Citation, ResolvedCitation, SourceChunk, SourceDocument, SourceKind
@@ -126,6 +133,9 @@ from .tutor_snapshot import (
 )
 
 __all__ = [
+    "MAX_TUTOR_PRESENTATION_QUESTION",
+    "MAX_TUTOR_PRESENTATION_SCHEMA_BYTES",
+    "MAX_TUTOR_PRESENTATION_TEXT",
     "TUTOR_SNAPSHOT_SCHEMA_VERSION",
     "Actor",
     "AnswerId",
@@ -221,6 +231,9 @@ __all__ = [
     "TutorHintDivergence",
     "TutorMaterialSummary",
     "TutorNote",
+    "TutorPresentationId",
+    "TutorPresentationKind",
+    "TutorPresentationRecord",
     "TutorSnapshotV1",
     "TutorStatementEvidence",
     "TutorTimelineEntry",
@@ -251,5 +264,6 @@ __all__ = [
     "substrate_id_for",
     "substrate_production_event_id_for",
     "substrate_production_id_for",
+    "tutor_presentation_id_for",
     "validate_page_map",
 ]

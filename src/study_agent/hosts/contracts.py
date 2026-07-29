@@ -11,6 +11,12 @@ from hashlib import sha256
 from typing import cast
 
 from study_agent.domain._validation import JsonObject, JsonValue, freeze_json, freeze_object
+from study_agent.domain.session import (
+    MAX_TUTOR_PRESENTATION_QUESTION,
+    MAX_TUTOR_PRESENTATION_SCHEMA_BYTES,
+    MAX_TUTOR_PRESENTATION_TEXT,
+    TutorPresentationKind,
+)
 from study_agent.portability import reject_provider_selectors
 
 HOST_CONTEXT_SCHEMA_VERSION = 1
@@ -392,6 +398,146 @@ class HostRetryReceipt:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class TutorPresentationReceipt:
+    """Closed proof emitted only after the host decision boundary is validated."""
+
+    host_turn_id: str
+    kind: TutorPresentationKind
+    content: str
+    observed_host_context_sequence: int
+    host_context_fingerprint: str
+    decision_fingerprint: str
+    continuation_fingerprint: str | None = None
+    capability_identity: str | None = None
+    response_schema: JsonObject | None = None
+
+    SCHEMA_VERSION = 1
+
+    def __post_init__(self) -> None:
+        _require_opaque(self.host_turn_id, "host_turn_id")
+        if not isinstance(self.kind, TutorPresentationKind):
+            raise TypeError("presentation kind is invalid")
+        maximum = (
+            MAX_TUTOR_PRESENTATION_QUESTION
+            if self.kind
+            in {
+                TutorPresentationKind.LEARNER_QUESTION,
+                TutorPresentationKind.CONTINUATION_REQUEST,
+            }
+            else MAX_TUTOR_PRESENTATION_TEXT
+        )
+        _require_bounded_text(self.content, "presentation content", maximum)
+        if (
+            type(self.observed_host_context_sequence) is not int
+            or self.observed_host_context_sequence < 0
+        ):
+            raise ValueError("observed_host_context_sequence must be non-negative")
+        _require_sha256(self.host_context_fingerprint, "host_context_fingerprint")
+        _require_sha256(self.decision_fingerprint, "decision_fingerprint")
+        if self.continuation_fingerprint is not None:
+            _require_sha256(self.continuation_fingerprint, "continuation_fingerprint")
+        if self.kind is TutorPresentationKind.CONTINUATION_REQUEST:
+            if self.continuation_fingerprint is None or self.capability_identity is None:
+                raise ValueError("continuation receipt requires continuation identity")
+            _require_bounded_text(self.capability_identity, "capability_identity", 128)
+            if self.response_schema is None:
+                raise ValueError("continuation receipt requires response schema")
+        elif (
+            self.continuation_fingerprint is not None
+            or self.capability_identity is not None
+            or self.response_schema is not None
+        ):
+            raise ValueError("only continuation receipts carry continuation descriptors")
+        if self.response_schema is not None:
+            schema = freeze_object(self.response_schema)
+            _validate_schema_definition(schema)
+            reject_provider_selectors(schema, "response_schema")
+            if len(_canonical_bytes(schema)) > MAX_TUTOR_PRESENTATION_SCHEMA_BYTES:
+                raise ValueError("response schema exceeds presentation bounds")
+            object.__setattr__(self, "response_schema", schema)
+
+    @property
+    def presentation_kind(self) -> TutorPresentationKind:
+        return self.kind
+
+    @property
+    def host_context_sequence(self) -> int:
+        return self.observed_host_context_sequence
+
+    @property
+    def observed_sequence(self) -> int:
+        return self.observed_host_context_sequence
+
+    @property
+    def text(self) -> str:
+        return self.content
+
+    @property
+    def learner_visible_content(self) -> str:
+        return self.content
+
+    @property
+    def fingerprint(self) -> str:
+        return _fingerprint("study-agent-tutor-presentation-receipt-v1", self.to_json())
+
+    def to_json(self) -> JsonObject:
+        return {
+            "schema_version": self.SCHEMA_VERSION,
+            "host_turn_id": self.host_turn_id,
+            "kind": self.kind.value,
+            "content": self.content,
+            "observed_host_context_sequence": self.observed_host_context_sequence,
+            "host_context_fingerprint": self.host_context_fingerprint,
+            "decision_fingerprint": self.decision_fingerprint,
+            "continuation_fingerprint": self.continuation_fingerprint,
+            "capability_identity": self.capability_identity,
+            "response_schema": self.response_schema,
+        }
+
+    def to_bytes(self) -> bytes:
+        return _canonical_bytes(self.to_json())
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> TutorPresentationReceipt:
+        raw = _canonical_object(data, "tutor presentation receipt")
+        _exact(
+            raw,
+            {
+                "schema_version",
+                "host_turn_id",
+                "kind",
+                "content",
+                "observed_host_context_sequence",
+                "host_context_fingerprint",
+                "decision_fingerprint",
+                "continuation_fingerprint",
+                "capability_identity",
+                "response_schema",
+            },
+            "tutor presentation receipt",
+        )
+        if _integer(raw, "schema_version") != cls.SCHEMA_VERSION:
+            raise ValueError("unsupported tutor presentation receipt schema version")
+        kind = TutorPresentationKind(_string(raw, "kind"))
+        schema_raw = raw["response_schema"]
+        schema = None if schema_raw is None else _object(schema_raw, "response_schema")
+        receipt = cls(
+            _string(raw, "host_turn_id"),
+            kind,
+            _string(raw, "content"),
+            _integer(raw, "observed_host_context_sequence"),
+            _string(raw, "host_context_fingerprint"),
+            _string(raw, "decision_fingerprint"),
+            _optional_string(raw, "continuation_fingerprint"),
+            _optional_string(raw, "capability_identity"),
+            schema,
+        )
+        if receipt.to_bytes() != data:
+            raise ValueError("tutor presentation receipt is not semantically canonical")
+        return receipt
+
+
 def decision_to_json(decision: TutorDecision) -> JsonObject:
     if isinstance(decision, StartCapabilityDecision):
         return {
@@ -743,6 +889,15 @@ def _string(value: Mapping[str, JsonValue], key: str) -> str:
     return item
 
 
+def _optional_string(value: Mapping[str, JsonValue], key: str) -> str | None:
+    item = value.get(key)
+    if item is None:
+        return None
+    if not isinstance(item, str):
+        raise ValueError(f"{key} must be a string or null")
+    return item
+
+
 def _integer(value: Mapping[str, JsonValue], key: str) -> int:
     item = value.get(key)
     if type(item) is not int:
@@ -770,6 +925,8 @@ __all__ = [
     "TutorDecision",
     "TutorDecisionKind",
     "TutorHostContext",
+    "TutorPresentationKind",
+    "TutorPresentationReceipt",
     "TutorStopReason",
     "decision_fingerprint",
     "decision_from_bytes",

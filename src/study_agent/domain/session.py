@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
-from ._validation import require_aware, require_text
+from ._validation import JsonObject, freeze_object, require_aware, require_text
 from .grounding import AnswerStatus, GroundedAnswer
 from .identifiers import (
     AnswerId,
@@ -13,6 +13,7 @@ from .identifiers import (
     InteractionId,
     RunId,
     SessionId,
+    TutorPresentationId,
 )
 
 
@@ -31,6 +32,109 @@ class SessionStatus(StrEnum):
 class AssistantTurnStatus(StrEnum):
     COMPLETED = "completed"
     TERMINATED = "terminated"
+
+
+class TutorPresentationKind(StrEnum):
+    ASSISTANT_MESSAGE = "assistant_message"
+    LEARNER_QUESTION = "learner_question"
+    CONTINUATION_REQUEST = "continuation_request"
+
+
+MAX_TUTOR_PRESENTATION_TEXT = 4_000
+MAX_TUTOR_PRESENTATION_QUESTION = 1_000
+MAX_TUTOR_PRESENTATION_SCHEMA_BYTES = 8_192
+
+
+@dataclass(frozen=True, slots=True)
+class TutorPresentationRecord:
+    """Canonical, learner-visible output proven by a validated tutor host."""
+
+    id: TutorPresentationId
+    session_id: SessionId
+    occurred_at: datetime
+    kind: TutorPresentationKind
+    content: str
+    in_reply_to_interaction_id: InteractionId | None
+    host_turn_id: str
+    observed_host_context_sequence: int
+    host_context_fingerprint: str
+    decision_fingerprint: str
+    receipt_fingerprint: str
+    continuation_fingerprint: str | None
+    capability_identity: str | None
+    response_schema: JsonObject | None
+    idempotency_key: str
+    command_fingerprint: str
+    event_id: EventId
+    course_sequence: int
+
+    def __post_init__(self) -> None:
+        require_aware(self.occurred_at, "occurred_at")
+        if not isinstance(self.id, TutorPresentationId):
+            raise TypeError("presentation id must be TutorPresentationId")
+        if not isinstance(self.kind, TutorPresentationKind):
+            raise TypeError("presentation kind must be TutorPresentationKind")
+        require_text(self.content, "content")
+        maximum = (
+            MAX_TUTOR_PRESENTATION_QUESTION
+            if self.kind
+            in {
+                TutorPresentationKind.LEARNER_QUESTION,
+                TutorPresentationKind.CONTINUATION_REQUEST,
+            }
+            else MAX_TUTOR_PRESENTATION_TEXT
+        )
+        if len(self.content) > maximum:
+            raise ValueError("presentation content exceeds its bound")
+        require_text(self.host_turn_id, "host_turn_id")
+        for value, name in (
+            (self.host_context_fingerprint, "host_context_fingerprint"),
+            (self.decision_fingerprint, "decision_fingerprint"),
+            (self.receipt_fingerprint, "receipt_fingerprint"),
+            (self.command_fingerprint, "command_fingerprint"),
+        ):
+            _require_fingerprint(value, name)
+        if self.continuation_fingerprint is not None:
+            _require_fingerprint(self.continuation_fingerprint, "continuation_fingerprint")
+        if self.kind is TutorPresentationKind.CONTINUATION_REQUEST:
+            if (
+                self.continuation_fingerprint is None
+                or self.capability_identity is None
+                or self.response_schema is None
+            ):
+                raise ValueError("continuation presentations require safe continuation descriptors")
+        elif (
+            self.continuation_fingerprint is not None
+            or self.capability_identity is not None
+            or self.response_schema is not None
+        ):
+            raise ValueError("only continuation presentations carry continuation descriptors")
+        if self.capability_identity is not None:
+            require_text(self.capability_identity, "capability_identity")
+            if len(self.capability_identity) > 128:
+                raise ValueError("capability_identity exceeds its bound")
+        if self.response_schema is not None:
+            object.__setattr__(self, "response_schema", freeze_object(self.response_schema))
+        if (
+            type(self.observed_host_context_sequence) is not int
+            or self.observed_host_context_sequence < 0
+        ):
+            raise ValueError("observed_host_context_sequence must be non-negative")
+        require_text(self.idempotency_key, "idempotency_key")
+        if type(self.course_sequence) is not int or self.course_sequence < 1:
+            raise ValueError("course_sequence must be positive")
+
+    @property
+    def host_context_sequence(self) -> int:
+        return self.observed_host_context_sequence
+
+    @property
+    def observed_sequence(self) -> int:
+        return self.observed_host_context_sequence
+
+    @property
+    def learner_visible_content(self) -> str:
+        return self.content
 
 
 @dataclass(frozen=True, slots=True)

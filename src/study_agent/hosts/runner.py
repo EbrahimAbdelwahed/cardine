@@ -62,6 +62,8 @@ from .contracts import (
     StopDecision,
     TutorDecision,
     TutorHostContext,
+    TutorPresentationKind,
+    TutorPresentationReceipt,
     TutorStopReason,
     decision_fingerprint,
     validate_decision,
@@ -119,6 +121,7 @@ class TutorHostRunResult:
     learner_text: str | None = None
     completed_output: JsonValue | None = None
     pending_continuation: PendingContinuationDescriptor | None = None
+    presentation_receipt: TutorPresentationReceipt | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.status, TutorHostRunStatus):
@@ -135,12 +138,17 @@ class TutorHostRunResult:
             self.pending_continuation, PendingContinuationDescriptor
         ):
             raise TypeError("pending continuation descriptor is invalid")
+        if self.presentation_receipt is not None and not isinstance(
+            self.presentation_receipt, TutorPresentationReceipt
+        ):
+            raise TypeError("presentation receipt is invalid")
 
         if self.status is TutorHostRunStatus.COMPLETED:
             if (
                 self.retry_receipt is not None
                 or self.learner_text is not None
                 or self.pending_continuation is not None
+                or self.presentation_receipt is not None
             ):
                 raise ValueError("completed result may expose output only")
         elif self.status is TutorHostRunStatus.SUSPENDED:
@@ -161,12 +169,17 @@ class TutorHostRunResult:
             ):
                 raise ValueError("question/message result requires bounded text only")
         elif self.status is TutorHostRunStatus.INTERRUPTED:
-            if self.learner_text is not None or self.completed_output is not None:
+            if (
+                self.learner_text is not None
+                or self.completed_output is not None
+                or self.presentation_receipt is not None
+            ):
                 raise ValueError("interrupted result cannot expose text or output")
         elif (
             self.learner_text is not None
             or self.completed_output is not None
             or self.pending_continuation is not None
+            or self.presentation_receipt is not None
         ):
             raise ValueError("closed result may expose a retry receipt only")
 
@@ -181,6 +194,10 @@ class TutorHostRunResult:
     @property
     def pending(self) -> PendingContinuationDescriptor | None:
         return self.pending_continuation
+
+    @property
+    def presentation(self) -> TutorPresentationReceipt | None:
+        return self.presentation_receipt
 
 
 @dataclass(frozen=True, slots=True)
@@ -444,7 +461,15 @@ class TutorHostRunner:
                 if len(decision.message) > self._limits.max_emitted_text_chars:
                     return _budget()
                 return TutorHostRunResult(
-                    TutorHostRunStatus.ASSISTANT_MESSAGE, learner_text=decision.message
+                    TutorHostRunStatus.ASSISTANT_MESSAGE,
+                    learner_text=decision.message,
+                    presentation_receipt=self._presentation_receipt(
+                        host_turn_id,
+                        context,
+                        TutorPresentationKind.ASSISTANT_MESSAGE,
+                        decision.message,
+                        decision,
+                    ),
                 )
             if isinstance(decision, AskLearnerDecision):
                 if len(decision.question) > self._limits.max_emitted_text_chars:
@@ -452,6 +477,13 @@ class TutorHostRunner:
                 return TutorHostRunResult(
                     TutorHostRunStatus.NEEDS_LEARNER_INPUT,
                     learner_text=decision.question,
+                    presentation_receipt=self._presentation_receipt(
+                        host_turn_id,
+                        context,
+                        TutorPresentationKind.LEARNER_QUESTION,
+                        decision.question,
+                        decision,
+                    ),
                 )
             if isinstance(decision, StopDecision):
                 status = (
@@ -599,6 +631,16 @@ class TutorHostRunner:
                     TutorHostRunStatus.SUSPENDED,
                     retry_action,
                     pending_continuation=descriptor,
+                    presentation_receipt=self._presentation_receipt(
+                        host_turn_id,
+                        context,
+                        TutorPresentationKind.CONTINUATION_REQUEST,
+                        descriptor.dialogue_request,
+                        decision,
+                        continuation_fingerprint=descriptor.fingerprint,
+                        capability_identity=descriptor.capability_identity,
+                        response_schema=descriptor.response_schema,
+                    ),
                 )
             if selected is not None:
                 try:
@@ -707,6 +749,30 @@ class TutorHostRunner:
             outcome.continuation.dialogue_step_id,
             outcome.dialogue_request,
             outcome.response_schema,
+        )
+
+    @staticmethod
+    def _presentation_receipt(
+        host_turn_id: str,
+        context: TutorHostContext,
+        kind: TutorPresentationKind,
+        content: str,
+        decision: TutorDecision,
+        *,
+        continuation_fingerprint: str | None = None,
+        capability_identity: str | None = None,
+        response_schema: JsonObject | None = None,
+    ) -> TutorPresentationReceipt:
+        return TutorPresentationReceipt(
+            host_turn_id=host_turn_id,
+            kind=kind,
+            content=content,
+            observed_host_context_sequence=context.tutor_snapshot_sequence,
+            host_context_fingerprint=context.fingerprint,
+            decision_fingerprint=decision_fingerprint(decision),
+            continuation_fingerprint=continuation_fingerprint,
+            capability_identity=capability_identity,
+            response_schema=response_schema,
         )
 
     def _create(

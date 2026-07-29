@@ -25,8 +25,10 @@ from study_agent.domain.identifiers import (
     RunId,
     SessionId,
     SourceId,
+    TutorPresentationId,
     assistant_interaction_id_for,
     session_turn_event_id_for,
+    tutor_presentation_id_for,
 )
 from study_agent.domain.provenance import (
     AnswerProvenance,
@@ -40,22 +42,28 @@ from study_agent.domain.provenance import (
     VersionPins,
 )
 from study_agent.domain.session import (
+    MAX_TUTOR_PRESENTATION_SCHEMA_BYTES,
     AnswerRecord,
     AssistantTurnRecord,
     AssistantTurnStatus,
     ContinuationSummaryV1,
     InteractionKind,
     SummaryExchange,
+    TutorPresentationKind,
+    TutorPresentationRecord,
     VerifiedRunOutputRef,
 )
 from study_agent.domain.source import Citation
+from study_agent.portability import reject_provider_selectors
 from study_agent.state import canonical_json_bytes
+from study_agent.tools.schema import validate_schema_definition
 
 SESSION_SCHEMA_VERSION = 1
 SESSION_STARTED = "session.started"
 SESSION_INTERACTION_RECORDED = "session.interaction_recorded"
 SESSION_ANSWER_RECORDED = "session.answer_recorded"
 SESSION_ASSISTANT_TURN_RECORDED = "session.assistant_turn_recorded"
+SESSION_TUTOR_PRESENTATION_RECORDED = "session.tutor_presentation_recorded"
 SESSION_CONTINUATION_SUMMARY_UPDATED = "session.continuation_summary_updated"
 SESSION_SUSPENDED = "session.suspended"
 SESSION_RESUMED = "session.resumed"
@@ -66,6 +74,7 @@ SESSION_EVENT_TYPES = frozenset(
         SESSION_INTERACTION_RECORDED,
         SESSION_ANSWER_RECORDED,
         SESSION_ASSISTANT_TURN_RECORDED,
+        SESSION_TUTOR_PRESENTATION_RECORDED,
         SESSION_CONTINUATION_SUMMARY_UPDATED,
         SESSION_SUSPENDED,
         SESSION_RESUMED,
@@ -94,6 +103,11 @@ class SessionAnswerRecorded:
 @dataclass(frozen=True, slots=True)
 class SessionAssistantTurnRecorded:
     record: AssistantTurnRecord
+
+
+@dataclass(frozen=True, slots=True)
+class SessionTutorPresentationRecorded:
+    record: TutorPresentationRecord
 
 
 @dataclass(frozen=True, slots=True)
@@ -708,6 +722,66 @@ def assistant_turn_command_fingerprint(
     ).hexdigest()
 
 
+def tutor_presentation_command_fingerprint(
+    kind: TutorPresentationKind,
+    content: str,
+    in_reply_to_interaction_id: InteractionId | None,
+    host_turn_id: str,
+    observed_host_context_sequence: int,
+    host_context_fingerprint: str,
+    decision_fingerprint: str,
+    receipt_fingerprint: str,
+    continuation_fingerprint: str | None,
+    capability_identity: str | None,
+    response_schema: JsonObject | None,
+) -> str:
+    return sha256(
+        b"study-agent-tutor-presentation-command-v1\0"
+        + canonical_json_bytes(
+            {
+                "kind": kind.value,
+                "content": content,
+                "in_reply_to_interaction_id": (
+                    str(in_reply_to_interaction_id)
+                    if in_reply_to_interaction_id is not None
+                    else None
+                ),
+                "host_turn_id": host_turn_id,
+                "observed_host_context_sequence": observed_host_context_sequence,
+                "host_context_fingerprint": host_context_fingerprint,
+                "decision_fingerprint": decision_fingerprint,
+                "receipt_fingerprint": receipt_fingerprint,
+                "continuation_fingerprint": continuation_fingerprint,
+                "capability_identity": capability_identity,
+                "response_schema": response_schema,
+            }
+        )
+    ).hexdigest()
+
+
+def tutor_presentation_recorded_payload(record: TutorPresentationRecord) -> JsonObject:
+    return {
+        "presentation_id": str(record.id),
+        "kind": record.kind.value,
+        "content": record.content,
+        "in_reply_to_interaction_id": (
+            str(record.in_reply_to_interaction_id)
+            if record.in_reply_to_interaction_id is not None
+            else None
+        ),
+        "host_turn_id": record.host_turn_id,
+        "observed_host_context_sequence": record.observed_host_context_sequence,
+        "host_context_fingerprint": record.host_context_fingerprint,
+        "decision_fingerprint": record.decision_fingerprint,
+        "receipt_fingerprint": record.receipt_fingerprint,
+        "continuation_fingerprint": record.continuation_fingerprint,
+        "capability_identity": record.capability_identity,
+        "response_schema": record.response_schema,
+        "idempotency_key": record.idempotency_key,
+        "command_fingerprint": record.command_fingerprint,
+    }
+
+
 def lifecycle_payload() -> JsonObject:
     return {}
 
@@ -853,6 +927,116 @@ def decode_assistant_turn_recorded(event: DomainEvent) -> SessionAssistantTurnRe
     ):
         raise ValueError("assistant turn command fingerprint mismatch")
     return SessionAssistantTurnRecorded(record)
+
+
+def decode_tutor_presentation_recorded(event: DomainEvent) -> SessionTutorPresentationRecorded:
+    session_id = _envelope(event, SESSION_TUTOR_PRESENTATION_RECORDED)
+    if event.actor.kind is not PrincipalKind.SERVICE:
+        raise ValueError("tutor presentations require service authority")
+    payload = _object(
+        event.payload,
+        "payload",
+        frozenset(
+            {
+                "presentation_id",
+                "kind",
+                "content",
+                "in_reply_to_interaction_id",
+                "host_turn_id",
+                "observed_host_context_sequence",
+                "host_context_fingerprint",
+                "decision_fingerprint",
+                "receipt_fingerprint",
+                "continuation_fingerprint",
+                "capability_identity",
+                "response_schema",
+                "idempotency_key",
+                "command_fingerprint",
+            }
+        ),
+    )
+    try:
+        kind = TutorPresentationKind(_text(payload.get("kind"), "payload.kind"))
+    except ValueError as error:
+        raise ValueError("payload.kind is unsupported") from error
+    reply_raw = payload.get("in_reply_to_interaction_id")
+    reply = (
+        None
+        if reply_raw is None
+        else InteractionId(_text(reply_raw, "payload.in_reply_to_interaction_id"))
+    )
+    continuation = _optional_text(
+        payload.get("continuation_fingerprint"), "payload.continuation_fingerprint"
+    )
+    capability = _optional_text(
+        payload.get("capability_identity"), "payload.capability_identity"
+    )
+    schema_raw = payload.get("response_schema")
+    if schema_raw is not None and not isinstance(schema_raw, Mapping):
+        raise ValueError("payload.response_schema must be an object")
+    schema = schema_raw
+    if schema is not None:
+        validate_schema_definition(schema)
+        reject_provider_selectors(schema, "payload.response_schema")
+        if len(canonical_json_bytes(schema)) > MAX_TUTOR_PRESENTATION_SCHEMA_BYTES:
+            raise ValueError("payload.response_schema exceeds presentation bounds")
+    record = TutorPresentationRecord(
+        id=TutorPresentationId(_text(payload.get("presentation_id"), "payload.presentation_id")),
+        session_id=session_id,
+        occurred_at=event.occurred_at,
+        kind=kind,
+        content=_text(payload.get("content"), "payload.content"),
+        in_reply_to_interaction_id=reply,
+        host_turn_id=_text(payload.get("host_turn_id"), "payload.host_turn_id"),
+        observed_host_context_sequence=_integer(
+            payload.get("observed_host_context_sequence"),
+            "payload.observed_host_context_sequence",
+        ),
+        host_context_fingerprint=_text(
+            payload.get("host_context_fingerprint"), "payload.host_context_fingerprint"
+        ),
+        decision_fingerprint=_text(
+            payload.get("decision_fingerprint"), "payload.decision_fingerprint"
+        ),
+        receipt_fingerprint=_text(
+            payload.get("receipt_fingerprint"), "payload.receipt_fingerprint"
+        ),
+        continuation_fingerprint=continuation,
+        capability_identity=capability,
+        response_schema=schema,
+        idempotency_key=_text(payload.get("idempotency_key"), "payload.idempotency_key"),
+        command_fingerprint=_text(
+            payload.get("command_fingerprint"), "payload.command_fingerprint"
+        ),
+        event_id=event.event_id,
+        course_sequence=event.course_sequence,
+    )
+    if record.id != tutor_presentation_id_for(
+        event.course_id, session_id, record.host_turn_id, record.kind.value
+    ):
+        raise ValueError("presentation id does not match host turn identity")
+    if record.command_fingerprint != tutor_presentation_command_fingerprint(
+        record.kind,
+        record.content,
+        record.in_reply_to_interaction_id,
+        record.host_turn_id,
+        record.observed_host_context_sequence,
+        record.host_context_fingerprint,
+        record.decision_fingerprint,
+        record.receipt_fingerprint,
+        record.continuation_fingerprint,
+        record.capability_identity,
+        record.response_schema,
+    ):
+        raise ValueError("presentation command fingerprint mismatch")
+    if event.event_id != session_turn_event_id_for(
+        event.course_id,
+        session_id,
+        record.idempotency_key,
+        SESSION_TUTOR_PRESENTATION_RECORDED,
+    ):
+        raise ValueError("presentation event id does not match command identity")
+    return SessionTutorPresentationRecorded(record)
 
 
 def decode_summary_updated(event: DomainEvent) -> SessionSummaryUpdated:
