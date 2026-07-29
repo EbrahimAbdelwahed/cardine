@@ -54,6 +54,7 @@ from study_agent.domain.session import (
     VerifiedRunOutputRef,
 )
 from study_agent.domain.source import Citation
+from study_agent.hosts.contracts import TutorPresentationReceipt
 from study_agent.portability import reject_provider_selectors
 from study_agent.state import canonical_json_bytes
 from study_agent.tools.schema import validate_schema_definition
@@ -1011,6 +1012,19 @@ def decode_tutor_presentation_recorded(event: DomainEvent) -> SessionTutorPresen
         event_id=event.event_id,
         course_sequence=event.course_sequence,
     )
+    receipt = TutorPresentationReceipt(
+        host_turn_id=record.host_turn_id,
+        kind=record.kind,
+        content=record.content,
+        observed_host_context_sequence=record.observed_host_context_sequence,
+        host_context_fingerprint=record.host_context_fingerprint,
+        decision_fingerprint=record.decision_fingerprint,
+        continuation_fingerprint=record.continuation_fingerprint,
+        capability_identity=record.capability_identity,
+        response_schema=record.response_schema,
+    )
+    if record.receipt_fingerprint != receipt.fingerprint:
+        raise ValueError("presentation receipt fingerprint mismatch")
     if record.id != tutor_presentation_id_for(
         event.course_id, session_id, record.host_turn_id, record.kind.value
     ):

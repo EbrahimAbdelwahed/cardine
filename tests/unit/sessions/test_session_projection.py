@@ -19,6 +19,7 @@ from study_agent.domain import (
     session_turn_event_id_for,
     tutor_presentation_id_for,
 )
+from study_agent.hosts.contracts import TutorPresentationReceipt
 from study_agent.sessions import (
     SESSION_STARTED,
     SESSION_TUTOR_PRESENTATION_RECORDED,
@@ -35,7 +36,6 @@ COURSE = CourseId("projection-course")
 SESSION = SessionId("projection-session")
 SHA_A = "a" * 64
 SHA_B = "b" * 64
-SHA_C = "c" * 64
 
 
 def _record(
@@ -49,6 +49,14 @@ def _record(
     observed = sequence - 1 if observed is None else observed
     kind = TutorPresentationKind.ASSISTANT_MESSAGE
     content = "A validated tutor message."
+    receipt = TutorPresentationReceipt(
+        host_turn_id=host_turn_id,
+        kind=kind,
+        content=content,
+        observed_host_context_sequence=observed,
+        host_context_fingerprint=SHA_A,
+        decision_fingerprint=SHA_B,
+    )
     command = tutor_presentation_command_fingerprint(
         kind,
         content,
@@ -57,7 +65,7 @@ def _record(
         observed,
         SHA_A,
         SHA_B,
-        SHA_C,
+        receipt.fingerprint,
         None,
         None,
         None,
@@ -73,7 +81,7 @@ def _record(
         observed,
         SHA_A,
         SHA_B,
-        SHA_C,
+        receipt.fingerprint,
         None,
         None,
         None,
@@ -130,7 +138,9 @@ def test_projection_materializes_presentation_and_view_orders_by_course_sequence
     assert view.presentations(COURSE, SESSION) == (record,)
     raw = projection.state["session_tutor_presentations"]
     assert isinstance(raw, Mapping)
-    assert raw[str(record.id)]["content"] == record.content
+    encoded = raw[str(record.id)]
+    assert isinstance(encoded, Mapping)
+    assert encoded["content"] == record.content
 
 
 def test_projection_rejects_orphan_reply_and_sequence_mismatch() -> None:

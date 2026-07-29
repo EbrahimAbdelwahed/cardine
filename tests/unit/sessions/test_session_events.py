@@ -20,6 +20,7 @@ from study_agent.domain import (
     tutor_presentation_id_for,
 )
 from study_agent.domain._validation import JsonObject, JsonValue
+from study_agent.hosts.contracts import TutorPresentationReceipt
 from study_agent.sessions import (
     SESSION_STARTED,
     SESSION_TUTOR_PRESENTATION_RECORDED,
@@ -36,7 +37,6 @@ COURSE = CourseId("events-course")
 SESSION = SessionId("events-session")
 SHA_A = "a" * 64
 SHA_B = "b" * 64
-SHA_C = "c" * 64
 
 
 def _record(*, sequence: int = 2, host_turn_id: str = "host-turn-1") -> TutorPresentationRecord:
@@ -44,6 +44,14 @@ def _record(*, sequence: int = 2, host_turn_id: str = "host-turn-1") -> TutorPre
     key = "presentation-key"
     kind = TutorPresentationKind.ASSISTANT_MESSAGE
     content = "A validated tutor message."
+    receipt = TutorPresentationReceipt(
+        host_turn_id=host_turn_id,
+        kind=kind,
+        content=content,
+        observed_host_context_sequence=observed,
+        host_context_fingerprint=SHA_A,
+        decision_fingerprint=SHA_B,
+    )
     command = tutor_presentation_command_fingerprint(
         kind,
         content,
@@ -52,7 +60,7 @@ def _record(*, sequence: int = 2, host_turn_id: str = "host-turn-1") -> TutorPre
         observed,
         SHA_A,
         SHA_B,
-        SHA_C,
+        receipt.fingerprint,
         None,
         None,
         None,
@@ -68,7 +76,7 @@ def _record(*, sequence: int = 2, host_turn_id: str = "host-turn-1") -> TutorPre
         observed_host_context_sequence=observed,
         host_context_fingerprint=SHA_A,
         decision_fingerprint=SHA_B,
-        receipt_fingerprint=SHA_C,
+        receipt_fingerprint=receipt.fingerprint,
         continuation_fingerprint=None,
         capability_identity=None,
         response_schema=None,
@@ -127,7 +135,7 @@ def test_tutor_presentation_codec_binds_id_command_and_event_identity() -> None:
 
     tampered: dict[str, JsonValue] = dict(tutor_presentation_recorded_payload(record))
     tampered["host_turn_id"] = "other-host-turn"
-    with pytest.raises(ValueError, match="presentation id"):
+    with pytest.raises(ValueError, match="receipt fingerprint"):
         decode_tutor_presentation_recorded(
             DomainEvent(
                 record.event_id,
@@ -150,6 +158,42 @@ def test_tutor_presentation_codec_binds_id_command_and_event_identity() -> None:
                 SESSION_TUTOR_PRESENTATION_RECORDED,
                 tutor_presentation_recorded_payload(record),
                 actor=PrincipalKind.HUMAN,
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "tampered"),
+    (
+        ("host_turn_id", "host-turn-tampered"),
+        ("kind", TutorPresentationKind.LEARNER_QUESTION.value),
+        ("content", "Tampered tutor content."),
+        ("observed_host_context_sequence", 0),
+        ("host_context_fingerprint", "e" * 64),
+        ("decision_fingerprint", "f" * 64),
+    ),
+)
+def test_tutor_presentation_codec_binds_every_direct_receipt_field(
+    field: str,
+    tampered: JsonValue,
+) -> None:
+    record = _record()
+    payload = dict(tutor_presentation_recorded_payload(record))
+    payload[field] = tampered
+
+    with pytest.raises(ValueError, match="receipt fingerprint"):
+        decode_tutor_presentation_recorded(
+            DomainEvent(
+                record.event_id,
+                COURSE,
+                record.course_sequence,
+                SESSION_TUTOR_PRESENTATION_RECORDED,
+                1,
+                Actor(PrincipalKind.SERVICE, "test-service"),
+                record.occurred_at,
+                CorrelationId("presentation-events"),
+                cast(JsonObject, payload),
+                SESSION,
             )
         )
 
@@ -187,6 +231,17 @@ def test_presentation_event_codec_accepts_continuation_descriptor() -> None:
     continuation = "d" * 64
     capability = "grounding.ask@1.0.0"
     schema: JsonObject = {"type": "boolean"}
+    receipt = TutorPresentationReceipt(
+        host_turn_id=base.host_turn_id,
+        kind=kind,
+        content=content,
+        observed_host_context_sequence=base.observed_host_context_sequence,
+        host_context_fingerprint=SHA_A,
+        decision_fingerprint=SHA_B,
+        continuation_fingerprint=continuation,
+        capability_identity=capability,
+        response_schema=schema,
+    )
     command = tutor_presentation_command_fingerprint(
         kind,
         content,
@@ -195,7 +250,7 @@ def test_presentation_event_codec_accepts_continuation_descriptor() -> None:
         base.observed_host_context_sequence,
         SHA_A,
         SHA_B,
-        SHA_C,
+        receipt.fingerprint,
         continuation,
         capability,
         schema,
@@ -213,7 +268,7 @@ def test_presentation_event_codec_accepts_continuation_descriptor() -> None:
         observed_host_context_sequence=base.observed_host_context_sequence,
         host_context_fingerprint=SHA_A,
         decision_fingerprint=SHA_B,
-        receipt_fingerprint=SHA_C,
+        receipt_fingerprint=receipt.fingerprint,
         continuation_fingerprint=continuation,
         capability_identity=capability,
         response_schema=schema,
@@ -235,6 +290,29 @@ def test_presentation_event_codec_accepts_continuation_descriptor() -> None:
         SESSION,
     )
     assert decode_tutor_presentation_recorded(event).record == record
+
+    for field, tampered in (
+        ("continuation_fingerprint", "e" * 64),
+        ("capability_identity", "grounding.ask@2.0.0"),
+        ("response_schema", {"type": "string"}),
+    ):
+        payload = dict(tutor_presentation_recorded_payload(record))
+        payload[field] = tampered
+        with pytest.raises(ValueError, match="receipt fingerprint"):
+            decode_tutor_presentation_recorded(
+                DomainEvent(
+                    record.event_id,
+                    COURSE,
+                    record.course_sequence,
+                    SESSION_TUTOR_PRESENTATION_RECORDED,
+                    1,
+                    Actor(PrincipalKind.SERVICE, "test-service"),
+                    record.occurred_at,
+                    CorrelationId("presentation-events"),
+                    cast(JsonObject, payload),
+                    SESSION,
+                )
+            )
 
 
 def test_old_session_projection_can_replay_without_presentation_state() -> None:
