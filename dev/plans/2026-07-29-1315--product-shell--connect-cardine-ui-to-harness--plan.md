@@ -135,11 +135,15 @@ never append events directly.
 
 ## Current Handoff
 
-- Active pass: UI-01 conversation persistence contract, in parallel with the
-  isolated UI-02 asset materialization.
+- Active pass: UI-01 implements accepted ADR-0015, in parallel with the isolated
+  UI-02 asset materialization.
 - Baseline: clean branch `codex/cardine-ui-integration` from `main` at
   `e18f670`.
-- Next: approve the narrow conversation owner, implement it with tests, then
-  integrate the Referto asset pass and bind its first real routes.
+- Approved boundary: keep verified assistant turns and `TutorSnapshotV1`
+  unchanged; persist validated host presentations through an additive
+  session-owned event, projection, durable continuation store, and
+  `ConversationTurnApplication`.
+- Next: implement ADR-0015 with contract/restart tests, then integrate the
+  Referto asset pass and bind its first real routes.
 - Blocker: public hosting target is not yet selected; production packaging can
   remain target-neutral until deployment.
