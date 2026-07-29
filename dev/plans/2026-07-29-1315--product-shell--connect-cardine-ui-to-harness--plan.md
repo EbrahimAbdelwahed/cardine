@@ -152,11 +152,12 @@ never append events directly.
     sanitized v1 surface, and blocks legacy mutable routes;
   - ADR-0015 presentation receipts, session event/projection/service support,
     and independent retry/CAS/compatibility tests are committed;
-  - full verification: 1,910 passed, 12 skipped; Ruff and source mypy are
+  - full verification: 1,916 passed, 12 skipped; Ruff and full mypy are
     green; the wheel contains the Referto HTML, CSS, JavaScript, and API.
 - Next: add the durable continuation adapter and
   `ConversationTurnApplication`, then compose the localhost repository-backed
   UI routes for artifacts, assessments, recall, and context resolution.
 - External blocker: public hosting target is not yet selected. Docker is not
   installed in the current environment, so container startup remains to be
-  verified on CI or the selected host even though the wheel build is green.
+  verified on CI or the selected host even though a clean wheel install and
+  packaged-asset smoke are green.

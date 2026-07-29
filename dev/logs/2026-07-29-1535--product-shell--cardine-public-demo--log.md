@@ -31,7 +31,7 @@ flow.
 
 ## Verification
 
-- `python -m pytest -q`: 1,910 passed, 12 skipped.
+- `python -m pytest -q`: 1,916 passed, 12 skipped.
 - `python -m ruff check src tests`: passed.
 - `/private/tmp/study-agent-pdf-check/bin/mypy src/study_agent`: passed, 264
   source files.
@@ -41,7 +41,13 @@ flow.
 - `uv build --wheel`: passed.
 - Wheel contents: `browser.html`, `browser.css`, `browser.js`, `browser.py`,
   and `ui_application.py` present.
+- Clean temporary virtualenv install: CLI help and packaged HTML/CSS/JS smoke
+  passed.
 - Independent visual gate: PASS, no remaining P1/P2 issues.
+- Independent semantic review: PASS after binding replayed presentation fields
+  back to the derived host receipt fingerprint.
+- Security review: no remaining P0/P1 findings after hardening; pathological
+  JSON is mapped to a bounded `400`.
 
 ## Notes
 
