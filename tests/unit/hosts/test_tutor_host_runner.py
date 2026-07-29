@@ -190,6 +190,12 @@ def test_runner_returns_bounded_assistant_message_without_gateway_effect() -> No
     )
     assert result.status is TutorHostRunStatus.ASSISTANT_MESSAGE
     assert result.learner_text == "hello"
+    assert result.presentation_receipt is not None
+    assert result.presentation_receipt.host_turn_id == "turn-1"
+    assert result.presentation_receipt.kind.value == "assistant_message"
+    assert result.presentation_receipt.content == "hello"
+    assert result.presentation_receipt.observed_host_context_sequence == 1
+    assert result.presentation_receipt.host_context_fingerprint == context.fingerprint
 
 
 def test_continuation_record_codec_is_canonical_and_reconstructs_authority() -> None:
