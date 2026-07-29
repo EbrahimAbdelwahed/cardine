@@ -102,3 +102,22 @@ def test_browser_payload_is_json_deterministic() -> None:
     )
 
     assert encoded == repeated
+
+
+def test_browser_surface_exposes_versioned_referto_api_without_transport_state() -> None:
+    surface = BrowserSurface(_journey)
+
+    bootstrap = surface.api_get("/api/v1/bootstrap")
+    receipt = surface.api_post(
+        "/api/v1/session/turns",
+        {
+            "schema_version": 1,
+            "request_id": "browser-request-1",
+            "expected_sequence": 2,
+            "payload": {"content": "Explain valves"},
+        },
+    )
+
+    assert bootstrap["mode"] == "public_demo"
+    assert receipt["request_id"] == "browser-request-1"
+    assert receipt["status"] == "demo_completed"

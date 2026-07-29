@@ -135,15 +135,21 @@ never append events directly.
 
 ## Current Handoff
 
-- Active pass: UI-01 implements accepted ADR-0015, in parallel with the isolated
-  UI-02 asset materialization.
+- Active pass: UI-01 implements accepted ADR-0015. The isolated UI-02 Referto
+  asset materialization and the transport-independent public-demo API are
+  complete and ready to integrate.
 - Baseline: clean branch `codex/cardine-ui-integration` from `main` at
   `e18f670`.
 - Approved boundary: keep verified assistant turns and `TutorSnapshotV1`
   unchanged; persist validated host presentations through an additive
   session-owned event, projection, durable continuation store, and
   `ConversationTurnApplication`.
-- Next: implement ADR-0015 with contract/restart tests, then integrate the
-  Referto asset pass and bind its first real routes.
+- Completed evidence:
+  - public-demo API exposes versioned bootstrap, session, materials, evidence,
+    explicit unavailable feature states, and a labelled stateless demo turn;
+  - 22 focused unit tests, Ruff, and mypy are green for the demo API pass;
+  - Referto assets are committed separately at `34f8093`.
+- Next: integrate the Referto assets and packaging, then land ADR-0015 and bind
+  repository-backed conversation turns.
 - Blocker: public hosting target is not yet selected; production packaging can
   remain target-neutral until deployment.

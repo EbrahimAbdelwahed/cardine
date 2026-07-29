@@ -26,12 +26,15 @@ from urllib.parse import urlsplit
 from study_agent.domain._validation import JsonObject
 
 from .product_shell import MAX_LEARNER_ENTRY_CHARS, run_offline_shell_demo
+from .ui_application import DemoUiApplication, UiRequestError
 
 DEFAULT_BROWSER_HOST = "127.0.0.1"
 DEFAULT_BROWSER_PORT = 8765
 STATE_PATH = "/api/state"
 ENTRY_PATH = "/api/entry"
 HEALTH_PATH = "/health"
+API_PREFIX = "/api/v1/"
+MAX_API_BODY_BYTES = 32_768
 
 BrowserJourney = Callable[[str], Mapping[str, object]]
 
@@ -41,6 +44,7 @@ class BrowserSurface:
 
     def __init__(self, journey: BrowserJourney = run_offline_shell_demo) -> None:
         self._journey = journey
+        self._ui = DemoUiApplication(journey)
 
     def state(self, learner_entry: str) -> JsonObject:
         """Return the presentation payload for one bounded learner entry."""
@@ -55,6 +59,16 @@ class BrowserSurface:
         """Return the packaged page bytes without filesystem or network access."""
 
         return resources.files("study_agent.demo").joinpath("browser.html").read_bytes()
+
+    def api_get(self, path: str) -> JsonObject:
+        """Delegate one versioned read without giving transport code authority."""
+
+        return self._ui.get(path)
+
+    def api_post(self, path: str, command: Mapping[str, object]) -> JsonObject:
+        """Delegate one versioned command without retaining canonical state."""
+
+        return self._ui.post(path, command)
 
 
 class _BrowserServer(ThreadingHTTPServer):
@@ -86,10 +100,21 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
         if path == STATE_PATH:
             self._send_state()
             return
+        if path.startswith(API_PREFIX):
+            try:
+                payload = self.server.surface.api_get(path)
+            except UiRequestError as error:
+                self._send_json(HTTPStatus(error.status_code), {"error": str(error)})
+                return
+            self._send_json(HTTPStatus.OK, payload)
+            return
         self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
+        if path.startswith(API_PREFIX):
+            self._post_api(path)
+            return
         if path != ENTRY_PATH:
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
             return
@@ -113,6 +138,28 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": "learner_entry is invalid"})
             return
         self.server.learner_entry = cast(str, payload["learner_entry"])
+        self._send_json(HTTPStatus.OK, payload)
+
+    def _post_api(self, path: str) -> None:
+        content_length = self.headers.get("Content-Length")
+        try:
+            length = int(content_length or "-1")
+        except ValueError:
+            length = -1
+        if length < 0 or length > MAX_API_BODY_BYTES:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "request body is too large"})
+            return
+        try:
+            raw = json.loads(self.rfile.read(length))
+            if not isinstance(raw, Mapping):
+                raise UiRequestError("command must be an object")
+            payload = self.server.surface.api_post(path, raw)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "request JSON is invalid"})
+            return
+        except UiRequestError as error:
+            self._send_json(HTTPStatus(error.status_code), {"error": str(error)})
+            return
         self._send_json(HTTPStatus.OK, payload)
 
     def _send_state(self) -> None:
@@ -272,10 +319,12 @@ def _require_local_host(host: str) -> None:
 
 
 __all__ = [
+    "API_PREFIX",
     "DEFAULT_BROWSER_HOST",
     "DEFAULT_BROWSER_PORT",
     "ENTRY_PATH",
     "HEALTH_PATH",
+    "MAX_API_BODY_BYTES",
     "STATE_PATH",
     "BrowserJourney",
     "BrowserSurface",
