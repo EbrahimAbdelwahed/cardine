@@ -38,6 +38,7 @@
     revealedReviews: Object.create(null),
     lastCommand: null,
     loading: false,
+    sidebarCollapsed: true,
   };
 
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -154,29 +155,31 @@
   function setBusy(busy) {
     state.loading = busy;
     $$('[data-command]').forEach((control) => { control.disabled = busy; });
-    const form = $("#entry-form");
-    if (form) $$('button, textarea', form).forEach((control) => { control.disabled = busy; });
+    $$('[data-entry-form]').forEach((form) => {
+      $$('button, textarea', form).forEach((control) => { control.disabled = busy; });
+      form.setAttribute("aria-busy", String(busy));
+    });
   }
 
   function renderCourse(bootstrap) {
     const course = object(bootstrap.course);
     const session = object(bootstrap.session);
     $("#rail-course").textContent = text(course.title, "corso locale");
-    const recent = array(first(bootstrap, ["recent_sessions", "sessions"], []));
     const list = $("#recent-session-list");
-    if (recent.length) {
+    const sessionId = text(session.id, "");
+    if (sessionId) {
       $("#recent-sessions").hidden = false;
-      list.innerHTML = recent.slice(0, 4).map((item) => `<button class="recent-session" type="button" data-session-id="${escapeAttribute(first(item, ["id", "session_id"]))}"><span>${escapeAttribute(first(item, ["title", "label"], "Sessione"))}</span><span class="recent-session__date">${escapeAttribute(first(item, ["updated_at", "when"], ""))}</span></button>`).join("");
+      list.innerHTML = `<button class="recent-session" type="button" data-route="sessione"><span>${escapeAttribute(text(first(session, ["title", "topic"], course.title), "Sessione corrente"))}</span><span class="recent-session__date">corrente</span></button>`;
     } else {
       $("#recent-sessions").hidden = true;
     }
     document.title = `${text(course.title, "Cardine")} · Cardine`;
-    const sessionId = text(session.id, "sessione non selezionata");
+    const trustSessionId = sessionId || "sessione non selezionata";
     const mode = text(first(bootstrap, ["mode"], "local_repository"), "local_repository");
     $("#runtime-label").textContent = mode === "public_demo"
       ? "modalità dimostrativa · nessun dato personale"
       : "ambiente locale · dati del corso";
-    $("#trust-copy").innerHTML = `<p>Corso <strong>${escapeAttribute(text(course.title, "non dichiarato"))}</strong>, sessione <code>${escapeAttribute(sessionId)}</code>. Modalità: <strong>${escapeAttribute(mode)}</strong>. Il browser riceve DTO JSON bounded dal servizio locale e non apre SQLite, file di corso, runtime del provider o credenziali.</p><ul><li>Le mutazioni usano request ID e sequenza osservata.</li><li>Il piano d'esame resta esplicitamente non disponibile finché non esiste un owner canonico.</li><li>Un conflitto di fonte non viene trasformato in conflitto di contesto.</li></ul>`;
+    $("#trust-copy").innerHTML = `<p>Corso <strong>${escapeAttribute(text(course.title, "non dichiarato"))}</strong>, sessione <code>${escapeAttribute(trustSessionId)}</code>. Modalità: <strong>${escapeAttribute(mode)}</strong>. Il browser riceve DTO JSON bounded dal servizio locale e non apre SQLite, file di corso, runtime del provider o credenziali.</p><ul><li>Le mutazioni usano request ID e sequenza osservata.</li><li>Il piano d'esame resta esplicitamente non disponibile finché non esiste un owner canonico.</li><li>Un conflitto di fonte non viene trasformato in conflitto di contesto.</li></ul>`;
   }
 
   function updateCounts(bootstrap) {
@@ -201,8 +204,13 @@
     state.route = route;
     navActive(route);
     root.innerHTML = html;
-    $("#main-content").focus({ preventScroll: true });
     bindDynamicControls();
+    const initialComposer = route === "oggi" ? $("#entry", root) : null;
+    if (initialComposer) {
+      initialComposer.focus({ preventScroll: true });
+    } else {
+      $("#main-content").focus({ preventScroll: true });
+    }
   }
 
   function renderLoading(route) {
@@ -275,23 +283,15 @@
 
   function renderOggi(payload) {
     const course = object(first(payload, ["course"], state.bootstrap?.course));
-    const session = object(first(payload, ["session"], state.bootstrap?.session));
     const status = text(first(payload, ["shell_status", "status"], state.bootstrap?.shell_status), "ready");
-    const counts = object(first(payload, ["counts"], state.bootstrap?.counts));
-    const feature = object(first(payload, ["features"], state.bootstrap?.features));
-    const focus = [
-      { n: count(counts, ["due_reviews", "due_review_count"]), label: "ripasso dovuto", detail: feature.recall === false ? "si attiva con una raccolta di ripasso" : "pronto per il ripasso", route: "ripasso", available: feature.recall !== false },
-      { n: count(counts, ["pending_proposals", "proposal_count"]), label: "proposte da decidere", detail: feature.artifacts === false ? "si attiva quando crei materiale" : "attende una tua decisione", route: "proposte", available: feature.artifacts !== false },
-      { n: count(counts, ["context_conflicts", "conflict_count"]), label: "preferenze da chiarire", detail: feature.context_resolution === false ? "nessun chiarimento richiesto" : "una scelta resta sempre esplicita", route: "conflitti", available: feature.context_resolution !== false },
-    ];
     const suspended = status === "suspended" || status === "needs_learner_input";
-    setView("oggi", `<section class="hero"><p class="eyebrow">${escapeAttribute(text(course.title, "corso locale"))}</p><h1>Riprendi il filo dello studio.</h1><p class="hero__lede">Parti da una domanda: Cardine ti accompagna nella sessione senza nascondere ciò che è ancora da configurare.</p>${entryForm("hero-entry", "Da dove vuoi iniziare?", "Cosa vuoi capire?", "button--light")}</section><div class="section-grid"><section class="section-grid__main" aria-labelledby="oggi-heading"><p class="section-kicker">oggi · il tuo spazio</p><h2 class="section-title" id="oggi-heading">Il prossimo passo</h2><ul class="focus-list">${focus.map((item) => `<li class="focus-item ${item.available ? "" : "is-unavailable"}"><span class="focus-item__number">${escapeAttribute(item.n)}</span><div><div class="focus-item__label">${escapeAttribute(item.label)}</div><div class="focus-item__detail">${escapeAttribute(item.detail)}</div></div><span class="focus-item__meta">${item.available ? escapeAttribute(item.route) : "non attivo"}</span><span class="focus-item__button">${item.available ? button("Apri", item.route) : ""}</span></li>`).join("")}</ul>${suspended ? `<div class="side-card" style="margin-top:27px"><p class="section-kicker">sessione in pausa</p><h3 class="side-card__title">Il tutor attende il tuo prossimo dettaglio.</h3><p class="side-card__copy">Puoi riprendere esattamente da dove avevi lasciato.</p><div class="side-card__actions">${button("Riprendi sessione", "sessione", "button")}</div></div>` : ""}</section><aside class="section-grid__side" aria-labelledby="oggi-status-heading"><div class="side-card"><p class="section-kicker">stato del corso</p><h2 id="oggi-status-heading" class="side-card__title">Spazio pronto</h2><p class="side-card__copy">Il tuo spazio di studio è pronto. In questa anteprima le azioni non configurate restano chiaramente disattivate.</p><div class="side-card__actions">${button("Apri sessione", "sessione", "button button--quiet")}</div></div><div class="side-card"><p class="section-kicker">piano</p><h3 class="side-card__title">Collega una data d'esame.</h3><p class="side-card__copy">Quando il piano sarà attivo, Cardine organizzerà qui tappe e priorità.</p></div></aside></div>`);
+    setView("oggi", `<section class="chat-home" aria-labelledby="home-heading"><div class="chat-home__center"><p class="eyebrow">${escapeAttribute(text(course.title, "corso locale"))}</p><h1 id="home-heading">${suspended ? "Riprendiamo da dove eravamo?" : "Come vuoi studiare oggi?"}</h1>${entryForm("hero-entry", "Scrivi al tutor", "Chiedi qualsiasi cosa sul corso…")}${suspended ? `<button class="resume-chat" type="button" data-route="sessione">Riprendi la sessione in corso</button>` : ""}</div></section>`);
   }
 
   function entryForm(id, label, placeholder, buttonClass = "", attributes = "") {
     const textareaId = id === "hero-entry" ? "entry" : `${id}-text`;
     const modeClass = id === "hero-entry" ? "composer--hero" : "composer--session";
-    return `<form id="${escapeAttribute(id)}" class="composer ${modeClass}" data-entry-form ${attributes}><label for="${escapeAttribute(textareaId)}">${escapeAttribute(label)}</label><div class="composer__row"><textarea id="${escapeAttribute(textareaId)}" name="learner_entry" maxlength="${MAX_ENTRY_CHARS}" rows="1" required placeholder="${escapeAttribute(placeholder)}"></textarea><button class="button ${buttonClass}" type="submit">Invia</button></div><p class="field-note">Scrivi liberamente: puoi cambiare direzione in ogni momento.</p></form>`;
+    return `<form id="${escapeAttribute(id)}" class="composer ${modeClass}" data-entry-form ${attributes}><label class="visually-hidden" for="${escapeAttribute(textareaId)}">${escapeAttribute(label)}</label><div class="composer__surface"><textarea id="${escapeAttribute(textareaId)}" name="learner_entry" maxlength="${MAX_ENTRY_CHARS}" rows="1" required placeholder="${escapeAttribute(placeholder)}"></textarea><div class="composer__toolbar"><span class="composer__mode">Tutor Cardine</span><span class="composer__hint">Invio invia · Maiusc + Invio va a capo</span><button class="composer__send ${buttonClass}" type="submit">Invia</button></div></div></form>`;
   }
 
   function renderSessione(payload) {
@@ -314,7 +314,7 @@
         );
     const continuationFingerprint = first(continuation, ["fingerprint", "continuation_fingerprint"], "");
     const continuationHtml = continuation && Object.keys(continuation).length ? `<div class="continuation"><p class="section-kicker">richiesta del tutor</p><p class="continuation__prompt">${escapeAttribute(first(continuation, ["prompt", "question", "message"], "Il tutor attende una risposta."))}</p>${continuationFingerprint ? entryForm("continuation-entry", "Risposta", "Scrivi la risposta…", "", `data-fingerprint="${escapeAttribute(continuationFingerprint)}"`) : emptyState("Continuazione non disponibile", "Il servizio non ha restituito il riferimento opaco necessario per riprendere.")}</div>` : "";
-    setView("sessione", `<section class="hero hero--session"><p class="eyebrow">sessione · ${escapeAttribute(text(session.id, "id non dichiarato"))}</p><h1>${escapeAttribute(text(first(snapshot, ["title", "topic"], object(state.bootstrap?.course).title), "Sessione di studio"))}</h1><p class="hero__lede">${pill(status)} <span class="meta">sequenza ${escapeAttribute(state.highWaterSequence || "—")}</span></p></section><div class="section-grid"><section class="section-grid__main" aria-labelledby="conversation-heading"><p class="section-kicker">registro canonico</p><h2 class="section-title" id="conversation-heading">Conversazione</h2><div class="session-thread">${thread}</div>${continuationHtml}${entryForm("session-entry", "Scrivi al tutor", "Chiedi un chiarimento…", "")}</section><aside class="section-grid__side" aria-labelledby="material-heading"><div class="side-card"><p class="section-kicker">stato</p><h2 class="side-card__title">${escapeAttribute(statusLabel(status))}</h2><p class="side-card__copy">Un reload rilegge la stessa snapshot dal servizio. Il browser non conserva lo stato canonico.</p></div><div class="side-card" aria-labelledby="material-heading"><p class="section-kicker">fonti nel contesto</p><h3 class="side-card__title" id="material-heading">Apri i materiali</h3><p class="side-card__copy">Citazioni e revisioni provengono dal catalogo del corso selezionato.</p><div class="side-card__actions">${button("Vai a Fonti", "fonti", "button button--quiet")}</div></div></aside></div>`);
+    setView("sessione", `<section class="chat-session" aria-labelledby="conversation-heading"><header class="conversation-header"><div><h1 id="conversation-heading">${escapeAttribute(text(first(snapshot, ["title", "topic"], object(state.bootstrap?.course).title), "Sessione di studio"))}</h1><p>${escapeAttribute(statusLabel(status))}</p></div><button class="text-button" type="button" data-route="fonti">Fonti</button></header><div class="conversation-scroll"><div class="conversation-column"><div class="session-thread">${thread}</div>${continuationHtml}</div></div><div class="conversation-composer-dock"><div class="conversation-column">${entryForm("session-entry", "Scrivi al tutor", "Rispondi al tutor…")}</div></div></section>`);
   }
 
   function renderMessage(message) {
@@ -323,7 +323,7 @@
     const learner = role === "learner" || role === "user" || role === "student";
     const content = first(item, ["text", "content", "detail", "message"], "");
     const citation = object(first(item, ["citation", "provenance", "source"], null));
-    return `<article class="thread-message ${learner ? "thread-message--learner" : "thread-message--assistant"}><p class="thread-message__role">${escapeAttribute(learner ? "tu" : role === "system" ? "sistema" : "tutor")}</p><p class="thread-message__text">${escapeAttribute(text(content, "Messaggio senza testo visualizzabile."))}</p>${Object.keys(citation).length ? `<button class="provenance-chip" type="button" data-provenance='${escapeAttribute(JSON.stringify(citation))}'>fonte · ${escapeAttribute(first(citation, ["locator", "title", "revision"], "metadati disponibili"))}</button>` : ""}</article>`;
+    return `<article class="thread-message ${learner ? "thread-message--learner" : "thread-message--assistant"}"><p class="thread-message__role">${escapeAttribute(learner ? "tu" : role === "system" ? "sistema" : "tutor")}</p><p class="thread-message__text">${escapeAttribute(text(content, "Messaggio senza testo visualizzabile."))}</p>${Object.keys(citation).length ? `<button class="provenance-chip" type="button" data-provenance='${escapeAttribute(JSON.stringify(citation))}'>fonte · ${escapeAttribute(first(citation, ["locator", "title", "revision"], "metadati disponibili"))}</button>` : ""}</article>`;
   }
 
   function renderFonti(payload) {
@@ -439,7 +439,7 @@
   async function submitTurn(form, continuation = false) {
     const textarea = $("textarea", form);
     const value = text(textarea?.value).trim();
-    if (!value || value.length > MAX_ENTRY_CHARS) return;
+    if (state.loading || !value || value.length > MAX_ENTRY_CHARS) return;
     const endpoint = continuation ? `/api/v1/session/continuations/${encodeURIComponent(form.dataset.fingerprint || "opaque")}/responses` : "/api/v1/session/turns";
     const payload = continuation ? { response: value } : { content: value };
     await executeCommand(endpoint, payload, form, continuation ? "sessione" : "sessione");
@@ -468,6 +468,8 @@
       } else {
         await loadRoute(refreshRoute);
       }
+      const nextComposer = $("#session-entry-text");
+      if (nextComposer) nextComposer.focus({ preventScroll: true });
     } catch (error) {
       setBusy(false);
       setStatus(error.status === 409 ? "stale" : "error", error.status === 409 ? "Stato aggiornato: ricarica prima di riprovare" : "Comando non registrato");
@@ -498,6 +500,12 @@
   function bindDynamicControls() {
     $$('[data-entry-form]').forEach((form) => {
       form.addEventListener("submit", (event) => { event.preventDefault(); submitTurn(form, form.id === "continuation-entry").catch((error) => showCommandError(error, form)); });
+      const textarea = $("textarea", form);
+      if (textarea) {
+        textarea.addEventListener("input", () => resizeComposer(textarea));
+        textarea.addEventListener("keydown", (event) => submitComposerFromKeyboard(event, form));
+        resizeComposer(textarea);
+      }
     });
     $$('[data-reveal-review]').forEach((control) => control.addEventListener("click", () => { state.revealedReviews[control.dataset.revealReview] = true; renderRipasso(state.viewData || {}); }));
     $$('[data-choice]').forEach((control) => control.addEventListener("click", () => { state.selectedAnswers[control.dataset.presentationId] = control.dataset.choice; const assessment = state.viewData; if (assessment) renderVerifiche(assessment); }));
@@ -505,6 +513,22 @@
     $$('[data-provenance]').forEach((control) => control.addEventListener("click", () => openProvenance(control.dataset.provenance)));
     $$('[data-retry-route]').forEach((control) => control.addEventListener("click", () => loadRoute(control.dataset.retryRoute)));
     $$('[data-retry-command]').forEach((control) => control.addEventListener("click", () => { if (state.lastCommand) executeCommand(state.lastCommand.endpoint, state.lastCommand.payload, control.parentElement, state.lastCommand.refreshRoute); }));
+  }
+
+  function resizeComposer(textarea) {
+    textarea.style.height = "auto";
+    const height = Math.min(Math.max(textarea.scrollHeight, 46), 180);
+    textarea.style.height = `${height}px`;
+    textarea.style.overflowY = textarea.scrollHeight > 180 ? "auto" : "hidden";
+  }
+
+  function submitComposerFromKeyboard(event, form) {
+    if (event.key !== "Enter" || event.shiftKey) return;
+    if (event.isComposing || event.keyCode === 229) return;
+    event.preventDefault();
+    const textarea = $("textarea", form);
+    if (state.loading || textarea?.disabled || !text(textarea?.value).trim()) return;
+    form.requestSubmit();
   }
 
   function commandFromControl(control) {
@@ -532,8 +556,7 @@
       if (routeControl) {
         event.preventDefault();
         const route = routeControl.dataset.route;
-        $("#rail").classList.remove("is-open");
-        $("#rail-toggle").setAttribute("aria-expanded", "false");
+        closeMobileRail();
         loadRoute(route);
         return;
       }
@@ -541,15 +564,63 @@
         const rail = $("#rail");
         const open = rail.classList.toggle("is-open");
         $("#rail-toggle").setAttribute("aria-expanded", String(open));
+        $("#main-content").inert = open;
+        $("#rail-backdrop").tabIndex = open ? 0 : -1;
+        applyRailState();
+        if (open) $("#rail-collapse").focus({ preventScroll: true });
       }
-      if (event.target.closest("#trust-details")) $("#trust-drawer").showModal();
+      if (event.target.closest("#rail-collapse")) {
+        if (window.matchMedia("(max-width: 700px)").matches) {
+          closeMobileRail(true);
+        } else {
+          state.sidebarCollapsed = !state.sidebarCollapsed;
+          applyRailState();
+        }
+      }
+      if (event.target.closest("#rail-backdrop")) closeMobileRail(true);
+      if (event.target.closest("#trust-mini")) $("#trust-drawer").showModal();
       if (event.target.closest("[data-close-drawer]")) event.target.closest("dialog").close();
     });
     window.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") $$('dialog[open]').forEach((dialog) => dialog.close());
+      if (event.key === "Escape") {
+        $$('dialog[open]').forEach((dialog) => dialog.close());
+        closeMobileRail(true);
+      }
+      if (event.key.toLowerCase() === "o" && event.shiftKey && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        loadRoute("oggi");
+      }
     });
   }
 
+  function closeMobileRail(returnFocus = false) {
+    const rail = $("#rail");
+    if (!rail.classList.contains("is-open")) return;
+    rail.classList.remove("is-open");
+    $("#rail-toggle").setAttribute("aria-expanded", "false");
+    $("#main-content").inert = false;
+    $("#rail-backdrop").tabIndex = -1;
+    applyRailState();
+    if (returnFocus) $("#rail-toggle").focus({ preventScroll: true });
+  }
+
+  function applyRailState() {
+    const rail = $("#rail");
+    const control = $("#rail-collapse");
+    const mobile = window.matchMedia("(max-width: 700px)").matches;
+    const mobileOpen = mobile && rail.classList.contains("is-open");
+    rail.classList.toggle("is-collapsed", state.sidebarCollapsed);
+    const expanded = mobile ? mobileOpen : !state.sidebarCollapsed;
+    const label = mobile
+      ? mobileOpen ? "Chiudi barra laterale" : "Apri barra laterale"
+      : state.sidebarCollapsed ? "Espandi barra laterale" : "Comprimi barra laterale";
+    control.setAttribute("aria-expanded", String(expanded));
+    control.setAttribute("aria-label", label);
+    control.title = label;
+  }
+
+  applyRailState();
   bindStaticControls();
+  window.addEventListener("resize", applyRailState);
   loadBootstrap();
 }());

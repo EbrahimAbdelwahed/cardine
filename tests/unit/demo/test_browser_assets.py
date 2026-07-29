@@ -61,3 +61,31 @@ def test_piano_is_explicitly_unavailable_and_source_conflicts_are_read_only() ->
     assert "Piano non disponibile" in javascript
     assert "Disaccordo tra fonti: sola lettura" in javascript
     assert "Non esiste un owner canonico" in javascript
+
+
+def test_composer_has_an_ime_safe_enter_key_contract() -> None:
+    javascript = (DEMO_DIR / "browser.js").read_text(encoding="utf-8")
+
+    assert 'event.key !== "Enter"' in javascript
+    assert "event.shiftKey" in javascript
+    assert "event.isComposing" in javascript
+    assert "event.keyCode === 229" in javascript
+    assert "event.preventDefault()" in javascript
+    assert "form.requestSubmit()" in javascript
+    assert 'textarea.addEventListener("input"' in javascript
+
+
+def test_primary_surface_is_a_chat_workspace_with_secondary_tools() -> None:
+    page = (DEMO_DIR / "browser.html").read_text(encoding="utf-8")
+    css = (DEMO_DIR / "browser.css").read_text(encoding="utf-8")
+    javascript = (DEMO_DIR / "browser.js").read_text(encoding="utf-8")
+
+    assert 'class="new-chat-button' in page
+    assert 'class="rail-tools"' in page
+    assert 'class="chat-home"' in javascript
+    assert 'class="chat-session"' in javascript
+    assert 'class="conversation-composer-dock"' in javascript
+    assert "Invio invia · Maiusc + Invio va a capo" in javascript
+    assert '"thread-message--assistant"}"><p class=' in javascript
+    assert ".conversation-scroll" in css
+    assert "position: sticky" in css

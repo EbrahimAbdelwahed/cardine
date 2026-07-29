@@ -17,34 +17,38 @@
   <div class="app-shell" id="app-shell">
     <aside class="rail" id="rail" aria-label="Navigazione del corso">
       <div class="rail__brand">
-        <a class="brand" href="#oggi" data-route="oggi" aria-label="Cardine, vai a Oggi">Cardine</a>
+        <div class="rail__brand-row">
+          <a class="brand" href="#oggi" data-route="oggi" aria-label="Cardine, vai alla nuova domanda">Cardine</a>
+          <button class="rail__collapse" type="button" id="rail-collapse" aria-label="Comprimi barra laterale" aria-expanded="true" title="Comprimi barra laterale"><img src="/icons/sidebar-simple.svg" alt=""></button>
+        </div>
         <p class="rail__course" id="rail-course">corso locale · in caricamento</p>
       </div>
       <nav class="rail__nav" id="navigation" aria-label="Sezioni">
-        <p class="nav-group__label">conversazione</p>
-        <button class="nav-item is-active" type="button" data-route="oggi"><span class="nav-item__number">00</span><span>Oggi</span></button>
-        <button class="nav-item" type="button" data-route="sessione"><span class="nav-item__number">01</span><span>Sessione</span></button>
-        <button class="nav-item" type="button" data-route="verifiche"><span class="nav-item__number">02</span><span>Verifiche</span><span class="nav-item__count" data-count="assessments">—</span></button>
-        <button class="nav-item" type="button" data-route="ripasso"><span class="nav-item__number">03</span><span>Ripasso</span><span class="nav-item__count" data-count="due_reviews">—</span></button>
-
-        <p class="nav-group__label">materiali</p>
-        <button class="nav-item" type="button" data-route="fonti"><span class="nav-item__number">04</span><span>Fonti</span></button>
-        <button class="nav-item" type="button" data-route="proposte"><span class="nav-item__number">05</span><span>Proposte</span><span class="nav-item__count" data-count="pending_proposals">—</span></button>
-
-        <p class="nav-group__label">progresso</p>
-        <button class="nav-item" type="button" data-route="evidenze"><span class="nav-item__number">06</span><span>Evidenze</span></button>
-        <button class="nav-item" type="button" data-route="piano"><span class="nav-item__number">07</span><span>Piano</span><span class="nav-item__count">—</span></button>
-        <button class="nav-item" type="button" data-route="conflitti"><span class="nav-item__number">08</span><span>Conflitti</span><span class="nav-item__count" data-count="context_conflicts">—</span></button>
+        <button class="new-chat-button is-active" type="button" data-route="oggi" title="Nuova domanda"><img src="/icons/plus.svg" alt=""><span class="nav-label">Nuova domanda</span><span class="shortcut">⇧⌘O</span></button>
+        <button class="nav-item" type="button" data-route="sessione" title="Chat"><img src="/icons/chat-circle.svg" alt=""><span class="nav-label">Chat</span></button>
+        <details class="rail-tools" open>
+          <summary>Spazio di studio</summary>
+          <div class="rail-tools__items">
+            <button class="nav-item" type="button" data-route="verifiche" title="Verifiche"><img src="/icons/exam.svg" alt=""><span class="nav-label">Verifiche</span><span class="nav-item__count" data-count="assessments">—</span></button>
+            <button class="nav-item" type="button" data-route="ripasso" title="Ripasso"><img src="/icons/cards.svg" alt=""><span class="nav-label">Ripasso</span><span class="nav-item__count" data-count="due_reviews">—</span></button>
+            <button class="nav-item" type="button" data-route="fonti" title="Fonti"><img src="/icons/books.svg" alt=""><span class="nav-label">Fonti</span></button>
+            <button class="nav-item" type="button" data-route="proposte" title="Proposte"><img src="/icons/note-pencil.svg" alt=""><span class="nav-label">Proposte</span><span class="nav-item__count" data-count="pending_proposals">—</span></button>
+            <button class="nav-item" type="button" data-route="evidenze" title="Evidenze"><img src="/icons/chart-line-up.svg" alt=""><span class="nav-label">Evidenze</span></button>
+            <button class="nav-item" type="button" data-route="piano" title="Piano"><img src="/icons/calendar-blank.svg" alt=""><span class="nav-label">Piano</span><span class="nav-item__count">—</span></button>
+            <button class="nav-item" type="button" data-route="conflitti" title="Conflitti"><img src="/icons/warning-circle.svg" alt=""><span class="nav-label">Conflitti</span><span class="nav-item__count" data-count="context_conflicts">—</span></button>
+          </div>
+        </details>
       </nav>
       <div class="rail__sessions" id="recent-sessions" hidden>
-        <p class="nav-group__label">sessioni</p>
+        <p class="nav-group__label">Recenti</p>
         <div id="recent-session-list"></div>
       </div>
-      <div class="trust-mini" id="trust-mini" aria-live="polite">
+      <button class="trust-mini" id="trust-mini" type="button" aria-live="polite" aria-label="Apri confini di fiducia">
         <span class="status-dot" aria-hidden="true"></span>
         <span id="trust-mini-label">verifica del contesto…</span>
-      </div>
+      </button>
     </aside>
+    <button class="rail-backdrop" id="rail-backdrop" type="button" tabindex="-1" aria-label="Chiudi barra laterale"></button>
 
     <main id="main-content" class="main" tabindex="-1">
       <header class="mobile-header">
@@ -60,13 +64,12 @@
           <p class="eyebrow">corso locale · Cardine</p>
           <h1 id="entry-heading">Il filo dello studio, in vista.</h1>
           <p class="hero__lede">Carico sessione, fonti e stato canonico dal repository selezionato.</p>
-          <form id="entry-form" class="composer composer--hero">
-            <label for="entry">Da dove vuoi iniziare?</label>
-            <div class="composer__row">
-              <textarea id="entry" name="learner_entry" maxlength="4000" rows="1" required placeholder="Cosa vuoi capire?"></textarea>
-              <button class="button button--light" type="submit">Studia ora</button>
+          <form id="entry-form" class="composer composer--hero" data-entry-form aria-busy="true">
+            <label class="visually-hidden" for="entry">Scrivi al tutor</label>
+            <div class="composer__surface">
+              <textarea id="entry" name="learner_entry" maxlength="4000" rows="1" required placeholder="Cosa vuoi capire?" disabled></textarea>
+              <div class="composer__toolbar"><span class="composer__mode">Tutor Cardine</span><span class="composer__hint">Caricamento del corso…</span><button class="composer__send" type="submit" disabled>Invia</button></div>
             </div>
-            <p class="field-note" id="entry-note">La richiesta viene registrata dal servizio di sessione.</p>
           </form>
         </section>
         <div class="loading-grid" aria-label="Caricamento">
@@ -75,7 +78,6 @@
       </div>
       <footer class="page-footer">
         <span id="runtime-label">ambiente in verifica</span>
-        <button class="text-button" type="button" id="trust-details">Apri confini di fiducia</button>
       </footer>
     </main>
   </div>

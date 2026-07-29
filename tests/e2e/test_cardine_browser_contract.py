@@ -21,7 +21,7 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-from study_agent.demo.browser import create_server
+from study_agent.demo.browser import ICON_ASSETS, create_server
 
 DEMO_DIR = Path(__file__).parents[2] / "src" / "study_agent" / "demo"
 ROUTES = {
@@ -139,6 +139,14 @@ def test_real_http_surface_serves_every_navigation_route(browser_url: str) -> No
         assert "status" in payload or "shell_status" in payload, route
 
 
+def test_real_http_surface_serves_every_packaged_icon(browser_url: str) -> None:
+    for icon_name in ICON_ASSETS:
+        status, payload, raw = _get(browser_url, f"/icons/{icon_name}")
+        assert status == 200, icon_name
+        assert payload == raw
+        assert raw.startswith("<svg"), icon_name
+
+
 def test_navigation_sidebar_is_expanded_and_accessible() -> None:
     page = (DEMO_DIR / "browser.html").read_text(encoding="utf-8")
     css = (DEMO_DIR / "browser.css").read_text(encoding="utf-8")
@@ -147,11 +155,13 @@ def test_navigation_sidebar_is_expanded_and_accessible() -> None:
 
     assert parser.details_open
     assert set(ROUTES).issubset(parser.route_labels)
-    assert any("Nuova sessione" in label for label in parser.route_labels["oggi"])
+    assert any("Nuova domanda" in label for label in parser.route_labels["oggi"])
     assert parser.ids["rail"].get("aria-label") == "Navigazione del corso"
     assert parser.ids["navigation"].get("aria-label") == "Sezioni"
     assert '.rail {\n' in css
-    assert "width: 244px" in css
+    assert "width: 288px" in css
+    assert ".rail.is-collapsed" in css
+    assert "width: 52px" in css
 
 
 def test_chat_home_and_session_markers_preserve_learner_tutor_boundary() -> None:
@@ -228,7 +238,7 @@ def test_accessibility_contract_has_labels_focus_targets_and_live_status() -> No
     assert 'id="rail-toggle" aria-expanded="false" aria-controls="rail"' in page
     assert 'id="trust-drawer" aria-labelledby="trust-heading"' in page
     assert 'id="provenance-drawer" aria-labelledby="drawer-heading"' in page
-    assert '<label for="entry">Da dove vuoi iniziare?</label>' in page
+    assert '<label class="visually-hidden" for="entry">Scrivi al tutor</label>' in page
     assert 'id="entry" name="learner_entry"' in page
     assert '$("#main-content").focus({ preventScroll: true })' in javascript
 

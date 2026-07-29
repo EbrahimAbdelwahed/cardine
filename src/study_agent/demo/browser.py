@@ -34,6 +34,20 @@ DEFAULT_BROWSER_PORT = 8765
 STATE_PATH = "/api/state"
 ENTRY_PATH = "/api/entry"
 HEALTH_PATH = "/health"
+ICON_ASSETS = frozenset(
+    {
+        "books.svg",
+        "calendar-blank.svg",
+        "cards.svg",
+        "chart-line-up.svg",
+        "chat-circle.svg",
+        "exam.svg",
+        "note-pencil.svg",
+        "plus.svg",
+        "sidebar-simple.svg",
+        "warning-circle.svg",
+    }
+)
 API_PREFIX = "/api/v1/"
 MAX_API_BODY_BYTES = 32_768
 MAX_CONCURRENT_REQUESTS = 32
@@ -67,9 +81,11 @@ class BrowserSurface:
     def asset(self, name: str) -> bytes:
         """Return one allowlisted packaged browser asset."""
 
-        if name not in {"browser.css", "browser.js"}:
-            raise ValueError("unknown browser asset")
-        return resources.files("study_agent.demo").joinpath(name).read_bytes()
+        if name in {"browser.css", "browser.js"}:
+            return resources.files("study_agent.demo").joinpath(name).read_bytes()
+        if name.startswith("icons/") and name.removeprefix("icons/") in ICON_ASSETS:
+            return resources.files("study_agent.demo").joinpath(name).read_bytes()
+        raise ValueError("unknown browser asset")
 
     def api_get(self, path: str) -> JsonObject:
         """Delegate one versioned read without giving transport code authority."""
@@ -157,6 +173,14 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
                 self.server.surface.asset("browser.js"),
             )
             return
+        if path.startswith("/icons/"):
+            try:
+                icon = self.server.surface.asset(path.removeprefix("/"))
+            except ValueError:
+                self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+                return
+            self._send(HTTPStatus.OK, "image/svg+xml", icon)
+            return
         if path == HEALTH_PATH:
             mode = "public_demo" if self.server.public_demo else "offline"
             self._send_json(HTTPStatus.OK, {"status": "ok", "mode": mode})
@@ -229,11 +253,11 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
             if not isinstance(raw, Mapping):
                 raise UiRequestError("command must be an object")
             payload = self.server.surface.api_post(path, raw)
-        except (UnicodeDecodeError, ValueError, RecursionError):
-            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "request JSON is invalid"})
-            return
         except UiRequestError as error:
             self._send_json(HTTPStatus(error.status_code), {"error": str(error)})
+            return
+        except (UnicodeDecodeError, ValueError, RecursionError):
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "request JSON is invalid"})
             return
         self._send_json(HTTPStatus.OK, payload)
 

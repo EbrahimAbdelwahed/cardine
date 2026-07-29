@@ -109,9 +109,12 @@ def test_browser_page_bytes_are_static_and_accessible() -> None:
     assert ".meta { color: var(--muted); font-size: .9rem; overflow-wrap: anywhere; }" in decoded
     assert BrowserSurface(_journey).asset("browser.css").startswith(b":root")
     assert b'"use strict";' in BrowserSurface(_journey).asset("browser.js")
+    assert BrowserSurface(_journey).asset("icons/plus.svg").startswith(b"<svg")
 
     with pytest.raises(ValueError, match="unknown browser asset"):
         BrowserSurface(_journey).asset("../secret")
+    with pytest.raises(ValueError, match="unknown browser asset"):
+        BrowserSurface(_journey).asset("icons/../browser.js")
 
 
 def test_browser_payload_is_json_deterministic() -> None:
