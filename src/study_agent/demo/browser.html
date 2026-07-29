@@ -49,7 +49,7 @@
     <main id="main-content" class="main" tabindex="-1">
       <header class="mobile-header">
         <a class="brand brand--small" href="#oggi" data-route="oggi">Cardine</a>
-        <button class="icon-button" type="button" id="rail-toggle" aria-expanded="false" aria-controls="rail" aria-label="Apri navigazione">☰</button>
+        <button class="icon-button" type="button" id="rail-toggle" aria-expanded="false" aria-controls="rail">Menu</button>
       </header>
       <div class="status-bar" id="global-status" role="status" aria-live="polite">
         <span class="status-bar__label">Caricamento del corso…</span>
@@ -64,7 +64,7 @@
             <label for="entry">Da dove vuoi iniziare?</label>
             <div class="composer__row">
               <textarea id="entry" name="learner_entry" maxlength="4000" rows="1" required placeholder="Cosa vuoi capire?"></textarea>
-              <button class="button button--light" type="submit">Studia ora <span aria-hidden="true">→</span></button>
+              <button class="button button--light" type="submit">Studia ora</button>
             </div>
             <p class="field-note" id="entry-note">La richiesta viene registrata dal servizio di sessione.</p>
           </form>
@@ -74,18 +74,18 @@
         </div>
       </div>
       <footer class="page-footer">
-        <span>localhost · repository-backed</span>
+        <span id="runtime-label">ambiente in verifica</span>
         <button class="text-button" type="button" id="trust-details">Apri confini di fiducia</button>
       </footer>
     </main>
   </div>
 
   <dialog class="drawer" id="provenance-drawer" aria-labelledby="drawer-heading">
-    <div class="drawer__header"><div><p class="eyebrow">margine · provenienza</p><h2 id="drawer-heading">Fonte selezionata</h2></div><button class="icon-button" type="button" data-close-drawer aria-label="Chiudi">×</button></div>
+    <div class="drawer__header"><div><p class="eyebrow">margine · provenienza</p><h2 id="drawer-heading">Fonte selezionata</h2></div><button class="icon-button" type="button" data-close-drawer>Chiudi</button></div>
     <div id="drawer-content"><p class="empty-state">Seleziona una fonte per vedere i metadati consentiti.</p></div>
   </dialog>
   <dialog class="drawer" id="trust-drawer" aria-labelledby="trust-heading">
-    <div class="drawer__header"><div><p class="eyebrow">confini di fiducia</p><h2 id="trust-heading">Il browser non è il proprietario dello stato</h2></div><button class="icon-button" type="button" data-close-drawer aria-label="Chiudi">×</button></div>
+    <div class="drawer__header"><div><p class="eyebrow">confini di fiducia</p><h2 id="trust-heading">Il browser non è il proprietario dello stato</h2></div><button class="icon-button" type="button" data-close-drawer>Chiudi</button></div>
     <div class="trust-copy" id="trust-copy"><p>Le decisioni passano per i servizi canonici del repository. Il browser mostra solo DTO bounded e non contiene chiavi, SQLite o runtime del provider.</p></div>
   </dialog>
 

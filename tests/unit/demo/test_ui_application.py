@@ -53,6 +53,7 @@ def test_demo_bootstrap_is_honest_about_available_features() -> None:
     assert bootstrap["mode"] == "public_demo"
     assert bootstrap["high_water_sequence"] == 2
     assert bootstrap["shell_status"] == "recovered"
+    assert _mapping(bootstrap["course"])["title"] == "Valvole cardiache"
     assert _mapping(bootstrap["features"]) == {
         "tutor": True,
         "artifacts": False,
@@ -162,3 +163,59 @@ def test_demo_rejects_unknown_routes_and_mutations() -> None:
                 "payload": {"decision": "accept"},
             },
         )
+
+
+def test_unknown_read_route_is_rejected_before_running_the_fixture() -> None:
+    calls = 0
+
+    def journey(entry: str) -> JsonObject:
+        nonlocal calls
+        calls += 1
+        return _journey(entry)
+
+    app = DemoUiApplication(journey)
+
+    with pytest.raises(UiRequestError, match="not found"):
+        app.get("/api/v1/unknown")
+
+    assert calls == 0
+
+
+def test_demo_read_routes_share_one_cached_sanitized_fixture_result() -> None:
+    calls = 0
+
+    def journey(entry: str) -> JsonObject:
+        nonlocal calls
+        calls += 1
+        return _journey(entry)
+
+    app = DemoUiApplication(journey)
+
+    assert app.get("/api/v1/bootstrap")["high_water_sequence"] == 2
+    assert app.get("/api/v1/session")["high_water_sequence"] == 2
+    assert app.get("/api/v1/materials")["high_water_sequence"] == 2
+    assert calls == 1
+
+
+@pytest.mark.parametrize(
+    "command",
+    (
+        {
+            "schema_version": 1,
+            "request_id": "\ud800",
+            "expected_sequence": 2,
+            "payload": {"content": "hello"},
+        },
+        {
+            "schema_version": 1,
+            "request_id": "request",
+            "expected_sequence": 2,
+            "payload": {"content": "\ud800"},
+        },
+    ),
+)
+def test_demo_rejects_text_that_cannot_be_encoded_as_utf8(command: JsonObject) -> None:
+    app = DemoUiApplication(_journey)
+
+    with pytest.raises(UiRequestError, match="invalid"):
+        app.post("/api/v1/session/turns", command)

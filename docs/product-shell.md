@@ -56,7 +56,28 @@ as `stale`, `degraded`, and `recovered` respectively.
 5. (2:05–2:40) Run the focused tests, Ruff, and source mypy gate.
 6. (2:40–2:55) Explain that SQLite and model/provider imports remain outside
    the shell; an API-key GPT-5.6 adapter is opt-in and never used by the
-   offline path.
+offline path.
+
+## Public demo container
+
+The repository includes a production container for the sanitized, stateless
+demo surface:
+
+```bash
+docker build -t cardine-demo .
+docker run --read-only --tmpfs /tmp --cap-drop ALL \
+  -p 127.0.0.1:8080:8080 cardine-demo
+```
+
+The container runs as a non-root user and starts
+`study-agent-shell-web --public-demo`. Public-demo mode is the only mode that
+may bind `0.0.0.0`; it serves the packaged UI, health check, and `/api/v1/*`
+fixture routes while returning `404` for the legacy mutable `/api/state` and
+`/api/entry` routes. It does not mount a repository, accept credentials, call a
+provider, or persist learner text. Deploy it behind an ingress that supplies
+TLS, request-rate limits, body/time limits, and access logs that omit request
+bodies. The built-in server also caps concurrent request workers and applies a
+socket timeout, but it is not a replacement for a production ingress.
 
 The implementation uses only the Python standard library and a packaged page:
 it provides an accessible, deterministic proof surface without a web framework

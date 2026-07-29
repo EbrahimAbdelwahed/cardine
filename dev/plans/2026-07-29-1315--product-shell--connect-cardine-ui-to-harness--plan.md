@@ -2,7 +2,7 @@
 
 Date: 2026-07-29 13:15
 Area: product-shell
-Status: Active
+Status: Active — public demo ready; repository-backed mode remains
 
 ## Goal
 
@@ -135,9 +135,8 @@ never append events directly.
 
 ## Current Handoff
 
-- Active pass: UI-01 implements accepted ADR-0015. The isolated UI-02 Referto
-  asset materialization and the transport-independent public-demo API are
-  complete and ready to integrate.
+- Completed passes: UI-01, UI-02, UI-06 public-demo treatment, and the UI-07
+  public-demo packaging boundary.
 - Baseline: clean branch `codex/cardine-ui-integration` from `main` at
   `e18f670`.
 - Approved boundary: keep verified assistant turns and `TutorSnapshotV1`
@@ -147,9 +146,17 @@ never append events directly.
 - Completed evidence:
   - public-demo API exposes versioned bootstrap, session, materials, evidence,
     explicit unavailable feature states, and a labelled stateless demo turn;
-  - 22 focused unit tests, Ruff, and mypy are green for the demo API pass;
-  - Referto assets are committed separately at `34f8093`.
-- Next: integrate the Referto assets and packaging, then land ADR-0015 and bind
-  repository-backed conversation turns.
-- Blocker: public hosting target is not yet selected; production packaging can
-  remain target-neutral until deployment.
+  - Referto assets are packaged with the wheel and independently passed the
+    source-vs-implementation visual gate;
+  - the public container runs as non-root, exposes only the stateless
+    sanitized v1 surface, and blocks legacy mutable routes;
+  - ADR-0015 presentation receipts, session event/projection/service support,
+    and independent retry/CAS/compatibility tests are committed;
+  - full verification: 1,910 passed, 12 skipped; Ruff and source mypy are
+    green; the wheel contains the Referto HTML, CSS, JavaScript, and API.
+- Next: add the durable continuation adapter and
+  `ConversationTurnApplication`, then compose the localhost repository-backed
+  UI routes for artifacts, assessments, recall, and context resolution.
+- External blocker: public hosting target is not yet selected. Docker is not
+  installed in the current environment, so container startup remains to be
+  verified on CI or the selected host even though the wheel build is green.

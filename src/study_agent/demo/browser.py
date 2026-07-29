@@ -1,4 +1,4 @@
-"""Local-only browser surface for the conversation-first product shell.
+"""Browser surface for the conversation-first product shell.
 
 The browser surface is intentionally a very small composition layer.  It
 serves a packaged, dependency-free HTML page and delegates the deterministic
@@ -6,10 +6,9 @@ journey to :func:`study_agent.demo.product_shell.run_offline_shell_demo`.
 The HTTP server owns only the latest bounded input for the page; it does not
 own tutor state, persistence, capability execution, or provider credentials.
 
-Run ``study-agent-shell-web`` and open ``http://127.0.0.1:8765/``.  The
-default route never makes a network or model call.  A host embedding the
-public :class:`ProductShell` ports can replace the journey function without
-changing this server or the page contract.
+Run ``study-agent-shell-web`` for the localhost compatibility surface.  The
+explicit ``--public-demo`` mode may bind all interfaces, but exposes only the
+stateless, sanitized versioned demo API.  Neither mode makes a model call.
 """
 
 from __future__ import annotations
@@ -20,6 +19,8 @@ from collections.abc import Callable, Mapping
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
+from socket import socket
+from threading import BoundedSemaphore
 from typing import cast
 from urllib.parse import urlsplit
 
@@ -35,8 +36,11 @@ ENTRY_PATH = "/api/entry"
 HEALTH_PATH = "/health"
 API_PREFIX = "/api/v1/"
 MAX_API_BODY_BYTES = 32_768
+MAX_CONCURRENT_REQUESTS = 32
+REQUEST_SOCKET_TIMEOUT_SECONDS = 10.0
 
 BrowserJourney = Callable[[str], Mapping[str, object]]
+SocketRequest = socket | tuple[bytes, socket]
 
 
 class BrowserSurface:
@@ -60,6 +64,13 @@ class BrowserSurface:
 
         return resources.files("study_agent.demo").joinpath("browser.html").read_bytes()
 
+    def asset(self, name: str) -> bytes:
+        """Return one allowlisted packaged browser asset."""
+
+        if name not in {"browser.css", "browser.js"}:
+            raise ValueError("unknown browser asset")
+        return resources.files("study_agent.demo").joinpath(name).read_bytes()
+
     def api_get(self, path: str) -> JsonObject:
         """Delegate one versioned read without giving transport code authority."""
 
@@ -74,11 +85,49 @@ class BrowserSurface:
 class _BrowserServer(ThreadingHTTPServer):
     allow_reuse_address = True
     daemon_threads = True
+    request_queue_size = MAX_CONCURRENT_REQUESTS
 
-    def __init__(self, address: tuple[str, int], surface: BrowserSurface) -> None:
+    def __init__(
+        self,
+        address: tuple[str, int],
+        surface: BrowserSurface,
+        *,
+        public_demo: bool,
+    ) -> None:
         super().__init__(address, _BrowserRequestHandler)
         self.surface = surface
+        self.public_demo = public_demo
+        self._request_slots = BoundedSemaphore(MAX_CONCURRENT_REQUESTS)
         self.learner_entry = "I have ten minutes. Help me understand heart valves."
+
+    def get_request(self) -> tuple[socket, tuple[str, int]]:
+        request, address = super().get_request()
+        request.settimeout(REQUEST_SOCKET_TIMEOUT_SECONDS)
+        return request, cast(tuple[str, int], address)
+
+    def process_request(
+        self,
+        request: SocketRequest,
+        client_address: tuple[str, int],
+    ) -> None:
+        if not self._request_slots.acquire(blocking=False):
+            (request[1] if isinstance(request, tuple) else request).close()
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._request_slots.release()
+            raise
+
+    def process_request_thread(
+        self,
+        request: SocketRequest,
+        client_address: tuple[str, int],
+    ) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._request_slots.release()
 
 
 class _BrowserRequestHandler(BaseHTTPRequestHandler):
@@ -94,10 +143,28 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
         if path == "/":
             self._send(HTTPStatus.OK, "text/html; charset=utf-8", self.server.surface.page())
             return
+        if path == "/browser.css":
+            self._send(
+                HTTPStatus.OK,
+                "text/css; charset=utf-8",
+                self.server.surface.asset("browser.css"),
+            )
+            return
+        if path == "/browser.js":
+            self._send(
+                HTTPStatus.OK,
+                "text/javascript; charset=utf-8",
+                self.server.surface.asset("browser.js"),
+            )
+            return
         if path == HEALTH_PATH:
-            self._send_json(HTTPStatus.OK, {"status": "ok", "mode": "offline"})
+            mode = "public_demo" if self.server.public_demo else "offline"
+            self._send_json(HTTPStatus.OK, {"status": "ok", "mode": mode})
             return
         if path == STATE_PATH:
+            if self.server.public_demo:
+                self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+                return
             self._send_state()
             return
         if path.startswith(API_PREFIX):
@@ -114,6 +181,9 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path.startswith(API_PREFIX):
             self._post_api(path)
+            return
+        if self.server.public_demo:
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
             return
         if path != ENTRY_PATH:
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
@@ -134,7 +204,12 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
             if not isinstance(entry, str):
                 raise ValueError
             payload = self.server.surface.state(entry)
-        except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+        except (
+            UnicodeDecodeError,
+            RecursionError,
+            TypeError,
+            ValueError,
+        ):
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": "learner_entry is invalid"})
             return
         self.server.learner_entry = cast(str, payload["learner_entry"])
@@ -154,7 +229,7 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
             if not isinstance(raw, Mapping):
                 raise UiRequestError("command must be an object")
             payload = self.server.surface.api_post(path, raw)
-        except (UnicodeDecodeError, json.JSONDecodeError):
+        except (UnicodeDecodeError, ValueError, RecursionError):
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": "request JSON is invalid"})
             return
         except UiRequestError as error:
@@ -171,13 +246,30 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
         self._send_json(HTTPStatus.OK, payload)
 
     def _send_json(self, status: HTTPStatus, payload: JsonObject) -> None:
-        self._send(status, "application/json; charset=utf-8", _json_bytes(payload))
+        try:
+            body = _json_bytes(payload)
+        except (TypeError, ValueError, UnicodeEncodeError):
+            status = HTTPStatus.INTERNAL_SERVER_ERROR
+            body = b'{"error":"response unavailable"}'
+        self._send(status, "application/json; charset=utf-8", body)
 
     def _send(self, status: HTTPStatus, content_type: str, body: bytes) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'self'; base-uri 'none'; form-action 'self'; "
+            "frame-ancestors 'none'; object-src 'none'",
+        )
+        self.send_header(
+            "Permissions-Policy",
+            "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+        )
         self.end_headers()
         self.wfile.write(body)
 
@@ -187,13 +279,20 @@ def create_server(
     port: int = DEFAULT_BROWSER_PORT,
     *,
     journey: BrowserJourney = run_offline_shell_demo,
+    public_demo: bool = False,
 ) -> ThreadingHTTPServer:
-    """Create a localhost-only server for tests or an embedding host."""
+    """Create a local server or an explicitly stateless public demo server."""
 
-    _require_local_host(host)
+    _require_bind_host(host, public_demo=public_demo)
+    if public_demo and journey is not run_offline_shell_demo:
+        raise ValueError("public-demo mode requires the fixed sanitized journey")
     if type(port) is not int or not 0 <= port <= 65_535:
         raise ValueError("port must be between 0 and 65535")
-    return _BrowserServer((host, port), BrowserSurface(journey))
+    return _BrowserServer(
+        (host, port),
+        BrowserSurface(journey),
+        public_demo=public_demo,
+    )
 
 
 def serve(
@@ -201,10 +300,11 @@ def serve(
     port: int = DEFAULT_BROWSER_PORT,
     *,
     journey: BrowserJourney = run_offline_shell_demo,
+    public_demo: bool = False,
 ) -> None:
     """Serve the browser surface until interrupted."""
 
-    server = create_server(host, port, journey=journey)
+    server = create_server(host, port, journey=journey, public_demo=public_demo)
     bound_host, bound_port = cast(tuple[str, int], server.server_address)
     print(f"Study Agent product shell: http://{bound_host}:{bound_port}/")
     try:
@@ -218,13 +318,22 @@ def serve(
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="study-agent-shell-web",
-        description="Serve the deterministic offline product shell on localhost.",
+        description="Serve Cardine locally or as a stateless sanitized public demo.",
     )
-    parser.add_argument("--host", default=DEFAULT_BROWSER_HOST, help="localhost bind address")
+    parser.add_argument(
+        "--host",
+        default=DEFAULT_BROWSER_HOST,
+        help="bind address; 0.0.0.0 requires --public-demo",
+    )
     parser.add_argument("--port", type=int, default=DEFAULT_BROWSER_PORT)
+    parser.add_argument(
+        "--public-demo",
+        action="store_true",
+        help="disable legacy mutable routes and permit a public bind",
+    )
     args = parser.parse_args()
     try:
-        serve(args.host, args.port)
+        serve(args.host, args.port, public_demo=args.public_demo)
     except ValueError as error:
         parser.error(str(error))
 
@@ -313,9 +422,14 @@ def _json_bytes(payload: JsonObject) -> bytes:
     ).encode("utf-8")
 
 
-def _require_local_host(host: str) -> None:
-    if host not in {"127.0.0.1", "localhost"}:
-        raise ValueError("browser server must bind to localhost")
+def _require_bind_host(host: str, *, public_demo: bool) -> None:
+    if host in {"127.0.0.1", "localhost"}:
+        return
+    if host == "0.0.0.0":
+        if public_demo:
+            return
+        raise ValueError("0.0.0.0 requires explicit --public-demo mode")
+    raise ValueError("bind host must be localhost or 0.0.0.0 in public-demo mode")
 
 
 __all__ = [

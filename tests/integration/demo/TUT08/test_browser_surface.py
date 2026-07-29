@@ -35,6 +35,28 @@ def test_local_browser_journey_serves_page_state_and_free_form_entry() -> None:
         assert b"Context conflicts" in page
         connection.close()
 
+        for path, content_type, marker in (
+            ("/browser.css", "text/css; charset=utf-8", b"--paper"),
+            ("/browser.js", "text/javascript; charset=utf-8", b"/api/v1/bootstrap"),
+        ):
+            connection = HTTPConnection(host, port, timeout=2)
+            connection.request("GET", path)
+            asset_response = connection.getresponse()
+            asset = asset_response.read()
+            assert asset_response.status == 200
+            assert asset_response.getheader("Content-Type") == content_type
+            assert marker in asset
+            connection.close()
+
+        connection = HTTPConnection(host, port, timeout=2)
+        connection.request("GET", "/api/v1/bootstrap")
+        bootstrap_response = connection.getresponse()
+        bootstrap = json.loads(bootstrap_response.read())
+        assert bootstrap_response.status == 200
+        assert bootstrap["mode"] == "public_demo"
+        assert bootstrap["high_water_sequence"] == 2
+        connection.close()
+
         connection = HTTPConnection(host, port, timeout=2)
         connection.request("GET", "/api/state")
         state_response = connection.getresponse()
@@ -63,10 +85,94 @@ def test_local_browser_journey_serves_page_state_and_free_form_entry() -> None:
         assert connection.getresponse().read() == updated
         connection.close()
 
+        command = json.dumps(
+            {
+                "schema_version": 1,
+                "request_id": "browser-integration-request",
+                "expected_sequence": 2,
+                "payload": {"content": "Explain the pulmonary valve"},
+            }
+        ).encode()
+        connection = HTTPConnection(host, port, timeout=2)
+        connection.request(
+            "POST",
+            "/api/v1/session/turns",
+            body=command,
+            headers={"Content-Type": "application/json", "Content-Length": str(len(command))},
+        )
+        command_response = connection.getresponse()
+        receipt = json.loads(command_response.read())
+        assert command_response.status == 200
+        assert receipt["status"] == "demo_completed"
+        assert receipt["result"]["learner_entry"] == "Explain the pulmonary valve"
+        connection.close()
+
         connection = HTTPConnection(host, port, timeout=2)
         connection.request("POST", "/api/entry", body=b'{"learner_entry":"   "}')
         invalid_response = connection.getresponse()
         assert invalid_response.status == 400
+        connection.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+        server_thread.join(timeout=2)
+
+
+def test_public_demo_disables_legacy_mutable_routes_and_sends_security_headers() -> None:
+    server = create_server("127.0.0.1", 0, public_demo=True)
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    try:
+        host, port = cast(tuple[str, int], server.server_address)
+        connection = HTTPConnection(host, port, timeout=2)
+        connection.request("GET", "/api/state")
+        state_response = connection.getresponse()
+        state_response.read()
+        assert state_response.status == 404
+        assert state_response.getheader("X-Content-Type-Options") == "nosniff"
+        assert state_response.getheader("Content-Security-Policy") == (
+            "default-src 'self'; base-uri 'none'; form-action 'self'; "
+            "frame-ancestors 'none'; object-src 'none'"
+        )
+        connection.close()
+
+        body = json.dumps({"learner_entry": "shared mutable state"}).encode()
+        connection = HTTPConnection(host, port, timeout=2)
+        connection.request(
+            "POST",
+            "/api/entry",
+            body=body,
+            headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+        )
+        entry_response = connection.getresponse()
+        entry_response.read()
+        assert entry_response.status == 404
+        connection.close()
+
+        connection = HTTPConnection(host, port, timeout=2)
+        connection.request("GET", "/health")
+        health_response = connection.getresponse()
+        health = json.loads(health_response.read())
+        assert health_response.status == 200
+        assert health == {"mode": "public_demo", "status": "ok"}
+        connection.close()
+
+        malformed = b'{"value":' + (b"9" * 5_000) + b"}"
+        connection = HTTPConnection(host, port, timeout=2)
+        connection.request(
+            "POST",
+            "/api/v1/session/turns",
+            body=malformed,
+            headers={
+                "Content-Type": "application/json",
+                "Content-Length": str(len(malformed)),
+            },
+        )
+        malformed_response = connection.getresponse()
+        assert malformed_response.status == 400
+        assert json.loads(malformed_response.read()) == {
+            "error": "request JSON is invalid"
+        }
         connection.close()
     finally:
         server.shutdown()

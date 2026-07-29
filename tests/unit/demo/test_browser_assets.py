@@ -49,6 +49,8 @@ def test_cardine_assets_use_only_approved_v1_routes_and_semantic_markers() -> No
 
     assert "schema_version: SCHEMA_VERSION" in javascript
     assert "expected_sequence: state.highWaterSequence" in javascript
+    assert "{ content: value }" in javascript
+    assert "Anteprima completata · nessun dato personale salvato" in javascript
     assert "/api/state" not in javascript
     assert "/api/entry" not in javascript
 

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=77"]
+requires = ["setuptools==82.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -47,7 +47,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 study_agent = ["py.typed"]
-"study_agent.demo" = ["fixtures/*.md", "browser.html"]
+"study_agent.demo" = ["fixtures/*.md", "browser.html", "browser.css", "browser.js"]
 "study_agent.operator_skill" = ["SKILL.md"]
 
 [tool.pytest.ini_options]

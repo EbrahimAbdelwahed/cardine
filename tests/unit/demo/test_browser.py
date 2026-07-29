@@ -5,7 +5,7 @@ from collections.abc import Mapping
 
 import pytest
 
-from study_agent.demo.browser import BrowserSurface, create_server
+from study_agent.demo.browser import BrowserSurface, _require_bind_host, create_server
 from study_agent.domain._validation import JsonValue
 
 
@@ -68,8 +68,27 @@ def test_browser_input_is_bounded_and_server_is_local_only() -> None:
         BrowserSurface(_journey).state("   ")
     with pytest.raises(ValueError, match="text bound"):
         BrowserSurface(_journey).state("x" * 4_001)
-    with pytest.raises(ValueError, match="localhost"):
+    with pytest.raises(ValueError, match="public-demo"):
         create_server("0.0.0.0", 0, journey=_journey)
+
+
+def test_public_demo_is_the_only_mode_allowed_to_bind_all_interfaces() -> None:
+    _require_bind_host("127.0.0.1", public_demo=False)
+    _require_bind_host("127.0.0.1", public_demo=True)
+    _require_bind_host("0.0.0.0", public_demo=True)
+
+    with pytest.raises(ValueError, match="public-demo"):
+        _require_bind_host("0.0.0.0", public_demo=False)
+    with pytest.raises(ValueError, match="bind host"):
+        _require_bind_host("192.0.2.10", public_demo=True)
+
+    with pytest.raises(ValueError, match="fixed sanitized journey"):
+        create_server(
+            "127.0.0.1",
+            0,
+            journey=_journey,
+            public_demo=True,
+        )
 
 
 def test_browser_page_bytes_are_static_and_accessible() -> None:
@@ -88,6 +107,11 @@ def test_browser_page_bytes_are_static_and_accessible() -> None:
     ):
         assert marker in decoded
     assert ".meta { color: var(--muted); font-size: .9rem; overflow-wrap: anywhere; }" in decoded
+    assert BrowserSurface(_journey).asset("browser.css").startswith(b":root")
+    assert b'"use strict";' in BrowserSurface(_journey).asset("browser.js")
+
+    with pytest.raises(ValueError, match="unknown browser asset"):
+        BrowserSurface(_journey).asset("../secret")
 
 
 def test_browser_payload_is_json_deterministic() -> None:

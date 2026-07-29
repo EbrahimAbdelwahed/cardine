@@ -17,6 +17,7 @@ from .product_shell import MAX_LEARNER_ENTRY_CHARS, run_offline_shell_demo
 DEFAULT_DEMO_ENTRY = "I have ten minutes. Help me understand heart valves."
 DEMO_COURSE_ID = "cardine-demo"
 DEMO_SESSION_ID = "heart-valves-demo"
+DEMO_COURSE_TITLE = "Valvole cardiache"
 
 DemoJourney = Callable[[str], Mapping[str, object]]
 
@@ -34,9 +35,9 @@ class DemoUiApplication:
 
     def __init__(self, journey: DemoJourney = run_offline_shell_demo) -> None:
         self._journey = journey
+        self._default_result: Mapping[str, object] | None = None
 
     def get(self, path: str) -> JsonObject:
-        result = self._result(DEFAULT_DEMO_ENTRY)
         routes: dict[str, Callable[[Mapping[str, object]], JsonObject]] = {
             "/api/v1/bootstrap": self._bootstrap,
             "/api/v1/session": self._session,
@@ -51,7 +52,7 @@ class DemoUiApplication:
         route = routes.get(path)
         if route is None:
             raise UiRequestError("route not found", status_code=404)
-        return route(result)
+        return route(self._cached_default_result())
 
     def post(self, path: str, command: Mapping[str, object]) -> JsonObject:
         if path != "/api/v1/session/turns":
@@ -82,12 +83,17 @@ class DemoUiApplication:
             raise TypeError("demo journey must return a mapping")
         return result
 
+    def _cached_default_result(self) -> Mapping[str, object]:
+        if self._default_result is None:
+            self._default_result = dict(self._result(DEFAULT_DEMO_ENTRY))
+        return self._default_result
+
     @staticmethod
     def _bootstrap(result: Mapping[str, object]) -> JsonObject:
         return {
             "schema_version": 1,
             "mode": "public_demo",
-            "course": {"id": DEMO_COURSE_ID, "title": _material_title(result)},
+            "course": {"id": DEMO_COURSE_ID, "title": DEMO_COURSE_TITLE},
             "session": {"id": DEMO_SESSION_ID, "status": "active"},
             "high_water_sequence": _sequence(result),
             "shell_status": str(result.get("status", "degraded")),
@@ -230,6 +236,7 @@ def _command(command: Mapping[str, object]) -> tuple[str, int, Mapping[str, obje
         or not request_id
         or request_id != request_id.strip()
         or len(request_id) > 200
+        or not _is_utf8(request_id)
     ):
         raise UiRequestError("request_id is invalid")
     if type(expected) is not int or expected < 0:
@@ -243,20 +250,26 @@ def _bounded_content(value: object) -> str:
     if not isinstance(value, str):
         raise UiRequestError("content is invalid")
     content = value.strip()
-    if not content or len(content) > MAX_LEARNER_ENTRY_CHARS:
+    if (
+        not content
+        or len(content) > MAX_LEARNER_ENTRY_CHARS
+        or not _is_utf8(content)
+    ):
         raise UiRequestError("content is invalid")
     return content
+
+
+def _is_utf8(value: str) -> bool:
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 def _sequence(result: Mapping[str, object]) -> int:
     value = result.get("evidence_sequence", result.get("evidence_refresh_sequence"))
     return value if type(value) is int and value >= 0 else 0
-
-
-def _material_title(result: Mapping[str, object]) -> str:
-    material = _mapping(result.get("material"))
-    value = material.get("title")
-    return value if isinstance(value, str) and value else "Study Agent public demo"
 
 
 def _mapping(value: object) -> Mapping[str, object]:

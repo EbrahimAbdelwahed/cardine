@@ -25,7 +25,7 @@
     needs_review: "richiede revisione",
     stale: "stato da aggiornare",
     degraded: "funzionalità ridotta",
-    recovered: "ripristinata",
+    recovered: "pronta",
     error: "non disponibile",
   });
 
@@ -61,7 +61,7 @@
   function array(value) {
     if (Array.isArray(value)) return value;
     if (value && typeof value === "object") {
-      for (const key of ["items", "rows", "data", "turns", "messages", "sources", "proposals", "presentations", "cards", "conflicts"]) {
+      for (const key of ["items", "rows", "data", "timeline", "turns", "messages", "sources", "proposals", "presentations", "cards", "conflicts"]) {
         if (Array.isArray(value[key])) return value[key];
       }
     }
@@ -161,7 +161,7 @@
   function renderCourse(bootstrap) {
     const course = object(bootstrap.course);
     const session = object(bootstrap.session);
-    $("#rail-course").textContent = `${text(course.title, "corso locale")} · ${text(course.id, "corso non selezionato")}`;
+    $("#rail-course").textContent = text(course.title, "corso locale");
     const recent = array(first(bootstrap, ["recent_sessions", "sessions"], []));
     const list = $("#recent-session-list");
     if (recent.length) {
@@ -173,6 +173,9 @@
     document.title = `${text(course.title, "Cardine")} · Cardine`;
     const sessionId = text(session.id, "sessione non selezionata");
     const mode = text(first(bootstrap, ["mode"], "local_repository"), "local_repository");
+    $("#runtime-label").textContent = mode === "public_demo"
+      ? "modalità dimostrativa · nessun dato personale"
+      : "ambiente locale · dati del corso";
     $("#trust-copy").innerHTML = `<p>Corso <strong>${escapeAttribute(text(course.title, "non dichiarato"))}</strong>, sessione <code>${escapeAttribute(sessionId)}</code>. Modalità: <strong>${escapeAttribute(mode)}</strong>. Il browser riceve DTO JSON bounded dal servizio locale e non apre SQLite, file di corso, runtime del provider o credenziali.</p><ul><li>Le mutazioni usano request ID e sequenza osservata.</li><li>Il piano d'esame resta esplicitamente non disponibile finché non esiste un owner canonico.</li><li>Un conflitto di fonte non viene trasformato in conflitto di contesto.</li></ul>`;
   }
 
@@ -277,26 +280,38 @@
     const counts = object(first(payload, ["counts"], state.bootstrap?.counts));
     const feature = object(first(payload, ["features"], state.bootstrap?.features));
     const focus = [
-      { n: count(counts, ["due_reviews", "due_review_count"]), label: "ripasso dovuto", detail: feature.recall === false ? "funzionalità non disponibile" : "coda del servizio recall", route: "ripasso" },
-      { n: count(counts, ["pending_proposals", "proposal_count"]), label: "proposte da decidere", detail: feature.artifacts === false ? "funzionalità non disponibile" : "decisione umana richiesta", route: "proposte" },
-      { n: count(counts, ["context_conflicts", "conflict_count"]), label: "conflitti di contesto", detail: feature.context_resolution === false ? "risoluzione non disponibile" : "nessuna sovrascrittura automatica", route: "conflitti" },
+      { n: count(counts, ["due_reviews", "due_review_count"]), label: "ripasso dovuto", detail: feature.recall === false ? "si attiva con una raccolta di ripasso" : "pronto per il ripasso", route: "ripasso", available: feature.recall !== false },
+      { n: count(counts, ["pending_proposals", "proposal_count"]), label: "proposte da decidere", detail: feature.artifacts === false ? "si attiva quando crei materiale" : "attende una tua decisione", route: "proposte", available: feature.artifacts !== false },
+      { n: count(counts, ["context_conflicts", "conflict_count"]), label: "preferenze da chiarire", detail: feature.context_resolution === false ? "nessun chiarimento richiesto" : "una scelta resta sempre esplicita", route: "conflitti", available: feature.context_resolution !== false },
     ];
     const suspended = status === "suspended" || status === "needs_learner_input";
-    setView("oggi", `<section class="hero"><p class="eyebrow">${escapeAttribute(text(course.title, "corso locale"))} · ${escapeAttribute(text(session.id, "sessione"))}</p><h1>Riprendi il filo dello studio.</h1><p class="hero__lede">Lo stato mostrato qui arriva dalla composizione selezionata. Le metriche non disponibili restano vuote.</p>${entryForm("hero-entry", "Da dove vuoi iniziare?", "Cosa vuoi capire?", "button--light")}</section><div class="section-grid"><section class="section-grid__main" aria-labelledby="oggi-heading"><p class="section-kicker">oggi · azioni reali</p><h2 class="section-title" id="oggi-heading">Il prossimo passo</h2><ul class="focus-list">${focus.map((item) => `<li class="focus-item"><span class="focus-item__number">${escapeAttribute(item.n)}</span><div><div class="focus-item__label">${escapeAttribute(item.label)}</div><div class="focus-item__detail">${escapeAttribute(item.detail)}</div></div><span class="focus-item__meta">${escapeAttribute(item.route)}</span><span class="focus-item__button">${button("Apri", item.route)}</span></li>`).join("")}</ul>${suspended ? `<div class="side-card" style="margin-top:27px"><p class="section-kicker">sessione sospesa</p><h3 class="side-card__title">Il tutor attende il tuo prossimo dettaglio.</h3><p class="side-card__copy">La continuazione resta nel servizio di sessione e può essere ripresa senza creare un nuovo filo.</p><div class="side-card__actions">${button("Riprendi sessione", "sessione", "button")}</div></div>` : ""}</section><aside class="section-grid__side" aria-labelledby="oggi-status-heading"><div class="side-card"><p class="section-kicker">stato del corso</p><h2 id="oggi-status-heading" class="side-card__title">${escapeAttribute(text(object(payload).shell_status, statusLabel(status)))}</h2><p class="side-card__copy">Sequenza osservata: <code>${escapeAttribute(state.highWaterSequence || "—")}</code>. Sessione: <code>${escapeAttribute(text(session.id, "—"))}</code>.</p><div class="side-card__actions">${button("Apri sessione", "sessione", "button button--quiet")}</div></div><div class="side-card"><p class="section-kicker">piano</p><h3 class="side-card__title">Nessun piano d'esame collegato.</h3><p class="side-card__copy">Il piano resta esplicitamente non disponibile finché non esiste un owner canonico.</p></div></aside></div>`);
+    setView("oggi", `<section class="hero"><p class="eyebrow">${escapeAttribute(text(course.title, "corso locale"))}</p><h1>Riprendi il filo dello studio.</h1><p class="hero__lede">Parti da una domanda: Cardine ti accompagna nella sessione senza nascondere ciò che è ancora da configurare.</p>${entryForm("hero-entry", "Da dove vuoi iniziare?", "Cosa vuoi capire?", "button--light")}</section><div class="section-grid"><section class="section-grid__main" aria-labelledby="oggi-heading"><p class="section-kicker">oggi · il tuo spazio</p><h2 class="section-title" id="oggi-heading">Il prossimo passo</h2><ul class="focus-list">${focus.map((item) => `<li class="focus-item ${item.available ? "" : "is-unavailable"}"><span class="focus-item__number">${escapeAttribute(item.n)}</span><div><div class="focus-item__label">${escapeAttribute(item.label)}</div><div class="focus-item__detail">${escapeAttribute(item.detail)}</div></div><span class="focus-item__meta">${item.available ? escapeAttribute(item.route) : "non attivo"}</span><span class="focus-item__button">${item.available ? button("Apri", item.route) : ""}</span></li>`).join("")}</ul>${suspended ? `<div class="side-card" style="margin-top:27px"><p class="section-kicker">sessione in pausa</p><h3 class="side-card__title">Il tutor attende il tuo prossimo dettaglio.</h3><p class="side-card__copy">Puoi riprendere esattamente da dove avevi lasciato.</p><div class="side-card__actions">${button("Riprendi sessione", "sessione", "button")}</div></div>` : ""}</section><aside class="section-grid__side" aria-labelledby="oggi-status-heading"><div class="side-card"><p class="section-kicker">stato del corso</p><h2 id="oggi-status-heading" class="side-card__title">Spazio pronto</h2><p class="side-card__copy">Il tuo spazio di studio è pronto. In questa anteprima le azioni non configurate restano chiaramente disattivate.</p><div class="side-card__actions">${button("Apri sessione", "sessione", "button button--quiet")}</div></div><div class="side-card"><p class="section-kicker">piano</p><h3 class="side-card__title">Collega una data d'esame.</h3><p class="side-card__copy">Quando il piano sarà attivo, Cardine organizzerà qui tappe e priorità.</p></div></aside></div>`);
   }
 
   function entryForm(id, label, placeholder, buttonClass = "", attributes = "") {
     const textareaId = id === "hero-entry" ? "entry" : `${id}-text`;
-    return `<form id="${escapeAttribute(id)}" class="composer composer--hero" data-entry-form ${attributes}><label for="${escapeAttribute(textareaId)}">${escapeAttribute(label)}</label><div class="composer__row"><textarea id="${escapeAttribute(textareaId)}" name="learner_entry" maxlength="${MAX_ENTRY_CHARS}" rows="1" required placeholder="${escapeAttribute(placeholder)}"></textarea><button class="button ${buttonClass}" type="submit">Invia <span aria-hidden="true">→</span></button></div><p class="field-note">Testo bounded · request ID assegnato dal client</p></form>`;
+    const modeClass = id === "hero-entry" ? "composer--hero" : "composer--session";
+    return `<form id="${escapeAttribute(id)}" class="composer ${modeClass}" data-entry-form ${attributes}><label for="${escapeAttribute(textareaId)}">${escapeAttribute(label)}</label><div class="composer__row"><textarea id="${escapeAttribute(textareaId)}" name="learner_entry" maxlength="${MAX_ENTRY_CHARS}" rows="1" required placeholder="${escapeAttribute(placeholder)}"></textarea><button class="button ${buttonClass}" type="submit">Invia</button></div><p class="field-note">Scrivi liberamente: puoi cambiare direzione in ogni momento.</p></form>`;
   }
 
   function renderSessione(payload) {
     const snapshot = object(first(payload, ["snapshot", "session", "view"], payload));
     const session = object(first(snapshot, ["session"], state.bootstrap?.session));
-    const messages = array(first(snapshot, ["turns", "messages", "conversation", "status_trace"], []));
+    const messages = array(
+      first(snapshot, ["timeline", "turns", "messages", "conversation", "status_trace"], [])
+    );
+    const learnerEntry = text(first(snapshot, ["learner_entry"], ""));
+    const displayMessages = learnerEntry
+      ? [{ role: "learner", content: learnerEntry }, ...messages]
+      : messages;
     const status = text(first(snapshot, ["shell_status", "status"], state.bootstrap?.shell_status), "ready");
     const continuation = object(first(snapshot, ["continuation", "pending_continuation"], null));
-    const thread = messages.length ? messages.map(renderMessage).join("") : emptyState("Nessun turno registrato", "La sessione non contiene ancora una conversazione canonica.");
+    const thread = displayMessages.length
+      ? displayMessages.map(renderMessage).join("")
+      : emptyState(
+          "Nessun turno registrato",
+          "La sessione non contiene ancora una conversazione canonica."
+        );
     const continuationFingerprint = first(continuation, ["fingerprint", "continuation_fingerprint"], "");
     const continuationHtml = continuation && Object.keys(continuation).length ? `<div class="continuation"><p class="section-kicker">richiesta del tutor</p><p class="continuation__prompt">${escapeAttribute(first(continuation, ["prompt", "question", "message"], "Il tutor attende una risposta."))}</p>${continuationFingerprint ? entryForm("continuation-entry", "Risposta", "Scrivi la risposta…", "", `data-fingerprint="${escapeAttribute(continuationFingerprint)}"`) : emptyState("Continuazione non disponibile", "Il servizio non ha restituito il riferimento opaco necessario per riprendere.")}</div>` : "";
     setView("sessione", `<section class="hero hero--session"><p class="eyebrow">sessione · ${escapeAttribute(text(session.id, "id non dichiarato"))}</p><h1>${escapeAttribute(text(first(snapshot, ["title", "topic"], object(state.bootstrap?.course).title), "Sessione di studio"))}</h1><p class="hero__lede">${pill(status)} <span class="meta">sequenza ${escapeAttribute(state.highWaterSequence || "—")}</span></p></section><div class="section-grid"><section class="section-grid__main" aria-labelledby="conversation-heading"><p class="section-kicker">registro canonico</p><h2 class="section-title" id="conversation-heading">Conversazione</h2><div class="session-thread">${thread}</div>${continuationHtml}${entryForm("session-entry", "Scrivi al tutor", "Chiedi un chiarimento…", "")}</section><aside class="section-grid__side" aria-labelledby="material-heading"><div class="side-card"><p class="section-kicker">stato</p><h2 class="side-card__title">${escapeAttribute(statusLabel(status))}</h2><p class="side-card__copy">Un reload rilegge la stessa snapshot dal servizio. Il browser non conserva lo stato canonico.</p></div><div class="side-card" aria-labelledby="material-heading"><p class="section-kicker">fonti nel contesto</p><h3 class="side-card__title" id="material-heading">Apri i materiali</h3><p class="side-card__copy">Citazioni e revisioni provengono dal catalogo del corso selezionato.</p><div class="side-card__actions">${button("Vai a Fonti", "fonti", "button button--quiet")}</div></div></aside></div>`);
@@ -426,7 +441,7 @@
     const value = text(textarea?.value).trim();
     if (!value || value.length > MAX_ENTRY_CHARS) return;
     const endpoint = continuation ? `/api/v1/session/continuations/${encodeURIComponent(form.dataset.fingerprint || "opaque")}/responses` : "/api/v1/session/turns";
-    const payload = continuation ? { text: value } : { text: value };
+    const payload = continuation ? { response: value } : { content: value };
     await executeCommand(endpoint, payload, form, continuation ? "sessione" : "sessione");
   }
 
@@ -434,14 +449,25 @@
     const request = state.lastCommand && state.lastCommand.endpoint === endpoint && JSON.stringify(state.lastCommand.payload) === JSON.stringify(payload) ? state.lastCommand.requestId : requestId();
     state.lastCommand = { endpoint, payload, requestId: request, refreshRoute };
     setBusy(true);
-    setStatus("working", "Salvataggio nel registro canonico…");
+    const publicDemo = text(first(state.bootstrap, ["mode"], "")) === "public_demo";
+    setStatus(
+      "working",
+      publicDemo ? "Esecuzione della fixture pubblica…" : "Salvataggio nel registro canonico…"
+    );
     try {
       const receipt = await fetchJson(endpoint, { method: "POST", body: JSON.stringify(commandPayload(payload, request)) });
       updateSequence(first(receipt, ["high_water_sequence", "sequence"], state.highWaterSequence));
       const status = text(first(receipt, ["status", "shell_status"], "committed"), "committed");
       setStatus(status, `Comando ${statusLabel(status)}`);
       state.lastCommand = null;
-      await loadRoute(refreshRoute);
+      if (status === "demo_completed" && refreshRoute === "sessione") {
+        state.route = "sessione";
+        state.viewData = object(receipt.result);
+        renderSessione(state.viewData);
+        setStatus("recovered", "Anteprima completata · nessun dato personale salvato");
+      } else {
+        await loadRoute(refreshRoute);
+      }
     } catch (error) {
       setBusy(false);
       setStatus(error.status === 409 ? "stale" : "error", error.status === 409 ? "Stato aggiornato: ricarica prima di riprovare" : "Comando non registrato");
