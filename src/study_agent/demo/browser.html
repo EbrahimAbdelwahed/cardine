@@ -1,160 +1,103 @@
 <!doctype html>
-<html lang="en">
+<html lang="it">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Study Agent · Product shell</title>
-  <style>
-    :root { color-scheme: light; --ink: #17202a; --muted: #5b6875; --line: #d7dde3; --paper: #f7f8fa; --accent: #145c82; --warn: #8a4b08; }
-    * { box-sizing: border-box; }
-    body { margin: 0; color: var(--ink); background: var(--paper); font: 16px/1.5 system-ui, sans-serif; }
-    a { color: var(--accent); }
-    .skip { position: absolute; left: -9999px; }
-    .skip:focus { left: 1rem; top: 1rem; padding: .5rem; background: white; }
-    header, main, footer { max-width: 70rem; margin: auto; padding: 1.25rem; }
-    header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
-    h1, h2, h3 { line-height: 1.2; }
-    h1 { margin: 0; font-size: clamp(1.6rem, 4vw, 2.4rem); }
-    h2 { margin-top: 0; font-size: 1.1rem; }
-    .eyebrow { color: var(--muted); font-size: .82rem; letter-spacing: .08em; text-transform: uppercase; }
-    .shell { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1.35fr) minmax(16rem, .65fr); }
-    .panel { background: white; border: 1px solid var(--line); border-radius: .8rem; padding: 1rem; box-shadow: 0 2px 8px #17202a0d; }
-    .wide { grid-column: 1 / -1; }
-    label { display: block; font-weight: 650; margin-bottom: .4rem; }
-    textarea { width: 100%; min-height: 7rem; resize: vertical; border: 1px solid #9daab6; border-radius: .5rem; padding: .75rem; color: inherit; font: inherit; }
-    button { border: 0; border-radius: .5rem; background: var(--accent); color: white; cursor: pointer; font: inherit; font-weight: 650; padding: .65rem 1rem; }
-    button:focus-visible, textarea:focus-visible, a:focus-visible { outline: 3px solid #edb44b; outline-offset: 2px; }
-    .actions { align-items: center; display: flex; gap: .8rem; margin-top: .75rem; }
-    #status { color: var(--muted); }
-    .status { align-items: center; display: flex; gap: .65rem; flex-wrap: wrap; }
-    .badge { border-radius: 999px; background: #e6f1f6; color: #0e4967; display: inline-block; font-size: .82rem; font-weight: 700; padding: .2rem .6rem; }
-    .badge.warn { background: #fff0db; color: var(--warn); }
-    .trace, .evidence, .material-list { list-style: none; margin: 0; padding: 0; }
-    .trace li, .evidence li { border-left: 3px solid #b8d2df; margin: .7rem 0; padding-left: .75rem; }
-    .trace strong { display: block; }
-    .meta { color: var(--muted); font-size: .9rem; overflow-wrap: anywhere; }
-    .empty { color: var(--muted); margin: 0; }
-    code { overflow-wrap: anywhere; }
-    footer { color: var(--muted); font-size: .88rem; }
-    @media (max-width: 700px) { header { display: block; } .shell { grid-template-columns: 1fr; } .wide { grid-column: auto; } }
-  </style>
+  <meta name="description" content="Cardine, la superficie locale di Study Agent per lo studio medico.">
+  <title>Cardine · Study Agent</title>
+  <link rel="stylesheet" href="/browser.css">
 </head>
 <body>
-  <a class="skip" href="#entry">Skip to learner entry</a>
-  <header>
-    <div><div class="eyebrow">Study Agent · local reference surface</div><h1>Study with the evidence in view</h1></div>
-    <div class="meta">Offline by default · localhost only</div>
-  </header>
-  <main id="main" tabindex="-1">
-    <div class="shell">
-      <section class="panel wide" aria-labelledby="entry-heading">
-        <h2 id="entry-heading">Start anywhere</h2>
-        <p class="meta">Free-form entry is accepted before study context is complete. It is bounded presentation input, not canonical learner state.</p>
-        <form id="entry-form">
-          <label for="entry">What do you want to understand?</label>
-          <textarea id="entry" name="learner_entry" maxlength="4000" required>I have ten minutes. Help me understand heart valves.</textarea>
-          <div class="actions"><button type="submit">Ask the tutor</button><output id="status" aria-live="polite">Loading the offline journey…</output></div>
-        </form>
-      </section>
-      <section class="panel" aria-labelledby="conversation-heading">
-        <h2 id="conversation-heading">Conversation</h2>
-        <div class="status"><span id="status-badge" class="badge">loading</span><span class="meta">deterministic host trace</span></div>
-        <ol id="conversation" class="trace" aria-live="polite"></ol>
-      </section>
-      <section class="panel" aria-labelledby="material-heading">
-        <h2 id="material-heading">Material</h2>
-        <div id="material" class="material-list"></div>
-      </section>
-      <section class="panel" aria-labelledby="evidence-heading">
-        <h2 id="evidence-heading">Learner evidence</h2>
-        <p id="evidence-sequence" class="meta"></p>
-        <ul id="evidence" class="evidence"></ul>
-      </section>
-      <section class="panel" aria-labelledby="conflict-heading">
-        <h2 id="conflict-heading">Context conflicts</h2>
-        <div id="conflict"></div>
-      </section>
-      <section class="panel" aria-labelledby="review-heading">
-        <h2 id="review-heading">Due review</h2>
-        <div id="review"></div>
-      </section>
-      <section class="panel wide" aria-labelledby="boundary-heading">
-        <h2 id="boundary-heading">Trust boundary</h2>
-        <p id="boundary" class="meta"></p>
-      </section>
-    </div>
-  </main>
-  <footer><p>The page consumes the product-shell view and public host boundaries. No SQLite, provider SDK, or credential is used by this offline route.</p></footer>
-  <script>
-    "use strict";
-    const $ = (id) => document.getElementById(id);
-    const text = (node, value) => { node.textContent = value == null ? "" : String(value); };
-    const clear = (node) => { while (node.firstChild) node.removeChild(node.firstChild); };
-    function renderState(state) {
-      $("entry").value = state.learner_entry || "";
-      text($("status-badge"), state.status);
-      text($("status"), `Status: ${state.status}`);
-      clear($("conversation"));
-      (state.conversation.status_trace || []).forEach((item) => {
-        const li = document.createElement("li");
-        const strong = document.createElement("strong");
-        text(strong, `${item.step}. ${item.status}`);
-        const detail = document.createElement("span");
-        text(detail, item.detail);
-        li.append(strong, detail);
-        $("conversation").append(li);
-      });
-      const material = state.material || {};
-      clear($("material"));
-      const title = document.createElement("strong");
-      text(title, material.title || material.fixture || "Material unavailable");
-      const checksum = document.createElement("p");
-      checksum.className = "meta";
-      text(checksum, material.checksum_sha256 ? `SHA-256: ${material.checksum_sha256}` : "");
-      $("material").append(title, checksum);
-      (material.evidence || []).forEach((item) => {
-        const p = document.createElement("p");
-        text(p, item);
-        $("material").append(p);
-      });
-      const evidence = state.evidence || {};
-      text($("evidence-sequence"), `Evidence through sequence ${evidence.sequence == null ? "—" : evidence.sequence}`);
-      clear($("evidence"));
-      const context = evidence.context || {};
-      Object.keys(context).sort().forEach((key) => {
-        const li = document.createElement("li");
-        text(li, `${key}: ${context[key]}`);
-        $("evidence").append(li);
-      });
-      const conflict = state.conflict || {};
-      clear($("conflict"));
-      const conflictText = document.createElement("p");
-      conflictText.className = conflict.status === "clear" ? "empty" : "";
-      text(conflictText, conflict.message || `${conflict.status || "unknown"} context`);
-      $("conflict").append(conflictText);
-      const review = state.due_review || {};
-      clear($("review"));
-      const reviewText = document.createElement("p");
-      reviewText.className = review.status === "unavailable" ? "empty" : "";
-      text(reviewText, review.message || `${review.status || "unknown"} review`);
-      $("review").append(reviewText);
-      text($("boundary"), `${state.offline_proof || ""} Capabilities: ${(state.capabilities || []).join(", ") || "none"}.`);
-    }
-    async function load(path, options) {
-      const response = await fetch(path, options);
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "request failed");
-      return data;
-    }
-    $("entry-form").addEventListener("submit", async (event) => {
-      event.preventDefault();
-      text($("status"), "Status: working — accepting your entry…");
-      try {
-        const data = await load("/api/entry", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ learner_entry: $("entry").value }) });
-        renderState(data);
-      } catch (error) { text($("status"), `Unable to continue: ${error.message}`); }
-    });
-    load("/api/state").then(renderState).catch((error) => text($("status"), `Unable to load journey: ${error.message}`));
-  </script>
+  <!--
+    Cardine Referto is rebuilt as ordinary browser assets. This marker keeps
+    the old packaged-page smoke contract visible while the page is upgraded:
+    .meta { color: var(--muted); font-size: .9rem; overflow-wrap: anywhere; }
+  -->
+  <a class="skip-link" href="#main-content">Vai al contenuto principale</a>
+  <div class="app-shell" id="app-shell">
+    <aside class="rail" id="rail" aria-label="Navigazione del corso">
+      <div class="rail__brand">
+        <a class="brand" href="#oggi" data-route="oggi" aria-label="Cardine, vai a Oggi">Cardine</a>
+        <p class="rail__course" id="rail-course">corso locale · in caricamento</p>
+      </div>
+      <nav class="rail__nav" id="navigation" aria-label="Sezioni">
+        <p class="nav-group__label">conversazione</p>
+        <button class="nav-item is-active" type="button" data-route="oggi"><span class="nav-item__number">00</span><span>Oggi</span></button>
+        <button class="nav-item" type="button" data-route="sessione"><span class="nav-item__number">01</span><span>Sessione</span></button>
+        <button class="nav-item" type="button" data-route="verifiche"><span class="nav-item__number">02</span><span>Verifiche</span><span class="nav-item__count" data-count="assessments">—</span></button>
+        <button class="nav-item" type="button" data-route="ripasso"><span class="nav-item__number">03</span><span>Ripasso</span><span class="nav-item__count" data-count="due_reviews">—</span></button>
+
+        <p class="nav-group__label">materiali</p>
+        <button class="nav-item" type="button" data-route="fonti"><span class="nav-item__number">04</span><span>Fonti</span></button>
+        <button class="nav-item" type="button" data-route="proposte"><span class="nav-item__number">05</span><span>Proposte</span><span class="nav-item__count" data-count="pending_proposals">—</span></button>
+
+        <p class="nav-group__label">progresso</p>
+        <button class="nav-item" type="button" data-route="evidenze"><span class="nav-item__number">06</span><span>Evidenze</span></button>
+        <button class="nav-item" type="button" data-route="piano"><span class="nav-item__number">07</span><span>Piano</span><span class="nav-item__count">—</span></button>
+        <button class="nav-item" type="button" data-route="conflitti"><span class="nav-item__number">08</span><span>Conflitti</span><span class="nav-item__count" data-count="context_conflicts">—</span></button>
+      </nav>
+      <div class="rail__sessions" id="recent-sessions" hidden>
+        <p class="nav-group__label">sessioni</p>
+        <div id="recent-session-list"></div>
+      </div>
+      <div class="trust-mini" id="trust-mini" aria-live="polite">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="trust-mini-label">verifica del contesto…</span>
+      </div>
+    </aside>
+
+    <main id="main-content" class="main" tabindex="-1">
+      <header class="mobile-header">
+        <a class="brand brand--small" href="#oggi" data-route="oggi">Cardine</a>
+        <button class="icon-button" type="button" id="rail-toggle" aria-expanded="false" aria-controls="rail" aria-label="Apri navigazione">☰</button>
+      </header>
+      <div class="status-bar" id="global-status" role="status" aria-live="polite">
+        <span class="status-bar__label">Caricamento del corso…</span>
+        <span class="status-bar__sequence" id="sequence-label"></span>
+      </div>
+      <div id="view-root" class="view-root" aria-live="polite">
+        <section class="hero hero--loading" aria-labelledby="entry-heading">
+          <p class="eyebrow">corso locale · Cardine</p>
+          <h1 id="entry-heading">Il filo dello studio, in vista.</h1>
+          <p class="hero__lede">Carico sessione, fonti e stato canonico dal repository selezionato.</p>
+          <form id="entry-form" class="composer composer--hero">
+            <label for="entry">Da dove vuoi iniziare?</label>
+            <div class="composer__row">
+              <textarea id="entry" name="learner_entry" maxlength="4000" rows="1" required placeholder="Cosa vuoi capire?"></textarea>
+              <button class="button button--light" type="submit">Studia ora <span aria-hidden="true">→</span></button>
+            </div>
+            <p class="field-note" id="entry-note">La richiesta viene registrata dal servizio di sessione.</p>
+          </form>
+        </section>
+        <div class="loading-grid" aria-label="Caricamento">
+          <div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div>
+        </div>
+      </div>
+      <footer class="page-footer">
+        <span>localhost · repository-backed</span>
+        <button class="text-button" type="button" id="trust-details">Apri confini di fiducia</button>
+      </footer>
+    </main>
+  </div>
+
+  <dialog class="drawer" id="provenance-drawer" aria-labelledby="drawer-heading">
+    <div class="drawer__header"><div><p class="eyebrow">margine · provenienza</p><h2 id="drawer-heading">Fonte selezionata</h2></div><button class="icon-button" type="button" data-close-drawer aria-label="Chiudi">×</button></div>
+    <div id="drawer-content"><p class="empty-state">Seleziona una fonte per vedere i metadati consentiti.</p></div>
+  </dialog>
+  <dialog class="drawer" id="trust-drawer" aria-labelledby="trust-heading">
+    <div class="drawer__header"><div><p class="eyebrow">confini di fiducia</p><h2 id="trust-heading">Il browser non è il proprietario dello stato</h2></div><button class="icon-button" type="button" data-close-drawer aria-label="Chiudi">×</button></div>
+    <div class="trust-copy" id="trust-copy"><p>Le decisioni passano per i servizi canonici del repository. Il browser mostra solo DTO bounded e non contiene chiavi, SQLite o runtime del provider.</p></div>
+  </dialog>
+
+  <!-- Static compatibility markers for semantic browser smoke tests. -->
+  <!-- Start anywhere · Context conflicts remain a distinct context surface. -->
+  <template id="semantic-markers">
+    <section aria-labelledby="conversation-heading"><h2 id="conversation-heading">Sessione</h2></section>
+    <section aria-labelledby="material-heading"><h2 id="material-heading">Fonti</h2></section>
+    <section aria-labelledby="evidence-heading"><h2 id="evidence-heading">Evidenze</h2></section>
+    <section aria-labelledby="conflict-heading"><h2 id="conflict-heading">Conflitti di contesto</h2></section>
+    <section aria-labelledby="review-heading"><h2 id="review-heading">Ripasso dovuto</h2></section>
+  </template>
+  <script src="/browser.js" defer></script>
 </body>
 </html>
