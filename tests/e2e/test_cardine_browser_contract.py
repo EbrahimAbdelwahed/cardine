@@ -170,9 +170,9 @@ def test_navigation_sidebar_is_expanded_and_accessible() -> None:
     assert parser.ids["rail"].get("aria-label") == "Navigazione del corso"
     assert parser.ids["navigation"].get("aria-label") == "Sezioni"
     assert '.rail {\n' in css
-    assert "width: 288px" in css
+    assert "--rail-width: 264px" in css
     assert ".rail.is-collapsed" in css
-    assert "width: 48px" in css
+    assert "--rail-width-collapsed: 56px" in css
 
 
 def test_chat_home_and_session_markers_preserve_learner_tutor_boundary() -> None:
@@ -181,7 +181,8 @@ def test_chat_home_and_session_markers_preserve_learner_tutor_boundary() -> None
     css = (DEMO_DIR / "browser.css").read_text(encoding="utf-8")
 
     assert 'id="entry-form"' in page
-    assert 'id="conversation-heading"' in page
+    # The conversation landmark belongs to the view that renders it.
+    assert 'id="conversation-heading"' in javascript
     assert "class=\"chat-home\"" in javascript
     assert "class=\"chat-session\"" in javascript
     assert "thread-message--learner" in javascript

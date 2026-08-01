@@ -47,8 +47,11 @@ def test_local_browser_journey_serves_page_state_and_free_form_entry() -> None:
         page_response = connection.getresponse()
         page = page_response.read()
         assert page_response.status == 200
-        assert b"Start anywhere" in page
-        assert b"Context conflicts" in page
+        # Assert the shell the browser actually gets, not marker strings
+        # parked in a comment for this line to find.
+        assert b'id="view-root"' in page
+        assert b'id="global-alert"' in page
+        assert b"<template" not in page
         connection.close()
 
         for path, content_type, marker in (

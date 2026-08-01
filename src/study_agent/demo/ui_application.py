@@ -325,7 +325,10 @@ class RepositoryUiApplication(UiApplicationPort):
                     "status": "unavailable",
                     "high_water_sequence": 0,
                     "items": (),
-                    "message": "Source text cannot be retrieved safely; grounding is unavailable.",
+                    "message": (
+                        "Il testo della fonte non è recuperabile in sicurezza: "
+                        "lo studio guidato dalle fonti non è disponibile."
+                    ),
                 }
             raise UiRequestError(
                 "canonical source text is unavailable; restore the source before continuing",
@@ -1170,8 +1173,8 @@ class RepositoryUiApplication(UiApplicationPort):
                                 "status": "needs_review",
                                 "attempt_id": str(attempt.id),
                                 "message": (
-                                    "Free-response grading requires an existing verified owner; "
-                                    "no grade was recorded."
+                                    "La valutazione delle risposte aperte richiede un "
+                                    "responsabile verificato: nessun voto è stato registrato."
                                 ),
                             },
                         }
@@ -1516,11 +1519,14 @@ class RepositoryUiApplication(UiApplicationPort):
             "high_water_sequence": snapshot.high_water_sequence,
             "items": items,
             "message": (
-                "Canonical source revisions are available for grounded study."
+                "Le fonti del corso sono disponibili per lo studio guidato."
                 if items and groundable
-                else "Source text cannot be retrieved safely; grounding is unavailable."
+                else (
+                    "Il testo della fonte non è recuperabile in sicurezza: "
+                    "lo studio guidato dalle fonti non è disponibile."
+                )
                 if items
-                else "No canonical source revision is available for this course."
+                else "Questo corso non ha ancora fonti disponibili."
             ),
         }
 
@@ -1829,7 +1835,7 @@ def _evidence_payload(snapshot: object) -> JsonObject:
             "through_sequence": 0,
             "items": (),
             "estimates": (),
-            "message": "No canonical assessment evidence is available.",
+            "message": "Non ci sono ancora evidenze registrate dalle verifiche.",
         }
     estimates = tuple(getattr(snapshot, "estimates", ()))
     rows = tuple(
@@ -1952,7 +1958,7 @@ def _recall_payload(
         else {
             "available": False,
             "code": "unavailable",
-            "message": "Recall is not configured.",
+            "message": "Il ripasso programmato non è configurato.",
         }
     )
     rows: list[JsonObject] = []

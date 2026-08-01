@@ -50,17 +50,15 @@ def test_browser_page_bytes_are_static_and_accessible() -> None:
 
     assert page == BrowserSurface(_RepositoryApplication()).page()
     decoded = page.decode("utf-8")
-    for marker in (
-        '<textarea id="entry"',
-        'aria-labelledby="conversation-heading"',
-        'aria-labelledby="material-heading"',
-        'aria-labelledby="evidence-heading"',
-        'aria-labelledby="conflict-heading"',
-        'aria-labelledby="review-heading"',
-        'id="entry-form"',
-    ):
+    for marker in ('<textarea id="entry"', 'id="entry-form"', 'id="main-content"'):
         assert marker in decoded
-    assert ".meta { color: var(--muted); font-size: .9rem; overflow-wrap: anywhere; }" in decoded
+    # The shell ships no scaffolding: no placeholder sections and no style
+    # rule hidden inside an HTML comment to keep an old assertion green.
+    assert "<template" not in decoded
+    assert ".meta {" not in decoded
+    assert "smoke" not in decoded
+    # An error must have somewhere visible to land that survives a re-render.
+    assert 'id="global-alert"' in decoded
     assert b":root" in BrowserSurface(_RepositoryApplication()).asset("browser.css")
     assert b'"use strict";' in BrowserSurface(_RepositoryApplication()).asset("browser.js")
     assert b".ai-loading" in BrowserSurface(_RepositoryApplication()).asset("ai-primitives.css")

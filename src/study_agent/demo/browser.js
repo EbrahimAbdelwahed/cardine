@@ -4,18 +4,36 @@
 
   const SCHEMA_VERSION = 1;
   const MAX_ENTRY_CHARS = 4000;
+  /* `label` is the one name a destination has: the rail, the command
+     palette and every reference read from it, so a section can never be
+     called two different things in two different places. */
   const ROUTES = Object.freeze({
-    oggi: { label: "Oggi", heading: "Oggi", endpoint: "/api/v1/bootstrap" },
-    sessione: { label: "Sessione", heading: "Sessione", endpoint: "/api/v1/session" },
-    fonti: { label: "Fonti", heading: "Fonti", endpoint: "/api/v1/materials" },
-    proposte: { label: "Proposte", heading: "Proposte", endpoint: "/api/v1/artifacts" },
-    verifiche: { label: "Verifiche", heading: "Verifiche", endpoint: "/api/v1/assessments" },
-    evidenze: { label: "Evidenze", heading: "Evidenze", endpoint: "/api/v1/evidence" },
-    ripasso: { label: "Ripasso", heading: "Ripasso", endpoint: "/api/v1/recall/due" },
-    piano: { label: "Piano", heading: "Piano", endpoint: "/api/v1/plan" },
-    conflitti: { label: "Conflitti", heading: "Conflitti di contesto", endpoint: "/api/v1/context/conflicts" },
-    impostazioni: { label: "Impostazioni", heading: "Impostazioni", endpoint: "/api/v1/settings", private: true },
-    login: { label: "Accedi", heading: "Accedi a Cardine", endpoint: null, private: true },
+    oggi: { label: "Nuova domanda", heading: "Oggi", icon: "icon--plus", endpoint: "/api/v1/bootstrap" },
+    sessione: { label: "Chat", heading: "Sessione", icon: "icon--chat-circle", endpoint: "/api/v1/session" },
+    fonti: { label: "Fonti", heading: "Fonti del corso", icon: "icon--book-open", endpoint: "/api/v1/materials" },
+    proposte: { label: "Proposte", heading: "Proposte", icon: "icon--note-pencil", endpoint: "/api/v1/artifacts" },
+    verifiche: { label: "Verifiche", heading: "Verifiche", icon: "icon--exam", endpoint: "/api/v1/assessments" },
+    evidenze: { label: "Evidenze", heading: "Evidenze per criterio", icon: "icon--chart-line-up", endpoint: "/api/v1/evidence" },
+    ripasso: { label: "Ripasso", heading: "Ripasso", icon: "icon--cards", endpoint: "/api/v1/recall/due" },
+    piano: { label: "Piano", heading: "Piano verso l’esame", icon: "icon--calendar-blank", endpoint: "/api/v1/plan" },
+    conflitti: { label: "Conflitti", heading: "Conflitti di contesto", icon: "icon--warning-circle", endpoint: "/api/v1/context/conflicts" },
+    impostazioni: { label: "Impostazioni", heading: "Impostazioni", icon: "icon--gear", endpoint: "/api/v1/settings", private: true },
+    login: { label: "Accedi", heading: "Accedi a Cardine", icon: "icon--gear", endpoint: null, private: true },
+  });
+
+  /* A description earns its place by adding something the title does not
+     already say. "Fonti · Apri Fonti" is noise, so it does not exist. */
+  const ROUTE_DESCRIPTIONS = Object.freeze({
+    oggi: "Apri una nuova conversazione con il tutor",
+    sessione: "Riprendi la conversazione in corso",
+    fonti: "Materiali del corso, revisioni e provenienza",
+    proposte: "Revisioni generate in attesa di una tua decisione",
+    verifiche: "Domande da svolgere e valutazioni registrate",
+    evidenze: "Che cosa risulta acquisito, criterio per criterio",
+    ripasso: "La coda di ripasso dovuta oggi",
+    piano: "Vincoli, obiettivi e lavoro aperto verso l’esame",
+    conflitti: "Divergenze da risolvere nel contesto di studio",
+    impostazioni: "Accesso, modello e dati locali",
   });
 
   const CONTINUATION_ROUTES = Object.freeze(new Set(["fonti", "proposte", "verifiche", "evidenze", "ripasso", "piano", "conflitti"]));
@@ -57,6 +75,25 @@
     degraded: "funzionalità ridotta",
     recovered: "pronta",
     error: "non disponibile",
+  });
+
+  const MODE_LABELS = Object.freeze({
+    local_repository: "repository locale",
+    public_demo: "anteprima pubblica",
+    private: "area privata",
+  });
+
+  /* Internal projection identifiers never reach the screen. Anything the
+     service adds that is not listed here is shown as a generic label
+     instead of leaking its enum name. */
+  const PROJECTION_LABELS = Object.freeze({
+    injected_clock: "orologio del servizio",
+    course: "scheda del corso",
+    study_context: "contesto di studio",
+    conflict_state: "stato dei conflitti",
+    configured_date: "data configurata",
+    as_of_date: "data di riferimento",
+    days_remaining: "giorni rimanenti",
   });
 
   const state = {
@@ -122,8 +159,16 @@
     return typeof result === "number" && Number.isFinite(result) ? String(result) : "—";
   }
 
-  function escapeAttribute(value) {
-    return text(value).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/'/g, "&#39;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  /* Escapes for both text content and quoted attribute values. One helper,
+     one honest name: the previous `escapeAttribute` was applied to text
+     nodes too, which worked only by accident. */
+  function esc(value) {
+    return text(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 
   function statusLabel(status) {
@@ -138,32 +183,46 @@
   }
 
   function pill(status, label = statusLabel(status)) {
-    return `<span class="status-pill" data-tone="${escapeAttribute(tone(status))}">${escapeAttribute(label)}</span>`;
+    return `<span class="status-pill" data-tone="${esc(tone(status))}">${esc(label)}</span>`;
+  }
+
+  /* Opaque service identifiers are shown as a recognisable stub. The full
+     value stays one click away in the provenance sheet. */
+  function shortId(value, keep = 10) {
+    const normalized = text(value);
+    const body = normalized.includes(":") ? normalized.slice(normalized.lastIndexOf(":") + 1) : normalized;
+    return body.length > keep ? `${body.slice(0, keep)}…` : body;
+  }
+
+  function sourceLabel(value) {
+    const source = object(first(object(value), ["source"], value));
+    const projection = text(source.projection);
+    if (!projection) return "";
+    return PROJECTION_LABELS[projection] || "proiezione del corso";
   }
 
   function sourceRef(value) {
-    const source = object(first(object(value), ["source"], value));
-    const projection = text(source.projection);
-    const sequence = first(source, ["sequence"], null);
-    if (!projection || sequence === null || sequence === undefined) return "";
-    return `<span class="source-ref">${escapeAttribute(projection)} · seq ${escapeAttribute(sequence)}</span>`;
+    const label = sourceLabel(value);
+    return label ? `<span class="source-ref">fonte: ${esc(label)}</span>` : "";
   }
 
-  function emptyState(title, copy, kind = "empty") {
+  /* Several provenance chips on one line used to be concatenated without a
+     separator, producing an unreadable run-on string. */
+  function sourceRefs(...values) {
+    const labels = [...new Set(values.map(sourceLabel).filter(Boolean))];
+    return labels.length ? `<span class="source-ref">fonti: ${esc(labels.join(", "))}</span>` : "";
+  }
+
+  function emptyState(title, copy, kind = "empty", actions = []) {
     const className = kind === "error" ? "error-state" : kind === "unavailable" ? "unavailable-state" : kind === "loading" ? "loading-state" : "empty-state";
-    return `<div class="${className}"><h3 class="state-title">${escapeAttribute(title)}</h3><p>${escapeAttribute(copy)}</p></div>`;
+    const controls = actions.length
+      ? `<div class="state-actions">${actions.map((action) => button(action.label, action.route, action.primary ? "button" : "button button--quiet")).join("")}</div>`
+      : "";
+    return `<div class="${className}"><h3 class="state-title">${esc(title)}</h3><p>${esc(copy)}</p>${controls}</div>`;
   }
 
   function button(label, route, className = "button button--quiet") {
-    return `<button class="${className}" type="button" data-route="${escapeAttribute(route)}">${escapeAttribute(label)}</button>`;
-  }
-
-  function aiMarkup(renderer, options, fallback = "") {
-    return typeof CardineAI[renderer] === "function" ? CardineAI[renderer](options || {}) : fallback;
-  }
-
-  function aiRenderer(renderer, options) {
-    return typeof CardineAI[renderer] === "function" ? CardineAI[renderer](options || {}) : "";
+    return `<button class="${className}" type="button" data-route="${esc(route)}">${esc(label)}</button>`;
   }
 
   // Named adapters keep the browser integration explicit and easy to audit.
@@ -177,10 +236,8 @@
   const aiRecommendation = (options) => typeof CardineAI.recommendation === "function" ? CardineAI.recommendation(options || {}) : "";
   const aiContextGrid = (options) => typeof CardineAI.contextGrid === "function" ? CardineAI.contextGrid(options || {}) : "";
   const aiDiffTable = (options) => typeof CardineAI.diffTable === "function" ? CardineAI.diffTable(options || {}) : "";
-  const aiRecordsTable = (options) => typeof CardineAI.recordsTable === "function" ? CardineAI.recordsTable(options || {}) : "";
   const aiFilterTable = (options) => typeof CardineAI.filterTable === "function" ? CardineAI.filterTable(options || {}) : "";
   const aiSidebarSearch = (options) => typeof CardineAI.sidebarSearch === "function" ? CardineAI.sidebarSearch(options || {}) : "";
-  const aiCommandSearch = (options) => typeof CardineAI.commandSearchMarkup === "function" ? CardineAI.commandSearchMarkup(options || {}) : "";
   const aiInsightDeck = (options) => typeof CardineAI.insightDeck === "function" ? CardineAI.insightDeck(options || {}) : "";
   const aiCodeBlock = (options) => typeof CardineAI.codeBlock === "function" ? CardineAI.codeBlock(options || {}) : "";
   const aiFineTune = (options) => typeof CardineAI.fineTune === "function" ? CardineAI.fineTune(options || {}) : "";
@@ -243,20 +300,86 @@
     };
   }
 
-  function setStatus(status, message = statusLabel(status)) {
-    const bar = $("#global-status");
-    const label = $(".status-bar__label", bar);
-    if (label) label.textContent = message;
-    bar.dataset.status = status;
+  /* ------------------------------------------------------------------ */
+  /* Status and alerts                                                   */
+  /*                                                                     */
+  /* Two channels, always in step: a live region for assistive tech and  */
+  /* a visible banner anchored outside #view-root. Nothing that matters  */
+  /* is ever announced without also being shown.                         */
+  /* ------------------------------------------------------------------ */
+
+  const ALERT_TONES = Object.freeze({ error: "danger", stale: "warning", degraded: "warning", working: "neutral" });
+
+  function setStatus(status, message = statusLabel(status), { alert = true } = {}) {
+    const live = $("#global-status");
+    if (live) live.textContent = message;
     const mini = $("#trust-mini");
-    mini.dataset.status = status;
-    $("#trust-mini-label").textContent = `${statusLabel(status)} · seq ${state.highWaterSequence || "—"}`;
+    if (mini) {
+      mini.dataset.status = status;
+      $("#trust-mini-label").textContent = statusLabel(status);
+    }
+    if (!alert) return;
+    if (status === "error" || status === "stale" || status === "degraded") {
+      showAlert({ tone: ALERT_TONES[status], title: message });
+    } else if (status === "ready" || status === "recovered" || status === "committed") {
+      dismissAlert();
+    }
+  }
+
+  function showAlert({ tone = "danger", title, detail = "", actions = [] }) {
+    const alert = $("#global-alert");
+    if (!alert) return;
+    alert.dataset.tone = tone;
+    $("#global-alert-title").textContent = text(title, "Qualcosa non ha funzionato");
+    $("#global-alert-detail").textContent = text(detail, "");
+    const slot = $("#global-alert-actions");
+    slot.replaceChildren();
+    actions.forEach((action) => {
+      const control = document.createElement("button");
+      control.type = "button";
+      control.className = "button button--quiet";
+      control.textContent = action.label;
+      control.addEventListener("click", () => {
+        dismissAlert();
+        action.run();
+      });
+      slot.append(control);
+    });
+    alert.hidden = false;
+  }
+
+  function dismissAlert() {
+    const alert = $("#global-alert");
+    if (alert) alert.hidden = true;
+  }
+
+  /* Overlays leave the way they arrived. Every close path in the product
+     goes through here, so no dialog can vanish with a cut. */
+  function closeDialog(dialog) {
+    if (!dialog || !dialog.open || dialog.dataset.closing !== undefined) return;
+    const motion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (motion) {
+      dialog.close();
+      return;
+    }
+    dialog.dataset.closing = "true";
+    const finish = () => {
+      delete dialog.dataset.closing;
+      dialog.close();
+    };
+    dialog.addEventListener("animationend", finish, { once: true });
+    // A missing animation must never leave a dialog stuck open.
+    window.setTimeout(() => {
+      if (dialog.dataset.closing !== undefined) finish();
+    }, 400);
+  }
+
+  function closeOpenDialogs() {
+    $$("dialog[open]").forEach(closeDialog);
   }
 
   function updateSequence(sequence) {
     if (typeof sequence === "number" && Number.isFinite(sequence)) state.highWaterSequence = sequence;
-    $("#sequence-label").textContent = state.highWaterSequence ? `seq ${state.highWaterSequence}` : "";
-    $("#trust-mini-label").textContent = `${statusLabel(state.bootstrap?.shell_status || "ready")} · seq ${state.highWaterSequence || "—"}`;
   }
 
   function setAccountControl() {
@@ -264,24 +387,34 @@
     if (!control) return;
     const name = $("#account-control-name");
     const status = $("#account-control-status");
+    const avatar = $("#account-control-avatar");
     const account = object(state.auth.account);
     if (state.auth.authenticated) {
-      if (name) name.textContent = text(first(account, ["name", "email", "username"], "Account"), "Account");
+      const label = text(first(account, ["name", "email", "username"], "Account"), "Account");
+      if (name) name.textContent = label;
       if (status) status.textContent = "sessione privata";
+      // An avatar stands for a signed-in person. Nobody signed in, no avatar.
+      if (avatar) avatar.textContent = label.slice(0, 1).toUpperCase();
     } else {
       if (name) name.textContent = "Accedi";
       if (status) status.textContent = "area privata";
+      if (avatar) avatar.textContent = "";
     }
     control.hidden = false;
   }
 
-  function setChromeVisibility(route = state.route) {
-    const dock = $("#continuation-dock");
-    const hideDock = !CONTINUATION_ROUTES.has(route) || route === "login" || route === "impostazioni" || route === "oggi" || route === "sessione";
-    if (dock) dock.hidden = hideDock;
-    const pending = $("#continuation-dock-pending");
-    if (pending) pending.hidden = !(state.continuation && state.continuation.pending);
-    setAccountControl();
+  /* The conversation lives in Chat. Outside it, a waiting tutor is a one
+     line banner with a way back — not a composer parked on every screen. */
+  function updatePendingContinuation() {
+    const waiting = Boolean(state.continuation && state.continuation.pending);
+    if (!waiting || state.route === "sessione" || state.route === "login") return;
+    if (!CONTINUATION_ROUTES.has(state.route)) return;
+    showAlert({
+      tone: "warning",
+      title: "Il tutor attende una risposta",
+      detail: text(state.continuation.prompt, ""),
+      actions: [{ label: "Apri la chat", run: () => loadRoute("sessione") }],
+    });
   }
 
   function continuationSummary(value) {
@@ -295,24 +428,14 @@
     return { pending: Boolean(pendingPrompt || fingerprint), prompt: pendingPrompt || lastPrompt || "Ultimo turno", fingerprint, last };
   }
 
-  function updateContinuationDock(payload = state.viewData || state.bootstrap || {}) {
+  function updateContinuation(payload = state.viewData || state.bootstrap || {}) {
     const summary = continuationSummary(payload);
     if (summary) {
       state.continuation = summary;
       state.lastTurn = summary.last;
     }
-    const dock = $("#continuation-dock");
-    if (!dock) return;
-    const label = $("#continuation-dock-last-turn .continuation-dock__label");
-    if (label) label.textContent = summary?.pending ? "Continua in Chat" : summary?.prompt ? `Ultimo turno · ${summary.prompt}` : "Ultimo turno";
-    const form = $("#continuation-dock-form");
-    if (form) form.hidden = Boolean(summary?.pending);
-    const textarea = $("#continuation-dock-entry");
-    if (textarea && textarea.value !== state.continuationDraft) {
-      textarea.value = state.continuationDraft;
-      resizeComposer(textarea);
-    }
-    setChromeVisibility(state.route);
+    setAccountControl();
+    updatePendingContinuation();
   }
 
   async function loadAuthSession() {
@@ -362,8 +485,7 @@
   function renderLogin(errorMessage = "") {
     state.route = "login";
     navActive("login");
-    setChromeVisibility("login");
-    setView("login", `<section class="login-surface" aria-labelledby="login-heading"><p class="eyebrow">Cardine · area privata</p><h1 id="login-heading">Accedi a Cardine</h1><p class="section-copy">La tua area privata per lo studio locale. La sessione resta attiva solo su questo dispositivo.</p><form class="login-surface__form" id="login-form" data-auth-login><label for="login-password">Password</label><input id="login-password" name="password" type="password" autocomplete="current-password" required inputmode="text"><p class="login-surface__error" id="login-error" ${errorMessage ? "" : "hidden"} role="alert">${escapeAttribute(errorMessage)}</p><button class="button" type="submit">Accedi</button></form><p class="login-surface__note">La password non viene salvata nel browser.</p></section>`);
+    setView("login", `<section class="login-surface" aria-labelledby="login-heading"><p class="eyebrow">Cardine · area privata</p><h1 id="login-heading">Accedi a Cardine</h1><p class="section-copy">La tua area privata per lo studio locale. La sessione resta attiva solo su questo dispositivo.</p><form class="login-surface__form" id="login-form" data-auth-login><label for="login-password">Password</label><span class="password-field"><input id="login-password" name="password" type="password" autocomplete="current-password" required><button class="text-button" type="button" data-toggle-secret="login-password" aria-pressed="false">Mostra</button></span><p class="field-error" id="login-error" ${errorMessage ? "" : "hidden"} role="alert"><span class="icon icon--warning-circle" aria-hidden="true"></span><span>${esc(errorMessage)}</span></p><button class="button" type="submit">Accedi</button></form><p class="login-surface__note">La password non viene salvata nel browser.</p></section>`);
     $("#login-password")?.focus({ preventScroll: true });
   }
 
@@ -376,7 +498,7 @@
       ? "Chiave presente nel runtime: verifica la connessione prima di iniziare la chat."
       : "Nessuna chiave API configurata";
     const accountLabel = text(first(account, ["label", "email", "name", "username"], "Account personale"), "Account personale");
-    setView("impostazioni", `<section class="settings-surface" aria-labelledby="settings-heading"><p class="eyebrow">area privata · impostazioni</p><h1 id="settings-heading">Impostazioni</h1><p class="section-copy">Gestisci accesso, dati locali e modello.</p>${settings.error ? `<p class="login-surface__error" role="alert">${escapeAttribute(settings.error)}</p>` : ""}<div class="settings-grid"><section class="settings-card"><h2>Account locale</h2><p>${escapeAttribute(accountLabel)}</p><p>Uscire chiude questa sessione senza eliminare i dati locali.</p><div class="settings-card__actions"><button class="button button--quiet" type="button" data-auth-logout>Esci</button></div></section><section class="settings-card"><h2>Modello</h2><p>Modello attivo: <strong>${escapeAttribute(modelLabel)}</strong>.</p><p>${escapeAttribute(credentialStatus)}</p></section><section class="settings-card"><h2>Chiave API</h2><p>La chiave inserita qui resta disponibile fino al riavvio del servizio. Per mantenerla, configura <code>OPENAI_API_KEY</code> nel secret store del deployment. Cardine non mostra né restituisce il valore.</p><form id="settings-model-form" data-settings-credential autocomplete="off"><label for="settings-credential">Nuova chiave API</label><input id="settings-credential" name="api_key" type="password" autocomplete="off" spellcheck="false" inputmode="text" placeholder="Incolla una nuova chiave" required aria-describedby="credential-settings-help"><p class="field-note" id="credential-settings-help">Cardine non scrive il valore nello storage del browser e svuota il campo subito dopo il salvataggio.</p><div class="settings-card__actions"><button class="button" type="submit">Salva nuova chiave</button><button class="button button--quiet" type="button" data-settings-remove>Rimuovi chiave temporanea</button><span class="settings-card__status" id="credential-settings-status" role="status"></span></div></form></section><section class="settings-card"><h2>Diagnostica preview</h2><p>Mostra solo codici, route e orari locali: non include messaggi, fonti, cookie o chiavi.</p><div id="preview-diagnostics"><p class="field-note">Carico diagnostica locale…</p></div><div class="settings-card__actions"><button class="button button--quiet" type="button" data-diagnostics-refresh>Aggiorna diagnostica</button></div></section><section class="settings-card"><h2>Dati del corso</h2><p>I dati di studio restano nel repository locale e non vengono inclusi nelle impostazioni del browser.</p></section><section class="settings-card"><h2>Privacy</h2><p>Sessione e chiave temporanea vengono rimosse al riavvio. Cardine non salva segreti nello storage del browser.</p></section></div></section>`);
+    setView("impostazioni", `<section class="settings-surface" aria-labelledby="settings-heading"><p class="eyebrow">area privata · impostazioni</p><h1 id="settings-heading">Impostazioni</h1><p class="section-copy">Gestisci accesso, dati locali e modello.</p>${settings.error ? `<p class="field-error" role="alert"><span class="icon icon--warning-circle" aria-hidden="true"></span>${esc(settings.error)}</p>` : ""}<div class="settings-grid"><section class="settings-card"><h2>Account locale</h2><p>${esc(accountLabel)}</p><p>Uscire chiude questa sessione senza eliminare i dati locali.</p><div class="settings-card__actions"><button class="button button--quiet" type="button" data-auth-logout>Esci</button></div></section><section class="settings-card"><h2>Modello</h2><p>Modello attivo: <strong>${esc(modelLabel)}</strong>.</p><p>${esc(credentialStatus)}</p></section><section class="settings-card"><h2>Chiave API</h2><p>La chiave inserita qui resta disponibile fino al riavvio del servizio. Per mantenerla, configura <code>OPENAI_API_KEY</code> nel secret store del deployment. Cardine non mostra né restituisce il valore.</p><form id="settings-model-form" data-settings-credential autocomplete="off"><label for="settings-credential">Nuova chiave API</label><span class="password-field"><input id="settings-credential" name="api_key" type="password" autocomplete="new-password" spellcheck="false" placeholder="Incolla una nuova chiave" required aria-describedby="credential-settings-help"><button class="text-button" type="button" data-toggle-secret="settings-credential" aria-pressed="false">Mostra</button></span><p class="field-note" id="credential-settings-help">Cardine non scrive il valore nello storage del browser e svuota il campo subito dopo il salvataggio.</p><div class="settings-card__actions"><button class="button" type="submit">Salva nuova chiave</button><button class="button button--danger" type="button" data-settings-remove>Rimuovi chiave temporanea</button><span class="settings-card__status" id="credential-settings-status" role="status"></span></div></form></section><section class="settings-card"><h2>Diagnostica preview</h2><p>Mostra solo codici, route e orari locali: non include messaggi, fonti, cookie o chiavi.</p><div id="preview-diagnostics"><p class="field-note">Carico diagnostica locale…</p></div><div class="settings-card__actions"><button class="button button--quiet" type="button" data-diagnostics-refresh>Aggiorna diagnostica</button></div></section><section class="settings-card"><h2>Dati del corso</h2><p>I dati di studio restano nel repository locale e non vengono inclusi nelle impostazioni del browser.</p></section><section class="settings-card"><h2>Privacy</h2><p>Sessione e chiave temporanea vengono rimosse al riavvio. Cardine non salva segreti nello storage del browser.</p></section></div></section>`);
   }
 
   async function loadSettings(navigationVersion = state.navigationVersion) {
@@ -405,7 +527,7 @@
       const workspaceCard = document.createElement("section");
       workspaceCard.className = "settings-card";
       workspaceCard.id = "workspace-card";
-      workspaceCard.innerHTML = `<h2>Corso e sessione</h2><div id="workspace-manager"><p class="field-note">Carico corsi e sessioni disponibili…</p></div>`;
+      patch(workspaceCard, `<h2>Corso e sessione</h2><div id="workspace-manager"><p class="field-note">Carico corsi e sessioni disponibili…</p></div>`);
       cards[2]?.before(workspaceCard);
     }
   }
@@ -418,7 +540,7 @@
     } catch (error) {
       if (navigationVersion !== state.navigationVersion) return;
       const manager = $("#workspace-manager", root);
-      if (manager) manager.innerHTML = `<p class="login-surface__error" role="alert">${escapeAttribute(error.message)}</p>`;
+      if (manager) patch(manager, `<p class="field-error" role="alert"><span class="icon icon--warning-circle" aria-hidden="true"></span>${esc(error.message)}</p>`);
     }
   }
 
@@ -521,10 +643,10 @@
     const selected = object(payload.selected);
     const selectedCourse = text(first(selected, ["course_id"], ""));
     const selectedSession = text(first(selected, ["session_id"], ""));
-    const courseOptions = courses.map((course) => `<option value="${escapeAttribute(text(course.id))}" ${text(course.id) === selectedCourse ? "selected" : ""}>${escapeAttribute(text(course.title, text(course.id)))}</option>`).join("");
+    const courseOptions = courses.map((course) => `<option value="${esc(text(course.id))}" ${text(course.id) === selectedCourse ? "selected" : ""}>${esc(text(course.title, text(course.id)))}</option>`).join("");
     const sessions = courses.flatMap((course) => array(course.sessions).map((item) => ({ ...object(item), course_id: text(course.id) })));
-    const sessionOptions = sessions.map((session) => `<option value="${escapeAttribute(text(session.id))}" data-course-id="${escapeAttribute(text(session.course_id))}" ${text(session.id) === selectedSession ? "selected" : ""}>${escapeAttribute(text(session.id))} · ${escapeAttribute(text(session.status, "unknown"))}</option>`).join("");
-    manager.innerHTML = `<p class="field-note">Seleziona il contesto di studio attivo. Il cambio non modifica i dati canonici.</p><form class="workspace-form" data-workspace-select><label for="workspace-course">Corso</label><select id="workspace-course" name="course_id">${courseOptions || "<option value=\"\">Nessun corso</option>"}</select><label for="workspace-session">Sessione</label><select id="workspace-session" name="session_id">${sessionOptions || "<option value=\"\">Nessuna sessione</option>"}</select><div class="settings-card__actions"><button class="button" type="submit">Usa selezione</button><span class="settings-card__status" id="workspace-status" role="status"></span></div></form><form class="workspace-form workspace-form--new" data-workspace-session><label for="workspace-new-session-course">Corso</label><select id="workspace-new-session-course" name="course_id">${courseOptions || "<option value=\"\">Nessun corso</option>"}</select><label for="workspace-new-session">Nuova sessione</label><input id="workspace-new-session" name="session_id" required maxlength="160" placeholder="es. ripasso-agosto"><div class="settings-card__actions"><button class="button button--quiet" type="submit">Avvia sessione</button></div></form><form class="workspace-form workspace-form--new" data-workspace-course><p class="field-note">Crea un corso vuoto; aggiungerai le fonti dalla sezione Fonti.</p><label for="workspace-new-course-id">ID corso</label><input id="workspace-new-course-id" name="course_id" required maxlength="160"><label for="workspace-new-course-title">Titolo</label><input id="workspace-new-course-title" name="title" required maxlength="240"><label for="workspace-new-course-language">Lingua</label><input id="workspace-new-course-language" name="language" value="it" required maxlength="32"><label for="workspace-new-course-goal">Obiettivo</label><input id="workspace-new-course-goal" name="learning_goal" required maxlength="240"><div class="settings-card__actions"><button class="button button--quiet" type="submit">Crea corso</button></div></form>`;
+    const sessionOptions = sessions.map((session) => `<option value="${esc(text(session.id))}" data-course-id="${esc(text(session.course_id))}" ${text(session.id) === selectedSession ? "selected" : ""}>${esc(text(session.id))} · ${esc(text(session.status, "unknown"))}</option>`).join("");
+    patch(manager, `<p class="field-note">Seleziona il contesto di studio attivo. Il cambio non modifica i dati canonici.</p><form class="workspace-form" data-workspace-select><label for="workspace-course">Corso</label><select id="workspace-course" name="course_id">${courseOptions || "<option value=\"\">Nessun corso</option>"}</select><label for="workspace-session">Sessione</label><select id="workspace-session" name="session_id">${sessionOptions || "<option value=\"\">Nessuna sessione</option>"}</select><div class="settings-card__actions"><button class="button" type="submit">Usa selezione</button><span class="settings-card__status" id="workspace-status" role="status"></span></div></form><form class="workspace-form workspace-form--new" data-workspace-session><label for="workspace-new-session-course">Corso</label><select id="workspace-new-session-course" name="course_id">${courseOptions || "<option value=\"\">Nessun corso</option>"}</select><label for="workspace-new-session">Nuova sessione</label><input id="workspace-new-session" name="session_id" required maxlength="160" placeholder="es. ripasso-agosto"><div class="settings-card__actions"><button class="button button--quiet" type="submit">Avvia sessione</button></div></form><form class="workspace-form workspace-form--new" data-workspace-course><p class="field-note">Crea un corso vuoto; aggiungerai le fonti dalla sezione Fonti.</p><label for="workspace-new-course-id">ID corso</label><input id="workspace-new-course-id" name="course_id" required maxlength="160"><label for="workspace-new-course-title">Titolo</label><input id="workspace-new-course-title" name="title" required maxlength="240"><label for="workspace-new-course-language">Lingua</label><input id="workspace-new-course-language" name="language" value="it" required maxlength="32"><label for="workspace-new-course-goal">Obiettivo</label><input id="workspace-new-course-goal" name="learning_goal" required maxlength="240"><div class="settings-card__actions"><button class="button button--quiet" type="submit">Crea corso</button></div></form>`);
   }
 
   async function logout() {
@@ -647,15 +769,15 @@
       const payload = object(await fetchJson("/api/v1/diagnostics"));
       if (navigationVersion !== state.navigationVersion) return;
       const entries = array(payload.entries);
-      target.innerHTML = entries.length
+      patch(target, entries.length
         ? `<ul class="plain-list">${entries.slice(-8).reverse().map((entry) => {
           const row = object(entry);
           const at = Number.isFinite(row.at_unix) ? new Date(row.at_unix * 1000).toLocaleTimeString() : "orario non disponibile";
-          return `<li><code>${escapeAttribute(text(row.category, "evento"))}</code> · ${escapeAttribute(text(row.path, "route"))} · HTTP ${escapeAttribute(text(row.status_code, "—"))} · ${escapeAttribute(at)}</li>`;
+          return `<li><code>${esc(text(row.category, "evento"))}</code> · ${esc(text(row.path, "route"))} · HTTP ${esc(text(row.status_code, "—"))} · ${esc(at)}</li>`;
         }).join("")}</ul>`
-        : `<p class="field-note">Nessun errore registrato in questa esecuzione.</p>`;
+        : `<p class="field-note">Nessun errore registrato in questa esecuzione.</p>`);
     } catch (error) {
-      target.innerHTML = `<p class="field-note">Diagnostica non disponibile: ${escapeAttribute(error.message)}</p>`;
+      patch(target, `<p class="field-note">Diagnostica non disponibile: ${esc(error.message)}</p>`);
     }
   }
 
@@ -666,7 +788,7 @@
       updateSequence(first(payload, ["high_water_sequence", "sequence"], state.highWaterSequence));
       renderCourse(payload);
       updateCounts(payload);
-      updateContinuationDock(payload);
+      updateContinuation(payload);
     } catch (_) {
       // The canonical command already committed; a sidebar refresh is
       // advisory and must not turn that success into a false command error.
@@ -699,29 +821,39 @@
     const sessionId = text(session.id, "");
     if (sessionId) {
       $("#recent-sessions").hidden = false;
-      list.innerHTML = `<button class="recent-session" type="button" data-route="sessione"><span>${escapeAttribute(text(first(session, ["title", "topic"], course.title), "Sessione corrente"))}</span><span class="recent-session__date"> · in corso</span></button>`;
+      patch(list, `<button class="recent-session" type="button" data-route="sessione"><span>${esc(text(first(session, ["title", "topic"], course.title), "Sessione corrente"))}</span><span class="recent-session__date"> · in corso</span></button>`);
     } else {
       $("#recent-sessions").hidden = true;
     }
     document.title = `${text(course.title, "Cardine")} · Cardine`;
     const trustSessionId = sessionId || "sessione non selezionata";
-    const mode = text(first(bootstrap, ["mode"], "local_repository"), "local_repository");
-    $("#runtime-label").textContent = "ambiente locale · dati del corso";
-    $("#trust-copy").innerHTML = `<p>Corso <strong>${escapeAttribute(text(course.title, "non dichiarato"))}</strong>, sessione <code>${escapeAttribute(trustSessionId)}</code>. Modalità: <strong>${escapeAttribute(mode)}</strong>. Il browser riceve dal servizio locale solo i dati consentiti e non apre SQLite, file di corso, runtime del provider o credenziali.</p><ul><li>Le mutazioni usano request ID e sequenza osservata.</li><li>Il Piano mostra solo fatti attribuiti e non calcola un punteggio.</li><li>Un conflitto di fonte non viene trasformato in conflitto di contesto.</li></ul>`;
+    const mode = MODE_LABELS[text(first(bootstrap, ["mode"], "local_repository"))] || "repository locale";
+    patch($("#trust-copy"), `<p>Corso <strong>${esc(text(course.title, "non dichiarato"))}</strong>, sessione <code>${esc(trustSessionId)}</code>. Modalità: <strong>${esc(mode)}</strong>. Il browser riceve dal servizio locale solo i dati consentiti e non apre SQLite, file di corso, runtime del provider o credenziali.</p><ul><li>Le mutazioni usano un identificativo di richiesta e la sequenza osservata (attuale: ${esc(state.highWaterSequence || "—")}).</li><li>Il Piano mostra solo fatti attribuiti e non calcola un punteggio.</li><li>Un conflitto di fonte non viene trasformato in conflitto di contesto.</li></ul>`);
+    const runtime = $("#runtime-label");
+    if (runtime) runtime.textContent = `ambiente locale · ${mode}`;
   }
 
+  /* Counts are a signal, not decoration: a zero is silence, not a badge. */
   function updateCounts(bootstrap) {
     const counts = object(bootstrap.counts);
-    $("[data-count='assessments']").textContent = count(counts, ["assessments", "assessment_count"]);
-    $("[data-count='due_reviews']").textContent = count(counts, ["due_reviews", "due_review_count"]);
-    $("[data-count='pending_proposals']").textContent = count(counts, ["pending_proposals", "proposal_count"]);
-    $("[data-count='context_conflicts']").textContent = count(counts, ["context_conflicts", "conflict_count"]);
+    setCount("assessments", count(counts, ["assessments", "assessment_count"]));
+    setCount("due_reviews", count(counts, ["due_reviews", "due_review_count"]));
+    setCount("pending_proposals", count(counts, ["pending_proposals", "proposal_count"]));
+    setCount("context_conflicts", count(counts, ["context_conflicts", "conflict_count"]));
     const features = object(bootstrap.features);
     $$("[data-route='ripasso'], [data-route='proposte'], [data-route='verifiche'], [data-route='conflitti']").forEach((control) => {
       const route = control.dataset.route;
       const feature = route === "ripasso" ? "recall" : route === "proposte" ? "artifacts" : route === "verifiche" ? "assessments" : "context_resolution";
       if (features[feature] === false) control.dataset.unavailable = "true";
     });
+  }
+
+  function setCount(name, value) {
+    const badge = $(`[data-count='${name}']`);
+    if (!badge) return;
+    const visible = value !== "—" && value !== "0";
+    badge.textContent = visible ? value : "";
+    badge.hidden = !visible;
   }
 
   function navActive(route) {
@@ -736,12 +868,133 @@
     });
   }
 
+  /* ------------------------------------------------------------------ */
+  /* Rendering                                                           */
+  /*                                                                     */
+  /* Views are patched into the live tree, never assigned over it. That   */
+  /* is what keeps scroll offsets, focus, open disclosures and in-flight  */
+  /* text alive across a refresh — and it is why a message appended to a  */
+  /* form is still attached to the document when the browser paints it.   */
+  /* ------------------------------------------------------------------ */
+
+  const PRESERVE_VALUE = new Set(["INPUT", "TEXTAREA"]);
+  const NEAR_BOTTOM = 64;
+
+  function nodeKey(node) {
+    return node.getAttribute("data-key") || node.id || "";
+  }
+
+  function isSameNode(current, next) {
+    if (current.nodeType !== next.nodeType) return false;
+    if (current.nodeType !== Node.ELEMENT_NODE) return true;
+    if (current.tagName !== next.tagName) return false;
+    const currentKey = nodeKey(current);
+    const nextKey = nodeKey(next);
+    if (currentKey || nextKey) return currentKey === nextKey;
+    return true;
+  }
+
+  function syncAttributes(current, next) {
+    for (const attribute of Array.from(current.attributes)) {
+      // A disclosure the reader opened stays open across a refresh.
+      if (attribute.name === "open" && current.tagName === "DETAILS") continue;
+      if (!next.hasAttribute(attribute.name)) current.removeAttribute(attribute.name);
+    }
+    for (const attribute of Array.from(next.attributes)) {
+      if (attribute.name === "open" && current.tagName === "DETAILS") continue;
+      if (current.getAttribute(attribute.name) !== attribute.value) {
+        current.setAttribute(attribute.name, attribute.value);
+      }
+    }
+  }
+
+  function morphElement(current, next) {
+    syncAttributes(current, next);
+    // Never overwrite what the reader is in the middle of typing.
+    if (PRESERVE_VALUE.has(current.tagName)) return;
+    if (current.tagName === "SELECT") {
+      const selected = current.value;
+      morphChildren(current, next);
+      if (Array.from(current.options).some((option) => option.value === selected)) current.value = selected;
+      return;
+    }
+    morphChildren(current, next);
+  }
+
+  function morphChildren(current, next) {
+    let existing = current.firstChild;
+    let incoming = next.firstChild;
+    while (incoming) {
+      const following = incoming.nextSibling;
+      if (!existing) {
+        current.appendChild(document.importNode(incoming, true));
+      } else if (isSameNode(existing, incoming)) {
+        if (existing.nodeType === Node.ELEMENT_NODE) morphElement(existing, incoming);
+        else if (existing.nodeValue !== incoming.nodeValue) existing.nodeValue = incoming.nodeValue;
+        existing = existing.nextSibling;
+      } else {
+        const key = incoming.nodeType === Node.ELEMENT_NODE ? nodeKey(incoming) : "";
+        let match = null;
+        if (key) {
+          for (let candidate = existing; candidate; candidate = candidate.nextSibling) {
+            if (candidate.nodeType === Node.ELEMENT_NODE && candidate.tagName === incoming.tagName && nodeKey(candidate) === key) {
+              match = candidate;
+              break;
+            }
+          }
+        }
+        if (match) {
+          current.insertBefore(match, existing);
+          morphElement(match, incoming);
+          existing = match.nextSibling;
+        } else {
+          current.insertBefore(document.importNode(incoming, true), existing);
+        }
+      }
+      incoming = following;
+    }
+    while (existing) {
+      const following = existing.nextSibling;
+      current.removeChild(existing);
+      existing = following;
+    }
+  }
+
+  function patch(container, html) {
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    morphChildren(container, template.content);
+  }
+
+  function captureScroll() {
+    const conversation = $(".conversation-scroll", root);
+    return {
+      view: root.scrollTop,
+      conversation: conversation ? conversation.scrollTop : 0,
+      pinned: conversation
+        ? conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight <= NEAR_BOTTOM
+        : true,
+    };
+  }
+
+  function restoreScroll(snapshot, routeChanged) {
+    root.scrollTop = routeChanged ? 0 : snapshot.view;
+    const conversation = $(".conversation-scroll", root);
+    if (!conversation) return;
+    // Follow the conversation only when the reader was already at the end;
+    // otherwise leave them exactly where they had scrolled to.
+    if (routeChanged || snapshot.pinned) conversation.scrollTop = conversation.scrollHeight;
+    else conversation.scrollTop = snapshot.conversation;
+  }
+
   function setView(route, html) {
+    const routeChanged = state.route !== route;
+    const snapshot = captureScroll();
+    const activeId = document.activeElement instanceof HTMLElement ? document.activeElement.id : "";
     state.route = route;
     navActive(route);
-    setChromeVisibility(route);
     destroyPrimitiveEnhancements();
-    root.innerHTML = html;
+    patch(root, html);
     bindDynamicControls();
     destroyPrimitiveEnhancements = typeof CardineAI.enhance === "function"
       ? CardineAI.enhance(root, {
@@ -750,27 +1003,44 @@
         onFineTune: (prompt, control) => populateComposerPrompt(prompt, control),
       })
       : () => {};
-    const initialComposer = route === "oggi" ? $("#entry", root) : null;
-    if (initialComposer) {
-      initialComposer.focus({ preventScroll: true });
-    } else {
-      $("#main-content").focus({ preventScroll: true });
+    syncComposers();
+    root.removeAttribute("aria-busy");
+    restoreScroll(snapshot, routeChanged);
+    if (!routeChanged) {
+      const restored = activeId ? document.getElementById(activeId) : null;
+      if (restored && restored !== document.activeElement) restored.focus({ preventScroll: true });
+      return;
     }
-    updateContinuationDock(state.viewData || state.bootstrap || {});
+    const composer = $("#entry", root) || $("#session-entry-text", root);
+    if (composer && !composer.disabled) composer.focus({ preventScroll: true });
+    else $("#main-content").focus({ preventScroll: true });
   }
 
+  /* Every composer re-measures after every render, whatever put the text
+     there: a restored draft, a follow-up prompt, or the reader typing. */
+  function syncComposers() {
+    $$("[data-entry-form] textarea", root).forEach((textarea) => resizeComposer(textarea));
+  }
+
+  /* Refreshing the section you are already reading must not blank it. The
+     placeholder is for the first paint only; a refresh marks the existing
+     view busy and leaves the reader's scroll, focus and draft alone. */
   function renderLoading(route) {
+    if (state.route === route && root.firstElementChild) {
+      root.setAttribute("aria-busy", "true");
+      return;
+    }
     const loading = aiLoading({
       label: `Carico ${ROUTES[route]?.heading || "la sezione"}`,
       detail: "Sto leggendo lo stato canonico dal servizio locale.",
     }, emptyState("Caricamento", "Sto leggendo lo stato canonico dal servizio locale.", "loading"));
-    setView(route, `<section class="section-grid"><div class="section-grid__main"><p class="section-kicker">${escapeAttribute(ROUTES[route]?.heading || "Cardine")}</p><div class="loading-state">${loading}</div></div><aside class="section-grid__side"><div class="skeleton-card"></div></aside></section>`);
+    setView(route, `<section class="section-grid"><div class="section-grid__main"><p class="section-kicker">in caricamento</p><h1 class="section-title">${esc(ROUTES[route]?.heading || "Cardine")}</h1><div class="loading-state">${loading}</div></div><aside class="section-grid__side"><div class="skeleton-stack" aria-hidden="true"><span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span></div></aside></section>`);
   }
 
   function renderError(route, error) {
     const message = error && error.message ? error.message : "Il servizio locale non ha risposto.";
     setStatus("error", "La sezione non è disponibile");
-    setView(route, `<section class="section-grid"><div class="section-grid__main"><p class="section-kicker">${escapeAttribute(ROUTES[route]?.heading || "Cardine")}</p>${emptyState("Stato non disponibile", message, "error")}<div class="state-actions"><button class="button" type="button" data-retry-route="${escapeAttribute(route)}">Riprova</button>${button("Torna a oggi", "oggi")}</div></div><aside class="section-grid__side">${emptyState("Nessuna cancellazione locale", "L'ultimo stato canonico non viene sostituito da dati inventati.")}</aside></section>`);
+    setView(route, `<section class="section-grid"><div class="section-grid__main"><p class="section-kicker">stato della sezione</p><h1 class="section-title">${esc(ROUTES[route]?.heading || "Cardine")}</h1>${emptyState("Stato non disponibile", message, "error")}<div class="state-actions"><button class="button" type="button" data-retry-route="${esc(route)}">Riprova</button>${button("Torna a oggi", "oggi")}</div></div><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">stato</p><h2 class="side-card__title">Nessun dato è stato perso</h2><p class="side-card__copy">L'ultimo stato canonico resta nel repository: Cardine non lo sostituisce con dati inventati.</p></div></aside></section>`);
   }
 
   async function loadBootstrap() {
@@ -813,7 +1083,7 @@
     }
     const featureByRoute = { proposte: "artifacts", verifiche: "assessments", evidenze: "evidence", ripasso: "recall", conflitti: "context_resolution" };
     if (state.bootstrap && object(state.bootstrap.features)[featureByRoute[route]] === false) {
-      setStatus("degraded", `${ROUTES[route].heading} non disponibile`);
+      setStatus(text(state.bootstrap?.shell_status, "ready"), `${ROUTES[route].heading} · sezione non attiva`);
       renderUnavailable(route);
       return;
     }
@@ -822,7 +1092,7 @@
       const payload = suppliedData || await fetchJson(ROUTES[route].endpoint);
       if (navigationVersion !== state.navigationVersion) return;
       state.viewData = payload;
-      updateContinuationDock(payload);
+      updateContinuation(payload);
       if (route === "oggi") {
         state.bootstrap = object(payload);
         renderCourse(state.bootstrap);
@@ -848,7 +1118,7 @@
   }
 
   function renderUnavailable(route) {
-    setView(route, `<section class="section-grid"><section class="section-grid__main"><p class="section-kicker">${escapeAttribute(ROUTES[route]?.heading || "Cardine")}</p>${emptyState("Questa sezione non è ancora attiva", "Il corso collegato non fornisce ancora dati per questa sezione. Tutto il resto continua a funzionare.", "unavailable")}<div class="state-actions">${button("Torna a oggi", "oggi", "button")}</div></section><aside class="section-grid__side">${emptyState("Nessuna degradazione globale", "La capacità opzionale è isolata dalla sessione principale.")}</aside></section>`);
+    setView(route, `<section class="section-grid"><section class="section-grid__main"><p class="section-kicker">sezione opzionale</p><h1 class="section-title">${esc(ROUTES[route]?.heading || "Cardine")}</h1>${emptyState("Questa sezione non è ancora attiva", "Il corso collegato non fornisce ancora dati per questa sezione. Tutto il resto continua a funzionare.", "unavailable", [{ label: "Vedi le fonti del corso", route: "fonti", primary: true }, { label: "Torna a Oggi", route: "oggi" }])}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">stato</p><h2 class="side-card__title">Il resto del corso funziona</h2><p class="side-card__copy">Questa sezione è opzionale e non incide sulla sessione principale.</p></div></aside></section>`);
   }
 
   function renderOggi(payload) {
@@ -877,52 +1147,72 @@
     const conflicts = first(counts, ["context_conflicts"], 0);
     const openWork = Number(due) + Number(pending) + Number(conflicts);
     const today = openWork > 0
-      ? `<div class="today-strip" aria-label="Lavoro aperto oggi"><button type="button" data-route="ripasso"><strong>${escapeAttribute(due)}</strong><span>ripassi dovuti</span></button><button type="button" data-route="proposte"><strong>${escapeAttribute(pending)}</strong><span>proposte</span></button><button type="button" data-route="conflitti"><strong>${escapeAttribute(conflicts)}</strong><span>conflitti</span></button></div>`
+      ? `<div class="today-strip" aria-label="Lavoro aperto oggi"><button type="button" data-route="ripasso"><strong>${esc(due)}</strong><span>ripassi dovuti</span></button><button type="button" data-route="proposte"><strong>${esc(pending)}</strong><span>proposte</span></button><button type="button" data-route="conflitti"><strong>${esc(conflicts)}</strong><span>conflitti</span></button></div>`
       : `<p class="today-clear">Non hai ripassi, proposte o conflitti in sospeso. Puoi iniziare con una domanda.</p>`;
     const taskItems = [
-      { label: `${due} ripassi dovuti`, detail: "Ripassi già programmati dal corso.", status: Number(due) > 0 ? "open" : "clear" },
-      { label: `${pending} proposte`, detail: "Revisioni che attendono una decisione esplicita.", status: Number(pending) > 0 ? "open" : "clear" },
-      { label: `${conflicts} conflitti`, detail: "Divergenze learner-context ancora da risolvere.", status: Number(conflicts) > 0 ? "open" : "clear" },
+      { label: `${due} ripassi dovuti`, detail: "Ripassi già programmati dal corso.", status: Number(due) > 0 ? "open" : "clear", status_label: Number(due) > 0 ? "da fare" : "in pari" },
+      { label: `${pending} proposte`, detail: "Revisioni che attendono una decisione esplicita.", status: Number(pending) > 0 ? "open" : "clear", status_label: Number(pending) > 0 ? "da decidere" : "in pari" },
+      { label: `${conflicts} conflitti`, detail: "Divergenze da risolvere nel tuo contesto di studio.", status: Number(conflicts) > 0 ? "open" : "clear", status_label: Number(conflicts) > 0 ? "da risolvere" : "in pari" },
     ];
     const evidence = array(readiness.evidence);
     const insights = evidence.slice(0, 3).map((item) => ({
       title: first(object(item), ["criterion", "concept", "label", "name"], "Evidenza del corso"),
       detail: first(object(item), ["detail", "dimension", "disposition", "status"], "Evidenza canonica disponibile."),
-      source: sourceRef(item).replace(/<[^>]+>/g, ""),
+      source: sourceLabel(item),
     }));
     if (!insights.length) insights.push({ title: "Stato della sessione", detail: `La sessione è ${statusLabel(status)}.`, source: "proiezione locale" });
     const support = `<details class="chat-home__support"><summary>Panoramica di studio</summary><div class="chat-home__support-grid"><div class="ai-home-card">${aiTaskList({ title: "Lavoro aperto", tasks: taskItems })}</div><div class="ai-home-card">${aiRecommendation({ title: openWork > 0 ? "Un passo alla volta" : "Pronto per una domanda", detail: openWork > 0 ? "Scegli una coda già dichiarata dal corso e continua senza cambiare stato dal browser." : "Scrivi al tutor e mantieni la sessione al centro.", prompt: openWork > 0 ? "Aiutami a scegliere il prossimo ripasso" : "Fammi una domanda di ripasso sulle fonti disponibili", actionLabel: openWork > 0 ? "Chiedimi cosa fare" : "Prepara una domanda" })}</div><div class="ai-home-card">${aiInsightDeck({ title: "Segnali utili", insights })}</div></div></details>`;
     const createCourse = state.auth.authenticated
       ? `<button class="chat-home__course-action" type="button" data-open-course-creation>Crea un corso</button>`
       : "";
-    setView("oggi", `<section class="chat-home" aria-labelledby="home-heading"><div class="chat-home__center"><p class="eyebrow">${escapeAttribute(text(course.title, "corso locale"))}</p><h1 id="home-heading">${suspended ? "Riprendiamo da dove eravamo?" : "Come vuoi studiare oggi?"}</h1>${entryForm("hero-entry", "Scrivi al tutor", "Chiedi qualsiasi cosa sul corso…")}${createCourse}${renderChatCourseCreation()}${suspended ? `<button class="resume-chat" type="button" data-route="sessione">Riprendi la sessione in corso</button>` : ""}${today}</div>${support}</section>`);
+    setView("oggi", `<section class="chat-home" aria-labelledby="home-heading"><div class="chat-home__center"><p class="eyebrow">${esc(text(course.title, "corso locale"))}</p><h1 id="home-heading">${suspended ? "Riprendiamo da dove eravamo?" : "Come vuoi studiare oggi?"}</h1>${entryForm("hero-entry", "Scrivi al tutor", "Chiedi qualsiasi cosa sul corso…")}${createCourse}${renderChatCourseCreation()}${suspended ? `<button class="resume-chat" type="button" data-route="sessione">Riprendi la sessione in corso</button>` : ""}${today}</div>${support}</section>`);
+  }
+
+  /* A three-step setup shows where you are and lets you go back. The frame
+     is identical on every step, so only the card content changes. */
+  const SETUP_STEPS = Object.freeze(["Materiali", "Obiettivo", "Argomento"]);
+
+  function wizardSteps(current) {
+    return `<nav class="wizard-steps" aria-label="Avanzamento del setup">${SETUP_STEPS.map((label, index) => {
+      const state = index + 1 < current ? "done" : index + 1 === current ? "current" : "todo";
+      return `<span class="wizard-steps__step" data-state="${state}"${state === "current" ? ' aria-current="step"' : ""}>${esc(label)}</span>`;
+    }).join("")}</nav>`;
+  }
+
+  function setupView(step, heading, lede, card) {
+    setView("oggi", `<section class="chat-home chat-home--setup" aria-labelledby="home-heading"><div class="chat-home__center">${wizardSteps(step)}<h1 id="home-heading">${esc(heading)}</h1><p class="chat-home__lede">${lede}</p>${card}</div></section>`);
   }
 
   function renderSourceFirstOnboarding(course, materials) {
     const authenticated = state.auth.mode !== "private" || state.auth.authenticated;
     const uploadBody = authenticated
-      ? `<form class="source-upload-form" data-source-upload><label for="source-upload-file">File di testo o Markdown</label><input id="source-upload-file" name="file" type="file" accept=".txt,.md,text/plain,text/markdown"><span class="field-note">Oppure incolla il testo qui sotto. PDF, immagini e altri formati non sono ancora importabili.</span><label for="source-upload-text">Testo della fonte</label><textarea id="source-upload-text" name="content" rows="6" maxlength="196608" placeholder="Incolla appunti, programma o una lezione…"></textarea><label for="source-upload-title">Titolo</label><input id="source-upload-title" name="title" maxlength="240" placeholder="es. Lezione 1 · Emodinamica"><div class="state-actions"><button class="button" type="submit">Aggiungi questa fonte</button><span class="settings-card__status" data-source-upload-status role="status"></span></div></form>`
-      : `<p class="field-note">Accedi per aggiungere fonti al corso e iniziare il setup.</p><button class="button" type="button" data-route="login">Accedi</button>`;
-    setView("oggi", `<section class="chat-home chat-home--setup" aria-labelledby="home-heading"><div class="chat-home__center"><p class="eyebrow">${escapeAttribute(text(course.title, "corso locale"))} · passo 1 di 3</p><h1 id="home-heading">Partiamo dai materiali.</h1><p class="chat-home__lede">Prima leggiamo le fonti del corso; solo dopo sceglieremo l’argomento iniziale insieme.</p><section class="study-setup-card" aria-labelledby="source-setup-heading"><h2 id="source-setup-heading">Aggiungi una fonte</h2><p>Cardine usa solo le fonti salvate nel repository del corso. Puoi aggiungere una lezione alla volta.</p>${uploadBody}</section></div></section>`);
+      ? `<form class="source-upload-form" data-source-upload novalidate><label for="source-upload-file">File di testo o Markdown <span class="field-optional">(facoltativo)</span></label><input id="source-upload-file" name="file" type="file" accept=".txt,.md,text/plain,text/markdown"><p class="field-note">Oppure incolla il testo qui sotto. PDF, immagini e altri formati non sono ancora importabili.</p><label for="source-upload-text">Testo della fonte <span class="field-required">obbligatorio se non carichi un file</span></label><textarea id="source-upload-text" name="content" rows="6" maxlength="196608" placeholder="Incolla appunti, programma o una lezione…"></textarea><label for="source-upload-title">Titolo <span class="field-optional">(facoltativo)</span></label><input id="source-upload-title" name="title" maxlength="240" placeholder="es. Lezione 1 · Emodinamica"><div class="state-actions"><button class="button" type="submit">Aggiungi questa fonte</button><span class="settings-card__status" data-source-upload-status role="status"></span></div></form>`
+      : `<p class="field-note">Accedi per aggiungere fonti al corso e iniziare il setup.</p><div class="state-actions"><button class="button" type="button" data-route="login">Accedi</button></div>`;
+    setupView(1, "Partiamo dai materiali.", "Prima leggiamo le fonti del corso; solo dopo sceglieremo l’argomento iniziale insieme.",
+      `<section class="study-setup-card" aria-labelledby="source-setup-heading"><h2 id="source-setup-heading">Aggiungi una fonte</h2><p>Cardine usa solo le fonti salvate nel repository del corso. Puoi aggiungere una lezione alla volta.</p>${uploadBody}</section>`);
   }
 
   function renderStudyIntentStep(course, materials) {
     const sourceNames = materials.slice(0, 3).map((item) => text(object(item).title)).filter(Boolean).join(", ");
-    setView("oggi", `<section class="chat-home chat-home--setup" aria-labelledby="home-heading"><div class="chat-home__center"><p class="eyebrow">${escapeAttribute(text(course.title, "corso locale"))} · passo 2 di 3</p><h1 id="home-heading">Ho letto le tue fonti.</h1><p class="chat-home__lede">Ora impostiamo il contesto dello studio, così il primo argomento parte con il ritmo giusto.</p><section class="study-setup-card" aria-labelledby="intent-setup-heading"><h2 id="intent-setup-heading">Il tuo obiettivo</h2><p>${escapeAttribute(String(materials.length))} ${materials.length === 1 ? "fonte è pronta" : "fonti sono pronte"}${sourceNames ? `: ${escapeAttribute(sourceNames)}` : ""}. Inserisci solo ciò che serve per questa sessione.</p><form data-study-setup class="study-setup-form"><label for="study-exam-date">Data dell’esame <span>(facoltativa)</span></label><input id="study-exam-date" name="exam_date" type="date"><label for="study-objective">Obiettivo di studio</label><input id="study-objective" name="objective" required maxlength="240" placeholder="es. capire la fisiologia, non memorizzare a caso"><label for="study-time">Tempo disponibile oggi</label><select id="study-time" name="available_time" required><option value="10 minuti">10 minuti</option><option value="25 minuti" selected>25 minuti</option><option value="45 minuti">45 minuti</option><option value="60 minuti o più">60 minuti o più</option></select><div class="state-actions"><button class="button" type="submit">Continua</button></div></form></section></div></section>`);
+    setupView(2, "Ho letto le tue fonti.", "Ora impostiamo il contesto dello studio, così il primo argomento parte con il ritmo giusto.",
+      `<section class="study-setup-card" aria-labelledby="intent-setup-heading"><h2 id="intent-setup-heading">Il tuo obiettivo</h2><p>${esc(String(materials.length))} ${materials.length === 1 ? "fonte è pronta" : "fonti sono pronte"}${sourceNames ? `: ${esc(sourceNames)}` : ""}. Inserisci solo ciò che serve per questa sessione.</p><form data-study-setup class="study-setup-form" novalidate><label for="study-objective">Obiettivo di studio <span class="field-required">obbligatorio</span></label><input id="study-objective" name="objective" required maxlength="240" placeholder="es. capire la fisiologia, non memorizzare a caso"><label for="study-time">Tempo disponibile oggi <span class="field-required">obbligatorio</span></label><select id="study-time" name="available_time" required><option value="10 minuti">10 minuti</option><option value="25 minuti" selected>25 minuti</option><option value="45 minuti">45 minuti</option><option value="60 minuti o più">60 minuti o più</option></select><label for="study-exam-date">Data dell’esame <span class="field-optional">(facoltativa)</span></label><input id="study-exam-date" name="exam_date" type="date"><div class="state-actions"><button class="button" type="submit">Continua</button></div></form></section>`);
   }
 
   function renderStudyTopicStep(course, materials) {
     const setup = object(state.studySetup);
     const source = object(materials[0]);
     const suggested = text(first(source, ["title"], "la prima fonte"));
-    const sourceCount = materials.length === 1 ? "la fonte disponibile" : `le ${materials.length} fonti disponibili`;
-    setView("oggi", `<section class="chat-home chat-home--setup" aria-labelledby="home-heading"><div class="chat-home__center"><p class="eyebrow">${escapeAttribute(text(course.title, "corso locale"))} · passo 3 di 3</p><h1 id="home-heading">Scegliamo il primo argomento.</h1><p class="chat-home__lede">Dalla struttura di ${escapeAttribute(sourceCount)} partirei da <strong>${escapeAttribute(suggested)}</strong>. È una proposta, non una decisione automatica.</p><section class="study-setup-card" aria-labelledby="topic-setup-heading"><h2 id="topic-setup-heading">Primo focus</h2><p>Obiettivo: ${escapeAttribute(text(setup.objective))} · Tempo: ${escapeAttribute(text(setup.availableTime))}${setup.examDate ? ` · Esame: ${escapeAttribute(text(setup.examDate))}` : ""}</p><div class="state-actions"><button class="button" type="button" data-study-topic-default="${escapeAttribute(suggested)}">Inizia da ${escapeAttribute(suggested)}</button></div><form class="study-setup-form study-setup-form--priority" data-study-topic><label for="study-topic-custom">Oppure scegli un’altra priorità</label><input id="study-topic-custom" name="topic" required maxlength="240" placeholder="es. le parti più difficili per me"><div class="state-actions"><button class="button button--quiet" type="submit">Usa questa priorità</button></div></form></section></div></section>`);
+    const sourceCount = materials.length === 1 ? "della fonte disponibile" : `delle ${materials.length} fonti disponibili`;
+    setupView(3, "Scegliamo il primo argomento.", `Dalla struttura ${esc(sourceCount)} partirei da <strong>${esc(suggested)}</strong>. È una proposta, non una decisione automatica.`,
+      `<section class="study-setup-card" aria-labelledby="topic-setup-heading"><h2 id="topic-setup-heading">Primo focus</h2><p>Obiettivo: ${esc(text(setup.objective))} · Tempo: ${esc(text(setup.availableTime))}${setup.examDate ? ` · Esame: ${esc(text(setup.examDate))}` : ""}</p><div class="state-actions"><button class="button" type="button" data-study-topic-default="${esc(suggested)}">Inizia da ${esc(suggested)}</button><button class="button button--quiet" type="button" data-study-setup-back>Torna indietro</button></div><form class="study-setup-form study-setup-form--priority" data-study-topic novalidate><label for="study-topic-custom">Oppure scegli un’altra priorità</label><input id="study-topic-custom" name="topic" required maxlength="240" placeholder="es. le parti più difficili per me"><div class="state-actions"><button class="button button--quiet" type="submit">Usa questa priorità</button></div></form></section>`);
   }
 
   function entryForm(id, label, placeholder, buttonClass = "", attributes = "") {
     const textareaId = id === "hero-entry" ? "entry" : `${id}-text`;
     const modeClass = id === "hero-entry" ? "composer--hero" : "composer--session";
-    return `<form id="${escapeAttribute(id)}" class="composer ${modeClass}" data-entry-form ${attributes}><label class="visually-hidden" for="${escapeAttribute(textareaId)}">${escapeAttribute(label)}</label><div class="composer__surface"><textarea id="${escapeAttribute(textareaId)}" name="learner_entry" maxlength="${MAX_ENTRY_CHARS}" rows="1" required placeholder="${escapeAttribute(placeholder)}" aria-describedby="${escapeAttribute(textareaId)}-hint"></textarea><div class="composer__toolbar"><button class="composer__add" type="button" data-route="fonti" aria-label="Apri fonti" title="Apri fonti"><span class="icon icon--plus" aria-hidden="true"></span></button><span class="composer__spacer"></span><button class="composer__mode" type="button" data-open-tutor-info aria-label="Stato del tutor e provenienza">GPT-5.6 Luna <span class="icon icon--caret-down" aria-hidden="true"></span></button><span class="visually-hidden composer__hint" id="${escapeAttribute(textareaId)}-hint">Invio invia · Maiusc + Invio va a capo</span><button class="composer__send ${buttonClass}" type="submit" aria-label="Invia messaggio" title="Invia messaggio" disabled><span class="icon icon--arrow-up" aria-hidden="true"></span></button></div></div></form>`;
+    // The model chip carries no chevron: it opens an information sheet, not
+    // a picker, and an affordance has to describe what actually happens.
+    return `<form id="${esc(id)}" class="composer ${modeClass}" data-entry-form ${attributes}><label class="visually-hidden" for="${esc(textareaId)}">${esc(label)}</label><div class="composer__surface"><textarea id="${esc(textareaId)}" name="learner_entry" maxlength="${MAX_ENTRY_CHARS}" rows="1" required placeholder="${esc(placeholder)}" aria-describedby="${esc(textareaId)}-hint"></textarea><div class="composer__toolbar"><button class="composer__add" type="button" data-route="fonti" aria-label="Apri fonti" data-tooltip="Apri fonti"><span class="icon icon--plus" aria-hidden="true"></span></button><span class="composer__spacer"></span><span class="char-counter" aria-live="polite" hidden></span><button class="composer__mode" type="button" data-open-tutor-info aria-label="Stato del tutor e provenienza">GPT-5.6 Luna</button><span class="visually-hidden composer__hint" id="${esc(textareaId)}-hint">Invio invia · Maiusc + Invio va a capo</span><button class="composer__send ${buttonClass}" type="submit" aria-label="Invia messaggio" data-tooltip="Invia messaggio" disabled><span class="icon icon--arrow-up" aria-hidden="true"></span></button></div></div></form>`;
   }
 
   function courseCreationIntentTitle(value) {
@@ -978,7 +1268,7 @@
   function renderChatCourseCreation() {
     const draft = object(state.chatCourseCreation);
     if (!Object.keys(draft).length || !state.auth.authenticated) return "";
-    return `<section class="chat-course-creation" aria-labelledby="chat-course-creation-heading"><div><p class="eyebrow">nuovo spazio di studio</p><h2 id="chat-course-creation-heading">Creiamo un corso</h2><p>Conferma i dettagli: Cardine creerà il corso, aprirà la prima sessione e la selezionerà.</p></div><form class="chat-course-creation__form" data-chat-course-creation><label for="chat-course-title">Nome del corso</label><input id="chat-course-title" name="title" value="${escapeAttribute(text(draft.title))}" required maxlength="240" autocomplete="off" placeholder="es. Fisiologia umana"><label for="chat-course-language">Lingua</label><select id="chat-course-language" name="language"><option value="it" ${text(draft.language, "it") === "it" ? "selected" : ""}>Italiano</option><option value="en" ${text(draft.language) === "en" ? "selected" : ""}>English</option></select><label for="chat-course-goal">Primo obiettivo</label><input id="chat-course-goal" name="learning_goal" value="${escapeAttribute(text(draft.learningGoal))}" required maxlength="240" autocomplete="off" placeholder="es. Collegare funzione e fisiopatologia"><p class="field-note">Il corso verrà creato solo quando confermi qui sotto.</p><div class="state-actions"><button class="button" type="submit">Crea e inizia a studiare</button><button class="button button--quiet" type="button" data-close-course-creation>Annulla</button><span class="settings-card__status" id="chat-course-creation-status" role="status"></span></div></form></section>`;
+    return `<section class="chat-course-creation" aria-labelledby="chat-course-creation-heading"><div><p class="eyebrow">nuovo spazio di studio</p><h2 id="chat-course-creation-heading">Creiamo un corso</h2><p>Conferma i dettagli: Cardine creerà il corso, aprirà la prima sessione e la selezionerà.</p></div><form class="chat-course-creation__form" data-chat-course-creation><label for="chat-course-title">Nome del corso</label><input id="chat-course-title" name="title" value="${esc(text(draft.title))}" required maxlength="240" autocomplete="off" placeholder="es. Fisiologia umana"><label for="chat-course-language">Lingua</label><select id="chat-course-language" name="language"><option value="it" ${text(draft.language, "it") === "it" ? "selected" : ""}>Italiano</option><option value="en" ${text(draft.language) === "en" ? "selected" : ""}>English</option></select><label for="chat-course-goal">Primo obiettivo</label><input id="chat-course-goal" name="learning_goal" value="${esc(text(draft.learningGoal))}" required maxlength="240" autocomplete="off" placeholder="es. Collegare funzione e fisiopatologia"><p class="field-note">Il corso verrà creato solo quando confermi qui sotto.</p><div class="state-actions"><button class="button" type="submit">Crea e inizia a studiare</button><button class="button button--quiet" type="button" data-close-course-creation>Annulla</button><span class="settings-card__status" id="chat-course-creation-status" role="status"></span></div></form></section>`;
   }
 
   function populateComposerPrompt(prompt, control = null) {
@@ -1028,9 +1318,11 @@
     const thread = displayMessages.length
       ? displayMessages.map((message, index) => renderMessage(message, index === lastAssistantIndex)).join("")
       : emptyState(
-          "Nessun turno registrato",
-          "La sessione non contiene ancora una conversazione canonica."
-        );
+        "Inizia la conversazione",
+        "Questa sessione non ha ancora turni registrati. Scrivi qui sotto per aprirla: il tutor risponderà usando solo le fonti del corso.",
+        "empty",
+        [{ label: "Vedi le fonti del corso", route: "fonti" }]
+      );
     const continuationFingerprint = first(continuation, ["fingerprint", "continuation_fingerprint"], "");
     const continuationPrompt = first(continuation, ["prompt", "question", "message"], "Il tutor attende una risposta.");
     const continuationApproval = continuation && Object.keys(continuation).length
@@ -1040,7 +1332,7 @@
         choices: [{ label: "Prepara la risposta", action: continuationPrompt, prompt: continuationPrompt }],
       })
       : "";
-    const continuationHtml = continuation && Object.keys(continuation).length ? `<div class="continuation"><p class="section-kicker">richiesta del tutor</p><p class="continuation__prompt">${escapeAttribute(continuationPrompt)}</p>${continuationApproval}${continuationFingerprint ? entryForm("continuation-entry", "Risposta", "Scrivi la risposta…", "", `data-fingerprint="${escapeAttribute(continuationFingerprint)}"`) : emptyState("Continuazione non disponibile", "Il servizio non ha restituito il riferimento opaco necessario per riprendere.")}</div>` : "";
+    const continuationHtml = continuation && Object.keys(continuation).length ? `<div class="continuation"><p class="section-kicker">richiesta del tutor</p><p class="continuation__prompt">${esc(continuationPrompt)}</p>${continuationApproval}${continuationFingerprint ? entryForm("continuation-entry", "Risposta", "Scrivi la risposta…", "", `data-fingerprint="${esc(continuationFingerprint)}"`) : emptyState("Continuazione non disponibile", "Manca il riferimento necessario per riprendere la conversazione.")}</div>` : "";
     const compactTranscript = messages.length
       ? aiChatPanel({
         title: "Trascrizione compatta",
@@ -1050,12 +1342,12 @@
       })
       : emptyState(
         "Trascrizione non disponibile",
-        "Il DTO della sessione espone solo lo stato operativo, non turni conversazionali dichiarati."
+        "Per questa sessione il servizio espone solo lo stato, non i singoli turni."
       );
     const activityDisclosure = `<details class="ai-session-activity"><summary>Attività e trascrizione compatta</summary><div class="ai-session-activity__grid">${aiThinking({
       summary: "Trace di ragionamento non esposto",
       hint: "Cardine mostra solo attività dichiarata dal contratto.",
-      steps: [{ label: "Risposta canonica disponibile", detail: "Il DTO non espone pensieri interni del modello.", status: "unavailable" }],
+      steps: [{ label: "Risposta canonica disponibile", detail: "Il servizio non espone il ragionamento interno del modello.", status: "unavailable" }],
     })}${aiToolStack({
       title: "Attività tecnica",
       tools: [{ label: "Strumenti usati", detail: "Il servizio non ha dichiarato strumenti usati in questa conversazione.", status: "unavailable" }],
@@ -1063,8 +1355,22 @@
     const createCourse = state.auth.authenticated
       ? `<button class="text-button" type="button" data-open-course-creation>Crea un corso</button>`
       : "";
-    setView("sessione", `<section class="chat-session" data-ai-chat-ready="true" aria-labelledby="conversation-heading"><header class="conversation-header"><div><h1 id="conversation-heading">${escapeAttribute(text(first(snapshot, ["title", "topic"], object(state.bootstrap?.course).title), "Sessione di studio"))}</h1><p>${escapeAttribute(statusLabel(status))}</p></div><div class="conversation-header__actions">${createCourse}<button class="text-button" type="button" data-route="fonti">Fonti</button></div></header><div class="conversation-scroll"><div class="conversation-column"><div class="session-thread">${thread}</div>${continuationHtml}${activityDisclosure}</div></div><div class="conversation-composer-dock"><div class="conversation-column">${entryForm("session-entry", "Scrivi al tutor", "Rispondi al tutor…")}</div></div></section>`);
-    updateContinuationDock(snapshot);
+    setView("sessione", sessionShell({
+      title: text(first(snapshot, ["title", "topic"], object(state.bootstrap?.course).title), "Sessione di studio"),
+      subtitle: statusLabel(status),
+      thread,
+      extras: `${continuationHtml}${activityDisclosure}`,
+      actions: `${createCourse}<button class="text-button" type="button" data-route="fonti">Fonti</button>`,
+      placeholder: "Rispondi al tutor…",
+    }));
+    updateContinuation(snapshot);
+  }
+
+  /* One chat shell, one definition. The optimistic turn and the committed
+     session render the same markup, so they cannot drift apart or invent a
+     subtitle that contradicts the real state. */
+  function sessionShell({ title, subtitle, thread, extras = "", actions = "", placeholder }) {
+    return `<section class="chat-session" data-ai-chat-ready="true" aria-labelledby="conversation-heading"><header class="conversation-header"><div><h1 id="conversation-heading">${esc(title)}</h1><p>${esc(subtitle)}</p></div><div class="conversation-header__actions">${actions}</div></header><div class="conversation-scroll"><div class="conversation-column"><div class="session-thread">${thread}</div>${extras}</div></div><div class="conversation-composer-dock"><div class="conversation-column">${entryForm("session-entry", "Scrivi al tutor", placeholder)}</div></div></section>`;
   }
 
   function renderMessage(message, showFineTune = false) {
@@ -1074,7 +1380,7 @@
     const content = first(item, ["text", "content", "detail", "message"], "");
     const citation = object(first(item, ["citation", "provenance", "source"], null));
     if (learner) {
-      return `<article class="thread-message thread-message--learner"><p class="thread-message__role">tu</p><p class="thread-message__text">${escapeAttribute(text(content, "Messaggio senza testo visualizzabile."))}</p></article>`;
+      return `<article class="thread-message thread-message--learner"><p class="thread-message__role">tu</p><p class="thread-message__text">${esc(text(content, "Messaggio senza testo visualizzabile."))}</p></article>`;
     }
     const citations = Object.keys(citation).length ? [citation] : [];
     const followUps = array(first(item, ["follow_ups", "followUps", "suggestions", "actions"], []));
@@ -1092,8 +1398,8 @@
         { label: "Fammi una domanda", prompt: "Fammi una domanda di richiamo attivo su questo punto." },
       ],
     }) : "";
-    const legacyCitation = Object.keys(citation).length ? `<button class="provenance-chip" type="button" data-provenance='${escapeAttribute(JSON.stringify(citation))}'>fonte · ${escapeAttribute(first(citation, ["locator", "title", "revision"], "metadati disponibili"))}</button>` : "";
-    return `<article class="thread-message thread-message--assistant"><p class="thread-message__role">${escapeAttribute(role === "system" ? "sistema" : "tutor")}</p>${answer}${thinkingView}${toolsView}${legacyCitation}${fineTune}</article>`;
+    const legacyCitation = Object.keys(citation).length ? `<button class="provenance-chip" type="button" data-provenance='${esc(JSON.stringify(citation))}'>fonte · ${esc(first(citation, ["locator", "title", "revision"], "metadati disponibili"))}</button>` : "";
+    return `<article class="thread-message thread-message--assistant"><p class="thread-message__role">${esc(role === "system" ? "sistema" : "tutor")}</p>${answer}${thinkingView}${toolsView}${legacyCitation}${fineTune}</article>`;
   }
 
   function renderFonti(payload) {
@@ -1101,10 +1407,16 @@
     const rows = materials.length ? materials.map((item) => renderSource(item)).join("") : emptyState("Nessuna fonte collegata", "Il catalogo del corso non ha restituito materiali disponibili.");
     const contextCards = materials.slice(0, 6).map((item) => {
       const source = object(item);
+      const chunks = first(source, ["chunk_count", "chunks", "fragment_count"], null);
+      // Each card says something about its own source instead of repeating
+      // the same sentence word for word next to itself.
+      const fallback = chunks === null
+        ? "Fonte indicizzata: apri la provenienza per leggerne un estratto."
+        : `Fonte indicizzata in ${chunks} ${Number(chunks) === 1 ? "frammento" : "frammenti"}.`;
       return {
         title: first(source, ["title", "name", "label"], "Fonte senza titolo"),
-        detail: first(source, ["excerpt", "quote", "description"], "Fonte indicizzata. Apri la provenienza per vederne un estratto."),
-        source: first(source, ["locator", "revision", "checksum_sha256", "checksum"], "Provenienza disponibile."),
+        detail: first(source, ["excerpt", "quote", "description"], fallback),
+        source: `revisione ${first(source, ["revision", "revision_id", "version"], "non dichiarata")}`,
       };
     });
     const recordRows = materials.map((item) => {
@@ -1116,11 +1428,16 @@
         chunks: first(source, ["chunk_count", "chunks", "fragment_count"], "—"),
       };
     });
-    const contextView = aiContextGrid({ title: "Contesto selezionato", cards: contextCards });
-    const recordsView = aiRecordsTable({ title: "Registro delle fonti", columns: [{ key: "title", label: "Fonte" }, { key: "revision", label: "Revisione" }, { key: "type", label: "Tipo" }, { key: "chunks", label: "Frammenti" }], records: recordRows });
-    const filterView = aiFilterTable({ title: "Filtra i materiali", columns: [{ key: "title", label: "Fonte" }, { key: "revision", label: "Revisione" }, { key: "type", label: "Tipo" }], records: recordRows });
+    const contextView = aiContextGrid({ title: "Estratti delle fonti", cards: contextCards });
+    // One register, one table. The filter view already contains the records,
+    // so rendering both would nest an identical card inside itself.
+    const registerView = aiFilterTable({
+      title: "Registro delle revisioni",
+      columns: [{ key: "title", label: "Fonte" }, { key: "revision", label: "Revisione" }, { key: "type", label: "Tipo" }, { key: "chunks", label: "Frammenti" }],
+      records: recordRows,
+    });
     const searchView = aiSidebarSearch({ placeholder: "Cerca in Cardine", shortcut: "/" });
-    setView("fonti", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="material-heading"><p class="section-kicker">libreria del corso</p><h1 class="section-title" id="material-heading">Fonti del corso</h1><p class="section-copy">Di ogni fonte vedi titolo, revisione, checksum e un estratto. Il testo completo resta nel repository del corso.</p><div class="ai-fonts-search">${searchView}</div><ul class="source-list">${rows}</ul><div class="ai-fonts-context">${contextView}</div><details class="ai-fonts-records"><summary>Esplora il registro delle revisioni</summary>${recordsView}${filterView}</details></section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">aggiunta fonte</p><h2 class="side-card__title">Aggiungere fonti non è ancora possibile</h2><p class="side-card__copy">Le fonti arrivano dal repository del corso. Aggiungi il file al repository e ricarica la pagina.</p></div></aside></section>`);
+    setView("fonti", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="material-heading"><p class="section-kicker">libreria del corso</p><h1 class="section-title" id="material-heading">Fonti del corso</h1><p class="section-copy">Di ogni fonte vedi titolo, revisione e un estratto. Il testo completo resta nel repository del corso.</p><div class="ai-fonts-search">${searchView}</div><ul class="source-list">${rows}</ul><div class="ai-fonts-context">${contextView}</div><details class="ai-fonts-records"><summary>Registro delle revisioni</summary>${registerView}</details></section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">da sapere</p><h2 class="side-card__title">Le fonti arrivano dal repository</h2><p class="side-card__copy">Aggiungi il file al repository del corso e ricarica: Cardine non modifica i materiali canonici dal browser.</p></div></aside></section>`);
   }
 
   function renderSource(item) {
@@ -1130,7 +1447,10 @@
     const checksum = first(source, ["checksum_sha256", "checksum", "sha256"], "checksum non dichiarato");
     const type = first(source, ["type", "kind", "role"], "materiale");
     const chunks = first(source, ["chunk_count", "chunks", "fragment_count"], "—");
-    return `<li class="source-row"><div><h2 class="source-row__title">${escapeAttribute(title)}</h2><p class="source-row__meta">${escapeAttribute(revision)} · <span class="checksum" title="${escapeAttribute(checksum)}">${escapeAttribute(checksum)}</span></p></div><div class="source-row__value source-row__type">${escapeAttribute(type)}</div><div class="source-row__value">${escapeAttribute(chunks)}</div><div class="source-row__button"><button class="button button--quiet" type="button" data-provenance='${escapeAttribute(JSON.stringify({ title, revision, checksum, type, excerpt: first(source, ["excerpt", "quote"], "") }))}'>Vedi provenienza</button></div></li>`;
+    // Opaque identifiers belong in the provenance sheet, not as the loudest
+    // thing in the row: 64 monospaced characters wrapping mid-token used to
+    // outrank the title of the source itself.
+    return `<li class="source-row"><div><h3 class="source-row__title">${esc(title)}</h3><p class="source-row__meta"><span>Revisione <span class="checksum">${esc(shortId(revision))}</span></span><span>Checksum <span class="checksum">${esc(shortId(checksum))}</span></span></p></div><div class="source-row__value source-row__type">Tipo <b>${esc(type)}</b></div><div class="source-row__value">Frammenti <b>${esc(chunks)}</b></div><div class="source-row__button"><button class="button button--quiet" type="button" data-provenance='${esc(JSON.stringify({ title, revision, checksum, type, excerpt: first(source, ["excerpt", "quote"], "") }))}'>Provenienza</button></div></li>`;
   }
 
   function renderProposte(payload) {
@@ -1146,7 +1466,7 @@
     const approvalView = aiApproval({ title: "Decidi con calma", detail: "La decisione canonica resta nei pulsanti della singola proposta; questo follow-up serve solo a chiedere chiarimenti.", choices: [{ label: "Spiegami cosa cambia", action: "spiega proposta", prompt: "Spiegami cosa cambia nella proposta corrente" }] });
     const pendingCount = proposals.filter((item) => ["pending", "proposed"].includes(text(first(object(item), ["status", "state"], "pending")))).length;
     const recommendationView = pendingCount ? aiRecommendation({ title: "Rivedi una proposta", detail: `${pendingCount} proposte attendono una decisione esplicita.`, prompt: "Aiutami a rivedere una proposta", actionLabel: "Chiedimi un riepilogo" }) : "";
-    setView("proposte", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="proposal-heading"><p class="section-kicker">artifact lifecycle · decisione umana</p><h1 class="section-title" id="proposal-heading">Proposte</h1><p class="section-copy">Generato non significa approvato. Ogni decisione è legata a revisione, sequenza e request ID.</p><div class="card-list">${rows}</div><div class="ai-proposals-diff">${diffView}</div>${approvalView}${recommendationView}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">regola di stato</p><h2 class="side-card__title">Nessun “accetta tutto”</h2><p class="side-card__copy">Le decisioni restano individuali per mantenere provenance e idempotenza verificabili.</p></div></aside></section>`);
+    setView("proposte", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="proposal-heading"><p class="section-kicker">proposte · decisione tua</p><h1 class="section-title" id="proposal-heading">Proposte</h1><p class="section-copy">Generato non significa approvato. Ogni decisione è legata a revisione, sequenza e request ID.</p><div class="card-list">${rows}</div><div class="ai-proposals-diff">${diffView}</div>${approvalView}${recommendationView}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">regola di stato</p><h2 class="side-card__title">Nessun “accetta tutto”</h2><p class="side-card__copy">Le decisioni restano individuali per mantenere provenance e idempotenza verificabili.</p></div></aside></section>`);
   }
 
   function renderProposal(item) {
@@ -1160,14 +1480,14 @@
     const enrollmentStatus = text(first(proposal, ["enrollment_status"], ""), "");
     const enrollment = status === "accepted" && proposal.kind === "flashcard" && revisionId
       ? enrollmentStatus === "not_enrolled"
-        ? `<button class="button button--quiet" type="button" data-command="enroll" data-revision-id="${escapeAttribute(revisionId)}">Attiva ripasso</button>`
+        ? `<button class="button button--quiet" type="button" data-command="enroll" data-revision-id="${esc(revisionId)}">Attiva ripasso</button>`
         : enrollmentStatus && enrollmentStatus !== "enrolled"
-          ? `<p class="card__meta">Ripasso: ${escapeAttribute(enrollmentStatus)}. Puoi riprovare quando il servizio è disponibile.</p>`
+          ? `<p class="card__meta">Ripasso: ${esc(enrollmentStatus)}. Puoi riprovare quando il servizio è disponibile.</p>`
           : enrollmentStatus === "enrolled" ? `<p class="card__meta">Ripasso attivo · la card entrerà nella coda quando sarà dovuta.</p>` : ""
       : "";
-    const actions = pending && revisionId ? `<div class="card__actions"><button class="decision-button" type="button" data-command="artifact" data-decision="accepted" data-revision-id="${escapeAttribute(revisionId)}">Accetta</button><button class="decision-button decision-button--reject" type="button" data-command="artifact" data-decision="rejected" data-revision-id="${escapeAttribute(revisionId)}">Rifiuta</button></div>` : pending ? `<p class="card__meta">Decisione non disponibile: manca l’identificativo opaco della revisione.</p>` : "";
+    const actions = pending && revisionId ? `<div class="card__actions"><button class="decision-button" type="button" data-command="artifact" data-decision="accepted" data-revision-id="${esc(revisionId)}">Accetta</button><button class="decision-button decision-button--reject" type="button" data-command="artifact" data-decision="rejected" data-revision-id="${esc(revisionId)}">Rifiuta</button></div>` : pending ? `<p class="card__meta">Decisione non disponibile: manca l’identificativo della revisione.</p>` : "";
     const enrollmentActions = enrollment ? `<div class="card__actions">${enrollment}</div>` : "";
-    return `<article class="card card--strong"><div class="card__header"><h2 class="card__title">${escapeAttribute(title)}</h2>${pill(status)}</div><p class="card__body">Revisione ${escapeAttribute(revisionId || "non dichiarata")} · ${escapeAttribute(first(proposal, ["session_id"], "sessione non dichiarata"))}</p><p class="card__meta">${escapeAttribute(commitments.length)} impegni di fonte · nessun contenuto atteso esposto</p>${actions}${enrollmentActions}</article>`;
+    return `<article class="card card--strong"><div class="card__header"><h2 class="card__title">${esc(title)}</h2>${pill(status)}</div><p class="card__body">Revisione ${esc(revisionId || "non dichiarata")} · ${esc(first(proposal, ["session_id"], "sessione non dichiarata"))}</p><p class="card__meta">${esc(commitments.length)} impegni di fonte · nessun contenuto atteso esposto</p>${actions}${enrollmentActions}</article>`;
   }
 
   function renderVerifiche(payload) {
@@ -1196,9 +1516,9 @@
       const value = first(choice, ["value", "id", "letter"], String(index));
       const label = first(choice, ["label", "text", "value"], value);
       const checked = selectedOptions.includes(value) ? " checked" : "";
-      return `<li><label class="choice-button ${checked ? "is-selected" : ""}"><input type="${multiple ? "checkbox" : "radio"}" name="assessment-${escapeAttribute(presentationId)}" value="${escapeAttribute(value)}" data-choice="${escapeAttribute(value)}" data-presentation-id="${escapeAttribute(presentationId)}"${checked}><span class="choice-button__letter">${escapeAttribute(first(choice, ["letter"], String.fromCharCode(65 + index)))}</span><span class="choice-button__label">${escapeAttribute(label)}</span></label></li>`;
+      return `<li><label class="choice-button ${checked ? "is-selected" : ""}"><input type="${multiple ? "checkbox" : "radio"}" name="assessment-${esc(presentationId)}" value="${esc(value)}" data-choice="${esc(value)}" data-presentation-id="${esc(presentationId)}"${checked}><span class="choice-button__letter">${esc(first(choice, ["letter"], String.fromCharCode(65 + index)))}</span><span class="choice-button__label">${esc(label)}</span></label></li>`;
     }).join("") : emptyState("Opzioni non disponibili", "Questa domanda non propone risposte a scelta.");
-    const freeControl = free && presentationId && !attemptId ? `<label class="visually-hidden" for="assessment-${escapeAttribute(presentationId)}-response">Risposta libera</label><textarea class="assessment-response" id="assessment-${escapeAttribute(presentationId)}-response" data-free-response="${escapeAttribute(presentationId)}" maxlength="${MAX_ENTRY_CHARS}" rows="4" placeholder="Scrivi la tua risposta…">${escapeAttribute(state.freeAnswers[presentationId] || "")}</textarea>` : "";
+    const freeControl = free && presentationId && !attemptId ? `<label class="visually-hidden" for="assessment-${esc(presentationId)}-response">Risposta libera</label><textarea class="assessment-response" id="assessment-${esc(presentationId)}-response" data-free-response="${esc(presentationId)}" maxlength="${MAX_ENTRY_CHARS}" rows="4" placeholder="Scrivi la tua risposta…">${esc(state.freeAnswers[presentationId] || "")}</textarea>` : "";
     const grade = first(assessment, ["grade", "result", "feedback"], null);
     const gradeHistory = array(first(assessment, ["grade_history"], []));
     const contests = array(first(assessment, ["contests"], []));
@@ -1212,19 +1532,19 @@
       const predecessor = first(record, ["supersedes_grade_id"], "");
       const contest = contests.find((item) => first(object(item), ["grade_id"], "") === gradeId);
       const disposition = contest ? "contestata" : record.active === true ? "attiva" : "superata";
-      const contestMeta = contest ? ` · contestata ${escapeAttribute(first(object(contest), ["contested_at"], ""))}` : "";
-      const predecessorMeta = predecessor ? ` · supera ${escapeAttribute(predecessor)}` : "";
-      return `<li class="assessment-lifecycle__item"><span class="assessment-lifecycle__state">${escapeAttribute(disposition)}</span><span class="assessment-lifecycle__id">${escapeAttribute(gradeId)}</span><span class="assessment-lifecycle__score">${escapeAttribute(scoreText)}</span><span class="assessment-lifecycle__meta">${escapeAttribute(first(record, ["lifecycle", "status"], "stato non dichiarato"))}${predecessorMeta}${contestMeta}</span></li>`;
+      const contestMeta = contest ? ` · contestata ${esc(first(object(contest), ["contested_at"], ""))}` : "";
+      const predecessorMeta = predecessor ? ` · supera ${esc(predecessor)}` : "";
+      return `<li class="assessment-lifecycle__item"><span class="assessment-lifecycle__state">${esc(disposition)}</span><span class="assessment-lifecycle__id">${esc(gradeId)}</span><span class="assessment-lifecycle__score">${esc(scoreText)}</span><span class="assessment-lifecycle__meta">${esc(first(record, ["lifecycle", "status"], "stato non dichiarato"))}${predecessorMeta}${contestMeta}</span></li>`;
     }).join("")}</ol></section>` : "";
     const hasResponse = free ? Boolean(text(state.freeAnswers[presentationId]).trim()) : selectedOptions.length > 0;
     const attemptAction = canAttempt
-      ? `<div class="card__actions"><button class="button" type="button" data-command="assessment-attempt" data-presentation-id="${escapeAttribute(presentationId)}" data-assessment-format="${escapeAttribute(format)}"${hasResponse ? "" : " disabled"}>Registra tentativo</button></div>`
+      ? `<div class="card__actions"><button class="button" type="button" data-command="assessment-attempt" data-presentation-id="${esc(presentationId)}" data-assessment-format="${esc(format)}"${hasResponse ? "" : " disabled"}>Registra tentativo</button></div>`
       : canGrade
-        ? `<div class="card__actions"><button class="button button--quiet" type="button" data-command="assessment-grade" data-attempt-id="${escapeAttribute(attemptId)}">Richiedi valutazione</button></div>`
+        ? `<div class="card__actions"><button class="button button--quiet" type="button" data-command="assessment-grade" data-attempt-id="${esc(attemptId)}">Richiedi valutazione</button></div>`
       : !presentationId && revisionId
-        ? `<div class="card__actions"><button class="button" type="button" data-command="assessment-present" data-revision-id="${escapeAttribute(revisionId)}">Presenta verifica</button></div>`
+        ? `<div class="card__actions"><button class="button" type="button" data-command="assessment-present" data-revision-id="${esc(revisionId)}">Presenta verifica</button></div>`
         : !presentationId ? `<p class="card__meta">Azioni non disponibili: manca l’identificativo della presentazione.</p>` : "";
-    return `<article class="assessment-card"><div class="card__header"><p class="section-kicker">${escapeAttribute(format)}</p>${pill(status)}</div><h2 class="assessment-card__prompt">${escapeAttribute(question)}</h2>${freeControl}<fieldset class="choice-fieldset"${free || !presentationId || attemptId ? " hidden" : ""}><legend class="visually-hidden">Scegli una risposta</legend><ol class="choice-list">${choices}</ol></fieldset>${grade ? `<p class="assessment-feedback">${escapeAttribute(typeof grade === "string" ? grade : first(object(grade), ["message", "summary", "label"], "Esito disponibile."))}</p>` : ""}${lifecycleHistory}${attemptAction}</article>`;
+    return `<article class="assessment-card"><div class="card__header"><p class="section-kicker">${esc(format)}</p>${pill(status)}</div><h2 class="assessment-card__prompt">${esc(question)}</h2>${freeControl}<fieldset class="choice-fieldset"${free || !presentationId || attemptId ? " hidden" : ""}><legend class="visually-hidden">Scegli una risposta</legend><ol class="choice-list">${choices}</ol></fieldset>${grade ? `<p class="assessment-feedback">${esc(typeof grade === "string" ? grade : first(object(grade), ["message", "summary", "label"], "Esito disponibile."))}</p>` : ""}${lifecycleHistory}${attemptAction}</article>`;
   }
 
   function renderEvidenze(payload) {
@@ -1238,18 +1558,18 @@
       const criterion = first(row, ["criterion", "concept", "label", "name"], "Criterio senza nome");
       const detail = first(row, ["dimension", "disposition", "status", "detail"], "evidenza canonica");
       const refs = array(first(row, ["references", "citations", "evidence"], []));
-      return `<article class="evidence-row"><div class="evidence-row__estimate">${escapeAttribute(estimate)}</div><div><h2 class="evidence-row__concept">${escapeAttribute(criterion)}</h2><p class="evidence-row__detail">${escapeAttribute(detail)}</p>${refs.length ? `<div class="reference-list">${refs.map((ref) => `<button class="provenance-chip" type="button" data-provenance='${escapeAttribute(JSON.stringify(ref))}'>${escapeAttribute(first(object(ref), ["locator", "title", "revision"], typeof ref === "string" ? ref : "riferimento"))}</button>`).join("")}</div>` : ""}</div></article>`;
+      return `<article class="evidence-row"><div class="evidence-row__estimate">${esc(estimate)}</div><div><h2 class="evidence-row__concept">${esc(criterion)}</h2><p class="evidence-row__detail">${esc(detail)}</p>${refs.length ? `<div class="reference-list">${refs.map((ref) => `<button class="provenance-chip" type="button" data-provenance='${esc(JSON.stringify(ref))}'>${esc(first(object(ref), ["locator", "title", "revision"], typeof ref === "string" ? ref : "riferimento"))}</button>`).join("")}</div>` : ""}</div></article>`;
     }).join("") : emptyState("Nessuna evidenza proiettata", "Le proiezioni vengono ricostruite dal ledger assessment e dalle fonti disponibili.");
     const insights = evidence.slice(0, 8).map((item) => {
       const row = object(item);
       return {
         title: first(row, ["criterion", "concept", "label", "name"], "Criterio senza nome"),
         detail: first(row, ["detail", "dimension", "disposition", "status"], "Evidenza canonica disponibile."),
-        source: first(row, ["through_sequence", "sequence", "projection"], throughSequence || "sequenza non dichiarata"),
+        source: "registro delle verifiche",
       };
     });
     const insightView = aiInsightDeck({ title: "Evidenze da tenere a mente", insights });
-    setView("evidenze", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="evidence-heading"><p class="section-kicker">proiezione replayabile</p><h1 class="section-title" id="evidence-heading">Evidenze per criterio</h1><p class="evidence-note">Queste sono stime di evidenza e riferimenti, non una percentuale generica di padronanza.</p>${insightView}${rows}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">integrità</p><h2 class="side-card__title">Sequenza ${escapeAttribute(throughSequence || "—")}</h2><p class="side-card__copy">Le evidenze sono lette al high-water mark restituito dal servizio.</p></div></aside></section>`);
+    setView("evidenze", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="evidence-heading"><p class="section-kicker">evidenze registrate</p><h1 class="section-title" id="evidence-heading">Evidenze per criterio</h1><p class="evidence-note">Queste sono stime di evidenza e riferimenti, non una percentuale generica di padronanza.</p>${insightView}${rows}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">integrità</p><h2 class="side-card__title">Evidenze allineate</h2><p class="side-card__copy">Le evidenze mostrate sono quelle registrate fino all’ultimo aggiornamento del corso.</p></div></aside></section>`);
   }
 
   function renderRipasso(payload) {
@@ -1271,22 +1591,22 @@
     const front = first(firstCard, ["front", "question", "prompt"], "Contenuto della card non disponibile.");
     const back = first(firstCard, ["back", "answer", "response"], "Risposta non disponibile fino alla rivelazione.");
     const citation = first(firstCard, ["citation", "provenance", "source"], null);
-    const reviewActions = revealed && revisionId ? `<div class="rating-list" style="margin-top:22px">${[["again", "Ancora"], ["hard", "Difficile"], ["good", "Bene"], ["easy", "Facile"]].map(([value, label]) => `<button class="rating-button" type="button" data-command="review" data-revision-id="${escapeAttribute(revisionId)}" data-rating="${value}">${label}<span class="rating-button__next">registra decisione</span></button>`).join("")}</div>` : revealed ? emptyState("Decisione non disponibile", "Manca l’identificativo opaco della revisione.", "unavailable") : "";
-    setView("ripasso", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="review-heading"><p class="section-kicker">ripasso · coda del giorno</p><h1 class="section-title" id="review-heading">Ripasso</h1><div class="review-card"><div class="review-progress"><span>${escapeAttribute(position)}</span><span class="review-progress__bar">${ticks}</span></div><div class="review-card__front">${escapeAttribute(front)}</div>${revealed ? `<div class="review-card__back">${escapeAttribute(back)}</div>` : revisionId ? `<button class="button" type="button" data-reveal-review="${escapeAttribute(revisionId)}">Mostra risposta</button>` : emptyState("Card senza identificativo", "La rivelazione è sospesa finché il servizio non restituisce la revisione.", "unavailable")}${citation ? `<button class="provenance-chip" type="button" data-provenance='${escapeAttribute(JSON.stringify(citation))}'>fonte · ${escapeAttribute(first(object(citation), ["locator", "title"], typeof citation === "string" ? citation : "metadati"))}</button>` : ""}${reviewActions}</div></section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">stato</p><h2 class="side-card__title">${escapeAttribute(text(firstCard.status, "due"))}</h2><p class="side-card__copy">La stessa coda viene usata su desktop e mobile. Il browser non calcola la prossima data.</p></div></aside></section>`);
+    const reviewActions = revealed && revisionId ? `<div class="rating-list">${[["again", "Ancora"], ["hard", "Difficile"], ["good", "Bene"], ["easy", "Facile"]].map(([value, label]) => `<button class="rating-button" type="button" data-command="review" data-revision-id="${esc(revisionId)}" data-rating="${value}">${label}<span class="rating-button__next">registra decisione</span></button>`).join("")}</div>` : revealed ? emptyState("Decisione non disponibile", "Manca l’identificativo della revisione.", "unavailable") : "";
+    setView("ripasso", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="review-heading"><p class="section-kicker">ripasso · coda del giorno</p><h1 class="section-title" id="review-heading">Ripasso</h1><div class="review-card"><div class="review-progress"><span>${esc(position)}</span><span class="review-progress__bar">${ticks}</span></div><div class="review-card__front">${esc(front)}</div>${revealed ? `<div class="review-card__back">${esc(back)}</div>` : revisionId ? `<button class="button" type="button" data-reveal-review="${esc(revisionId)}">Mostra risposta</button>` : emptyState("Card senza identificativo", "La rivelazione è sospesa finché il servizio non restituisce la revisione.", "unavailable")}${citation ? `<button class="provenance-chip" type="button" data-provenance='${esc(JSON.stringify(citation))}'>fonte · ${esc(first(object(citation), ["locator", "title"], typeof citation === "string" ? citation : "metadati"))}</button>` : ""}${reviewActions}</div></section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">stato</p><h2 class="side-card__title">${esc(text(firstCard.status, "due"))}</h2><p class="side-card__copy">La stessa coda viene usata su desktop e mobile. Il browser non calcola la prossima data.</p></div></aside></section>`);
   }
 
   function renderPlan(payload) {
     const plan = object(payload);
     const readiness = object(first(plan, ["readiness"], plan));
     if (text(plan.status, "ready") === "unavailable") {
-      setView("piano", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="plan-heading"><p class="section-kicker">progresso · piano</p><h1 class="section-title" id="plan-heading">Piano verso l'esame</h1>${emptyState("Piano non disponibile", first(plan, ["message"], "Non esiste un owner canonico per questa composizione."), "unavailable")}</section><aside class="section-grid__side">${emptyState("Nessuna degradazione globale", "Le superfici disponibili restano intatte.")}</aside></section>`);
+      setView("piano", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="plan-heading"><p class="section-kicker">progresso · piano</p><h1 class="section-title" id="plan-heading">Piano verso l'esame</h1>${emptyState("Piano non disponibile", first(plan, ["message"], "Non esiste un owner canonico per questa composizione."), "unavailable")}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">stato</p><h2 class="side-card__title">Il resto del corso funziona</h2><p class="side-card__copy">Il piano richiede un owner canonico; le altre sezioni restano disponibili.</p></div></aside></section>`);
       return;
     }
     const exam = object(first(readiness, ["exam"], plan));
     const dateValue = first(exam, ["date", "exam_date"], first(readiness, ["exam_date"], "Data non configurata"));
     const days = first(exam, ["days_remaining"], first(readiness, ["days_remaining"], null));
-    const goals = array(readiness.learning_goals).map((item) => `${escapeAttribute(text(first(object(item), ["value"], item)))} ${sourceRef(item)}`).join("<br>") || "Nessun obiettivo configurato";
-    const styles = array(readiness.assessment_styles).map((item) => `${escapeAttribute(text(first(object(item), ["value"], item)))} ${sourceRef(item)}`).join("<br>") || "Nessuno stile configurato";
+    const goals = array(readiness.learning_goals).map((item) => `${esc(text(first(object(item), ["value"], item)))} ${sourceRef(item)}`).join("<br>") || "Nessun obiettivo configurato";
+    const styles = array(readiness.assessment_styles).map((item) => `${esc(text(first(object(item), ["value"], item)))} ${sourceRef(item)}`).join("<br>") || "Nessuno stile configurato";
     const constraints = array(readiness.constraints);
     const blueprints = array(readiness.blueprints);
     const counts = array(readiness.artifact_counts);
@@ -1294,43 +1614,43 @@
     const recall = object(readiness.recall);
     const constraintRows = constraints.map((item) => {
       const row = object(item);
-      return `<li><strong>${escapeAttribute(text(row.kind, "vincolo"))}</strong>: ${escapeAttribute(text(row.value, "non dichiarato"))} ${pill(text(row.status, "active"))} ${sourceRef(row)}</li>`;
-    }).join("") || "<li>Nessun vincolo learner attivo.</li>";
+      return `<li><strong>${esc(text(row.kind, "vincolo"))}</strong>: ${esc(text(row.value, "non dichiarato"))} ${pill(text(row.status, "active"))} ${sourceRef(row)}</li>`;
+    }).join("") || "<li>Non hai vincoli attivi.</li>";
     const blueprintRows = blueprints.map((item) => {
       const row = object(item);
       const observations = [...array(row.observed_topics), ...array(row.observed_formats)].map((value) => text(first(object(value), ["value"], ""))).filter(Boolean);
       const limitations = array(row.limitations).map((value) => text(value)).filter(Boolean);
-      return `<li><strong>Blueprint osservativo</strong> · campione ${escapeAttribute(text(row.sample_size, "—"))}${observations.length ? ` · ${escapeAttribute(observations.join(", "))}` : ""}${limitations.length ? ` · limiti: ${escapeAttribute(limitations.join(", "))}` : ""} ${sourceRef(row)}</li>`;
-    }).join("") || "<li>Nessuna osservazione blueprint accettata.</li>";
+      return `<li><strong>Osservazione</strong> · campione ${esc(text(row.sample_size, "—"))}${observations.length ? ` · ${esc(observations.join(", "))}` : ""}${limitations.length ? ` · limiti: ${esc(limitations.join(", "))}` : ""} ${sourceRef(row)}</li>`;
+    }).join("") || "<li>Nessuna osservazione registrata sul formato d’esame.</li>";
     const countRows = counts.map((item) => {
       const row = object(item);
-      return `<li>${escapeAttribute(text(row.kind, "artefatto"))}: ${escapeAttribute(text(row.pending, "0"))} proposte · ${escapeAttribute(text(row.accepted, "0"))} accettati ${sourceRef(row)}</li>`;
-    }).join("") || "<li>Nessun artefatto canonico.</li>";
-    const evidenceCopy = evidence.length ? `${evidence.length} righe di evidenza con riferimenti canonici. ${sourceRef(evidence[0])}` : "Nessuna evidenza assessment disponibile.";
-    const recallCopy = recall.available ? `${escapeAttribute(text(recall.due_count, "0"))} revisioni dovute.` : "Recall non configurato.";
+      return `<li>${esc(text(row.kind, "artefatto"))}: ${esc(text(row.pending, "0"))} proposte · ${esc(text(row.accepted, "0"))} accettati ${sourceRef(row)}</li>`;
+    }).join("") || "<li>Nessun materiale generato dal corso.</li>";
+    const evidenceCopy = evidence.length ? `${evidence.length} evidenze registrate con i relativi riferimenti. ${sourceRef(evidence[0])}` : "Nessuna evidenza registrata dalle verifiche.";
+    const recallCopy = recall.available ? `${esc(text(recall.due_count, "0"))} revisioni dovute.` : "Il ripasso programmato non è configurato.";
     const examSources = object(exam.sources);
     const planTasks = [
-      ...array(readiness.learning_goals).slice(0, 8).map((item) => ({ label: `Obiettivo: ${text(first(object(item), ["value", "label"], item), "non dichiarato")}`, detail: "Obiettivo learner dichiarato.", status: "open" })),
-      ...constraints.slice(0, 8).map((item) => ({ label: `Vincolo: ${text(first(object(item), ["kind", "value"], item), "non dichiarato")}`, detail: "Vincolo learner restituito dal contesto.", status: text(first(object(item), ["status", "state"], "active"), "active") })),
+      ...array(readiness.learning_goals).slice(0, 8).map((item) => ({ label: `Obiettivo: ${text(first(object(item), ["value", "label"], item), "non dichiarato")}`, detail: "Obiettivo che hai dichiarato.", status: "open", status_label: "attivo" })),
+      ...constraints.slice(0, 8).map((item) => ({ label: `Vincolo: ${text(first(object(item), ["kind", "value"], item), "non dichiarato")}`, detail: "Vincolo restituito dal tuo contesto di studio.", status: text(first(object(item), ["status", "state"], "active"), "active"), status_label: statusLabel(text(first(object(item), ["status", "state"], "active"), "active")) })),
     ];
-    if (!planTasks.length) planTasks.push({ label: "Nessun lavoro pianificato", detail: "Il servizio non ha restituito obiettivi o vincoli attivi.", status: "clear" });
+    if (!planTasks.length) planTasks.push({ label: "Nessun lavoro pianificato", detail: "Non ci sono obiettivi o vincoli attivi per questo corso.", status: "clear", status_label: "in pari" });
     const planInsights = evidence.slice(0, 6).map((item) => {
       const row = object(item);
-      return { title: first(row, ["criterion", "concept", "label", "name"], "Evidenza"), detail: first(row, ["detail", "dimension", "disposition", "status"], "Evidenza canonica disponibile."), source: first(row, ["through_sequence", "sequence"], "sequenza non dichiarata") };
+      return { title: first(row, ["criterion", "concept", "label", "name"], "Evidenza"), detail: first(row, ["detail", "dimension", "disposition", "status"], "Evidenza canonica disponibile."), source: "registro delle verifiche" };
     });
-    if (!planInsights.length) planInsights.push({ title: "Nessuna evidenza", detail: "Il servizio non ha restituito righe assessment per questa proiezione.", source: "stato dichiarato" });
+    if (!planInsights.length) planInsights.push({ title: "Nessuna evidenza", detail: "Il corso non ha ancora prodotto evidenze da mostrare qui.", source: "stato dichiarato" });
     const taskView = aiTaskList({ title: "Lavoro dichiarato", tasks: planTasks });
-    const insightView = aiInsightDeck({ title: "Segnali per l'esame", insights: planInsights });
+    const insightView = aiInsightDeck({ title: "Che cosa sappiamo finora", insights: planInsights });
     const recommendationView = days !== null && days !== undefined
       ? aiRecommendation({ title: "Scegli il prossimo passo", detail: `Il servizio riporta ${days} giorni di calendario configurati.`, prompt: "Aiutami a scegliere un prossimo passo dal piano", actionLabel: "Chiedimi una direzione" })
       : "";
-    setView("piano", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="plan-heading"><p class="section-kicker">fatti attribuiti · nessuna agenda</p><h1 class="section-title" id="plan-heading">Piano verso l'esame</h1><div class="fact-grid"><div class="side-card"><p class="section-kicker">data configurata</p><h2 class="side-card__title">${escapeAttribute(text(dateValue, "Data non configurata"))}</h2><p class="side-card__copy">As of: ${escapeAttribute(text(first(readiness, ["as_of_date"], "—")))}</p>${sourceRef(examSources.configured_date)}</div><div class="side-card"><p class="section-kicker">giorni di calendario</p><h2 class="side-card__title">${escapeAttribute(days === null || days === undefined ? "non disponibile" : String(days))}</h2><p class="side-card__copy">Valore derivato dal servizio da data, conflitti e clock UTC.</p>${sourceRef(object(examSources.days_remaining).as_of_date)} ${sourceRef(object(examSources.days_remaining).configured_date)} ${sourceRef(object(examSources.days_remaining).conflict_state)}</div></div>${taskView}${insightView}${recommendationView}<p class="section-copy"><strong>Obiettivi:</strong><br>${goals}<br><strong>Stili di verifica:</strong><br>${styles}</p><h2 class="section-subtitle">Vincoli learner</h2><ul class="plain-list">${constraintRows}</ul><h2 class="section-subtitle">Blueprint e limiti</h2><ul class="plain-list">${blueprintRows}</ul><h2 class="section-subtitle">Artefatti</h2><ul class="plain-list">${countRows}</ul><p class="section-copy">${evidenceCopy} ${escapeAttribute(recallCopy)} ${sourceRef(recall)}</p></section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">limite esplicito</p><h2 class="side-card__title">Nessun punteggio o priorità.</h2><p class="side-card__copy">Questa vista riporta osservazioni, vincoli e lavoro aperto; non genera agenda, copertura, retention o readiness score.</p></div></aside></section>`);
+    setView("piano", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="plan-heading"><p class="section-kicker">fatti attribuiti · nessuna agenda</p><h1 class="section-title" id="plan-heading">Piano verso l'esame</h1><div class="fact-grid"><div class="side-card"><p class="section-kicker">data configurata</p><h2 class="side-card__title">${esc(text(dateValue, "Data non configurata"))}</h2><p class="side-card__copy">Aggiornata al ${esc(text(first(readiness, ["as_of_date"], "—")))}</p>${sourceRef(examSources.configured_date)}</div><div class="side-card"><p class="section-kicker">giorni di calendario</p><h2 class="side-card__title">${esc(days === null || days === undefined ? "non disponibile" : String(days))}</h2><p class="side-card__copy">Valore derivato dal servizio da data, conflitti e clock UTC.</p>${sourceRefs(object(examSources.days_remaining).as_of_date, object(examSources.days_remaining).configured_date, object(examSources.days_remaining).conflict_state)}</div></div>${taskView}${insightView}${recommendationView}<p class="section-copy"><strong>Obiettivi:</strong><br>${goals}<br><strong>Stili di verifica:</strong><br>${styles}</p><h2 class="section-subtitle">I tuoi vincoli</h2><ul class="plain-list">${constraintRows}</ul><h2 class="section-subtitle">Osservazioni sull’esame</h2><ul class="plain-list">${blueprintRows}</ul><h2 class="section-subtitle">Materiali generati</h2><ul class="plain-list">${countRows}</ul><p class="section-copy">${evidenceCopy} ${recallCopy} ${sourceRef(recall)}</p></section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">limite esplicito</p><h2 class="side-card__title">Nessun punteggio o priorità.</h2><p class="side-card__copy">Questa vista riporta osservazioni, vincoli e lavoro aperto; non genera agenda, copertura, retention o readiness score.</p></div></aside></section>`);
   }
 
   function renderConflitti(payload) {
     const conflicts = array(payload);
     const rows = conflicts.length ? conflicts.map(renderConflict).join("") : emptyState("Nessun conflitto di contesto", "Non ci sono divergenze da risolvere fra le tue fonti.");
-    setView("conflitti", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="conflict-heading"><p class="section-kicker">learner context · risoluzione esplicita</p><h1 class="section-title" id="conflict-heading">Conflitti di contesto</h1><p class="section-copy">Qui compaiono solo divergenze del contesto dello studente. Un disaccordo tra fonti resta nella provenienza e non viene risolto da questa schermata.</p><div>${rows}</div></section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">regola</p><h2 class="side-card__title">Nessuna sovrascrittura per recenza.</h2><p class="side-card__copy">La scelta viene inviata al servizio StudyContext con sequenza attesa.</p></div></aside></section>`);
+    setView("conflitti", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="conflict-heading"><p class="section-kicker">contesto di studio · risoluzione esplicita</p><h1 class="section-title" id="conflict-heading">Conflitti di contesto</h1><p class="section-copy">Qui compaiono solo divergenze del contesto dello studente. Un disaccordo tra fonti resta nella provenienza e non viene risolto da questa schermata.</p><div>${rows}</div></section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">regola</p><h2 class="side-card__title">Nessuna sovrascrittura per recenza.</h2><p class="side-card__copy">La scelta viene registrata nel tuo contesto di studio, senza sovrascrivere nulla in automatico.</p></div></aside></section>`);
   }
 
   function renderConflict(item) {
@@ -1340,7 +1660,7 @@
     const status = text(first(conflict, ["status", "state"], "conflicted"), "conflicted");
     const options = array(first(conflict, ["candidates", "options", "choices", "values"], []));
     const sourceConflict = kind.includes("source") || kind.includes("evidence");
-    return `<article class="conflict-card" data-kind="${sourceConflict ? "source" : "context"}"><div class="conflict-card__heading"><h2 class="conflict-card__title">${escapeAttribute(title)}</h2>${pill(status)}</div>${sourceConflict ? `<p class="conflict-readonly">Disaccordo tra fonti: sola lettura. Serve un contratto di risoluzione della fonte separato.</p>` : options.length ? `<div class="conflict-card__values">${options.map((option) => { const value = object(option); const statementId = first(value, ["statement_id"], ""); const displayValue = first(value, ["value", "label"], "valore non dichiarato"); return statementId ? `<button class="conflict-option" type="button" data-command="context" data-conflict-kind="${escapeAttribute(first(conflict, ["kind", "type"], "context"))}" data-statement-id="${escapeAttribute(statementId)}"><span class="conflict-option__value">${escapeAttribute(displayValue)}</span><span class="conflict-option__event">scegli StatementId canonico</span></button>` : `<p class="conflict-readonly">Scelta non disponibile: manca lo StatementId canonico.</p>`; }).join("")}</div>` : `<p class="conflict-readonly">Nessuna opzione di risoluzione disponibile.</p>`}</article>`;
+    return `<article class="conflict-card" data-kind="${sourceConflict ? "source" : "context"}"><div class="conflict-card__heading"><h2 class="conflict-card__title">${esc(title)}</h2>${pill(status)}</div>${sourceConflict ? `<p class="conflict-readonly">Disaccordo tra fonti: sola lettura. Serve un contratto di risoluzione della fonte separato.</p>` : options.length ? `<div class="conflict-card__values">${options.map((option) => { const value = object(option); const statementId = first(value, ["statement_id"], ""); const displayValue = first(value, ["value", "label"], "valore non dichiarato"); return statementId ? `<button class="conflict-option" type="button" data-command="context" data-conflict-kind="${esc(first(conflict, ["kind", "type"], "context"))}" data-statement-id="${esc(statementId)}"><span class="conflict-option__value">${esc(displayValue)}</span><span class="conflict-option__event">scegli questo valore</span></button>` : `<p class="conflict-readonly">Scelta non disponibile: il servizio non ha fornito un identificativo per questo valore.</p>`; }).join("")}</div>` : `<p class="conflict-readonly">Nessuna opzione di risoluzione disponibile.</p>`}</article>`;
   }
 
   async function submitTurn(form, continuation = false) {
@@ -1386,8 +1706,6 @@
       if (isTutorTurn) state.pendingTurn = null;
       if (endpoint === "/api/v1/session/turns" || endpoint.includes("/session/continuations/")) {
         state.continuationDraft = "";
-        const dockEntry = $("#continuation-dock-entry");
-        if (dockEntry) { dockEntry.value = ""; resizeComposer(dockEntry); }
       }
       await refreshBootstrapCounts();
       const originIsStillActive = commandNavigationVersion === state.navigationVersion;
@@ -1412,34 +1730,41 @@
       if (error.authExpired) return;
       if (commandNavigationVersion === state.navigationVersion) {
         if (isTutorTurn || error.status === 409) await refreshBootstrapCounts();
-        setStatus(
-          error.status === 409 ? "stale" : "error",
-          error.status === 409
-            ? "Stato aggiornato: puoi riprovare"
-            : isTutorTurn && MODEL_ERROR_MESSAGES[error.code]
-              ? MODEL_ERROR_MESSAGES[error.code]
-              : error.status === 503 && isTutorTurn
-                ? "Il modello non ha prodotto una risposta verificata: controlla Impostazioni"
-              : "Comando non registrato"
-        );
-        showCommandError(error, form);
+        // One diagnosis, phrased once. The live region and the banner say
+        // the same thing, so a screen reader and a screen never disagree.
+        const conflict = error.status === 409;
+        const title = conflict ? "Lo stato è cambiato" : "Il messaggio non è stato inviato";
+        const detail = conflict
+          ? "Ho aggiornato la sezione con lo stato corrente: puoi rieseguire lo stesso comando."
+          : (isTutorTurn && MODEL_ERROR_MESSAGES[error.code])
+            || (error.status === 503 && isTutorTurn
+              ? "Il tutor non ha prodotto una risposta verificata. Controlla la chiave del modello in Impostazioni."
+              : text(error.message, "Il servizio locale non ha risposto."));
+        setStatus(conflict ? "stale" : "error", `${title}. ${detail}`, { alert: false });
+        showCommandError(error, { title, detail });
       }
     }
     setBusy(false);
   }
 
   function renderOptimisticTurn(content) {
-    const safeContent = escapeAttribute(content);
+    const safeContent = esc(content);
     const outgoing = `<article class="thread-message thread-message--learner" data-optimistic-turn><p class="thread-message__role">tu</p><p class="thread-message__text">${safeContent}</p></article>`;
     const pending = `<article class="thread-message thread-message--assistant thread-message--pending" data-optimistic-turn><p class="thread-message__role">tutor</p><p class="thread-message__text">Sto preparando una risposta basata sulle fonti del corso…</p></article>`;
     const thread = $(".session-thread", root);
     if (thread) {
       thread.insertAdjacentHTML("beforeend", outgoing + pending);
-      thread.lastElementChild?.scrollIntoView({ block: "end", behavior: "smooth" });
+      const scroller = $(".conversation-scroll", root);
+      if (scroller) scroller.scrollTop = scroller.scrollHeight;
       return;
     }
-    const courseTitle = text(object(state.bootstrap?.course).title, "Sessione di studio");
-    setView("sessione", `<section class="chat-session" data-ai-chat-ready="true" aria-labelledby="conversation-heading"><header class="conversation-header"><div><h1 id="conversation-heading">${escapeAttribute(courseTitle)}</h1><p>Messaggio inviato</p></div></header><div class="conversation-scroll"><div class="conversation-column"><div class="session-thread">${outgoing}${pending}</div></div></div><div class="conversation-composer-dock"><div class="conversation-column">${entryForm("session-entry", "Scrivi al tutor", "Prepara il prossimo messaggio…")}</div></div></section>`);
+    setView("sessione", sessionShell({
+      title: text(object(state.bootstrap?.course).title, "Sessione di studio"),
+      subtitle: statusLabel("working"),
+      thread: outgoing + pending,
+      placeholder: "Prepara il prossimo messaggio…",
+      actions: `<button class="text-button" type="button" data-route="fonti">Fonti</button>`,
+    }));
   }
 
   function removeOptimisticTurn() {
@@ -1448,7 +1773,7 @@
 
   function restoreFailedTurnDraft(content, originForm) {
     const origin = originForm && document.contains(originForm) ? $("textarea", originForm) : null;
-    const textarea = origin || $("#session-entry-text", root) || $("#continuation-dock-entry");
+    const textarea = origin || $("#session-entry-text", root) || $("#entry", root);
     if (!textarea || text(textarea.value).trim()) return;
     textarea.value = content;
     state.continuationDraft = content;
@@ -1521,35 +1846,48 @@
     executeCommand("/api/v1/session/turns", { content: prompt }, null, "sessione").catch((error) => setStatus("error", error.message));
   }
 
-  function showCommandError(error, form) {
-    if (!form) return;
-    const previous = $(".command-error", form);
-    if (previous) previous.remove();
-    const message = document.createElement("p");
-    message.className = "field-note command-error";
-    message.setAttribute("role", "alert");
-    message.textContent = error.status === 409 ? "La sequenza è cambiata. Ho aggiornato lo stato: puoi riprovare lo stesso comando." : error.message;
-    form.append(message);
-    if (state.lastCommand && !$("[data-retry-command]", form)) {
-      const retry = document.createElement("button");
-      retry.className = "text-button";
-      retry.type = "button";
-      retry.dataset.retryCommand = "true";
-      retry.textContent = "Riprova esattamente";
-      form.append(retry);
+  /* A failed command reports into the shell's alert region, which is
+     outside #view-root and therefore still in the document after the
+     refresh that a failure triggers. */
+  function showCommandError(error, copy = null) {
+    const conflict = error && error.status === 409;
+    const command = state.lastCommand;
+    const actions = command
+      ? [{
+        label: "Riprova",
+        run: () => executeCommand(command.endpoint, command.payload, null, command.refreshRoute),
+      }]
+      : [];
+    // A model failure is fixed in Settings, so offer the way there.
+    if (!conflict && error && MODEL_ERROR_MESSAGES[error.code]) {
+      actions.push({ label: "Apri Impostazioni", run: () => loadRoute("impostazioni") });
     }
+    showAlert({
+      tone: conflict ? "warning" : "danger",
+      title: copy?.title || (conflict ? "Lo stato è cambiato" : "Il comando non è stato registrato"),
+      detail: copy?.detail || (conflict
+        ? "Ho aggiornato la sezione con lo stato corrente: puoi rieseguire lo stesso comando."
+        : text(error && error.message, "Il servizio locale non ha risposto.")),
+      actions,
+    });
   }
 
   function bindDynamicControls() {
+    // The browser's own validation bubble is never the product's error UI.
+    $$("form", root).forEach((form) => { form.noValidate = true; });
     $$('[data-entry-form]').forEach((form) => {
       if (form.dataset.bound === "true") return;
       form.dataset.bound = "true";
-      form.addEventListener("submit", (event) => { event.preventDefault(); submitTurn(form, form.id === "continuation-entry").catch((error) => showCommandError(error, form)); });
+      form.addEventListener("submit", (event) => { event.preventDefault(); submitTurn(form, form.id === "continuation-entry").catch((error) => showCommandError(error)); });
       const textarea = $("textarea", form);
       if (textarea) {
-        if (form.dataset.dockForm !== undefined) textarea.value = state.continuationDraft;
+        // An unsent draft belongs to the conversation, so it comes back with
+        // it. A reply to a specific continuation does not carry it over.
+        if (form.id !== "continuation-entry" && !text(textarea.value).trim() && state.continuationDraft) {
+          textarea.value = state.continuationDraft;
+        }
         textarea.addEventListener("input", () => {
-          if (form.dataset.dockForm !== undefined || form.id === "entry-form" || form.id === "hero-entry" || form.id === "session-entry" || form.id === "continuation-entry") state.continuationDraft = textarea.value;
+          if (form.id !== "continuation-entry") state.continuationDraft = textarea.value;
           resizeComposer(textarea);
         });
         textarea.addEventListener("keydown", (event) => submitComposerFromKeyboard(event, form));
@@ -1581,23 +1919,39 @@
     $$('[data-command]').forEach((control) => control.addEventListener("click", () => commandFromControl(control)));
     $$('[data-provenance]').forEach((control) => control.addEventListener("click", () => openProvenance(control.dataset.provenance)));
     $$('[data-retry-route]').forEach((control) => control.addEventListener("click", () => loadRoute(control.dataset.retryRoute)));
-    $$('[data-retry-command]').forEach((control) => control.addEventListener("click", () => { if (state.lastCommand) executeCommand(state.lastCommand.endpoint, state.lastCommand.payload, control.parentElement, state.lastCommand.refreshRoute); }));
   }
 
+  /* The floor and the ceiling come from the stylesheet, so the box can
+     never disagree with its own CSS and clip text the reader has typed. */
   function resizeComposer(textarea) {
+    if (!textarea || !textarea.isConnected) return;
+    const styles = window.getComputedStyle(textarea);
+    const floor = parseFloat(styles.minHeight) || 0;
+    const ceiling = parseFloat(styles.maxHeight) || Infinity;
     textarea.style.height = "auto";
-    const height = Math.min(Math.max(textarea.scrollHeight, 46), 180);
+    const content = textarea.scrollHeight;
+    const height = Math.min(Math.max(content, floor), ceiling);
     textarea.style.height = `${height}px`;
-    textarea.style.overflowY = textarea.scrollHeight > 180 ? "auto" : "hidden";
+    textarea.style.overflowY = content > ceiling ? "auto" : "hidden";
     const form = textarea.closest("[data-entry-form]");
     if (form) syncComposerState(form, textarea);
   }
 
   function syncComposerState(form, textarea) {
-    const hasValue = Boolean(text(textarea.value).trim());
+    const value = text(textarea.value);
+    const hasValue = Boolean(value.trim());
     form.classList.toggle("has-value", hasValue);
     const send = $(".composer__send", form);
     if (send) send.disabled = Boolean(state.pendingTurn) || state.loading || !hasValue;
+    const counter = $(".char-counter", form);
+    if (counter) {
+      const remaining = MAX_ENTRY_CHARS - value.length;
+      // Silent until the limit is close enough to matter.
+      const near = remaining <= 400;
+      counter.hidden = !near;
+      counter.textContent = near ? `${remaining} caratteri rimasti` : "";
+      counter.dataset.state = remaining < 0 ? "over" : "near";
+    }
   }
 
   function submitComposerFromKeyboard(event, form) {
@@ -1644,54 +1998,70 @@
     const quoteText = text(quote, "");
     const multilineOrCode = quoteText.includes("\n") || ["code", "source", "snippet"].includes(text(first(source, ["kind", "type", "role"], "")).toLowerCase());
     const excerpt = quoteText
-      ? multilineOrCode ? aiCodeBlock({ title, code: quoteText, language: first(source, ["language", "lang"], "testo"), caption: "Estratto della fonte selezionata." }) : `<p class="drawer__quote">${escapeAttribute(quoteText)}</p>`
+      ? multilineOrCode ? aiCodeBlock({ title, code: quoteText, language: first(source, ["language", "lang"], "testo"), caption: "Estratto della fonte selezionata." }) : `<p class="sheet__quote">${esc(quoteText)}</p>`
       : `<p class="empty-state">Nessun estratto disponibile.</p>`;
-    $("#drawer-content").innerHTML = `<div class="drawer__body"><h3 class="state-title">${escapeAttribute(title)}</h3>${excerpt}<div class="provenance-meta">${fields.map(([key, value]) => `<div class="provenance-meta__row"><span class="provenance-meta__key">${escapeAttribute(key)}</span><span class="provenance-meta__value">${escapeAttribute(value)}</span></div>`).join("")}</div></div>`;
+    patch($("#drawer-content"), `<div class="sheet__body"><h3 class="state-title">${esc(title)}</h3>${excerpt}<div class="provenance-meta">${fields.map(([key, value]) => `<div class="provenance-meta__row"><span class="provenance-meta__key">${esc(key)}</span><span class="provenance-meta__value">${esc(value)}</span></div>`).join("")}</div></div>`);
     $("#provenance-drawer").showModal();
   }
 
   function commandSearchEntries() {
-    const routes = Object.entries(ROUTES).filter(([, config]) => !config.private || state.auth.authenticated).map(([route, config]) => ({
-      label: config.heading,
-      description: `Apri ${config.label}`,
-      keywords: [config.label, config.heading, route],
-      route,
-    }));
+    const routes = Object.entries(ROUTES)
+      .filter(([route, config]) => route !== "login" && (!config.private || state.auth.authenticated))
+      .map(([route, config]) => ({
+        group: "Vai a",
+        icon: config.icon,
+        label: config.label,
+        description: ROUTE_DESCRIPTIONS[route] || "",
+        keywords: [config.label, config.heading, route],
+        route,
+      }));
     const prompts = [
       {
+        group: "Chiedi al tutor",
+        icon: "icon--chat-circle",
         label: "Spiegami un concetto",
-        description: "Prepara una richiesta chiara nel composer.",
+        description: "Dalle basi, usando solo le fonti del corso",
         keywords: ["chat", "spiega", "studio"],
         prompt: "Spiegami un concetto dalle fonti disponibili, partendo dalle basi.",
       },
       {
+        group: "Chiedi al tutor",
+        icon: "icon--exam",
         label: "Interrogami",
-        description: "Prepara una domanda di richiamo attivo.",
+        description: "Una domanda di richiamo attivo alla volta",
         keywords: ["quiz", "verifica", "domanda"],
         prompt: "Interrogami sulle fonti disponibili, una domanda alla volta.",
       },
       {
+        group: "Chiedi al tutor",
+        icon: "icon--chart-line-up",
         label: "Crea un collegamento clinico",
-        description: "Prepara un follow-up orientato al ragionamento.",
+        description: "Collega l’argomento a un caso e fatti ragionare",
         keywords: ["clinica", "caso", "applicazione"],
         prompt: "Collega questo argomento a un caso clinico e fammi ragionare.",
       },
     ];
     if (state.auth.authenticated) {
       prompts.push({
+        group: "Azioni",
+        icon: "icon--plus",
         label: "Crea un corso",
-        description: "Apri una conferma chat per un nuovo spazio di studio.",
+        description: "Apre una conferma prima di creare qualsiasi cosa",
         keywords: ["corso", "nuovo", "crea", "sessione"],
         action: "course-creation",
       });
     }
+    // A source is identified by what it is, not by its hash.
     const materials = state.route === "fonti" ? array(state.viewData).slice(0, 30).map((item) => {
       const source = object(item);
-      const title = first(source, ["title", "name", "label"], "Fonte");
+      const chunks = first(source, ["chunk_count", "chunks", "fragment_count"], null);
+      const type = first(source, ["type", "kind", "role"], "materiale");
       return {
-        label: title,
-        description: `Fonte · ${first(source, ["revision", "revision_id", "version"], "revisione non indicata")}`,
-        keywords: ["fonte", first(source, ["type", "kind", "role"], "materiale")],
+        group: "Fonti del corso",
+        icon: "icon--book-open",
+        label: first(source, ["title", "name", "label"], "Fonte"),
+        description: chunks === null ? `${type}` : `${type} · ${chunks} frammenti`,
+        keywords: ["fonte", type],
         route: "fonti",
       };
     }) : [];
@@ -1700,7 +2070,7 @@
 
   async function selectCommandSearchEntry(entry) {
     const dialog = $("#command-search");
-    if (dialog.open) dialog.close();
+    closeDialog(dialog);
     if (entry.route) {
       await loadRoute(entry.route);
       return;
@@ -1740,17 +2110,72 @@
     const body = $("#account-menu-body");
     if (!dialog || !body) return;
     if (state.auth.authenticated) {
-      body.innerHTML = `<p>Sessione privata attiva. Le impostazioni non cambiano lo stato del corso.</p><div class="state-actions"><button class="button button--quiet" type="button" data-route="impostazioni">Apri impostazioni</button><button class="button" type="button" data-auth-logout>Esci</button></div>`;
+      patch(body, `<p>Sessione privata attiva. Le impostazioni non cambiano lo stato del corso.</p><div class="state-actions"><button class="button button--quiet" type="button" data-route="impostazioni">Apri impostazioni</button><button class="button" type="button" data-auth-logout>Esci</button></div>`);
     } else {
-      body.innerHTML = `<p>Accedi per aprire le impostazioni e la configurazione del modello.</p><div class="state-actions"><button class="button" type="button" data-route="login">Accedi</button></div>`;
+      patch(body, `<p>Accedi per aprire le impostazioni e la configurazione del modello.</p><div class="state-actions"><button class="button" type="button" data-route="login">Accedi</button></div>`);
     }
     dialog.showModal();
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Validation                                                          */
+  /*                                                                     */
+  /* Inline, in Italian, anchored to the field it is about, and styled as */
+  /* an error — instead of an OS bubble that vanishes on the next click   */
+  /* and an orange ring that also means "focused".                       */
+  /* ------------------------------------------------------------------ */
+
+  function validationMessage(control) {
+    const validity = control.validity;
+    if (validity.valueMissing) return "Questo campo è obbligatorio.";
+    if (validity.tooLong) return `Massimo ${control.maxLength} caratteri.`;
+    if (validity.typeMismatch || validity.badInput) return "Il formato non è valido.";
+    return "Controlla questo valore.";
+  }
+
+  function setFieldError(control, message) {
+    const id = `${control.id || control.name || "field"}-error`;
+    const anchor = control.closest(".password-field") || control;
+    let node = anchor.parentElement?.querySelector(`[data-field-error="${id}"]`) || null;
+    if (!message) {
+      node?.remove();
+      if (control.getAttribute("aria-describedby") === id) control.removeAttribute("aria-describedby");
+      return;
+    }
+    if (!node) {
+      node = document.createElement("p");
+      node.className = "field-error";
+      node.dataset.fieldError = id;
+      node.id = id;
+      node.setAttribute("role", "alert");
+      anchor.after(node);
+    }
+    node.textContent = message;
+    control.setAttribute("aria-describedby", id);
+  }
+
+  function validateForm(form) {
+    let firstInvalid = null;
+    $$("input, textarea, select", form).forEach((control) => {
+      if (control.disabled || control.type === "hidden") return;
+      const valid = control.checkValidity();
+      control.setAttribute("aria-invalid", valid ? "false" : "true");
+      setFieldError(control, valid ? "" : validationMessage(control));
+      if (!valid && !firstInvalid) firstInvalid = control;
+    });
+    if (firstInvalid) firstInvalid.focus({ preventScroll: true });
+    return !firstInvalid;
   }
 
   function bindStaticControls() {
     document.addEventListener("submit", (event) => {
       const form = event.target instanceof HTMLFormElement ? event.target : null;
       if (!form) return;
+      // The composer validates itself through the send button's state.
+      if (!form.matches("[data-entry-form]") && !validateForm(form)) {
+        event.preventDefault();
+        return;
+      }
       if (form.matches("[data-auth-login]")) {
         event.preventDefault();
         login(form);
@@ -1792,7 +2217,7 @@
       const routeControl = event.target.closest("[data-route]");
       if (routeControl) {
         event.preventDefault();
-        routeControl.closest("dialog")?.close();
+        closeDialog(routeControl.closest("dialog"));
         const route = routeControl.dataset.route;
         closeMobileRail();
         loadRoute(route);
@@ -1803,7 +2228,7 @@
         const open = rail.classList.toggle("is-open");
         $("#rail-toggle").setAttribute("aria-expanded", String(open));
         $("#main-content").inert = open;
-        $("#rail-backdrop").tabIndex = open ? 0 : -1;
+        $("#rail-toggle").setAttribute("aria-label", open ? "Chiudi barra laterale" : "Apri barra laterale");
         applyRailState();
         if (open) $("#rail-collapse").focus({ preventScroll: true });
       }
@@ -1843,7 +2268,7 @@
       if (event.target.closest("[data-account-control]")) openAccountMenu();
       if (event.target.closest("[data-auth-logout]")) {
         event.preventDefault();
-        $("#account-menu")?.close();
+        closeDialog($("#account-menu"));
         logout();
       }
       if (event.target.closest("[data-settings-remove]")) {
@@ -1858,7 +2283,28 @@
         event.preventDefault();
         loadDiagnostics();
       }
-      if (event.target.closest("[data-close-drawer]")) event.target.closest("dialog").close();
+      if (event.target.closest("[data-close-drawer]")) closeDialog(event.target.closest("dialog"));
+      const secretToggle = event.target.closest("[data-toggle-secret]");
+      if (secretToggle) {
+        event.preventDefault();
+        const field = document.getElementById(secretToggle.dataset.toggleSecret);
+        if (field) {
+          const revealed = field.type === "text";
+          field.type = revealed ? "password" : "text";
+          secretToggle.textContent = revealed ? "Mostra" : "Nascondi";
+          secretToggle.setAttribute("aria-pressed", String(!revealed));
+          field.focus({ preventScroll: true });
+        }
+      }
+      if (event.target.closest("[data-study-setup-back]")) {
+        event.preventDefault();
+        state.studySetup = null;
+        renderOggi(state.viewData || state.bootstrap || {});
+      }
+      if (event.target.closest("#global-alert-dismiss")) {
+        event.preventDefault();
+        dismissAlert();
+      }
     });
     window.addEventListener("keydown", (event) => {
       const commandSearchActivator = event.target instanceof Element
@@ -1871,7 +2317,7 @@
         return;
       }
       if (event.key === "Escape") {
-        $$('dialog[open]').forEach((dialog) => dialog.close());
+        closeOpenDialogs();
         closeMobileRail(true);
       }
       if (event.key.toLowerCase() === "o" && event.shiftKey && (event.metaKey || event.ctrlKey)) {
@@ -1904,7 +2350,7 @@
     rail.classList.remove("is-open");
     $("#rail-toggle").setAttribute("aria-expanded", "false");
     $("#main-content").inert = false;
-    $("#rail-backdrop").tabIndex = -1;
+    $("#rail-toggle").setAttribute("aria-label", "Apri barra laterale");
     applyRailState();
     if (returnFocus) $("#rail-toggle").focus({ preventScroll: true });
   }
@@ -1916,7 +2362,6 @@
     if (!mobile && rail.classList.contains("is-open")) {
       rail.classList.remove("is-open");
       $("#main-content").inert = false;
-      $("#rail-backdrop").tabIndex = -1;
       $("#rail-toggle").setAttribute("aria-expanded", "false");
     }
     const mobileOpen = mobile && rail.classList.contains("is-open");
@@ -1927,7 +2372,7 @@
       : state.sidebarCollapsed ? "Espandi barra laterale" : "Comprimi barra laterale";
     control.setAttribute("aria-expanded", String(expanded));
     control.setAttribute("aria-label", label);
-    control.title = label;
+    control.dataset.tooltip = label;
   }
 
   applyRailState();

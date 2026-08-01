@@ -41,7 +41,6 @@ HEALTH_PATH = "/health"
 PREVIEW_RUNTIME_ID = "cardine-local-source-grounding-v2"
 ICON_ASSETS = frozenset(
     {
-        "books.svg",
         "book-open.svg",
         "arrow-up.svg",
         "calendar-blank.svg",
@@ -50,10 +49,13 @@ ICON_ASSETS = frozenset(
         "chart-line-up.svg",
         "chat-circle.svg",
         "exam.svg",
+        "favicon.svg",
         "gear.svg",
         "note-pencil.svg",
         "magnifying-glass.svg",
         "plus.svg",
+        "select-caret.svg",
+        "select-caret-inverse.svg",
         "shield-check.svg",
         "sidebar-simple.svg",
         "warning-circle.svg",
@@ -656,10 +658,8 @@ def main() -> None:
     try:
         from .ui_application import RepositoryUiApplication
 
-        ui_application = None
         private_access = None
         settings_application = None
-        credentials = None
         environment = None
         credentials = None
         if args.private:

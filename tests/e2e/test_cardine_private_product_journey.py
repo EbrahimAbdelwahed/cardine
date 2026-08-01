@@ -460,14 +460,22 @@ def _click_route(browser: _Browser, route: str) -> None:
 
 
 def _entry_value(browser: _Browser) -> object:
-    return browser.evaluate("document.querySelector('#dock-entry, #continuation-dock-entry').value")
+    return browser.evaluate("document.querySelector('#session-entry-text, #entry').value")
 
 
-def test_private_browser_routes_dock_continuation_keyboard_draft_and_mobile() -> None:
+def test_private_browser_routes_composer_scope_keyboard_draft_and_mobile() -> None:
+    """The composer belongs to the conversation, not to every screen.
+
+    A persistent dock parked under Fonti, Piano, Ripasso and Verifiche is a
+    conversation surface in the wrong place: it competes with the section it
+    sits under, and it was the element that overflowed the viewport on a
+    phone. The composer now appears on the two conversational routes only,
+    and a waiting tutor is announced by the shell's alert region with a way
+    back to Chat.
+    """
+
     with _serve_private() as url, _browser(url) as browser:
         browser.wait("Boolean(document.querySelector('#login-form'))")
-        assert browser.evaluate("document.querySelectorAll('#continuation-dock').length") == 1
-        assert browser.evaluate("document.querySelector('#continuation-dock').hidden") is True
         browser.evaluate(
             "document.querySelector('#login-form input[type=password]').value="
             f"{json.dumps(PASSWORD)}"
@@ -476,81 +484,78 @@ def test_private_browser_routes_dock_continuation_keyboard_draft_and_mobile() ->
         browser.wait("!document.querySelector('#login-form')")
         browser.wait("Boolean(document.querySelector('[data-route=\"oggi\"].is-active'))")
 
+        # Tool sections carry no composer.
         for route in ROUTES:
             _click_route(browser, route)
             browser.wait(
                 f"Boolean(document.querySelector('[data-route={json.dumps(route)}].is-active'))"
             )
-            assert browser.evaluate("document.querySelectorAll('#continuation-dock').length") == 1
-            assert browser.evaluate("document.querySelector('#continuation-dock').hidden") is False
-        for route in ("oggi", "sessione"):
-            _click_route(browser, route)
-            assert browser.evaluate("document.querySelectorAll('#continuation-dock').length") == 1
-            assert browser.evaluate("document.querySelector('#continuation-dock').hidden") is True
+            assert browser.evaluate("document.querySelectorAll('[data-entry-form]').length") == 0
 
-        _click_route(browser, "fonti")
-        browser.wait("Boolean(document.querySelector('#continuation-dock'))")
+        # Chat always does, and exactly once. Oggi shows the source-first
+        # setup wizard until the course has materials, so it is not asserted
+        # to carry a composer here.
+        _click_route(browser, "sessione")
+        browser.wait("Boolean(document.querySelector('#session-entry-text'))")
+        assert browser.evaluate("document.querySelectorAll('[data-entry-form]').length") == 1
+
+        # A draft written in Chat survives a trip through a tool section.
+        _click_route(browser, "sessione")
+        browser.wait("Boolean(document.querySelector('#session-entry-text'))")
         browser.evaluate(
-            "[...document.querySelectorAll('#continuation-dock button')].find("
-            "button => button.innerText.includes('Ultimo turno')).click()"
-        )
-        browser.wait("Boolean(document.querySelector('[data-route=\"sessione\"].is-active'))")
-        browser.wait("Boolean(document.querySelector('#conversation-heading'))")
-
-        _click(browser, "#account-control")
-        _click_route(browser, "impostazioni")
-        assert browser.evaluate("document.querySelectorAll('#continuation-dock').length") == 1
-        assert browser.evaluate("document.querySelector('#continuation-dock').hidden") is True
-
-        _click_route(browser, "fonti")
-        browser.wait("Boolean(document.querySelector('#continuation-dock'))")
-        browser.evaluate(
-            "document.querySelector('#dock-entry, #continuation-dock-entry').value="
+            "document.querySelector('#session-entry-text').value="
             "'draft survives route change';"
-            "document.querySelector('#dock-entry, #continuation-dock-entry')"
+            "document.querySelector('#session-entry-text')"
             ".dispatchEvent(new Event('input',{bubbles:true}))"
         )
-        _click_route(browser, "proposte")
-        browser.wait("Boolean(document.querySelector('#continuation-dock'))")
+        _click_route(browser, "fonti")
+        browser.wait("Boolean(document.querySelector('[data-route=\"fonti\"].is-active'))")
+        _click_route(browser, "sessione")
+        browser.wait("Boolean(document.querySelector('#session-entry-text'))")
         assert _entry_value(browser) == "draft survives route change"
-        browser.evaluate(
-            "document.querySelector('#dock-entry, #continuation-dock-entry').value=''; "
-            "document.querySelector('#dock-entry, #continuation-dock-entry')"
-            ".dispatchEvent(new Event("
-            "'input',{bubbles:true}))"
-        )
 
+        # A failed send restores the text instead of losing it, and reports
+        # the failure somewhere the reader can actually see.
         browser.evaluate(
-            "document.querySelector('#dock-entry, #continuation-dock-entry').value='line one'"
+            "document.querySelector('#session-entry-text').value='line one';"
+            "document.querySelector('#session-entry-text')"
+            ".dispatchEvent(new Event('input',{bubbles:true}))"
         )
         browser.evaluate(
             "window.__cardineOriginalFetch=window.fetch; "
             "window.fetch=()=>Promise.reject(new Error('e2e forced failure'))"
         )
         browser.evaluate(
-            "document.querySelector('#dock-entry, #continuation-dock-entry')"
+            "document.querySelector('#session-entry-text')"
             ".dispatchEvent(new KeyboardEvent("
             "'keydown',{key:'Enter',bubbles:true}))"
         )
-        time.sleep(0.2)
+        time.sleep(0.4)
         assert _entry_value(browser) == "line one"
+        assert browser.evaluate("document.querySelector('#global-alert').hidden") is False
+        assert cast(
+            str, browser.evaluate("document.querySelector('#global-alert-title').innerText")
+        ).strip() != ""
         browser.evaluate("window.fetch=window.__cardineOriginalFetch")
+        _click(browser, "#global-alert-dismiss")
+        assert browser.evaluate("document.querySelector('#global-alert').hidden") is True
+
         browser.evaluate(
-            "document.querySelector('#dock-entry, #continuation-dock-entry')"
+            "document.querySelector('#session-entry-text')"
             ".dispatchEvent(new KeyboardEvent("
             "'keydown',{key:'Enter',bubbles:true}))"
         )
-        browser.wait("document.querySelector('#dock-entry, #continuation-dock-entry').value === ''")
+        browser.wait("document.querySelector('#session-entry-text').value === ''")
         browser.evaluate(
-            "document.querySelector('#dock-entry, #continuation-dock-entry').value='line one'"
+            "document.querySelector('#session-entry-text').value='line one'"
         )
         browser.evaluate(
-            "document.querySelector('#dock-entry, #continuation-dock-entry')"
+            "document.querySelector('#session-entry-text')"
             ".dispatchEvent(new KeyboardEvent("
             "'keydown',{key:'Enter',shiftKey:true,bubbles:true}))"
         )
         browser.evaluate(
-            "document.querySelector('#dock-entry, #continuation-dock-entry')"
+            "document.querySelector('#session-entry-text')"
             ".dispatchEvent(new KeyboardEvent("
             "'keydown',{key:'Enter',isComposing:true,bubbles:true}))"
         )
@@ -569,12 +574,13 @@ def test_private_browser_routes_dock_continuation_keyboard_draft_and_mobile() ->
                 )
                 <= 1
             )
+            # Nothing in the shell may be drawn outside the viewport.
             assert (
                 browser.evaluate(
-                    "[...document.querySelectorAll('#continuation-dock button,"
-                    "#continuation-dock input')].every(node=>{"
+                    "[...document.querySelectorAll('#view-root button,#view-root input,"
+                    "#view-root textarea,#alert-region *')].every(node=>{"
                     "const r=node.getBoundingClientRect(); "
-                    "return r.right<=innerWidth && r.left>=0 && r.bottom<=innerHeight})"
+                    "return r.width===0 || (r.right<=innerWidth+1 && r.left>=-1)})"
                 )
                 is True
             )
@@ -628,14 +634,15 @@ def test_settings_labels_write_only_empty_after_save_and_pending_continuation_ro
 
         _click(browser, '[data-route="sessione"]')
         browser.wait("Boolean(document.querySelector('#conversation-heading'))")
-        pending = browser.evaluate(
-            "document.querySelector('#continuation-dock-pending')?.hidden === false || "
-            "Boolean(document.querySelector('[data-continuation-pending]'))"
-        )
+        # A waiting tutor is surfaced by the shell alert with a route back to
+        # Chat, not by a composer parked under an unrelated section.
+        _click_route(browser, "fonti")
+        browser.wait("Boolean(document.querySelector('[data-route=\"fonti\"].is-active'))")
+        pending = browser.evaluate("document.querySelector('#global-alert').hidden === false")
         if pending:
             browser.evaluate(
-                "document.querySelector('#continuation-dock-last-turn button, "
-                "[data-action=ultimo-turno]').click()"
+                "[...document.querySelectorAll('#global-alert-actions button')]"
+                ".find(button => button.innerText.includes('chat'))?.click()"
             )
             browser.wait(
                 "Boolean(document.querySelector('[data-route=\"sessione\"].is-active'))"

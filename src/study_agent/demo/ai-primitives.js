@@ -151,14 +151,15 @@
   function renderTaskList(options) {
     var config = options || {};
     var tasks = list(config.tasks || config.items);
-    var rows = tasks.map(function (task, index) {
+    var rows = tasks.map(function (task) {
       var item = typeof task === "object" && task !== null ? task : { label: task };
       var state = value(read(item, ["status", "state"], "open"), "open");
-      var id = value(read(item, ["id", "task_id"], index), index);
+      /* A round status marker, never a square that reads as an empty
+         checkbox: none of these rows can be ticked. */
       return '<li class="ai-task-list__row" data-state="' + escapeAttribute(state) + '"><span class="ai-task-list__check" aria-hidden="true"></span><span class="ai-task-list__copy"><strong>' + escapeText(read(item, ["label", "title", "text"], "Attività")) +
-        '</strong><small>' + escapeText(read(item, ["detail", "description"], "")) + '</small></span>' + statusPill(state, read(item, ["status_label", "status"], state)) + '<span class="ai-visually-hidden">task ' + escapeText(id) + "</span></li>";
+        '</strong><small>' + escapeText(read(item, ["detail", "description"], "")) + '</small></span>' + statusPill(state, read(item, ["status_label", "status"], state)) + "</li>";
     }).join("");
-    return '<section class="ai-task-list" aria-labelledby="ai-task-list-title"><header><p class="ai-eyebrow">lavoro aperto</p><h2 id="ai-task-list-title">' + escapeText(config.title || "Per oggi") + '</h2></header><ul>' + (rows || '<li class="ai-empty">Nessun compito aperto.</li>') + "</ul></section>";
+    return '<section class="ai-task-list" aria-labelledby="ai-task-list-title"><header><div><p class="ai-eyebrow">lavoro aperto</p><h2 id="ai-task-list-title">' + escapeText(config.title || "Per oggi") + '</h2></div></header><ul>' + (rows || '<li class="ai-empty">Nessun compito aperto.</li>') + "</ul></section>";
   }
 
   function renderChatPanel(options) {
@@ -178,7 +179,7 @@
   function renderRecommendation(options) {
     var config = options || {};
     var prompt = bounded(read(config, ["prompt", "followUp", "value"], config.title || "Inizia"), "Inizia");
-    return '<article class="ai-recommendation"><div class="ai-recommendation__accent" aria-hidden="true"></div><div><p class="ai-eyebrow">prossimo passo</p><h2>' + escapeText(config.title || "Una scelta utile per continuare") + '</h2><p>' + escapeText(config.detail || "Basato solo sulle evidenze disponibili nel corso.") +
+    return '<article class="ai-recommendation"><div class="ai-recommendation__accent" aria-hidden="true"></div><div class="ai-recommendation__body"><p class="ai-eyebrow">prossimo passo</p><h2>' + escapeText(config.title || "Una scelta utile per continuare") + '</h2><p>' + escapeText(config.detail || "Basato solo sulle evidenze disponibili nel corso.") +
       '</p><button class="ai-button ai-button--accent" type="button" data-ai-follow-up="' + escapeAttribute(prompt) + '">' + escapeText(config.actionLabel || "Portami lì") + "</button></div></article>";
   }
 
@@ -220,32 +221,42 @@
     return '<section class="ai-records-table" aria-label="' + escapeAttribute(config.title || "Record del corso") + '"><header><div><p class="ai-eyebrow">registro</p><h2>' + escapeText(config.title || "Record del corso") + '</h2></div>' + statusPill(config.status, config.statusLabel) + '</header><div class="ai-table-scroll"><table><thead><tr>' + head + '</tr></thead><tbody>' + (body || '<tr><td colspan="' + escapeAttribute(headers.length) + '" class="ai-empty">Nessun record disponibile.</td></tr>') + "</tbody></table></div></section>";
   }
 
+  /* One container, one heading. The records table is embedded without its
+     own surface or title so the filter never renders a card inside an
+     identical card carrying the same <h2> twice. */
   function renderFilterTable(options) {
     var config = options || {};
-    var table = renderRecordsTable(config);
-    var marker = '<div class="ai-filter-table__toolbar"><label><span>Cerca nel registro</span><input type="search" data-ai-filter placeholder="Filtra…" autocomplete="off"></label><span class="ai-filter-table__status" data-ai-filter-status role="status"></span></div>';
-    return '<section class="ai-filter-table" aria-label="' + escapeAttribute(config.title || "Filtra i record") + '"><header><div><p class="ai-eyebrow">filtro locale</p><h2>' + escapeText(config.title || "Filtra i record") + '</h2></div></header>' + marker + table.replace('<section class="ai-records-table"', '<div class="ai-filter-table__table ai-records-table"').replace('</section>', '</div>') + '</section>';
+    var table = renderRecordsTable(config)
+      .replace(/^<section class="ai-records-table"[^>]*>/, '<div class="ai-filter-table__table ai-records-table">')
+      .replace(/<header>[\s\S]*?<\/header>/, "")
+      .replace(/<\/section>$/, "</div>");
+    var toolbar = '<div class="ai-filter-table__toolbar"><label><span>Cerca nel registro</span><input type="search" data-ai-filter placeholder="Filtra…" autocomplete="off"></label><span class="ai-filter-table__status" data-ai-filter-status role="status"></span></div>';
+    return '<section class="ai-filter-table" aria-labelledby="ai-filter-table-title"><header><div><p class="ai-eyebrow">filtro locale</p><h2 id="ai-filter-table-title">' + escapeText(config.title || "Filtra i record") + '</h2></div></header>' + toolbar + table + '</section>';
   }
 
   function renderSidebarSearch(options) {
     var config = options || {};
     var label = config.placeholder || "Cerca in Cardine";
-    return '<button class="ai-sidebar-search" type="button" data-open-command-search aria-label="' + escapeAttribute(label) + '"><span>' + escapeText(label) + '</span><kbd aria-hidden="true">' + escapeText(config.shortcut || "/") + "</kbd></button>";
+    return '<button class="ai-sidebar-search" type="button" data-open-command-search aria-label="' + escapeAttribute(label) + '"><span class="icon icon--magnifying-glass" aria-hidden="true"></span><span>' + escapeText(label) + '</span><kbd aria-hidden="true">' + escapeText(config.shortcut || "/") + "</kbd></button>";
   }
 
   function renderCommandSearch(options) {
     var config = options || {};
-    return '<dialog class="ai-command-search" aria-labelledby="ai-command-search-title"><div class="ai-command-search__header"><p class="ai-eyebrow">navigazione</p><h2 id="ai-command-search-title">' + escapeText(config.title || "Cerca in Cardine") + '</h2><input type="search" data-ai-command-input placeholder="' + escapeAttribute(config.placeholder || "Cerca sezioni, fonti o suggerimenti…") + '" autocomplete="off"><kbd>esc</kbd></div><div class="ai-command-search__results" data-ai-command-results role="listbox" aria-label="Risultati"></div><p class="ai-command-search__empty" data-ai-command-empty hidden>Nessun risultato.</p></dialog>';
+    return '<dialog class="modal ai-command-search" aria-label="' + escapeAttribute(config.title || "Cerca in Cardine") + '"><div class="ai-command-search__header"><span class="icon icon--magnifying-glass ai-command-search__icon" aria-hidden="true"></span><input type="search" data-ai-command-input placeholder="' + escapeAttribute(config.placeholder || "Cerca sezioni, fonti o suggerimenti…") + '" autocomplete="off"><kbd>esc</kbd></div><div class="ai-command-search__results" data-ai-command-results role="listbox" aria-label="Risultati"></div><p class="ai-command-search__empty" data-ai-command-empty hidden>Nessun risultato.</p></dialog>';
   }
 
   function renderInsightDeck(options) {
     var config = options || {};
     var insights = list(config.insights || config.cards);
+    var single = insights.length < 2;
     var cards = insights.map(function (insight, index) {
       var item = typeof insight === "object" && insight !== null ? insight : { title: insight };
-      return '<article class="ai-insight-deck__card" data-ai-insight="' + escapeAttribute(index) + '"' + (index ? ' hidden' : '') + '><p class="ai-eyebrow">evidenza ' + escapeText(index + 1) + ' / ' + escapeText(insights.length) + '</p><h3>' + escapeText(read(item, ["title", "label"], "Osservazione")) + '</h3><p>' + escapeText(read(item, ["detail", "description", "text"], "Nessun dettaglio disponibile.")) + '</p>' + (read(item, ["source", "provenance"], "") ? '<small>' + escapeText(read(item, ["source", "provenance"], "")) + "</small>" : "") + "</article>";
+      var counter = single ? "" : '<p class="ai-eyebrow">' + escapeText(index + 1) + ' di ' + escapeText(insights.length) + "</p>";
+      return '<article class="ai-insight-deck__card" data-ai-insight="' + escapeAttribute(index) + '"' + (index ? ' hidden' : '') + '>' + counter + '<h3>' + escapeText(read(item, ["title", "label"], "Osservazione")) + '</h3><p>' + escapeText(read(item, ["detail", "description", "text"], "Nessun dettaglio disponibile.")) + '</p>' + (read(item, ["source", "provenance"], "") ? '<small>' + escapeText(read(item, ["source", "provenance"], "")) + "</small>" : "") + "</article>";
     }).join("");
-    return '<section class="ai-insight-deck" aria-labelledby="ai-insight-deck-title"><header><div><p class="ai-eyebrow">segnali utili</p><h2 id="ai-insight-deck-title">' + escapeText(config.title || "Osservazioni del corso") + '</h2></div><div class="ai-insight-deck__controls"><button type="button" class="ai-icon-button" data-ai-insight-prev aria-label="Evidenza precedente">Indietro</button><button type="button" class="ai-icon-button" data-ai-insight-next aria-label="Evidenza successiva">Avanti</button></div></header><div class="ai-insight-deck__viewport" aria-live="polite">' + (cards || '<p class="ai-empty">Nessuna evidenza disponibile.</p>') + '</div></section>';
+    /* A single card is not a carousel: the controls are removed, not just
+       left enabled at both ends of a list of one. */
+    return '<section class="ai-insight-deck" data-single="' + (single ? "true" : "false") + '" aria-labelledby="ai-insight-deck-title"><header><div><p class="ai-eyebrow">segnali utili</p><h2 id="ai-insight-deck-title">' + escapeText(config.title || "Osservazioni del corso") + '</h2></div><div class="ai-insight-deck__controls">' + (single ? "" : '<button type="button" class="ai-icon-button" data-ai-insight-prev aria-label="Evidenza precedente" disabled>Indietro</button><button type="button" class="ai-icon-button" data-ai-insight-next aria-label="Evidenza successiva">Avanti</button>') + '</div></header><div class="ai-insight-deck__viewport" aria-live="polite">' + (cards || '<p class="ai-empty">Nessuna evidenza disponibile.</p>') + '</div></section>';
   }
 
   function renderCodeBlock(options) {
@@ -263,7 +274,7 @@
       var prompt = read(item, ["prompt", "followUp", "value"], label);
       return '<button type="button" class="ai-fine-tune__option' + (index === 0 ? ' is-selected' : '') + '" data-ai-style="' + escapeAttribute(prompt) + '" aria-pressed="' + (index === 0 ? "true" : "false") + '">' + escapeText(label) + "</button>";
     }).join("");
-    return '<section class="ai-fine-tune" data-ai-fine-tune aria-labelledby="ai-fine-tune-title"><div><p class="ai-eyebrow">risposta su misura</p><h2 id="ai-fine-tune-title">' + escapeText(config.title || "Come vuoi continuare?") + '</h2><p>' + escapeText(config.detail || "Prepara un follow-up locale senza cambiare le impostazioni del modello.") + '</p></div><div class="ai-fine-tune__options" role="group" aria-label="Stile di risposta">' + (controls || '<span class="ai-empty">Nessuna opzione.</span>') + "</div></section>";
+    return '<section class="ai-fine-tune" data-ai-fine-tune aria-labelledby="ai-fine-tune-title"><div class="ai-fine-tune__copy"><p class="ai-eyebrow">risposta su misura</p><h2 id="ai-fine-tune-title">' + escapeText(config.title || "Come vuoi continuare?") + '</h2><p>' + escapeText(config.detail || "Prepara un follow-up locale senza cambiare le impostazioni del modello.") + '</p></div><div class="ai-fine-tune__options" role="group" aria-label="Stile di risposta">' + (controls || '<span class="ai-empty">Nessuna opzione.</span>') + "</div></section>";
   }
 
   function render(name, options) {
@@ -381,16 +392,20 @@
       deck.dataset.aiEnhanced = "true";
       var cards = Array.prototype.slice.call(deck.querySelectorAll("[data-ai-insight]"));
       var index = 0;
-      var show = function (next) {
+      var prev = deck.querySelector("[data-ai-insight-prev]");
+      var next = deck.querySelector("[data-ai-insight-next]");
+      /* The deck does not wrap around, so the controls report the real
+         boundaries instead of staying enabled at both ends. */
+      var show = function (target) {
         if (!cards.length) return;
-        index = (next + cards.length) % cards.length;
+        index = Math.min(Math.max(target, 0), cards.length - 1);
         cards.forEach(function (card, cardIndex) {
           card.hidden = cardIndex !== index;
           card.setAttribute("aria-current", cardIndex === index ? "true" : "false");
         });
+        if (prev) prev.disabled = index === 0;
+        if (next) next.disabled = index === cards.length - 1;
       };
-      var prev = deck.querySelector("[data-ai-insight-prev]");
-      var next = deck.querySelector("[data-ai-insight-next]");
       var onPrev = function () { show(index - 1); };
       var onNext = function () { show(index + 1); };
       if (prev) prev.addEventListener("click", onPrev);
@@ -496,24 +511,53 @@
     function choose(item) {
       if (typeof onSelect === "function") onSelect(item);
     }
+    /* A conformant listbox: exactly one tab stop (the input), a roving
+       aria-activedescendant, and section headings so fourteen rows do not
+       arrive as one undifferentiated list. */
     function paint() {
       if (!results || !documentRef) return;
       results.replaceChildren();
+      var lastGroup = null;
       filtered.forEach(function (item, index) {
+        var group = value(read(item, ["group", "section"], ""), "");
+        if (group && group !== lastGroup) {
+          lastGroup = group;
+          var heading = documentRef.createElement("p");
+          heading.className = "ai-command-search__group";
+          heading.id = "ai-command-group-" + index;
+          heading.setAttribute("role", "presentation");
+          heading.textContent = group;
+          results.appendChild(heading);
+        }
         var button = documentRef.createElement("button");
         button.type = "button";
         button.className = "ai-command-search__result";
+        button.id = "ai-command-option-" + index;
         button.setAttribute("role", "option");
         button.setAttribute("aria-selected", index === active ? "true" : "false");
+        button.tabIndex = -1;
         button.dataset.commandIndex = String(index);
+        var glyph = documentRef.createElement("span");
+        glyph.className = "icon " + value(read(item, ["icon"], "icon--chat-circle"), "icon--chat-circle");
+        glyph.setAttribute("aria-hidden", "true");
+        button.appendChild(glyph);
+        var copy = documentRef.createElement("span");
+        copy.className = "ai-command-search__result-copy";
         var label = documentRef.createElement("strong");
         label.textContent = bounded(read(item, ["label", "title", "name"], "Risultato"), "Risultato");
-        button.appendChild(label);
+        copy.appendChild(label);
         var detail = read(item, ["description", "detail"], "");
-        if (detail) { var copy = documentRef.createElement("small"); copy.textContent = bounded(detail, ""); button.appendChild(copy); }
+        if (detail) { var note = documentRef.createElement("small"); note.textContent = bounded(detail, ""); copy.appendChild(note); }
+        button.appendChild(copy);
         button.addEventListener("click", function () { choose(item); });
         results.appendChild(button);
       });
+      var current = results.querySelector('[aria-selected="true"]');
+      if (input) {
+        if (current) input.setAttribute("aria-activedescendant", current.id);
+        else input.removeAttribute("aria-activedescendant");
+      }
+      if (current && typeof current.scrollIntoView === "function") current.scrollIntoView({ block: "nearest" });
       if (empty) empty.hidden = filtered.length !== 0;
     }
     function refresh(query) {

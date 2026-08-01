@@ -2,43 +2,41 @@
 <html lang="it">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="description" content="Cardine, la superficie locale di Study Agent per lo studio medico.">
-  <title>Cardine · Study Agent</title>
-  <link rel="icon" href="/icons/book-open.svg" type="image/svg+xml">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1a1a19" media="(prefers-color-scheme: dark)">
+  <title>Cardine</title>
+  <link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/browser.css">
   <link rel="stylesheet" href="/ai-primitives.css">
 </head>
 <body>
-  <!--
-    Cardine Referto is rebuilt as ordinary browser assets. This marker keeps
-    the old packaged-page smoke contract visible while the page is upgraded:
-    .meta { color: var(--muted); font-size: .9rem; overflow-wrap: anywhere; }
-  -->
   <a class="skip-link" href="#main-content">Vai al contenuto principale</a>
   <div class="app-shell" id="app-shell">
     <aside class="rail" id="rail" aria-label="Navigazione del corso">
       <div class="rail__brand">
         <div class="rail__brand-row">
           <a class="brand" href="#oggi" data-route="oggi" aria-label="Cardine, vai alla nuova domanda">Cardine</a>
-          <button class="rail__collapse" type="button" id="rail-collapse" aria-label="Comprimi barra laterale" aria-expanded="true" title="Comprimi barra laterale"><span class="icon icon--sidebar-simple" aria-hidden="true"></span></button>
+          <button class="rail__control rail__collapse" type="button" id="rail-collapse" aria-label="Espandi barra laterale" aria-expanded="false" aria-controls="rail" data-tooltip="Espandi barra laterale"><span class="icon icon--sidebar-simple" aria-hidden="true"></span></button>
         </div>
         <p class="rail__course" id="rail-course">corso locale · in caricamento</p>
       </div>
       <nav class="rail__nav" id="navigation" aria-label="Sezioni">
-        <button class="new-chat-button is-active" type="button" data-route="oggi" title="Nuova domanda"><span class="icon icon--plus" aria-hidden="true"></span><span class="nav-label">Nuova domanda</span><span class="shortcut">⇧⌘O</span></button>
-        <button class="nav-item ai-sidebar-search" type="button" data-open-command-search title="Cerca"><span class="icon icon--magnifying-glass" aria-hidden="true"></span><span class="nav-label">Cerca</span><span class="shortcut">/</span></button>
-        <button class="nav-item" type="button" data-route="sessione" title="Chat"><span class="icon icon--chat-circle" aria-hidden="true"></span><span class="nav-label">Chat</span></button>
-        <details class="rail-tools" open>
-          <summary>Spazio di studio</summary>
+        <button class="nav-item new-chat-button is-active" type="button" data-route="oggi" data-tooltip="Nuova domanda" aria-label="Nuova domanda"><span class="icon icon--plus" aria-hidden="true"></span><span class="nav-label">Nuova domanda</span><kbd class="shortcut">⇧⌘O</kbd></button>
+        <button class="nav-item" type="button" data-open-command-search data-tooltip="Cerca" aria-label="Cerca in Cardine"><span class="icon icon--magnifying-glass" aria-hidden="true"></span><span class="nav-label">Cerca</span><kbd class="shortcut">/</kbd></button>
+        <button class="nav-item" type="button" data-route="sessione" data-tooltip="Chat" aria-label="Chat"><span class="icon icon--chat-circle" aria-hidden="true"></span><span class="nav-label">Chat</span></button>
+        <details class="rail-tools" id="rail-tools" open>
+          <summary class="rail-tools__summary"><span class="rail-tools__caret" aria-hidden="true"></span><span>Spazio di studio</span></summary>
           <div class="rail-tools__items">
-            <button class="nav-item" type="button" data-route="verifiche" title="Verifiche"><span class="icon icon--exam" aria-hidden="true"></span><span class="nav-label">Verifiche</span><span class="nav-item__count" data-count="assessments">—</span></button>
-            <button class="nav-item" type="button" data-route="ripasso" title="Ripasso"><span class="icon icon--cards" aria-hidden="true"></span><span class="nav-label">Ripasso</span><span class="nav-item__count" data-count="due_reviews">—</span></button>
-            <button class="nav-item" type="button" data-route="fonti" title="Fonti"><span class="icon icon--book-open" aria-hidden="true"></span><span class="nav-label">Fonti</span></button>
-            <button class="nav-item" type="button" data-route="proposte" title="Proposte"><span class="icon icon--note-pencil" aria-hidden="true"></span><span class="nav-label">Proposte</span><span class="nav-item__count" data-count="pending_proposals">—</span></button>
-            <button class="nav-item" type="button" data-route="evidenze" title="Evidenze"><span class="icon icon--chart-line-up" aria-hidden="true"></span><span class="nav-label">Evidenze</span></button>
-            <button class="nav-item" type="button" data-route="piano" title="Piano"><span class="icon icon--calendar-blank" aria-hidden="true"></span><span class="nav-label">Piano</span><span class="nav-item__count">—</span></button>
-            <button class="nav-item" type="button" data-route="conflitti" title="Conflitti"><span class="icon icon--warning-circle" aria-hidden="true"></span><span class="nav-label">Conflitti</span><span class="nav-item__count" data-count="context_conflicts">—</span></button>
+            <button class="nav-item" type="button" data-route="verifiche" data-tooltip="Verifiche" aria-label="Verifiche"><span class="icon icon--exam" aria-hidden="true"></span><span class="nav-label">Verifiche</span><span class="nav-item__count" data-count="assessments" hidden></span></button>
+            <button class="nav-item" type="button" data-route="ripasso" data-tooltip="Ripasso" aria-label="Ripasso"><span class="icon icon--cards" aria-hidden="true"></span><span class="nav-label">Ripasso</span><span class="nav-item__count" data-count="due_reviews" hidden></span></button>
+            <button class="nav-item" type="button" data-route="fonti" data-tooltip="Fonti" aria-label="Fonti"><span class="icon icon--book-open" aria-hidden="true"></span><span class="nav-label">Fonti</span></button>
+            <button class="nav-item" type="button" data-route="proposte" data-tooltip="Proposte" aria-label="Proposte"><span class="icon icon--note-pencil" aria-hidden="true"></span><span class="nav-label">Proposte</span><span class="nav-item__count" data-count="pending_proposals" hidden></span></button>
+            <button class="nav-item" type="button" data-route="evidenze" data-tooltip="Evidenze" aria-label="Evidenze"><span class="icon icon--chart-line-up" aria-hidden="true"></span><span class="nav-label">Evidenze</span></button>
+            <button class="nav-item" type="button" data-route="piano" data-tooltip="Piano" aria-label="Piano"><span class="icon icon--calendar-blank" aria-hidden="true"></span><span class="nav-label">Piano</span></button>
+            <button class="nav-item" type="button" data-route="conflitti" data-tooltip="Conflitti" aria-label="Conflitti"><span class="icon icon--warning-circle" aria-hidden="true"></span><span class="nav-label">Conflitti</span><span class="nav-item__count" data-count="context_conflicts" hidden></span></button>
           </div>
         </details>
       </nav>
@@ -46,96 +44,89 @@
         <p class="nav-group__label">Recenti</p>
         <div id="recent-session-list"></div>
       </div>
-      <div class="rail__secondary" aria-label="Azioni account">
-        <button class="nav-item rail__settings" type="button" data-route="impostazioni" title="Impostazioni"><span class="icon icon--gear" aria-hidden="true"></span><span class="nav-label">Impostazioni</span></button>
+      <div class="rail__secondary">
+        <button class="nav-item rail__settings" type="button" data-route="impostazioni" data-tooltip="Impostazioni" aria-label="Impostazioni"><span class="icon icon--gear" aria-hidden="true"></span><span class="nav-label">Impostazioni</span></button>
+        <button class="account-control" id="account-control" type="button" data-account-control aria-label="Apri account e impostazioni" data-tooltip="Account" hidden>
+          <span class="account-control__avatar" id="account-control-avatar" aria-hidden="true"></span>
+          <span class="account-control__copy"><strong id="account-control-name">Account</strong><small id="account-control-status">accesso locale</small></span>
+          <span class="icon icon--caret-down" aria-hidden="true"></span>
+        </button>
+        <button class="trust-mini" id="trust-mini" type="button" aria-label="Apri stato e provenienza" data-tooltip="Stato e provenienza">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span class="trust-mini__label" id="trust-mini-label">verifica del contesto…</span>
+        </button>
       </div>
-      <button class="account-control" id="account-control" type="button" data-account-control aria-label="Apri account e impostazioni" title="Account e impostazioni" hidden>
-        <span class="account-control__avatar" aria-hidden="true">C</span>
-        <span class="account-control__copy"><strong id="account-control-name">Account</strong><small id="account-control-status">accesso locale</small></span>
-        <span class="icon icon--caret-down" aria-hidden="true"></span>
-      </button>
-      <button class="trust-mini" id="trust-mini" type="button" aria-label="Apri stato e provenienza" title="Stato e provenienza">
-        <img class="trust-mini__icon" src="/icons/shield-check.svg" alt="">
-        <span class="status-dot" aria-hidden="true"></span>
-        <span id="trust-mini-label">verifica del contesto…</span>
-      </button>
     </aside>
-    <button class="rail-backdrop" id="rail-backdrop" type="button" tabindex="-1" aria-label="Chiudi barra laterale"></button>
+    <div class="rail-backdrop" id="rail-backdrop" aria-hidden="true"></div>
 
     <main id="main-content" class="main" tabindex="-1">
       <header class="mobile-header">
-        <a class="brand brand--small" href="#oggi" data-route="oggi">Cardine</a>
-        <button class="icon-button" type="button" id="rail-toggle" aria-expanded="false" aria-controls="rail">Menu</button>
+        <button class="rail__control" type="button" id="rail-toggle" aria-expanded="false" aria-controls="rail" aria-label="Apri barra laterale"><span class="icon icon--sidebar-simple" aria-hidden="true"></span></button>
+        <a class="brand brand--compact" href="#oggi" data-route="oggi">Cardine</a>
+        <button class="rail__control" type="button" data-open-command-search aria-label="Cerca in Cardine"><span class="icon icon--magnifying-glass" aria-hidden="true"></span></button>
       </header>
-      <div class="status-bar" id="global-status" role="status" aria-live="polite">
-        <span class="status-bar__label">Caricamento del corso…</span>
-        <span class="status-bar__sequence" id="sequence-label"></span>
+
+      <!-- The only surface that reports failure. It lives outside #view-root,
+           so it survives every view swap and can never be rendered into a
+           node that has already been detached from the document. -->
+      <div class="alert-region" id="alert-region">
+        <div class="alert" id="global-alert" data-tone="danger" hidden>
+          <span class="alert__icon icon icon--warning-circle" aria-hidden="true"></span>
+          <div class="alert__copy">
+            <strong class="alert__title" id="global-alert-title"></strong>
+            <p class="alert__detail" id="global-alert-detail"></p>
+          </div>
+          <div class="alert__actions" id="global-alert-actions"></div>
+          <button class="alert__dismiss" type="button" id="global-alert-dismiss" aria-label="Chiudi avviso"><span aria-hidden="true">×</span></button>
+        </div>
       </div>
+      <p class="visually-hidden" id="global-status" role="status" aria-live="polite"></p>
+
       <div id="view-root" class="view-root">
-        <section class="hero hero--loading" aria-labelledby="entry-heading">
-          <p class="eyebrow">corso locale · Cardine</p>
-          <h1 id="entry-heading">Il filo dello studio, in vista.</h1>
-          <p class="hero__lede">Carico sessione, fonti e stato canonico dal repository selezionato.</p>
-          <form id="entry-form" class="composer composer--hero" data-entry-form aria-busy="true">
-            <label class="visually-hidden" for="entry">Scrivi al tutor</label>
-            <div class="composer__surface">
-              <textarea id="entry" name="learner_entry" maxlength="4000" rows="1" required placeholder="Chiedi qualsiasi cosa sul corso…" disabled></textarea>
-              <div class="composer__toolbar">
-                <button class="composer__add" type="button" data-route="fonti" aria-label="Apri fonti" title="Apri fonti"><span class="icon icon--plus" aria-hidden="true"></span></button>
-                <span class="composer__spacer"></span>
-                <button class="composer__mode" type="button" data-open-tutor-info aria-label="Stato del tutor e provenienza">GPT-5.6 Luna <span class="icon icon--caret-down" aria-hidden="true"></span></button>
-                <span class="visually-hidden composer__hint">Invio invia. Maiusc più Invio va a capo.</span>
-                <button class="composer__send" type="submit" aria-label="Invia messaggio" title="Invia messaggio" disabled><span class="icon icon--arrow-up" aria-hidden="true"></span></button>
+        <section class="chat-home" aria-labelledby="entry-heading" aria-busy="true">
+          <div class="chat-home__center">
+            <p class="eyebrow">corso locale · Cardine</p>
+            <h1 id="entry-heading">Il filo dello studio, in vista.</h1>
+            <form id="entry-form" class="composer composer--hero" data-entry-form>
+              <label class="visually-hidden" for="entry">Scrivi al tutor</label>
+              <div class="composer__surface">
+                <textarea id="entry" name="learner_entry" maxlength="4000" rows="1" required placeholder="Chiedi qualsiasi cosa sul corso…" disabled></textarea>
+                <div class="composer__toolbar">
+                  <button class="composer__add" type="button" data-route="fonti" aria-label="Apri fonti" data-tooltip="Apri fonti"><span class="icon icon--plus" aria-hidden="true"></span></button>
+                  <span class="composer__spacer"></span>
+                  <button class="composer__mode" type="button" data-open-tutor-info aria-label="Stato del tutor e provenienza">GPT-5.6 Luna</button>
+                  <span class="visually-hidden composer__hint">Invio invia · Maiusc + Invio va a capo</span>
+                  <button class="composer__send" type="submit" aria-label="Invia messaggio" data-tooltip="Invia messaggio" disabled><span class="icon icon--arrow-up" aria-hidden="true"></span></button>
+                </div>
               </div>
-            </div>
-          </form>
-        </section>
-        <div class="loading-grid" aria-label="Caricamento">
-          <div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div>
-        </div>
-      </div>
-      <section class="continuation-dock" id="continuation-dock" aria-label="Continua la conversazione" hidden>
-        <div class="continuation-dock__last-turn" id="continuation-dock-last-turn">
-          <button class="continuation-dock__last-turn-button" type="button" data-route="sessione" aria-label="Apri l'ultimo turno in Chat">
-            <span class="continuation-dock__label">Ultimo turno</span>
-            <span class="continuation-dock__arrow" aria-hidden="true">›</span>
-          </button>
-        </div>
-        <form class="composer composer--continuation" id="continuation-dock-form" data-entry-form data-dock-form>
-          <label class="visually-hidden" for="continuation-dock-entry">Scrivi al tutor</label>
-          <div class="composer__surface">
-            <textarea id="continuation-dock-entry" name="learner_entry" maxlength="4000" rows="1" required placeholder="Chiedi qualsiasi cosa sul corso…" aria-describedby="continuation-dock-entry-hint"></textarea>
-            <div class="composer__toolbar">
-              <button class="composer__add" type="button" data-route="fonti" aria-label="Apri fonti" title="Apri fonti"><span class="icon icon--plus" aria-hidden="true"></span></button>
-              <span class="composer__spacer"></span>
-              <span class="visually-hidden composer__hint" id="continuation-dock-entry-hint">Invio invia. Maiusc più Invio va a capo.</span>
-              <button class="composer__send" type="submit" aria-label="Invia messaggio" title="Invia messaggio" disabled><span class="icon icon--arrow-up" aria-hidden="true"></span></button>
+            </form>
+            <div class="skeleton-stack" aria-hidden="true">
+              <span class="skeleton"></span>
+              <span class="skeleton"></span>
+              <span class="skeleton"></span>
             </div>
           </div>
-        </form>
-        <p class="continuation-dock__pending" id="continuation-dock-pending" hidden>Il tutor attende una risposta.</p>
-      </section>
-      <footer class="page-footer">
-        <span id="runtime-label">ambiente in verifica</span>
-      </footer>
+        </section>
+      </div>
     </main>
   </div>
 
-  <dialog class="drawer" id="provenance-drawer" aria-labelledby="drawer-heading">
-    <div class="drawer__header"><div><p class="eyebrow">margine · provenienza</p><h2 id="drawer-heading">Fonte selezionata</h2></div><button class="icon-button" type="button" data-close-drawer>Chiudi</button></div>
-    <div id="drawer-content"><p class="empty-state">Seleziona una fonte per vedere i metadati consentiti.</p></div>
+  <dialog class="sheet" id="provenance-drawer" aria-labelledby="drawer-heading">
+    <header class="sheet__header"><div><p class="eyebrow">margine · provenienza</p><h2 id="drawer-heading">Fonte selezionata</h2></div><button class="sheet__close" type="button" data-close-drawer aria-label="Chiudi"><span aria-hidden="true">×</span></button></header>
+    <div class="sheet__body" id="drawer-content"><p class="empty-state">Seleziona una fonte per vedere i metadati consentiti.</p></div>
   </dialog>
-  <dialog class="drawer" id="trust-drawer" aria-labelledby="trust-heading">
-    <div class="drawer__header"><div><p class="eyebrow">confini di fiducia</p><h2 id="trust-heading">Il browser non è il proprietario dello stato</h2></div><button class="icon-button" type="button" data-close-drawer>Chiudi</button></div>
-    <div class="trust-copy" id="trust-copy"><p>Le decisioni passano per i servizi canonici del repository. Il browser mostra solo i dati consentiti e non contiene chiavi, SQLite o runtime del provider.</p></div>
+  <dialog class="sheet" id="trust-drawer" aria-labelledby="trust-heading">
+    <header class="sheet__header"><div><p class="eyebrow">confini di fiducia</p><h2 id="trust-heading">Il browser non è il proprietario dello stato</h2></div><button class="sheet__close" type="button" data-close-drawer aria-label="Chiudi"><span aria-hidden="true">×</span></button></header>
+    <div class="sheet__body trust-copy" id="trust-copy"><p>Le decisioni passano per i servizi canonici del repository. Il browser mostra solo i dati consentiti e non contiene chiavi, SQLite o runtime del provider.</p></div>
+    <footer class="sheet__footer"><span id="runtime-label">ambiente in verifica</span></footer>
   </dialog>
-  <dialog class="account-menu" id="account-menu" aria-labelledby="account-menu-heading">
-    <div class="drawer__header"><div><p class="eyebrow">accesso privato</p><h2 id="account-menu-heading">Account</h2></div><button class="icon-button" type="button" data-close-drawer>Chiudi</button></div>
-    <div class="account-menu__body" id="account-menu-body"><p>Controllo della sessione in corso…</p></div>
+  <dialog class="modal account-menu" id="account-menu" aria-labelledby="account-menu-heading">
+    <header class="sheet__header"><div><p class="eyebrow">accesso privato</p><h2 id="account-menu-heading">Account</h2></div><button class="sheet__close" type="button" data-close-drawer aria-label="Chiudi"><span aria-hidden="true">×</span></button></header>
+    <div class="sheet__body account-menu__body" id="account-menu-body"><p>Controllo della sessione in corso…</p></div>
   </dialog>
-  <dialog class="ai-command-search" id="command-search" aria-labelledby="command-search-heading">
+  <dialog class="modal ai-command-search" id="command-search" aria-labelledby="command-search-heading">
     <div class="ai-command-search__header">
-      <span class="icon icon--magnifying-glass" aria-hidden="true"></span>
+      <span class="icon icon--magnifying-glass ai-command-search__icon" aria-hidden="true"></span>
       <label class="visually-hidden" for="command-search-input" id="command-search-heading">Cerca in Cardine</label>
       <input id="command-search-input" type="search" autocomplete="off" placeholder="Cerca sezioni, fonti o un suggerimento…" aria-controls="command-search-results">
       <kbd>esc</kbd>
@@ -144,15 +135,6 @@
     <p class="ai-command-search__empty" id="command-search-empty" hidden>Nessun risultato. Prova con un altro termine.</p>
   </dialog>
 
-  <!-- Static compatibility markers for semantic browser smoke tests. -->
-  <!-- Start anywhere · Context conflicts remain a distinct context surface. -->
-  <template id="semantic-markers">
-    <section aria-labelledby="conversation-heading"><h2 id="conversation-heading">Sessione</h2></section>
-    <section aria-labelledby="material-heading"><h2 id="material-heading">Fonti</h2></section>
-    <section aria-labelledby="evidence-heading"><h2 id="evidence-heading">Evidenze</h2></section>
-    <section aria-labelledby="conflict-heading"><h2 id="conflict-heading">Conflitti di contesto</h2></section>
-    <section aria-labelledby="review-heading"><h2 id="review-heading">Ripasso dovuto</h2></section>
-  </template>
   <script src="/ai-primitives.js" defer></script>
   <script src="/browser.js" defer></script>
 </body>

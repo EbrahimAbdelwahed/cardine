@@ -9,7 +9,8 @@ def test_cardine_assets_are_split_and_reference_each_other() -> None:
     javascript = (DEMO_DIR / "browser.js").read_text(encoding="utf-8")
 
     assert '<link rel="stylesheet" href="/browser.css">' in page
-    assert '<link rel="icon" href="/icons/book-open.svg" type="image/svg+xml">' in page
+    assert '<link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">' in page
+    assert '<meta name="theme-color"' in page
     assert '<script src="/browser.js" defer></script>' in page
     assert "<style" not in page
     assert "x-dc" not in page
@@ -49,7 +50,13 @@ def test_ai_native_primitives_are_modular_packaged_and_complete() -> None:
     ):
         assert marker in primitives_css + primitives_js
 
-    assert "prefers-reduced-motion" in primitives_css
+    # The primitives consume the shell tokens; they must not fork the
+    # design system with a parallel --ai-* palette or a second
+    # reduced-motion / dark-mode block of their own.
+    assert "prefers-reduced-motion" not in primitives_css
+    assert "prefers-color-scheme" not in primitives_css
+    assert "--ai-accent" not in primitives_css
+    assert "@layer primitives" in primitives_css
     assert "CardineAI" in primitives_js
     assert "innerHTML" not in primitives_js
     assert "fetch(" not in primitives_js
@@ -60,16 +67,24 @@ def test_cardine_assets_use_only_approved_v1_routes_and_semantic_markers() -> No
     page = (DEMO_DIR / "browser.html").read_text(encoding="utf-8")
     javascript = (DEMO_DIR / "browser.js").read_text(encoding="utf-8")
 
+    for marker in ('<textarea id="entry"', 'id="entry-form"'):
+        assert marker in page
+
+    # Landmarks are asserted against the views that really render them. The
+    # page must not carry a scaffold of placeholder sections, and must not
+    # smuggle style rules through an HTML comment, just to satisfy a test.
+    assert "semantic-markers" not in page
+    assert "smoke" not in page
+    assert "<template" not in page
+    assert ".meta {" not in page
     for marker in (
-        '<textarea id="entry"',
         'aria-labelledby="conversation-heading"',
         'aria-labelledby="material-heading"',
         'aria-labelledby="evidence-heading"',
         'aria-labelledby="conflict-heading"',
         'aria-labelledby="review-heading"',
-        'id="entry-form"',
     ):
-        assert marker in page
+        assert marker in javascript
 
     for route in (
         "/api/v1/bootstrap",
@@ -143,8 +158,17 @@ def test_collapsed_sidebar_keeps_search_and_account_controls_on_same_grid() -> N
 
     assert ".rail.is-collapsed .nav-item" in css
     assert ".rail.is-collapsed .account-control" in css
-    assert "width: 40px" in css
+    assert ".rail.is-collapsed .trust-mini" in css
+    # One control size and one rail inset, so 56 - 2 x 8 leaves exactly the
+    # 40px box every rail control occupies: no icon is centred by rounding.
+    assert "--control-height: 40px" in css
+    assert "--rail-width-collapsed: 56px" in css
+    assert "--rail-inset: var(--space-2)" in css
+    assert "width: var(--rail-item)" in css
     assert "place-items: center" in css
+    # The rail must not draw its edge with a border: that would shrink the
+    # content box and pull every icon off the optical column.
+    assert "box-shadow: inset -1px 0 0 var(--line)" in css
 
 
 def test_piano_is_explicitly_unavailable_and_source_conflicts_are_read_only() -> None:
@@ -189,7 +213,7 @@ def test_claude_caliber_shell_polish_remains_theme_and_motion_safe() -> None:
     assert "color-scheme: light dark" in css
     assert "@media (prefers-color-scheme: dark)" in css
     assert "--ease-out: cubic-bezier(.23, 1, .32, 1)" in css
-    assert "transition: width" not in css
+    assert "inline-size var(--duration-base)" in css
     assert ".composer.has-value .composer__send" in css
     assert "icon--arrow-up" in page + javascript
     assert 'data-open-tutor-info' in page + javascript
@@ -200,7 +224,7 @@ def test_primary_surface_is_a_chat_workspace_with_secondary_tools() -> None:
     css = (DEMO_DIR / "browser.css").read_text(encoding="utf-8")
     javascript = (DEMO_DIR / "browser.js").read_text(encoding="utf-8")
 
-    assert 'class="new-chat-button' in page
+    assert "new-chat-button" in page
     assert 'class="rail-tools"' in page
     assert 'class="chat-home"' in javascript
     assert 'class="chat-session"' in javascript
