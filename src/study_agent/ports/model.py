@@ -42,6 +42,8 @@ class StructuredOutputConstraint:
 
     def __post_init__(self) -> None:
         require_text(self.name, "name")
+        if not isinstance(self.strict, bool):
+            raise ValueError("strict must be a boolean")
         object.__setattr__(self, "schema", freeze_object(self.schema))
 
 
@@ -124,6 +126,8 @@ class ModelInvocation:
 
 class ModelErrorCode(StrEnum):
     UNAVAILABLE = "unavailable"
+    MODEL_UNAVAILABLE = "model_unavailable"
+    ENDPOINT_INCOMPATIBLE = "endpoint_incompatible"
     AUTHENTICATION = "authentication"
     RATE_LIMITED = "rate_limited"
     TIMEOUT = "timeout"

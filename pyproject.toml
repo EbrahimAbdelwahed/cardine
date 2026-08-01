@@ -31,6 +31,7 @@ study-agent = "study_agent.cli.main:main"
 study-agent-demo = "study_agent.demo.anatomy:main"
 study-agent-shell = "study_agent.demo.product_shell:main"
 study-agent-shell-web = "study_agent.demo.browser:main"
+study-agent-private-password-hash = "study_agent.demo.private_access:main"
 
 [project.optional-dependencies]
 dev = [
@@ -47,7 +48,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 study_agent = ["py.typed"]
-"study_agent.demo" = ["fixtures/*.md", "browser.html", "browser.css", "browser.js", "icons/*.svg", "icons/*.txt"]
+"study_agent.demo" = ["fixtures/*.md", "browser.html", "browser.css", "browser.js", "ai-primitives.css", "ai-primitives.js", "icons/*.svg", "icons/*.txt", "fonts/*.woff2", "fonts/*.txt"]
 "study_agent.operator_skill" = ["SKILL.md"]
 
 [tool.pytest.ini_options]

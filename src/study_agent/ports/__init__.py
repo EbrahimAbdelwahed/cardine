@@ -81,6 +81,7 @@ from .tutor_host import (
 )
 from .tutor_runner import (
     TutorCapabilityGatewayPort,
+    TutorCompletionHandoffStore,
     TutorContinuationStore,
     TutorHostActionIdentityPort,
     TutorHostAuthorityPort,
@@ -145,6 +146,7 @@ __all__ = [
     "StudyTool",
     "ToolCall",
     "TutorCapabilityGatewayPort",
+    "TutorCompletionHandoffStore",
     "TutorContinuationStore",
     "TutorDecisionPort",
     "TutorHostActionIdentityPort",

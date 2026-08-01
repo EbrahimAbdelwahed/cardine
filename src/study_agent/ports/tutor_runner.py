@@ -87,8 +87,19 @@ class TutorContinuationStore(Protocol):
     ) -> None: ...
 
 
+class TutorCompletionHandoffStore(Protocol):
+    """Durable CAS slots for host capability-completion handoffs."""
+
+    def create(self, key: str, payload: bytes) -> bool: ...
+
+    def load(self, key: str) -> bytes: ...
+
+    def compare_and_set(self, key: str, expected: bytes, replacement: bytes) -> bool: ...
+
+
 __all__ = [
     "TutorCapabilityGatewayPort",
+    "TutorCompletionHandoffStore",
     "TutorContinuationStore",
     "TutorHostActionIdentityPort",
     "TutorHostAuthorityPort",

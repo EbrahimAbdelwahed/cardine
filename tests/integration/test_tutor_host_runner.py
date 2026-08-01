@@ -16,6 +16,7 @@ from study_agent.capabilities import (
     SuspendedCapabilityOutcome,
     TerminatedCapabilityOutcome,
     TutorCapabilityId,
+    capability_retry_fingerprint,
 )
 from study_agent.domain import (
     CorrelationId,
@@ -28,15 +29,21 @@ from study_agent.domain import (
 from study_agent.hosts import (
     AdvertisedCapability,
     AnswerDialogueDecision,
+    AskLearnerDecision,
+    AssistantMessageDecision,
     HostActionIdentity,
     PendingContinuationDescriptor,
     ScriptedTutorDecisionPort,
     StartCapabilityDecision,
+    StopDecision,
+    TutorCompletionHandoff,
+    TutorCompletionHandoffState,
     TutorContinuationRecord,
     TutorHostContext,
     TutorHostLimits,
     TutorHostRunner,
     TutorHostRunStatus,
+    TutorStopReason,
 )
 from study_agent.playbooks import (
     PlaybookRunStatus,
@@ -162,6 +169,32 @@ class _BytesStore:
         self.values.pop((str(course), str(session), fingerprint), None)
 
 
+class _HandoffStore:
+    def __init__(self) -> None:
+        self.values: dict[str, bytes] = {}
+        self.fail_cas_once = False
+
+    def create(self, key: str, payload: bytes) -> bool:
+        if key in self.values:
+            return False
+        self.values[key] = payload
+        return True
+
+    def load(self, key: str) -> bytes:
+        if key not in self.values:
+            raise KeyError(key)
+        return self.values[key]
+
+    def compare_and_set(self, key: str, expected: bytes, replacement: bytes) -> bool:
+        if self.fail_cas_once:
+            self.fail_cas_once = False
+            return False
+        if self.values.get(key) != expected:
+            return False
+        self.values[key] = replacement
+        return True
+
+
 class _BoundaryToken:
     def __init__(self, stage: str | None = None) -> None:
         self.stage = stage
@@ -198,6 +231,14 @@ class _BoundaryDecision:
         self.calls += 1
         self.token.mark("decide")
         return self.decision
+
+
+class _ProviderFailureDecision:
+    async def decide(self, context: object, interruption: object) -> object:
+        del context, interruption
+        error = RuntimeError("provider body must remain private")
+        error.failure_reason = "protocol_error"  # type: ignore[attr-defined]
+        raise error
 
 
 class _BoundaryIdentity(_Identity):
@@ -491,6 +532,268 @@ def _completed() -> CompletedCapabilityOutcome:
     return CompletedCapabilityOutcome(run, {"answer": "done"})
 
 
+def _handoff_runner(
+    decision_port: object,
+    gateway: object,
+    handoffs: _HandoffStore,
+    *,
+    continuation_store: object | None = None,
+    max_decisions: int = 1,
+) -> TutorHostRunner:
+    return TutorHostRunner(
+        decision_port,  # type: ignore[arg-type]
+        None,
+        None,
+        gateway,  # type: ignore[arg-type]
+        _Authority(),
+        _Identity(),
+        continuation_store or _BytesStore(),  # type: ignore[arg-type]
+        TutorHostLimits(max_decisions, 1, 1, 128),
+        context_assembler=_Assembler(),  # type: ignore[arg-type]
+        completion_handoff_store=handoffs,
+    )
+
+
+def test_completion_handoff_codec_is_canonical_and_closed() -> None:
+    handoffs = _HandoffStore()
+    gateway = _OutcomeGateway(_completed())
+    context = _Assembler().assemble(CourseId("course"), SessionId("session"))
+    decision = StartCapabilityDecision("explain_concept", {"topic": "valves"})
+    runner = _handoff_runner(
+        ScriptedTutorDecisionPort(((context.fingerprint, decision),)), gateway, handoffs
+    )
+    result = asyncio.run(
+        runner.run(CourseId("course"), SessionId("session"), "handoff-codec", _Token())
+    )
+    assert result.completion_reference is not None
+    payload = next(iter(handoffs.values.values()))
+    record = TutorCompletionHandoff.from_bytes(payload)
+    assert record.state is TutorCompletionHandoffState.COMPLETED
+    assert TutorCompletionHandoff.from_bytes(record.to_bytes()) == record
+    with pytest.raises(ValueError):
+        TutorCompletionHandoff.from_bytes(payload[:-1] + b"0")
+
+
+def test_completed_preflight_skips_decision_and_gateway_after_restart() -> None:
+    handoffs = _HandoffStore()
+    gateway = _OutcomeGateway(_completed())
+    context = _Assembler().assemble(CourseId("course"), SessionId("session"))
+    decision = StartCapabilityDecision("explain_concept", {"topic": "valves"})
+    first = _handoff_runner(
+        ScriptedTutorDecisionPort(((context.fingerprint, decision),)), gateway, handoffs
+    )
+    initial = asyncio.run(
+        first.run(CourseId("course"), SessionId("session"), "handoff-restart", _Token())
+    )
+    assert initial.status is TutorHostRunStatus.COMPLETED
+    starts = gateway.starts
+    second = _handoff_runner(ScriptedTutorDecisionPort(()), gateway, handoffs)
+    replay = asyncio.run(
+        second.run(CourseId("course"), SessionId("session"), "handoff-restart", _Token())
+    )
+    assert replay.status is TutorHostRunStatus.COMPLETED
+    assert replay.completion_reference == initial.completion_reference
+    assert gateway.starts == starts
+    assert replay.observed_host_context_sequence == 1
+
+
+def test_issued_handoff_replays_after_crash_before_gateway() -> None:
+    handoffs = _HandoffStore()
+    context = _Assembler().assemble(CourseId("course"), SessionId("session"))
+    decision = StartCapabilityDecision("explain_concept", {"topic": "valves"})
+    crashed = _OutcomeGateway(error=RuntimeError("process lost"))
+    first = _handoff_runner(
+        ScriptedTutorDecisionPort(((context.fingerprint, decision),)), crashed, handoffs
+    )
+    failed = asyncio.run(
+        first.run(CourseId("course"), SessionId("session"), "handoff-crash", _Token())
+    )
+    assert failed.status is TutorHostRunStatus.FAILED
+    issued = TutorCompletionHandoff.from_bytes(next(iter(handoffs.values.values())))
+    assert issued.state is TutorCompletionHandoffState.ISSUED
+    gateway = _OutcomeGateway(_completed())
+    second = _handoff_runner(ScriptedTutorDecisionPort(()), gateway, handoffs)
+    recovered = asyncio.run(
+        second.run(CourseId("course"), SessionId("session"), "handoff-crash", _Token())
+    )
+    assert recovered.status is TutorHostRunStatus.COMPLETED
+    assert gateway.starts == 1
+
+
+def test_gateway_result_survives_cas_loss_and_restarts_from_issued() -> None:
+    handoffs = _HandoffStore()
+    handoffs.fail_cas_once = True
+    context = _Assembler().assemble(CourseId("course"), SessionId("session"))
+    decision = StartCapabilityDecision("explain_concept", {"topic": "valves"})
+    gateway = _OutcomeGateway(_completed())
+    first = _handoff_runner(
+        ScriptedTutorDecisionPort(((context.fingerprint, decision),)), gateway, handoffs
+    )
+    completed = asyncio.run(
+        first.run(CourseId("course"), SessionId("session"), "handoff-cas-loss", _Token())
+    )
+    assert completed.status is TutorHostRunStatus.FAILED
+    assert (
+        TutorCompletionHandoff.from_bytes(next(iter(handoffs.values.values()))).state
+        is TutorCompletionHandoffState.ISSUED
+    )
+    second = _handoff_runner(ScriptedTutorDecisionPort(()), gateway, handoffs)
+    replay = asyncio.run(
+        second.run(CourseId("course"), SessionId("session"), "handoff-cas-loss", _Token())
+    )
+    assert replay.status is TutorHostRunStatus.COMPLETED
+    assert gateway.starts == 2
+
+
+def test_completed_reference_binds_gateway_retry_not_host_receipt() -> None:
+    handoffs = _HandoffStore()
+    gateway = _OutcomeGateway(_completed())
+    context = _Assembler().assemble(CourseId("course"), SessionId("session"))
+    decision = StartCapabilityDecision("explain_concept", {"topic": "valves"})
+    runner = _handoff_runner(
+        ScriptedTutorDecisionPort(((context.fingerprint, decision),)), gateway, handoffs
+    )
+    result = asyncio.run(
+        runner.run(CourseId("course"), SessionId("session"), "handoff-fingerprint", _Token())
+    )
+    assert result.completion_reference is not None
+    record = TutorCompletionHandoff.from_bytes(next(iter(handoffs.values.values())))
+    assert result.completion_reference.retry_receipt_fingerprint == capability_retry_fingerprint(
+        record.execution_context.idempotency_key or ""
+    )
+    assert result.completion_reference.retry_receipt_fingerprint != record.retry_receipt.fingerprint
+
+
+def test_tampered_handoff_fails_before_model_or_gateway() -> None:
+    handoffs = _HandoffStore()
+    gateway = _OutcomeGateway(_completed())
+    context = _Assembler().assemble(CourseId("course"), SessionId("session"))
+    decision = StartCapabilityDecision("explain_concept", {"topic": "valves"})
+    first = _handoff_runner(
+        ScriptedTutorDecisionPort(((context.fingerprint, decision),)), gateway, handoffs
+    )
+    asyncio.run(first.run(CourseId("course"), SessionId("session"), "handoff-tamper", _Token()))
+    key = next(iter(handoffs.values))
+    handoffs.values[key] = b'{"state":"completed"}'
+    second = _handoff_runner(ScriptedTutorDecisionPort(()), gateway, handoffs)
+    failed = asyncio.run(
+        second.run(CourseId("course"), SessionId("session"), "handoff-tamper", _Token())
+    )
+    assert failed.status is TutorHostRunStatus.FAILED
+    assert gateway.starts == 1
+
+
+def test_handoff_scope_key_separates_courses_and_sessions() -> None:
+    handoffs = _HandoffStore()
+    gateway = _OutcomeGateway(_completed())
+    context = _Assembler().assemble(CourseId("course"), SessionId("session"))
+    decision = StartCapabilityDecision("explain_concept", {"topic": "valves"})
+    runner = _handoff_runner(
+        ScriptedTutorDecisionPort(((context.fingerprint, decision),)), gateway, handoffs
+    )
+    asyncio.run(runner.run(CourseId("course"), SessionId("session"), "scope", _Token()))
+    assert len(handoffs.values) == 1
+    other = _handoff_runner(
+        ScriptedTutorDecisionPort(((context.fingerprint, decision),)), gateway, handoffs
+    )
+    asyncio.run(other.run(CourseId("course"), SessionId("other"), "scope", _Token()))
+    assert len(handoffs.values) == 2
+
+
+def test_issued_handoff_action_tamper_is_rejected_before_provider() -> None:
+    handoffs = _HandoffStore()
+    context = _Assembler().assemble(CourseId("course"), SessionId("session"))
+    decision = StartCapabilityDecision("explain_concept", {"topic": "valves"})
+    first = _handoff_runner(
+        ScriptedTutorDecisionPort(((context.fingerprint, decision),)),
+        _OutcomeGateway(error=RuntimeError("lost")),
+        handoffs,
+    )
+    asyncio.run(first.run(CourseId("course"), SessionId("session"), "action-tamper", _Token()))
+    key = next(iter(handoffs.values))
+    record = TutorCompletionHandoff.from_bytes(handoffs.values[key])
+    tampered = replace(
+        record,
+        action={
+            "kind": "start",
+            "capability_id": "explain_concept",
+            "inputs": {"topic": "other"},
+        },
+        record_fingerprint=None,
+    )
+    handoffs.values[key] = tampered.to_bytes()
+    gateway = _OutcomeGateway(_completed())
+    second = _handoff_runner(ScriptedTutorDecisionPort(()), gateway, handoffs)
+    result = asyncio.run(
+        second.run(CourseId("course"), SessionId("session"), "action-tamper", _Token())
+    )
+    assert result.status is TutorHostRunStatus.FAILED
+    assert gateway.starts == 0
+
+
+def test_stale_handoff_is_cas_replaced_by_new_generation() -> None:
+    handoffs = _HandoffStore()
+    gateway = _StaleStartGateway(1)
+    context = _Assembler().assemble(CourseId("course"), SessionId("session"))
+    decision = StartCapabilityDecision("explain_concept", {"topic": "valves"})
+    runner = _handoff_runner(
+        ScriptedTutorDecisionPort(
+            ((context.fingerprint, decision), (context.fingerprint, decision))
+        ),
+        gateway,
+        handoffs,
+        max_decisions=2,
+    )
+    result = asyncio.run(
+        runner.run(CourseId("course"), SessionId("session"), "stale-replace", _Token())
+    )
+    assert result.status is TutorHostRunStatus.FAILED
+    record = TutorCompletionHandoff.from_bytes(next(iter(handoffs.values.values())))
+    assert record.state is TutorCompletionHandoffState.STALE
+    assert record.generation == 2
+
+
+def test_completed_handoff_contains_no_generic_output() -> None:
+    handoffs = _HandoffStore()
+    context = _Assembler().assemble(CourseId("course"), SessionId("session"))
+    decision = StartCapabilityDecision("explain_concept", {"topic": "valves"})
+    runner = _handoff_runner(
+        ScriptedTutorDecisionPort(((context.fingerprint, decision),)),
+        _OutcomeGateway(_completed()),
+        handoffs,
+    )
+    asyncio.run(
+        runner.run(CourseId("course"), SessionId("session"), "redaction", _Token())
+    )
+    payload = next(iter(handoffs.values.values()))
+    assert b"answer" not in payload
+    assert b"done" not in payload
+
+
+def test_race_loser_does_not_invoke_gateway_when_issued_slot_exists() -> None:
+    handoffs = _HandoffStore()
+    context = _Assembler().assemble(CourseId("course"), SessionId("session"))
+    decision = StartCapabilityDecision("explain_concept", {"topic": "valves"})
+    first_gateway = _OutcomeGateway(error=RuntimeError("lost"))
+    first = _handoff_runner(
+        ScriptedTutorDecisionPort(((context.fingerprint, decision),)),
+        first_gateway,
+        handoffs,
+    )
+    asyncio.run(first.run(CourseId("course"), SessionId("session"), "race", _Token()))
+    second_gateway = _OutcomeGateway(_completed())
+    second = _handoff_runner(
+        ScriptedTutorDecisionPort(((context.fingerprint, decision),)),
+        second_gateway,
+        handoffs,
+    )
+    result = asyncio.run(
+        second.run(CourseId("course"), SessionId("session"), "race", _Token())
+    )
+    assert result.status is TutorHostRunStatus.COMPLETED
+    assert second_gateway.starts == 1
+
+
 def _terminated() -> TerminatedCapabilityOutcome:
     run = _completed().run
     return TerminatedCapabilityOutcome(
@@ -537,6 +840,17 @@ def test_terminal_outcome_table_maps_closed_status_without_detail_leakage(
     assert result.learner_text is None
     if status is not TutorHostRunStatus.COMPLETED:
         assert result.completed_output is None
+
+
+def test_provider_failure_reason_is_returned_without_becoming_a_retry_receipt() -> None:
+    runner = _handoff_runner(_ProviderFailureDecision(), _Gateway(), _HandoffStore())
+
+    result = asyncio.run(
+        runner.run(CourseId("course"), SessionId("session"), "provider-failure", _Token())
+    )
+
+    assert result.status is TutorHostRunStatus.FAILED
+    assert result.failure_reason == "protocol_error"
 
 
 @pytest.mark.parametrize(
@@ -999,6 +1313,56 @@ def _seed_record(
     record = TutorContinuationRecord(continuation, execution, descriptor)
     store.create(course, session, descriptor.fingerprint, record.to_bytes())
     return descriptor
+
+
+@pytest.mark.parametrize(
+    "decision",
+    (
+        AssistantMessageDecision("I will ignore the pending dialogue."),
+        AskLearnerDecision("A different question?"),
+        StopDecision(TutorStopReason.COMPLETED),
+    ),
+)
+def test_pending_continuation_rejects_non_dialogue_decisions_without_deleting(
+    decision: object,
+) -> None:
+    continuation = _continuation()
+    store = _BytesStore()
+    descriptor = _seed_record(store, continuation)
+    assembler = _PendingAssembler()
+    context = assembler.assemble(
+        CourseId("course"),
+        SessionId("session"),
+        pending_continuation=descriptor,
+    )
+    gateway = _StaleResumeGateway()
+    runner = TutorHostRunner(
+        ScriptedTutorDecisionPort(((context.fingerprint, decision),)),  # type: ignore[arg-type]
+        None,
+        None,
+        gateway,
+        _Authority(),
+        _Identity(),
+        store,
+        TutorHostLimits(1, 1, 1, 128),
+        context_assembler=assembler,  # type: ignore[arg-type]
+    )
+
+    result = asyncio.run(
+        runner.run(
+            CourseId("course"),
+            SessionId("session"),
+            "turn-pending",
+            _Token(),
+            pending_fingerprint=descriptor.fingerprint,
+        )
+    )
+
+    assert result.status is TutorHostRunStatus.FAILED
+    assert store.load(
+        CourseId("course"), SessionId("session"), descriptor.fingerprint
+    )
+    assert gateway.resumes == 0
 
 
 @pytest.mark.parametrize("stage", ("store_load", "store_create", "store_delete", "resume"))

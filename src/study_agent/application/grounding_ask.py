@@ -42,6 +42,7 @@ from study_agent.playbooks.builtin import GROUNDED_ANSWER_FLOW
 from study_agent.ports import (
     CourseNotFoundError,
     CourseViewPort,
+    EventStore,
     IndexReceipt,
     RetrievalPort,
     RunStore,
@@ -164,6 +165,7 @@ class GroundingAskService:
         engine_factory: GroundingEngineFactory,
         run_store: RunStore,
         configuration: GroundingAskConfiguration,
+        events: EventStore | None = None,
     ) -> None:
         self._courses = courses
         self._session_service = session_service
@@ -175,9 +177,23 @@ class GroundingAskService:
         self._engine_factory = engine_factory
         self._run_store = run_store
         self._configuration = configuration
+        self._events = events
 
-    async def ask(self, question: str, context: ExecutionContext) -> GroundingAskResult:
+    async def ask(
+        self,
+        question: str,
+        context: ExecutionContext,
+        *,
+        expected_sequence: int | None = None,
+    ) -> GroundingAskResult:
         question = _question(question)
+        if expected_sequence is not None and (
+            type(expected_sequence) is not int or expected_sequence < 0
+        ):
+            raise GroundingAskError(
+                GroundingAskErrorCode.INVALID_REQUEST,
+                "expected_sequence must be a non-negative integer",
+            )
         session_id, key = self._authorize(context)
         try:
             profile = self._courses.get(context.course_id)
@@ -206,6 +222,25 @@ class GroundingAskService:
                     "idempotency key already names a different grounded question",
                 )
             return _result(existing, context.course_id, session_id)
+
+        if expected_sequence is not None:
+            if self._events is None:
+                raise GroundingAskError(
+                    GroundingAskErrorCode.INCOMPATIBLE_RUNTIME,
+                    "canonical event state could not be verified",
+                )
+            try:
+                current_sequence = _current_sequence(self._events, context.course_id)
+            except (LookupError, OSError, RuntimeError, ValueError) as error:
+                raise GroundingAskError(
+                    GroundingAskErrorCode.INCOMPATIBLE_RUNTIME,
+                    "canonical event state could not be verified",
+                ) from error
+            if current_sequence != expected_sequence:
+                raise GroundingAskError(
+                    GroundingAskErrorCode.RETRYABLE_CONFLICT,
+                    "canonical session state advanced; retry safely",
+                )
 
         profile_json = freeze_object(course_profile_manifest(profile))
         try:
@@ -265,6 +300,7 @@ class GroundingAskService:
                 pins=self._configuration.pins,
                 read_dependencies=dependencies,
                 idempotency_key=key,
+                expected_sequence=expected_sequence,
             )
         except IdempotencyConflictError as error:
             raise GroundingAskError(GroundingAskErrorCode.CONFLICT, "request conflicts") from error
@@ -611,6 +647,17 @@ def _session_fingerprint(
             "continuation_summary": summary_json,
         }
     )
+
+
+def _current_sequence(events: EventStore, course_id: CourseId) -> int:
+    stream = tuple(events.read(course_id))
+    if not stream:
+        return 0
+    expected = tuple(range(1, len(stream) + 1))
+    actual = tuple(event.course_sequence for event in stream)
+    if actual != expected or any(event.course_id != course_id for event in stream):
+        raise ValueError("course event stream is not contiguous")
+    return actual[-1]
 
 
 def _result(

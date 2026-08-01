@@ -60,6 +60,14 @@ def test_six_layers_are_canonical_and_composition_is_deterministic() -> None:
     assert len(first.fingerprint) == 64
 
 
+def test_grounded_answer_schema_uses_openai_strict_nullable_note_shape() -> None:
+    properties = cast(JsonObject, GROUNDED_ANSWER_DRAFT_SCHEMA.value["properties"])
+
+    assert properties["unsupported_information_note"] == {
+        "type": ("string", "null")
+    }
+
+
 def test_untrusted_injection_remains_json_data_and_course_policy_changes_only_data() -> None:
     composer = CanonicalPromptComposer()
     base = composer.compose(

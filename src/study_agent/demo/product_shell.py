@@ -387,7 +387,10 @@ def run_offline_shell_demo(
             "due_review": {
                 "status": "unavailable",
                 "items": (),
-                "message": "Optional recall capability is not installed; continuing safely.",
+                "message": (
+                    "Il ripasso programmato non è attivo. "
+                    "Puoi comunque studiare dalla chat e dalle fonti."
+                ),
             },
             "optional_due_review": "unavailable (TUT-07 is optional)",
             "parity": result["parity"],

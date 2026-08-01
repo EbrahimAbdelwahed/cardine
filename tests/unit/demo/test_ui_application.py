@@ -4,8 +4,14 @@ from collections.abc import Mapping
 
 import pytest
 
-from study_agent.demo.ui_application import DemoUiApplication, UiRequestError
+from study_agent.demo.ui_application import UiRequestError
 from study_agent.domain._validation import JsonObject, JsonValue
+
+# This file is retained temporarily so downstream branches can see which
+# stateless contract disappeared.  Its fixtures are intentionally not a
+# runtime path any longer; repository-backed coverage lives in the Cardine
+# integration and E2E suites.
+pytestmark = pytest.mark.skip(reason="the stateless Cardine demo was removed")
 
 
 def _journey(entry: str) -> JsonObject:
@@ -18,7 +24,7 @@ def _journey(entry: str) -> JsonObject:
         ),
         "material": {
             "fixture": "heart-valves.md",
-            "title": "Heart valves — sanitized public demo fixture",
+            "title": "Valvole cardiache — materiale di esempio",
             "checksum_sha256": "a" * 64,
             "byte_size": 42,
             "evidence": ("Aortic evidence", "Pulmonary evidence"),

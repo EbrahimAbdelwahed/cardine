@@ -34,6 +34,9 @@ ADAPTER_VERSION = "1.0.0"
 _MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 _RESERVED_HEADERS = frozenset({"authorization", "content-type", "content-length"})
 _HEADER_NAME = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+_STRUCTURED_OUTPUT_FORMATS = frozenset({"json_schema", "json_object"})
+_REASONING_EFFORTS = frozenset({"none", "low", "medium", "high", "xhigh", "max"})
+_MAX_OUTPUT_TOKEN_FIELDS = frozenset({"max_tokens", "max_completion_tokens"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +59,21 @@ class _TransportFailure(Exception):
     pass
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Keep bearer credentials on the configured origin only."""
+
+    def redirect_request(
+        self,
+        request: urllib.request.Request,
+        file_pointer: object,
+        status: int,
+        message: str,
+        headers: object,
+        new_url: str,
+    ) -> None:
+        return None
+
+
 class StdlibHttpTransport:
     def post(
         self,
@@ -66,7 +84,8 @@ class StdlibHttpTransport:
     ) -> HttpResponse:
         request = urllib.request.Request(url, body, dict(headers), method="POST")
         try:
-            with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            opener = urllib.request.build_opener(_NoRedirectHandler())
+            with opener.open(request, timeout=timeout_seconds) as response:
                 payload = response.read(_MAX_RESPONSE_BYTES + 1)
                 status = response.status
         except urllib.error.HTTPError as error:
@@ -87,6 +106,9 @@ class OpenAICompatibleConfig:
     timeout_seconds: float = 60.0
     capabilities: ModelCapabilities = field(default_factory=ModelCapabilities)
     extra_headers: Mapping[str, str] = field(default_factory=dict, repr=False)
+    structured_output_format: str = "json_schema"
+    reasoning_effort: str | None = None
+    max_output_tokens_field: str = "max_tokens"
 
     def __post_init__(self) -> None:
         parsed = urlsplit(self.endpoint_url)
@@ -102,6 +124,17 @@ class OpenAICompatibleConfig:
             raise ValueError("timeout_seconds must be positive")
         if self.capabilities.streaming or self.capabilities.cancellation:
             raise ValueError("HTTP streaming and cancellation are unsupported in v0.1")
+        if self.structured_output_format not in _STRUCTURED_OUTPUT_FORMATS:
+            raise ValueError(
+                "structured_output_format must be json_schema or json_object"
+            )
+        if (
+            self.reasoning_effort is not None
+            and self.reasoning_effort not in _REASONING_EFFORTS
+        ):
+            raise ValueError("reasoning_effort is unsupported")
+        if self.max_output_tokens_field not in _MAX_OUTPUT_TOKEN_FIELDS:
+            raise ValueError("max_output_tokens_field is unsupported")
         headers = dict(self.extra_headers)
         for name, value in headers.items():
             if not isinstance(name, str) or _HEADER_NAME.fullmatch(name) is None:
@@ -123,7 +156,28 @@ def _plain(value: JsonValue) -> object:
     return value
 
 
+def _provider_error_code(body: bytes) -> str | None:
+    """Extract only a bounded provider error code, never its response text."""
+
+    try:
+        payload = json.loads(body)
+    except (UnicodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, Mapping):
+        return None
+    error = payload.get("error")
+    if not isinstance(error, Mapping):
+        return None
+    code = error.get("code")
+    if not isinstance(code, str) or len(code) > 80:
+        return None
+    return code
+
+
 class OpenAICompatibleModel:
+    _adapter_id = ADAPTER_ID
+    _adapter_version = ADAPTER_VERSION
+
     def __init__(
         self,
         config: OpenAICompatibleConfig,
@@ -153,18 +207,23 @@ class OpenAICompatibleModel:
             "messages": messages,
         }
         if request.max_output_tokens is not None:
-            payload["max_tokens"] = request.max_output_tokens
+            payload[self._config.max_output_tokens_field] = request.max_output_tokens
         if request.temperature is not None:
             payload["temperature"] = request.temperature
+        if self._config.reasoning_effort is not None:
+            payload["reasoning_effort"] = self._config.reasoning_effort
         if request.structured_output is not None and self.capabilities.structured_output:
-            payload["response_format"] = {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": request.structured_output.name,
-                    "schema": _plain(request.structured_output.schema),
-                    "strict": request.structured_output.strict,
-                },
-            }
+            if self._config.structured_output_format == "json_object":
+                payload["response_format"] = {"type": "json_object"}
+            else:
+                payload["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": request.structured_output.name,
+                        "schema": _plain(request.structured_output.schema),
+                        "strict": request.structured_output.strict,
+                    },
+                }
         return json.dumps(
             payload,
             ensure_ascii=False,
@@ -181,7 +240,8 @@ class OpenAICompatibleModel:
         }
 
     @staticmethod
-    def _error_for_status(status: int) -> ModelError:
+    def _error_for_status(status: int, body: bytes) -> ModelError:
+        provider_code = _provider_error_code(body)
         if status in (401, 403):
             return ModelError(ModelErrorCode.AUTHENTICATION, "model authentication failed")
         if status == 429:
@@ -195,6 +255,20 @@ class OpenAICompatibleModel:
                 ModelErrorCode.TIMEOUT,
                 "model request timed out",
                 retryable=True,
+            )
+        if provider_code in {"model_not_found", "model_not_available"}:
+            return ModelError(
+                ModelErrorCode.MODEL_UNAVAILABLE,
+                "configured model is unavailable",
+            )
+        if status == 404 or provider_code in {
+            "unsupported_parameter",
+            "unsupported_value",
+            "invalid_parameter",
+        }:
+            return ModelError(
+                ModelErrorCode.ENDPOINT_INCOMPATIBLE,
+                "model endpoint does not support this request",
             )
         if status < 500:
             return ModelError(
@@ -273,8 +347,8 @@ class OpenAICompatibleModel:
                 usage,
                 reason,
                 ModelInvocation(
-                    ADAPTER_ID,
-                    ADAPTER_VERSION,
+                    self._adapter_id,
+                    self._adapter_version,
                     self._config.model_id,
                     response_id,
                 ),
@@ -363,7 +437,7 @@ class OpenAICompatibleModel:
             ) from None
         response = self._validated_response(response)
         if not 200 <= response.status < 300:
-            raise self._error_for_status(response.status)
+            raise self._error_for_status(response.status, response.body)
         return self._parse(response.body, request)
 
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:

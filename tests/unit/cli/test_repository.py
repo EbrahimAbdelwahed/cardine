@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from study_agent.adapters.model import OpenAICompatibleModel
+from study_agent.adapters.model import OpenAICompatibleModel, OpenAIGpt56LunaModel
 from study_agent.cli import (
     EMPTY_CONFIG,
     LocalRepository,
@@ -278,7 +278,7 @@ def test_registry_does_not_expose_unrelated_environment_or_builder_errors() -> N
 def test_default_adapter_resolves_key_only_at_construction() -> None:
     registry = __import__(
         "study_agent.cli", fromlist=["default_model_adapters"]
-    ).default_model_adapters()
+    ).default_model_adapters(allow_configurable_endpoints=True)
     config = model_config().model
     assert config is not None
 
@@ -288,6 +288,90 @@ def test_default_adapter_resolves_key_only_at_construction() -> None:
     assert isinstance(adapter, OpenAICompatibleModel)
     assert "credential-value" not in repr(adapter)
     assert "credential-value" not in repr(registry)
+
+
+def test_default_adapter_selects_provider_json_object_mode() -> None:
+    registry = __import__(
+        "study_agent.cli", fromlist=["default_model_adapters"]
+    ).default_model_adapters(allow_configurable_endpoints=True)
+    config = ModelAdapterConfig(
+        "openai-compatible-http",
+        {
+            "endpoint_url": "https://models.example.test/v1/chat/completions",
+            "model_id": "model-with-json-text-only",
+            "timeout_seconds": 10,
+            "structured_output_format": "json_object",
+        },
+        "MODEL_KEY",
+    )
+
+    adapter = registry.create(config, {"MODEL_KEY": "credential-value"})
+
+    assert adapter.capabilities.structured_output is True
+
+
+def test_default_registry_selects_fixed_luna_adapter_from_credential_reference() -> None:
+    registry = __import__(
+        "study_agent.cli", fromlist=["default_model_adapters"]
+    ).default_model_adapters()
+    config = ModelAdapterConfig(
+        "openai-gpt-5.6-luna",
+        {"timeout_seconds": 45},
+        "OPENAI_API_KEY",
+    )
+
+    adapter = registry.create(config, {"OPENAI_API_KEY": "credential-value"})
+
+    assert isinstance(adapter, OpenAIGpt56LunaModel)
+    assert "openai-gpt-5.6-luna" in registry.adapter_ids
+    assert "credential-value" not in repr(adapter)
+    assert str(registry.artifact("openai-gpt-5.6-luna").version) == "1.0.0"
+
+
+def test_default_registry_exposes_only_the_fixed_luna_network_destination() -> None:
+    registry = __import__(
+        "study_agent.cli", fromlist=["default_model_adapters"]
+    ).default_model_adapters()
+
+    assert registry.adapter_ids == ("openai-gpt-5.6-luna",)
+
+
+def test_luna_registry_rejects_an_alternate_credential_environment() -> None:
+    registry = __import__(
+        "study_agent.cli", fromlist=["default_model_adapters"]
+    ).default_model_adapters()
+    config = ModelAdapterConfig(
+        "openai-gpt-5.6-luna",
+        {"timeout_seconds": 45},
+        "AWS_SECRET_ACCESS_KEY",
+    )
+
+    with pytest.raises(ModelAdapterConfigurationError):
+        registry.create(config, {"AWS_SECRET_ACCESS_KEY": "credential-value"})
+
+
+@pytest.mark.parametrize(
+    "settings",
+    (
+        {},
+        {"timeout_seconds": 45, "model_id": "gpt-5.6-sol"},
+        {"timeout_seconds": 45, "endpoint_url": "https://example.invalid"},
+    ),
+)
+def test_luna_registry_rejects_missing_or_overridable_fixed_settings(
+    settings: dict[str, object],
+) -> None:
+    registry = __import__(
+        "study_agent.cli", fromlist=["default_model_adapters"]
+    ).default_model_adapters()
+    config = ModelAdapterConfig(
+        "openai-gpt-5.6-luna",
+        settings,
+        "OPENAI_API_KEY",
+    )
+
+    with pytest.raises(ModelAdapterConfigurationError):
+        registry.create(config, {"OPENAI_API_KEY": "credential-value"})
 
 
 def test_open_does_not_require_or_resolve_model_credentials(tmp_path: Path) -> None:

@@ -1,100 +1,54 @@
 from __future__ import annotations
 
-import json
-from collections.abc import Mapping
-
 import pytest
 
-from study_agent.demo.browser import BrowserSurface, _require_bind_host, create_server
-from study_agent.domain._validation import JsonValue
+from study_agent.demo.browser import (
+    BrowserSurface,
+    PREVIEW_RUNTIME_ID,
+    _require_bind_host,
+    create_server,
+)
+from study_agent.domain._validation import JsonObject
 
 
-def _journey(entry: str) -> dict[str, object]:
-    return {
-        "learner_entry": entry,
-        "status": "recovered",
-        "status_trace": ({"step": 1, "status": "completed", "detail": "Grounded"},),
-        "source_state": {"fixture": "notes.md", "evidence": ("A fact",)},
-        "evidence_refresh_sequence": 2,
-        "discovered_capabilities": ("explain_concept",),
-        "parity": True,
-    }
+class _RepositoryApplication:
+    mode = "local_repository"
+
+    def get(self, path: str) -> JsonObject:
+        if path != "/api/v1/bootstrap":
+            raise AssertionError(path)
+        return {"schema_version": 1, "mode": self.mode}
+
+    def post(self, path: str, command: object) -> JsonObject:
+        assert path == "/api/v1/session/turns"
+        assert isinstance(command, dict)
+        return {"schema_version": 1, "status": "committed"}
 
 
-def _mapping(value: JsonValue) -> Mapping[str, JsonValue]:
-    assert isinstance(value, Mapping)
-    return value
+def test_browser_requires_a_repository_application_and_never_constructs_demo_state() -> None:
+    surface = BrowserSurface(_RepositoryApplication())
+    assert surface.repository_backed is True
+    assert surface.api_get("/api/v1/bootstrap")["mode"] == "local_repository"
+    assert not hasattr(surface, "state")
+    with pytest.raises(TypeError):
+        BrowserSurface()  # type: ignore[call-arg]
 
 
-def test_browser_surface_projects_the_existing_journey_without_new_state() -> None:
-    surface = BrowserSurface(_journey)
-
-    first = surface.state("  Explain valves  ")
-    second = surface.state("Explain valves")
-
-    assert first == second
-    assert first["learner_entry"] == "Explain valves"
-    assert _mapping(first["conversation"])["status_trace"] == (
-        {"step": 1, "status": "completed", "detail": "Grounded"},
-    )
-    assert _mapping(first["material"])["fixture"] == "notes.md"
-    assert _mapping(first["evidence"])["sequence"] == 2
-    assert _mapping(first["conflict"])["status"] == "clear"
-    assert _mapping(first["due_review"])["status"] == "unavailable"
-    assert first["parity"] is True
-
-
-def test_browser_surface_uses_conflicts_and_due_review_when_a_host_view_has_them() -> None:
-    def journey(entry: str) -> dict[str, object]:
-        result = _journey(entry)
-        result["conflict"] = {"status": "conflicted", "message": "Goal differs"}
-        result["due_review"] = {
-            "status": "needs_review",
-            "items": ({"label": "Aortic valve"},),
-            "message": "One review is due.",
-        }
-        return result
-
-    payload = BrowserSurface(journey).state("review this")
-
-    assert payload["conflict"] == {"status": "conflicted", "message": "Goal differs"}
-    due_review = _mapping(payload["due_review"])
-    assert due_review["status"] == "needs_review"
-    assert due_review["items"] == ({"label": "Aortic valve"},)
-
-
-def test_browser_input_is_bounded_and_server_is_local_only() -> None:
-    with pytest.raises(ValueError, match="non-empty"):
-        BrowserSurface(_journey).state("   ")
-    with pytest.raises(ValueError, match="text bound"):
-        BrowserSurface(_journey).state("x" * 4_001)
-    with pytest.raises(ValueError, match="public-demo"):
-        create_server("0.0.0.0", 0, journey=_journey)
-
-
-def test_public_demo_is_the_only_mode_allowed_to_bind_all_interfaces() -> None:
-    _require_bind_host("127.0.0.1", public_demo=False)
-    _require_bind_host("127.0.0.1", public_demo=True)
-    _require_bind_host("0.0.0.0", public_demo=True)
-
-    with pytest.raises(ValueError, match="public-demo"):
-        _require_bind_host("0.0.0.0", public_demo=False)
+def test_non_loopback_requires_private_production() -> None:
+    _require_bind_host("127.0.0.1")
+    _require_bind_host("0.0.0.0", private_production=True)
+    with pytest.raises(ValueError, match="private production"):
+        _require_bind_host("0.0.0.0")
     with pytest.raises(ValueError, match="bind host"):
-        _require_bind_host("192.0.2.10", public_demo=True)
-
-    with pytest.raises(ValueError, match="fixed sanitized journey"):
-        create_server(
-            "127.0.0.1",
-            0,
-            journey=_journey,
-            public_demo=True,
-        )
+        _require_bind_host("192.0.2.10")
+    with pytest.raises(ValueError, match="private production"):
+        create_server("0.0.0.0", 0, ui_application=_RepositoryApplication())
 
 
 def test_browser_page_bytes_are_static_and_accessible() -> None:
-    page = BrowserSurface(_journey).page()
+    page = BrowserSurface(_RepositoryApplication()).page()
 
-    assert page == BrowserSurface(_journey).page()
+    assert page == BrowserSurface(_RepositoryApplication()).page()
     decoded = page.decode("utf-8")
     for marker in (
         '<textarea id="entry"',
@@ -107,44 +61,50 @@ def test_browser_page_bytes_are_static_and_accessible() -> None:
     ):
         assert marker in decoded
     assert ".meta { color: var(--muted); font-size: .9rem; overflow-wrap: anywhere; }" in decoded
-    assert BrowserSurface(_journey).asset("browser.css").startswith(b":root")
-    assert b'"use strict";' in BrowserSurface(_journey).asset("browser.js")
-    assert BrowserSurface(_journey).asset("icons/plus.svg").startswith(b"<svg")
+    assert b":root" in BrowserSurface(_RepositoryApplication()).asset("browser.css")
+    assert b'"use strict";' in BrowserSurface(_RepositoryApplication()).asset("browser.js")
+    assert b".ai-loading" in BrowserSurface(_RepositoryApplication()).asset("ai-primitives.css")
+    assert b"CardineAI" in BrowserSurface(_RepositoryApplication()).asset("ai-primitives.js")
+    assert BrowserSurface(_RepositoryApplication()).asset("icons/plus.svg").startswith(b"<svg")
 
     with pytest.raises(ValueError, match="unknown browser asset"):
-        BrowserSurface(_journey).asset("../secret")
+        BrowserSurface(_RepositoryApplication()).asset("../secret")
     with pytest.raises(ValueError, match="unknown browser asset"):
-        BrowserSurface(_journey).asset("icons/../browser.js")
+        BrowserSurface(_RepositoryApplication()).asset("icons/../browser.js")
 
 
-def test_browser_payload_is_json_deterministic() -> None:
-    payload = BrowserSurface(_journey).state("same")
-
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=list)
-    repeated = json.dumps(
-        BrowserSurface(_journey).state("same"),
-        sort_keys=True,
-        separators=(",", ":"),
-        default=list,
-    )
-
-    assert encoded == repeated
+def test_browser_surface_exposes_only_versioned_repository_api() -> None:
+    surface = BrowserSurface(_RepositoryApplication())
+    assert surface.api_post("/api/v1/session/turns", {})["status"] == "committed"
 
 
-def test_browser_surface_exposes_versioned_referto_api_without_transport_state() -> None:
-    surface = BrowserSurface(_journey)
+def test_preview_runtime_marker_is_safe_and_versioned() -> None:
+    assert PREVIEW_RUNTIME_ID.startswith("cardine-local-")
+    assert "key" not in PREVIEW_RUNTIME_ID.lower()
+    assert "secret" not in PREVIEW_RUNTIME_ID.lower()
 
-    bootstrap = surface.api_get("/api/v1/bootstrap")
-    receipt = surface.api_post(
-        "/api/v1/session/turns",
-        {
-            "schema_version": 1,
-            "request_id": "browser-request-1",
-            "expected_sequence": 2,
-            "payload": {"content": "Explain valves"},
-        },
-    )
 
-    assert bootstrap["mode"] == "public_demo"
-    assert receipt["request_id"] == "browser-request-1"
-    assert receipt["status"] == "demo_completed"
+def test_preview_diagnostics_are_bounded_and_redacted(capsys: pytest.CaptureFixture[str]) -> None:
+    surface = BrowserSurface(_RepositoryApplication())
+
+    surface.diagnostic("/api/v1/session/turns", 503, "tutor_execution_failed")
+    surface.diagnostic("/api/v1/session/turns", 503, "unsafe provider response")
+
+    entries = surface.diagnostics()["entries"]
+    assert len(entries) == 2
+    assert entries[0]["category"] == "tutor_execution_failed"
+    assert entries[1]["category"] == "invalid_request"
+    output = capsys.readouterr().err
+    assert "tutor_execution_failed" in output
+    assert "unsafe provider response" not in output
+
+
+def test_preview_diagnostics_keep_a_safe_model_failure_category(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    surface = BrowserSurface(_RepositoryApplication())
+
+    surface.diagnostic("/api/v1/session/turns", 502, "tutor_endpoint_incompatible")
+
+    assert surface.diagnostics()["entries"][0]["category"] == "tutor_endpoint_incompatible"
+    assert "tutor_endpoint_incompatible" in capsys.readouterr().err

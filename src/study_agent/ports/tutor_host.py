@@ -15,6 +15,10 @@ class TutorInterruptionToken(Protocol):
 class RetryableTutorDecisionError(RuntimeError):
     """A provider failure that the bounded host runner may retry."""
 
+    def __init__(self, message: str, *, failure_reason: str | None = None) -> None:
+        super().__init__(message)
+        self.failure_reason = failure_reason
+
 
 class TutorDecisionPort(Protocol):
     async def decide(

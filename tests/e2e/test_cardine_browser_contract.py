@@ -147,6 +147,17 @@ def test_real_http_surface_serves_every_packaged_icon(browser_url: str) -> None:
         assert raw.startswith("<svg"), icon_name
 
 
+def test_real_http_surface_serves_ai_native_primitive_modules(browser_url: str) -> None:
+    for path, marker in (
+        ("/ai-primitives.css", ".ai-command-search"),
+        ("/ai-primitives.js", "CardineAI"),
+    ):
+        status, payload, raw = _get(browser_url, path)
+        assert status == 200, path
+        assert payload == raw
+        assert marker in raw, path
+
+
 def test_navigation_sidebar_is_expanded_and_accessible() -> None:
     page = (DEMO_DIR / "browser.html").read_text(encoding="utf-8")
     css = (DEMO_DIR / "browser.css").read_text(encoding="utf-8")
@@ -161,7 +172,7 @@ def test_navigation_sidebar_is_expanded_and_accessible() -> None:
     assert '.rail {\n' in css
     assert "width: 288px" in css
     assert ".rail.is-collapsed" in css
-    assert "width: 52px" in css
+    assert "width: 48px" in css
 
 
 def test_chat_home_and_session_markers_preserve_learner_tutor_boundary() -> None:
@@ -177,7 +188,7 @@ def test_chat_home_and_session_markers_preserve_learner_tutor_boundary() -> None
     assert "thread-message--assistant" in javascript
     assert "thread-message--learner" in css
     assert "thread-message--assistant" in css
-    assert 'learner ? "tu"' in javascript
+    assert '<p class="thread-message__role">tu</p>' in javascript
     assert 'role === "system" ? "sistema" : "tutor"' in javascript
 
 
@@ -234,7 +245,8 @@ def test_accessibility_contract_has_labels_focus_targets_and_live_status() -> No
     assert '<a class="skip-link" href="#main-content">' in page
     assert '<main id="main-content"' in page
     assert 'id="global-status" role="status" aria-live="polite"' in page
-    assert 'id="view-root" class="view-root" aria-live="polite"' in page
+    assert '<div id="view-root" class="view-root">' in page
+    assert 'id="view-root" class="view-root" aria-live="polite"' not in page
     assert 'id="rail-toggle" aria-expanded="false" aria-controls="rail"' in page
     assert 'id="trust-drawer" aria-labelledby="trust-heading"' in page
     assert 'id="provenance-drawer" aria-labelledby="drawer-heading"' in page

@@ -32,7 +32,7 @@ GROUNDED_ANSWER_DRAFT_SCHEMA = JsonSchema(
                     },
                 },
             },
-            "unsupported_information_note": {},
+            "unsupported_information_note": {"type": ("string", "null")},
         },
     }
 )

@@ -11,6 +11,7 @@ from hashlib import sha256
 from typing import cast
 
 from study_agent.domain._validation import JsonObject, JsonValue, freeze_json, freeze_object
+from study_agent.domain.identifiers import RunId
 from study_agent.domain.session import (
     MAX_TUTOR_PRESENTATION_QUESTION,
     MAX_TUTOR_PRESENTATION_SCHEMA_BYTES,
@@ -30,6 +31,7 @@ class TutorDecisionKind(StrEnum):
     ANSWER_DIALOGUE = "answer_dialogue"
     ASK_LEARNER = "ask_learner"
     ASSISTANT_MESSAGE = "assistant_message"
+    INVOKE_TOOL = "invoke_tool"
     STOP = "stop"
 
 
@@ -298,6 +300,19 @@ class AssistantMessageDecision:
 
 
 @dataclass(frozen=True, slots=True)
+class InvokeToolDecision:
+    """A model-selected operation, executed only by the trusted host runner."""
+
+    tool_name: str
+    arguments: JsonObject
+    kind: TutorDecisionKind = field(default=TutorDecisionKind.INVOKE_TOOL, init=False)
+
+    def __post_init__(self) -> None:
+        _require_bounded_text(self.tool_name, "tool name", 128)
+        object.__setattr__(self, "arguments", freeze_object(self.arguments))
+
+
+@dataclass(frozen=True, slots=True)
 class StopDecision:
     reason: TutorStopReason
     kind: TutorDecisionKind = field(default=TutorDecisionKind.STOP, init=False)
@@ -312,6 +327,7 @@ type TutorDecision = (
     | AnswerDialogueDecision
     | AskLearnerDecision
     | AssistantMessageDecision
+    | InvokeToolDecision
     | StopDecision
 )
 
@@ -396,6 +412,41 @@ class HostRetryReceipt:
             _integer(raw, "decision_generation"),
             _integer(raw, "attempt"),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class TutorCapabilityCompletionReference:
+    """Closed proof reference for one authority-verified capability completion.
+
+    The reference deliberately carries no output.  Product handlers must use
+    this identity to recover the verified owner result before creating any
+    canonical product effect or learner-visible presentation.
+    """
+
+    capability_identity: str
+    manifest_fingerprint: str
+    run_id: RunId
+    output_fingerprint: str
+    retry_receipt_fingerprint: str
+
+    def __post_init__(self) -> None:
+        _require_bounded_text(self.capability_identity, "capability identity", 128)
+        if "@" not in self.capability_identity:
+            raise ValueError("capability identity must include a version")
+        _require_sha256(self.manifest_fingerprint, "manifest_fingerprint")
+        if not isinstance(self.run_id, RunId):
+            raise TypeError("completion run_id must be RunId")
+        _require_sha256(self.output_fingerprint, "output_fingerprint")
+        _require_sha256(self.retry_receipt_fingerprint, "retry_receipt_fingerprint")
+
+    def to_json(self) -> JsonObject:
+        return {
+            "capability_identity": self.capability_identity,
+            "manifest_fingerprint": self.manifest_fingerprint,
+            "run_id": str(self.run_id),
+            "output_fingerprint": self.output_fingerprint,
+            "retry_receipt_fingerprint": self.retry_receipt_fingerprint,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -535,6 +586,8 @@ def decision_to_json(decision: TutorDecision) -> JsonObject:
         return {"kind": decision.kind.value, "question": decision.question}
     if isinstance(decision, AssistantMessageDecision):
         return {"kind": decision.kind.value, "message": decision.message}
+    if isinstance(decision, InvokeToolDecision):
+        return {"kind": decision.kind.value, "tool_name": decision.tool_name, "arguments": decision.arguments}
     if isinstance(decision, StopDecision):
         return {"kind": decision.kind.value, "reason": decision.reason.value}
     raise TypeError("unsupported tutor decision")
@@ -599,9 +652,22 @@ def decision_schema(context: TutorHostContext) -> JsonObject:
                 "additionalProperties": False,
             }
         )
+    for tool in _context_tools(context):
+        branches.append(
+            {
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string", "enum": (TutorDecisionKind.INVOKE_TOOL.value,)},
+                    "tool_name": {"type": "string", "enum": (tool["name"],)},
+                    "arguments": tool["input_schema"],
+                },
+                "required": ("kind", "tool_name", "arguments"),
+                "additionalProperties": False,
+            }
+        )
     pending = context.pending_continuation
     if pending is not None:
-        branches.append(
+        branches = [
             {
                 "type": "object",
                 "properties": {
@@ -618,7 +684,7 @@ def decision_schema(context: TutorHostContext) -> JsonObject:
                 "required": ("kind", "continuation_fingerprint", "response"),
                 "additionalProperties": False,
             }
-        )
+        ]
     return {
         "type": "object",
         "properties": {"decision": {"anyOf": tuple(branches)}},
@@ -653,6 +719,9 @@ def decision_from_bytes(data: bytes, context: TutorHostContext) -> TutorDecision
     elif kind is TutorDecisionKind.ASSISTANT_MESSAGE:
         _exact(raw, {"kind", "message"}, "message decision")
         decision = AssistantMessageDecision(_string(raw, "message"))
+    elif kind is TutorDecisionKind.INVOKE_TOOL:
+        _exact(raw, {"kind", "tool_name", "arguments"}, "tool decision")
+        decision = InvokeToolDecision(_string(raw, "tool_name"), _object(raw["arguments"], "arguments"))
     else:
         _exact(raw, {"kind", "reason"}, "stop decision")
         decision = StopDecision(TutorStopReason(_string(raw, "reason")))
@@ -661,6 +730,12 @@ def decision_from_bytes(data: bytes, context: TutorHostContext) -> TutorDecision
 
 
 def validate_decision(decision: TutorDecision, context: TutorHostContext) -> None:
+    if context.pending_continuation is not None and not isinstance(
+        decision, AnswerDialogueDecision
+    ):
+        raise ValueError(
+            "pending continuation requires an exact dialogue answer decision"
+        )
     if isinstance(decision, StartCapabilityDecision):
         descriptor = next(
             (item for item in context.advertised_capabilities if item.id == decision.capability_id),
@@ -680,6 +755,32 @@ def validate_decision(decision: TutorDecision, context: TutorHostContext) -> Non
             _validate_json(decision.response, pending.response_schema)
         except ValueError as error:
             raise ValueError("dialogue response violates the pending schema") from error
+    elif isinstance(decision, InvokeToolDecision):
+        descriptor = next((item for item in _context_tools(context) if item["name"] == decision.tool_name), None)
+        if descriptor is None:
+            raise ValueError("decision names an unadvertised harness tool")
+        try:
+            _validate_json(decision.arguments, descriptor["input_schema"])
+        except ValueError as error:
+            raise ValueError("tool arguments violate the advertised schema") from error
+
+
+def _context_tools(context: TutorHostContext) -> tuple[JsonObject, ...]:
+    raw = context.tutor_snapshot.get("harness_tools", ())
+    if not isinstance(raw, tuple):
+        return ()
+    values: list[JsonObject] = []
+    for item in raw:
+        if not isinstance(item, Mapping):
+            continue
+        try:
+            name = _string(cast(JsonObject, item), "name")
+            schema = _object(cast(JsonObject, item)["input_schema"], "input_schema")
+            _validate_schema_definition(schema)
+        except (KeyError, TypeError, ValueError):
+            continue
+        values.append({"name": name, "input_schema": schema})
+    return tuple(values)
 
 
 def _advertised_from_json(value: JsonValue) -> AdvertisedCapability:
@@ -899,6 +1000,7 @@ __all__ = [
     "HostActionIdentity",
     "HostFileDescriptor",
     "HostRetryReceipt",
+    "InvokeToolDecision",
     "PendingContinuationDescriptor",
     "StartCapabilityDecision",
     "StopDecision",

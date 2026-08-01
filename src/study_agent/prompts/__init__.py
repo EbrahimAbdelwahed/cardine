@@ -14,6 +14,7 @@ from .contracts import (
 from .explain_concept_v1 import EXPLAIN_CONCEPT_LAYERS, EXPLAIN_CONCEPT_PROMPT
 from .grade_response_v1 import GRADE_RESPONSE_LAYERS, GRADE_RESPONSE_PROMPT
 from .grounded_answer_v1 import GROUNDED_ANSWER_LAYERS, GROUNDED_ANSWER_PROMPT
+from .tutor_decision_v1 import TUTOR_DECISION_INSTRUCTION, TUTOR_DECISION_PROMPT
 
 __all__ = [
     "ASSESS_UNDERSTANDING_LAYERS",
@@ -24,6 +25,8 @@ __all__ = [
     "GRADE_RESPONSE_PROMPT",
     "GROUNDED_ANSWER_LAYERS",
     "GROUNDED_ANSWER_PROMPT",
+    "TUTOR_DECISION_INSTRUCTION",
+    "TUTOR_DECISION_PROMPT",
     "CanonicalPromptComposer",
     "ComposedPrompt",
     "PromptComposer",

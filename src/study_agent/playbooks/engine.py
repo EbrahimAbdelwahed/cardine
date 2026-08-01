@@ -1739,8 +1739,18 @@ def _validate_schema_definition(schema: JsonObject, path: str = "schema") -> Non
     if unsupported:
         _schema_error(f"unsupported schema keyword at {path}: {unsupported[0]}")
     schema_type = schema.get("type")
-    if schema_type is not None and schema_type not in _SCHEMA_TYPES:
-        _schema_error(f"unsupported schema type at {path}")
+    if schema_type is not None:
+        if isinstance(schema_type, str):
+            schema_types = (schema_type,)
+        elif isinstance(schema_type, tuple) and schema_type:
+            schema_types = schema_type
+        else:
+            _schema_error(f"unsupported schema type at {path}")
+        if any(
+            not isinstance(item, str) or item not in _SCHEMA_TYPES
+            for item in schema_types
+        ):
+            _schema_error(f"unsupported schema type at {path}")
     required = schema.get("required")
     if required is not None and (
         not isinstance(required, tuple)
@@ -1779,7 +1789,9 @@ def _validate_schema(
 ) -> None:
     _validate_schema_definition(schema)
     schema_type = schema.get("type")
-    if schema_type is not None and not _matches_type(cast(str, schema_type), value):
+    if schema_type is not None and not _matches_type(
+        cast(str | tuple[str, ...], schema_type), value
+    ):
         _schema_error(f"{label} has wrong type at {path}", step_id)
     enum = schema.get("enum")
     if isinstance(enum, tuple) and value not in enum:
@@ -1808,7 +1820,9 @@ def _validate_schema(
             _validate_schema(item_schema, item, label, step_id, f"{path}[{index}]")
 
 
-def _matches_type(schema_type: str, value: JsonValue) -> bool:
+def _matches_type(schema_type: str | tuple[str, ...], value: JsonValue) -> bool:
+    if isinstance(schema_type, tuple):
+        return any(_matches_type(item, value) for item in schema_type)
     if schema_type == "object":
         return isinstance(value, Mapping)
     if schema_type == "array":

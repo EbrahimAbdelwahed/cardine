@@ -72,7 +72,7 @@ COURSE_ID = CourseId("demo-course")
 SESSION_ID = SessionId("demo-session")
 _SHA = "a" * 64
 _DEFAULT_LEARNER_ENTRY = "I have ten minutes. Help me understand heart valves."
-_FIXTURE_TITLE = "Heart valves — sanitized public demo fixture"
+_FIXTURE_TITLE = "Valvole cardiache — materiale di esempio"
 _FIXTURE_EVIDENCE = (
     "The aortic valve sits between the left ventricle and the aorta.",
     "The pulmonary valve sits between the right ventricle and the pulmonary trunk.",

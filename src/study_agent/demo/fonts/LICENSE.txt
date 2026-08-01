@@ -1,0 +1,24 @@
+Bundled web fonts
+=================
+
+Both families below are licensed under the SIL Open Font License, Version 1.1,
+which permits bundling and redistribution with this software. The full license
+text is available at https://openfontlicense.org/ and in each upstream project.
+
+Instrument Serif
+  Files:      instrument-serif-400.woff2
+  Copyright:  Copyright 2022 The Instrument Serif Project Authors
+              (https://github.com/Instrument/instrument-serif)
+  License:    SIL Open Font License 1.1
+  Source:     Google Fonts (latin subset)
+
+IBM Plex Mono
+  Files:      ibm-plex-mono-400.woff2, ibm-plex-mono-600.woff2
+  Copyright:  Copyright 2017 IBM Corp.
+              (https://github.com/IBM/plex)
+  License:    SIL Open Font License 1.1
+  Source:     Google Fonts (latin subset)
+
+Both files carry the latin subset only (U+0000-00FF plus common punctuation),
+which covers the Italian interface copy. Any glyph outside that range falls back
+to the next family in the stack declared in browser.css.

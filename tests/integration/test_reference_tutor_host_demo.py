@@ -45,7 +45,7 @@ def test_reference_demo_captures_only_a_safe_markdown_descriptor() -> None:
 
     source = cast(dict[str, object], result["source_state"])
     assert source["fixture"] == "heart-valves.md"
-    assert source["title"] == "Heart valves — sanitized public demo fixture"
+    assert source["title"] == "Valvole cardiache — materiale di esempio"
     assert source["checksum_sha256"] == descriptor["checksum_sha256"]
     assert source["byte_size"] == descriptor["byte_size"]
     assert source["evidence"] == (

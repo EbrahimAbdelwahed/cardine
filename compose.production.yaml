@@ -1,0 +1,25 @@
+services:
+  cardine:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      CARDINE_OWNER_PASSWORD_HASH: ${CARDINE_OWNER_PASSWORD_HASH:?set in the deployment environment}
+      CARDINE_PUBLIC_ORIGIN: ${CARDINE_PUBLIC_ORIGIN:?set to the HTTPS browser origin}
+      CARDINE_COURSE_ID: ${CARDINE_COURSE_ID:?set to the repository course id}
+      CARDINE_SESSION_ID: ${CARDINE_SESSION_ID:?set to the repository session id}
+      CARDINE_REPOSITORY: /cardine/repository
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?set in the deployment secret store}
+    volumes:
+      - ${CARDINE_REPOSITORY_PATH:?set to a persistent repository directory}:/cardine/repository

@@ -1,79 +1,110 @@
-# Design QA: Cardine chat-centric product shell
+# Design QA: Cardine AI-native primitives
 
-Date: 2026-07-29 21:26 CEST
-Target: faithful Claude interaction and layout model adapted to Cardine's
-medical-study content and honest harness capabilities.
+Date: 2026-07-31 04:15 CEST
+Target: adapt the complete useful component vocabulary from Beautiful UI to
+Cardine's Claude-like, chat-centric medical-study workspace without copying the
+reference site's shell or inventing backend capabilities.
 
 ## Evidence
 
-- Claude expanded reference:
-  `dev/plans/assets/claude-reference/claude-home-expanded-1440x1000-current.png`
-- Same-state comparison:
-  `dev/plans/assets/chat-centric-audit/claude-cardine-expanded-comparison.png`
-- Final conversation:
-  `dev/plans/assets/chat-centric-audit/cardine-conversation-final.png`
-- Final mobile drawer:
-  `dev/plans/assets/chat-centric-audit/cardine-mobile-sidebar-final.png`
-- User-supplied compact-sidebar reference:
-  `/var/folders/gq/j51ckj5n2dd55d6jvjkwy80m0000gn/T/codex-clipboard-67f8b8d5-b4bc-4dfd-9be8-2a79b8d1380e.png`
+- Reference captures and exposed-code inventory:
+  `dev/plans/assets/beautiful-ui-pattern-audit/`
+- Cardine desktop states:
+  `20-cardine-ai-home-refined.jpg`, `21-cardine-ai-chat-refined.jpg`,
+  `24-cardine-command-search-final.jpg`, `25-cardine-fonti.jpg`, and
+  `26-cardine-fonti-filtered.jpg`
+- Cardine mobile states:
+  `27-cardine-mobile-home.jpg`, `28-cardine-mobile-drawer.jpg`, and
+  `29-cardine-mobile-search.jpg`
+- Reference and implementation in the same comparison inputs:
+  `30-reference-cardine-chat-comparison.jpg` and
+  `31-reference-cardine-search-comparison.jpg`
 
-## Matched structure
+All paths above are under
+`dev/plans/assets/beautiful-ui-pattern-audit/`.
 
-- Warm off-white full-height workspace and restrained monochrome controls.
-- Compact 52 px icon rail and expanded 288 px navigation state.
-- Centered 672 px home composer with a 20 px radius and subtle Claude-like
-  border/shadow treatment.
-- Right-aligned bounded learner bubble, unboxed assistant prose, and persistent
-  bottom composer.
-- Mobile navigation becomes a full-height modal sheet with an inert,
-  substantially dimmed background and explicit close semantics.
+## Pattern coverage
 
-## Product-specific adaptations
+All 17 reference patterns are mapped: loading, bounded thinking/activity,
+staged answer reveal, approval, tool status, task rows, compact chat,
+recommendation, context cards, diff table, records table, filter table,
+sidebar search, command search, insight deck, source/code excerpt, and
+fine-tuning/follow-up controls.
 
-- Cardine identity, course title, medical-study routes, trust boundary, and
-  provenance controls replace Claude branding and product labels.
-- The primary action is named **Nuova domanda**, not **Nuova chat**, because the
-  current harness has no canonical session-creation command. The interface does
-  not promise state it cannot create.
-- Study tools remain visually secondary and expose honest unavailable states
-  when their owners are absent.
+The patterns use Cardine's existing typography, dark/light tokens, compact and
+expanded rail, learner-message boundaries, unboxed tutor prose, bottom
+composer, route DTOs, and canonical commands. Tool traces and transcripts that
+are absent from a DTO are identified as unavailable; they are not fabricated.
 
-## Findings and resolution
+## Interaction and accessibility
 
-- Fixed malformed message markup that prevented learner and assistant classes
-  from applying.
-- Removed repeated visible role labels and tightened assistant spacing.
-- Increased secondary-text contrast and focused keyboard-guidance contrast.
-- Strengthened the mobile backdrop and drawer elevation; hid the underlying
-  mobile header while modal navigation is open.
-- Synchronized mobile `Apri/Chiudi barra laterale` semantics with the actual
-  drawer state.
-- Replaced dead recent-session controls with one truthful current-session
-  route.
+- Enter sends and Shift+Enter inserts a newline; IME composition is preserved.
+- Command search supports `/`, Cmd/Ctrl+O, filtering, arrows, Enter, and Escape.
+- Fonti search and filters are operable by pointer and keyboard.
+- Follow-up and fine-tune controls target the correct composer and do not
+  mutate hidden model settings.
+- The answer reveal keeps the complete canonical response in the DOM, respects
+  reduced motion, finishes in 280 ms, and announces the completed response
+  once through an atomic live status.
+- Mobile drawer focus/inert state recovers when returning to desktop.
+- The browser console is clean on the final local preview.
 
-Fresh screenshot critique on the final conversation and mobile drawer reported
-no remaining P0, P1, or P2 visual defects.
+## Comparison result
+
+The combined chat and search comparisons preserve the reference's compact
+density, restrained hierarchy, low-noise surfaces, and short interaction
+motion while remaining recognizably Cardine. Desktop, compact rail, mobile,
+loading, empty, success, and error states have no remaining P0, P1, or P2
+visual or interaction differences within the product-specific adaptation.
+
+Two independent review passes were completed. The final semantic and
+accessibility re-review reported zero P0/P1/P2 findings.
 
 ## Verification
 
-- In-app browser: compact/expanded toggle, Enter send, Shift+Enter newline,
-  all study routes, mobile open/close/Escape, focus return, and zero console
-  errors.
-- `python -m pytest -q tests/unit/demo/test_browser_assets.py
-  tests/unit/demo/test_browser.py
-  tests/integration/demo/TUT08/test_browser_surface.py
-  tests/e2e/test_cardine_browser_contract.py`: 22 passed.
-- `node --check src/study_agent/demo/browser.js`: passed.
+- `node --check src/study_agent/demo/ai-primitives.js` and
+  `node --check src/study_agent/demo/browser.js`: passed.
+- UI boundary suite: 101 passed.
+- Full repository suite: 2067 passed, 13 optional/live tests skipped.
 - `python -m ruff check src tests`: passed.
-- Wheel built with `python -m pip wheel . --no-deps --no-build-isolation`; all
-  HTML/CSS/JS files, ten Phosphor SVGs, and the Phosphor license are present.
-  A clean `--target` install of the regenerated `dist/` wheel then loaded all
-  ten SVGs through `BrowserSurface.asset(...)` and served all ten successfully
-  over the real local HTTP boundary.
-- `python -m mypy src tests`: not run because mypy is not installed in the
-  workspace interpreter.
-- A full repository pytest run was stopped after 767 passing tests because it
-  had collected a pre-edit E2E assertion; the current focused surface suite was
-  recollected afterward and passed.
+- `git diff --check`: passed.
+- Wheel build: passed; the wheel contains both primitive assets and the
+  Phosphor search icon.
+- Clean wheel install: `BrowserSurface` loaded the JavaScript, CSS, and icon
+  assets successfully.
+- Final in-app browser reload at `http://127.0.0.1:8765/`: correct home state
+  and zero console messages.
+
+Final result: passed.
+
+---
+
+# Design QA: private continuation dock, Login, and Settings
+
+Date: 2026-07-31 13:40 CEST
+
+## Evidence
+
+- Reference: `dev/plans/assets/continuation-dock-reference.png`
+- Final: `dev/plans/assets/private-shell-dock-final-anchored.png`
+- Same-input comparison:
+  `dev/plans/assets/private-shell-dock-comparison.png`
+- Login, Settings, expanded rail, and mobile captures:
+  `dev/plans/assets/private-shell-login.png`,
+  `dev/plans/assets/private-shell-settings.png`,
+  `dev/plans/assets/private-shell-sidebar-expanded.png`, and
+  `dev/plans/assets/private-shell-mobile.png`
+
+## Result
+
+The final dock is a 111 px two-layer component with a 68 px single-row
+composer. It occupies the final grid row, sits 12 px from the viewport bottom,
+and leaves the independently scrolling route view above it. Empty pages cannot
+pull it upward. It remains unique in the DOM, appears only on the seven
+approved non-chat routes, and has no horizontal overflow at 320/390 px.
+
+Login and Settings retain Cardine's existing type, spacing, focus, rail, and
+surface language. The API-key input is write-only, cleared after submission,
+and not presented as a password-manager credential.
 
 Final result: passed.

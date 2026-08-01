@@ -1,77 +1,172 @@
-"""Browser surface for the conversation-first product shell.
+"""Repository-backed browser surface for the conversation-first product shell.
 
-The browser surface is intentionally a very small composition layer.  It
-serves a packaged, dependency-free HTML page and delegates the deterministic
-journey to :func:`study_agent.demo.product_shell.run_offline_shell_demo`.
-The HTTP server owns only the latest bounded input for the page; it does not
-own tutor state, persistence, capability execution, or provider credentials.
-
-Run ``study-agent-shell-web`` for the localhost compatibility surface.  The
-explicit ``--public-demo`` mode may bind all interfaces, but exposes only the
-stateless, sanitized versioned demo API.  Neither mode makes a model call.
+The transport serves static assets, authentication and HTTP envelopes only.
+All learner state, timelines, presentations and continuations are read from
+the configured canonical repository application.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-from collections.abc import Callable, Mapping
+import os
+import sys
+import time
+from collections import deque
+from collections.abc import Mapping
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
+from pathlib import Path
 from socket import socket
-from threading import BoundedSemaphore
+from threading import BoundedSemaphore, Lock
 from typing import cast
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from study_agent.domain._validation import JsonObject
 
-from .product_shell import MAX_LEARNER_ENTRY_CHARS, run_offline_shell_demo
-from .ui_application import DemoUiApplication, UiRequestError
+from .private_access import (
+    LoginRateLimited,
+    PrivateAccessController,
+    PrivateAccessError,
+)
+from .product_settings import PrivateSettingsApplication
+from .ui_application import UiApplicationPort, UiRequestError
 
 DEFAULT_BROWSER_HOST = "127.0.0.1"
 DEFAULT_BROWSER_PORT = 8765
-STATE_PATH = "/api/state"
-ENTRY_PATH = "/api/entry"
 HEALTH_PATH = "/health"
+# Safe, non-secret marker for distinguishing a freshly restarted preview from
+# an older listener that still owns the same loopback port.
+PREVIEW_RUNTIME_ID = "cardine-local-source-grounding-v2"
 ICON_ASSETS = frozenset(
     {
         "books.svg",
+        "book-open.svg",
+        "arrow-up.svg",
         "calendar-blank.svg",
+        "caret-down.svg",
         "cards.svg",
         "chart-line-up.svg",
         "chat-circle.svg",
         "exam.svg",
+        "gear.svg",
         "note-pencil.svg",
+        "magnifying-glass.svg",
         "plus.svg",
+        "shield-check.svg",
         "sidebar-simple.svg",
         "warning-circle.svg",
     }
 )
+FONT_ASSETS = frozenset(
+    {
+        "instrument-serif-400.woff2",
+        "ibm-plex-mono-400.woff2",
+        "ibm-plex-mono-600.woff2",
+    }
+)
 API_PREFIX = "/api/v1/"
-MAX_API_BODY_BYTES = 32_768
+DIAGNOSTICS_PATH = "/api/v1/diagnostics"
+# Source revisions are intentionally bounded by the UI application at 192 KiB.
+# Leave protocol headroom for the JSON envelope while keeping generic API bodies
+# small enough for the local threaded server.
+MAX_API_BODY_BYTES = 262_144
 MAX_CONCURRENT_REQUESTS = 32
 REQUEST_SOCKET_TIMEOUT_SECONDS = 10.0
 
-BrowserJourney = Callable[[str], Mapping[str, object]]
 SocketRequest = socket | tuple[bytes, socket]
 
 
 class BrowserSurface:
-    """Adapt one product-shell journey to a stable browser JSON payload."""
+    """Adapt one repository application to the browser transport."""
 
-    def __init__(self, journey: BrowserJourney = run_offline_shell_demo) -> None:
-        self._journey = journey
-        self._ui = DemoUiApplication(journey)
+    def __init__(
+        self,
+        ui_application: UiApplicationPort,
+        *,
+        private_access: PrivateAccessController | None = None,
+        settings_application: PrivateSettingsApplication | None = None,
+    ) -> None:
+        self._ui = ui_application
+        self._private_access = private_access
+        self._settings = settings_application
+        self._diagnostics: deque[JsonObject] = deque(maxlen=24)
+        self._diagnostics_lock = Lock()
 
-    def state(self, learner_entry: str) -> JsonObject:
-        """Return the presentation payload for one bounded learner entry."""
+    @property
+    def repository_backed(self) -> bool:
+        return getattr(self._ui, "mode", "") == "local_repository"
 
-        entry = _bounded_entry(learner_entry)
-        result = self._journey(entry)
-        if not isinstance(result, Mapping):
-            raise TypeError("product-shell journey must return a mapping")
-        return _browser_payload(result, entry)
+    @property
+    def mode(self) -> str:
+        if self._private_access is not None:
+            return "private"
+        return str(getattr(self._ui, "mode", "local_repository"))
+
+    @property
+    def private_access(self) -> PrivateAccessController | None:
+        return self._private_access
+
+    @property
+    def private_mode(self) -> bool:
+        return self._private_access is not None
+
+    def diagnostic(self, path: str, status_code: int, category: str) -> None:
+        """Retain a small, redacted local preview diagnostic record.
+
+        Learner text, cookies, credentials, provider bodies, and exception
+        strings are deliberately excluded.  The same safe record is sent to
+        stderr so the local launcher can persist it in its preview log.
+        """
+
+        if not isinstance(path, str) or not path.startswith(API_PREFIX):
+            return
+        if type(status_code) is not int or not 100 <= status_code <= 599:
+            return
+        if category not in {
+            "authentication_required",
+            "invalid_request",
+            "model_check_invalid_credential",
+            "model_check_provider_unavailable",
+            "model_check_rate_limited",
+            "model_check_timeout",
+            "model_check_protocol_error",
+            "model_check_model_unavailable",
+            "model_check_endpoint_incompatible",
+            "repository_runtime_unavailable",
+            "source_content_unavailable",
+            "stale_sequence",
+            "tutor_execution_failed",
+            "tutor_authentication",
+            "tutor_model_unavailable",
+            "tutor_endpoint_incompatible",
+            "tutor_rate_limited",
+            "tutor_timeout",
+            "tutor_protocol_error",
+            "tutor_unavailable",
+            "tutor_internal_error",
+        }:
+            category = "invalid_request"
+        entry: JsonObject = {
+            "at_unix": int(time.time()),
+            "path": path,
+            "status_code": status_code,
+            "category": category,
+        }
+        with self._diagnostics_lock:
+            self._diagnostics.append(entry)
+        print(
+            "cardine_preview_diagnostic"
+            f" path={path} status={status_code} category={category}",
+            file=sys.stderr,
+            flush=True,
+        )
+
+    def diagnostics(self) -> JsonObject:
+        with self._diagnostics_lock:
+            entries = tuple(dict(entry) for entry in self._diagnostics)
+        return {"schema_version": 1, "entries": entries}
 
     def page(self) -> bytes:
         """Return the packaged page bytes without filesystem or network access."""
@@ -81,21 +176,73 @@ class BrowserSurface:
     def asset(self, name: str) -> bytes:
         """Return one allowlisted packaged browser asset."""
 
-        if name in {"browser.css", "browser.js"}:
+        if name in {
+            "browser.css",
+            "browser.js",
+            "ai-primitives.css",
+            "ai-primitives.js",
+        }:
             return resources.files("study_agent.demo").joinpath(name).read_bytes()
         if name.startswith("icons/") and name.removeprefix("icons/") in ICON_ASSETS:
             return resources.files("study_agent.demo").joinpath(name).read_bytes()
+        if name.startswith("fonts/") and name.removeprefix("fonts/") in FONT_ASSETS:
+            return resources.files("study_agent.demo").joinpath(name).read_bytes()
         raise ValueError("unknown browser asset")
 
-    def api_get(self, path: str) -> JsonObject:
+    def api_get(self, path: str, *, session_token: str | None = None) -> JsonObject:
         """Delegate one versioned read without giving transport code authority."""
 
-        return self._ui.get(path)
+        if (
+            self._private_access is not None
+            and path != "/api/v1/auth/session"
+            and not self._private_access.authenticate(session_token)
+        ):
+            raise UiRequestError("authentication required", status_code=401)
+        if path == "/api/v1/auth/session":
+            if self._private_access is None:
+                raise UiRequestError("route not found", status_code=404)
+            session = self._private_access.session(session_token)
+            return {
+                "schema_version": 1,
+                "mode": "private",
+                "authenticated": session is not None,
+                "csrf_token": None if session is None else session.csrf_token,
+            }
+        if path == DIAGNOSTICS_PATH:
+            return self.diagnostics()
+        return (self._settings or self._ui).get(path)
 
-    def api_post(self, path: str, command: Mapping[str, object]) -> JsonObject:
+    def api_post(
+        self,
+        path: str,
+        command: Mapping[str, object],
+        *,
+        session_token: str | None = None,
+        csrf_token: str | None = None,
+    ) -> JsonObject:
         """Delegate one versioned command without retaining canonical state."""
 
-        return self._ui.post(path, command)
+        if self._private_access is not None:
+            if path == "/api/v1/auth/login":
+                raise UiRequestError("login is handled by the transport", status_code=500)
+            if not self._private_access.csrf_valid(session_token, csrf_token):
+                raise UiRequestError("csrf token is invalid", status_code=403)
+            if path == "/api/v1/auth/logout":
+                self._private_access.logout(session_token)
+                return {"schema_version": 1, "status": "logged_out"}
+        result = (self._settings or self._ui).post(path, command)
+        if path == "/api/v1/settings/model/check" and result.get("status") == "error":
+            reason = result.get("reason")
+            category = {
+                "invalid_credential": "model_check_invalid_credential",
+                "rate_limited": "model_check_rate_limited",
+                "timeout": "model_check_timeout",
+                "model_unavailable": "model_check_model_unavailable",
+                "endpoint_incompatible": "model_check_endpoint_incompatible",
+                "provider_protocol_error": "model_check_protocol_error",
+            }.get(str(reason), "model_check_provider_unavailable")
+            self.diagnostic(path, HTTPStatus.OK, category)
+        return result
 
 
 class _BrowserServer(ThreadingHTTPServer):
@@ -107,14 +254,10 @@ class _BrowserServer(ThreadingHTTPServer):
         self,
         address: tuple[str, int],
         surface: BrowserSurface,
-        *,
-        public_demo: bool,
     ) -> None:
         super().__init__(address, _BrowserRequestHandler)
         self.surface = surface
-        self.public_demo = public_demo
         self._request_slots = BoundedSemaphore(MAX_CONCURRENT_REQUESTS)
-        self.learner_entry = "I have ten minutes. Help me understand heart valves."
 
     def get_request(self) -> tuple[socket, tuple[str, int]]:
         request, address = super().get_request()
@@ -155,7 +298,12 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
         del format, args
 
     def do_GET(self) -> None:
-        path = urlsplit(self.path).path
+        if not self._host_matches_server():
+            self._send_json(
+                HTTPStatus.MISDIRECTED_REQUEST, {"error": "host is not allowed"}
+            )
+            return
+        path = unquote(urlsplit(self.path).path)
         if path == "/":
             self._send(HTTPStatus.OK, "text/html; charset=utf-8", self.server.surface.page())
             return
@@ -166,11 +314,25 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
                 self.server.surface.asset("browser.css"),
             )
             return
+        if path == "/ai-primitives.css":
+            self._send(
+                HTTPStatus.OK,
+                "text/css; charset=utf-8",
+                self.server.surface.asset("ai-primitives.css"),
+            )
+            return
         if path == "/browser.js":
             self._send(
                 HTTPStatus.OK,
                 "text/javascript; charset=utf-8",
                 self.server.surface.asset("browser.js"),
+            )
+            return
+        if path == "/ai-primitives.js":
+            self._send(
+                HTTPStatus.OK,
+                "text/javascript; charset=utf-8",
+                self.server.surface.asset("ai-primitives.js"),
             )
             return
         if path.startswith("/icons/"):
@@ -181,65 +343,62 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
                 return
             self._send(HTTPStatus.OK, "image/svg+xml", icon)
             return
-        if path == HEALTH_PATH:
-            mode = "public_demo" if self.server.public_demo else "offline"
-            self._send_json(HTTPStatus.OK, {"status": "ok", "mode": mode})
-            return
-        if path == STATE_PATH:
-            if self.server.public_demo:
+        if path.startswith("/fonts/"):
+            try:
+                font = self.server.surface.asset(path.removeprefix("/"))
+            except ValueError:
                 self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
                 return
-            self._send_state()
+            self._send(HTTPStatus.OK, "font/woff2", font)
+            return
+        if path == HEALTH_PATH:
+            mode = self.server.surface.mode
+            self._send_json(
+                HTTPStatus.OK,
+                {"status": "ok", "mode": mode, "runtime_id": PREVIEW_RUNTIME_ID},
+            )
             return
         if path.startswith(API_PREFIX):
             try:
-                payload = self.server.surface.api_get(path)
+                payload = self.server.surface.api_get(
+                    path, session_token=self._session_token()
+                )
             except UiRequestError as error:
-                self._send_json(HTTPStatus(error.status_code), {"error": str(error)})
+                self.server.surface.diagnostic(
+                    path, error.status_code, _diagnostic_category(error)
+                )
+                self._send_json(
+                    HTTPStatus(error.status_code),
+                    {"error": str(error), "code": error.diagnostic_code},
+                )
                 return
             self._send_json(HTTPStatus.OK, payload)
             return
         self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
     def do_POST(self) -> None:
-        path = urlsplit(self.path).path
+        if not self._host_matches_server():
+            self._send_json(
+                HTTPStatus.MISDIRECTED_REQUEST, {"error": "host is not allowed"}
+            )
+            return
+        path = unquote(urlsplit(self.path).path)
         if path.startswith(API_PREFIX):
             self._post_api(path)
             return
-        if self.server.public_demo:
-            self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
-            return
-        if path != ENTRY_PATH:
-            self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
-            return
-        content_length = self.headers.get("Content-Length")
-        try:
-            length = int(content_length or "-1")
-        except ValueError:
-            length = -1
-        if length < 0 or length > MAX_LEARNER_ENTRY_CHARS * 4:
-            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "request body is too large"})
-            return
-        try:
-            raw = json.loads(self.rfile.read(length))
-            if not isinstance(raw, Mapping) or set(raw) != {"learner_entry"}:
-                raise ValueError
-            entry = raw["learner_entry"]
-            if not isinstance(entry, str):
-                raise ValueError
-            payload = self.server.surface.state(entry)
-        except (
-            UnicodeDecodeError,
-            RecursionError,
-            TypeError,
-            ValueError,
-        ):
-            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "learner_entry is invalid"})
-            return
-        self.server.learner_entry = cast(str, payload["learner_entry"])
-        self._send_json(HTTPStatus.OK, payload)
+        self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
     def _post_api(self, path: str) -> None:
+        if not _is_json_content_type(self.headers.get("Content-Type")):
+            self._send_json(
+                HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                {"error": "Content-Type must be application/json"},
+            )
+            return
+        private_login = self.server.surface.private_mode and path == "/api/v1/auth/login"
+        if not self._origin_matches_request(require_origin=self.server.surface.private_mode):
+            self._send_json(HTTPStatus.FORBIDDEN, {"error": "origin is not allowed"})
+            return
         content_length = self.headers.get("Content-Length")
         try:
             length = int(content_length or "-1")
@@ -252,22 +411,108 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
             raw = json.loads(self.rfile.read(length))
             if not isinstance(raw, Mapping):
                 raise UiRequestError("command must be an object")
-            payload = self.server.surface.api_post(path, raw)
+            if private_login:
+                payload = self._login(cast(Mapping[str, object], raw))
+            else:
+                payload = self.server.surface.api_post(
+                    path,
+                    raw,
+                    session_token=self._session_token(),
+                    csrf_token=self.headers.get("X-CSRF-Token"),
+                )
+                if path == "/api/v1/auth/logout" and self.server.surface.private_access:
+                    self._pending_cookie = self.server.surface.private_access.clear_cookie_header()
         except UiRequestError as error:
-            self._send_json(HTTPStatus(error.status_code), {"error": str(error)})
+            self.server.surface.diagnostic(
+                path, error.status_code, _diagnostic_category(error)
+            )
+            self._send_json(
+                HTTPStatus(error.status_code),
+                {"error": str(error), "code": error.diagnostic_code},
+            )
             return
         except (UnicodeDecodeError, ValueError, RecursionError):
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": "request JSON is invalid"})
             return
-        self._send_json(HTTPStatus.OK, payload)
-
-    def _send_state(self) -> None:
-        try:
-            payload = self.server.surface.state(self.server.learner_entry)
-        except (TypeError, ValueError):
-            self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "state unavailable"})
+        except Exception:
+            category = (
+                "tutor_internal_error"
+                if path == "/api/v1/session/turns"
+                or path.startswith("/api/v1/session/continuations/")
+                else "repository_runtime_unavailable"
+            )
+            self.server.surface.diagnostic(path, HTTPStatus.INTERNAL_SERVER_ERROR, category)
+            self._send_json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {"error": "request could not be completed", "code": category},
+            )
             return
         self._send_json(HTTPStatus.OK, payload)
+
+    def _origin_matches_request(self, *, require_origin: bool = False) -> bool:
+        """Allow same-origin browser requests and direct clients without Origin."""
+
+        origin = self.headers.get("Origin")
+        if origin is None:
+            return not require_origin
+        if self.server.surface.private_access is not None:
+            return self.server.surface.private_access.origin_allowed(origin)
+        origin_parts = _origin_parts(origin, scheme="http")
+        host = self.headers.get("Host")
+        if origin_parts is None or host is None:
+            return False
+        request_parts = _origin_parts(f"http://{host}", scheme="http")
+        return request_parts is not None and origin_parts == request_parts
+
+    def _session_token(self) -> str | None:
+        access = self.server.surface.private_access
+        if access is None:
+            return None
+        cookie_header = self.headers.get("Cookie", "")
+        for part in cookie_header.split(";"):
+            name, separator, value = part.strip().partition("=")
+            if separator and name == access.cookie_name:
+                return value
+        return None
+
+    def _login(self, command: Mapping[str, object]) -> JsonObject:
+        access = self.server.surface.private_access
+        if access is None:
+            raise UiRequestError("route not found", status_code=404)
+        if set(command) != {"password"} or not isinstance(command.get("password"), str):
+            raise UiRequestError("invalid credentials", status_code=401)
+        try:
+            session = access.login(
+                cast(str, command["password"]),
+                client_id=self.client_address[0],
+            )
+        except LoginRateLimited:
+            raise UiRequestError("login temporarily unavailable", status_code=429) from None
+        except PrivateAccessError:
+            raise UiRequestError("invalid credentials", status_code=401) from None
+        self._pending_cookie = access.cookie_header(session.session_token)
+        return {
+            "schema_version": 1,
+            "mode": "private",
+            "status": "authenticated",
+            "csrf_token": session.csrf_token,
+            "expires_at": int(session.expires_at),
+        }
+
+    def _host_matches_server(self) -> bool:
+        """Reject DNS-rebinding Host values for this repository-backed surface."""
+        host = self.headers.get("Host")
+        if host is None:
+            return False
+        if self.server.surface.private_access is not None:
+            access = self.server.surface.private_access
+            return access.host_allowed(host)
+        request_parts = _origin_parts(f"http://{host}", scheme="http")
+        if request_parts is None:
+            return False
+        hostname, port = request_parts
+        server_port = cast(tuple[str, int], self.server.server_address)[1]
+        return hostname in {"127.0.0.1", "localhost"} and port == server_port
 
     def _send_json(self, status: HTTPStatus, payload: JsonObject) -> None:
         try:
@@ -281,10 +526,20 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        pending_cookie = getattr(self, "_pending_cookie", None)
+        if isinstance(pending_cookie, str):
+            self.send_header("Set-Cookie", pending_cookie)
+            self._pending_cookie = None
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("X-Frame-Options", "DENY")
+        access = self.server.surface.private_access
+        if access is not None and access.production:
+            self.send_header(
+                "Strict-Transport-Security",
+                "max-age=31536000; includeSubDomains",
+            )
         self.send_header(
             "Content-Security-Policy",
             "default-src 'self'; base-uri 'none'; form-action 'self'; "
@@ -302,20 +557,30 @@ def create_server(
     host: str = DEFAULT_BROWSER_HOST,
     port: int = DEFAULT_BROWSER_PORT,
     *,
-    journey: BrowserJourney = run_offline_shell_demo,
-    public_demo: bool = False,
+    ui_application: UiApplicationPort,
+    private_access: PrivateAccessController | None = None,
+    settings_application: PrivateSettingsApplication | None = None,
 ) -> ThreadingHTTPServer:
-    """Create a local server or an explicitly stateless public demo server."""
+    """Create one private repository-backed browser server."""
 
-    _require_bind_host(host, public_demo=public_demo)
-    if public_demo and journey is not run_offline_shell_demo:
-        raise ValueError("public-demo mode requires the fixed sanitized journey")
+    private_production = bool(
+        private_access is not None and private_access.production
+    )
+    _require_bind_host(
+        host,
+        private_production=private_production,
+    )
+    if settings_application is not None and private_access is None:
+        raise ValueError("settings application requires private access")
     if type(port) is not int or not 0 <= port <= 65_535:
         raise ValueError("port must be between 0 and 65535")
     return _BrowserServer(
         (host, port),
-        BrowserSurface(journey),
-        public_demo=public_demo,
+        BrowserSurface(
+            ui_application,
+            private_access=private_access,
+            settings_application=settings_application,
+        ),
     )
 
 
@@ -323,12 +588,19 @@ def serve(
     host: str = DEFAULT_BROWSER_HOST,
     port: int = DEFAULT_BROWSER_PORT,
     *,
-    journey: BrowserJourney = run_offline_shell_demo,
-    public_demo: bool = False,
+    ui_application: UiApplicationPort,
+    private_access: PrivateAccessController | None = None,
+    settings_application: PrivateSettingsApplication | None = None,
 ) -> None:
     """Serve the browser surface until interrupted."""
 
-    server = create_server(host, port, journey=journey, public_demo=public_demo)
+    server = create_server(
+        host,
+        port,
+        ui_application=ui_application,
+        private_access=private_access,
+        settings_application=settings_application,
+    )
     bound_host, bound_port = cast(tuple[str, int], server.server_address)
     print(f"Study Agent product shell: http://{bound_host}:{bound_port}/")
     try:
@@ -342,97 +614,115 @@ def serve(
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="study-agent-shell-web",
-        description="Serve Cardine locally or as a stateless sanitized public demo.",
+        description="Serve Cardine from a canonical local repository.",
     )
     parser.add_argument(
         "--host",
         default=DEFAULT_BROWSER_HOST,
-        help="bind address; 0.0.0.0 requires --public-demo",
+        help="bind address; non-loopback requires private production controls",
     )
     parser.add_argument("--port", type=int, default=DEFAULT_BROWSER_PORT)
     parser.add_argument(
-        "--public-demo",
+        "--repository",
+        type=Path,
+        required=True,
+        help="local repository root",
+    )
+    parser.add_argument(
+        "--course-id",
+        default=None,
+        help="optional initial course identity; must be paired with --session-id",
+    )
+    parser.add_argument(
+        "--session-id",
+        default=None,
+        help="optional initial session identity; must be paired with --course-id",
+    )
+    parser.add_argument(
+        "--private",
         action="store_true",
-        help="disable legacy mutable routes and permit a public bind",
+        help="enable single-owner access using CARDINE_OWNER_PASSWORD_HASH",
+    )
+    parser.add_argument(
+        "--production",
+        action="store_true",
+        help="use the production Secure __Host session cookie",
     )
     args = parser.parse_args()
+    if (args.course_id is None) != (args.session_id is None):
+        parser.error("--course-id and --session-id must be provided together")
+    if args.production and not args.private:
+        parser.error("--production requires --private")
     try:
-        serve(args.host, args.port, public_demo=args.public_demo)
+        from .ui_application import RepositoryUiApplication
+
+        ui_application = None
+        private_access = None
+        settings_application = None
+        credentials = None
+        environment = None
+        credentials = None
+        if args.private:
+            from .product_settings import RuntimeCredentialStore
+
+            credentials = RuntimeCredentialStore()
+            environment = credentials
+        ui_application = RepositoryUiApplication(
+            args.repository,
+            args.course_id,
+            args.session_id,
+            environment=environment,
+        )
+        if args.private:
+            from .private_access import PrivateAccessController
+            from .product_settings import RuntimeCredentialStore
+
+            password_hash = os.environ.get("CARDINE_OWNER_PASSWORD_HASH")
+            canonical_origin = os.environ.get("CARDINE_PUBLIC_ORIGIN")
+            if not password_hash or not canonical_origin:
+                parser.error(
+                    "--private requires CARDINE_OWNER_PASSWORD_HASH and CARDINE_PUBLIC_ORIGIN"
+                )
+            private_access = PrivateAccessController(
+                password_hash,
+                canonical_origin=canonical_origin,
+                production=args.production,
+            )
+            credentials = (
+                credentials if credentials is not None else RuntimeCredentialStore()
+            )
+            settings_application = PrivateSettingsApplication(
+                ui_application,
+                credentials=credentials,
+            )
+        serve(
+            args.host,
+            args.port,
+            ui_application=ui_application,
+            private_access=private_access,
+            settings_application=settings_application,
+        )
     except ValueError as error:
         parser.error(str(error))
 
 
-def _browser_payload(result: Mapping[str, object], learner_entry: str) -> JsonObject:
-    """Project the existing shell result; no tutor behavior is implemented here."""
+def _diagnostic_category(error: UiRequestError) -> str:
+    """Map known safe UI failures to opaque local-preview diagnostics."""
 
-    material = _mapping(result.get("material")) or _mapping(result.get("source_state"))
-    context = _mapping(result.get("context_state"))
-    timeline = _sequence_of_mappings(result.get("status_trace"))
-    conflict = _mapping(result.get("conflict"))
-    if conflict is None:
-        conflict = {
-            "status": "clear",
-            "items": (),
-            "message": "No context conflict reported by this snapshot.",
-        }
-    due_review = _mapping(result.get("due_review"))
-    if due_review is None:
-        due_review = {
-            "status": "unavailable",
-            "items": (),
-            "message": "Optional recall capability is not installed; continuing safely.",
-        }
-    return cast(
-        JsonObject,
-        {
-            "surface": "study-agent-product-shell",
-            "mode": "offline",
-            "learner_entry": learner_entry,
-            "status": str(result.get("status", "degraded")),
-            "conversation": {"status_trace": timeline},
-            "material": material or {"fixture": "unavailable", "evidence": ()},
-            "evidence": {
-                "sequence": result.get(
-                    "evidence_sequence", result.get("evidence_refresh_sequence")
-                ),
-                "context": context or {},
-            },
-            "conflict": conflict,
-            "due_review": due_review,
-            "capabilities": tuple(_strings(result.get("capabilities"))),
-            "parity": result.get("parity") is True,
-            "offline_proof": "No network, credentials, model SDK, or provider call.",
-        },
-    )
-
-
-def _bounded_entry(value: str) -> str:
-    if not isinstance(value, str):
-        raise TypeError("learner_entry must be a string")
-    entry = value.strip()
-    if not entry:
-        raise ValueError("learner_entry must be non-empty")
-    if len(entry) > MAX_LEARNER_ENTRY_CHARS:
-        raise ValueError("learner_entry exceeds the shell text bound")
-    return entry
-
-
-def _mapping(value: object) -> dict[str, object] | None:
-    if not isinstance(value, Mapping):
-        return None
-    return {str(key): item for key, item in value.items()}
-
-
-def _sequence_of_mappings(value: object) -> tuple[dict[str, object], ...]:
-    if not isinstance(value, (tuple, list)):
-        return ()
-    return tuple(item for item in (_mapping(candidate) for candidate in value) if item is not None)
-
-
-def _strings(value: object) -> tuple[str, ...]:
-    if not isinstance(value, (tuple, list)):
-        return ()
-    return tuple(item for item in value if isinstance(item, str))
+    if error.diagnostic_code is not None:
+        return error.diagnostic_code
+    message = str(error)
+    if error.status_code == HTTPStatus.UNAUTHORIZED:
+        return "authentication_required"
+    if error.status_code == HTTPStatus.CONFLICT:
+        return "stale_sequence"
+    if error.status_code == HTTPStatus.SERVICE_UNAVAILABLE:
+        return (
+            "tutor_execution_failed"
+            if message == "repository runtime is unavailable"
+            else "repository_runtime_unavailable"
+        )
+    return "invalid_request"
 
 
 def _json_bytes(payload: JsonObject) -> bytes:
@@ -446,25 +736,64 @@ def _json_bytes(payload: JsonObject) -> bytes:
     ).encode("utf-8")
 
 
-def _require_bind_host(host: str, *, public_demo: bool) -> None:
+def _is_json_content_type(value: str | None) -> bool:
+    if value is None:
+        return False
+    media_type, _, _parameters = value.partition(";")
+    return media_type.strip().lower() == "application/json"
+
+
+def _is_private_endpoint(path: str) -> bool:
+    return (
+        path.startswith("/api/v1/auth/")
+        or path.startswith("/api/v1/settings")
+        or path == "/api/v1/chat/course-creation"
+        or path == "/api/v1/sources/upload"
+    )
+
+
+def _origin_parts(value: str, *, scheme: str) -> tuple[str, int] | None:
+    try:
+        parsed = urlsplit(value)
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError:
+        return None
+    if (
+        parsed.scheme.lower() != scheme
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path
+        or parsed.query
+        or parsed.fragment
+        or hostname is None
+    ):
+        return None
+    return hostname.lower(), port if port is not None else 80
+
+
+def _require_bind_host(
+    host: str,
+    *,
+    private_production: bool = False,
+) -> None:
     if host in {"127.0.0.1", "localhost"}:
         return
     if host == "0.0.0.0":
-        if public_demo:
+        if private_production:
             return
-        raise ValueError("0.0.0.0 requires explicit --public-demo mode")
-    raise ValueError("bind host must be localhost or 0.0.0.0 in public-demo mode")
+        raise ValueError("0.0.0.0 requires private production mode")
+    raise ValueError("bind host must be localhost or 0.0.0.0 in private production mode")
 
 
 __all__ = [
     "API_PREFIX",
     "DEFAULT_BROWSER_HOST",
     "DEFAULT_BROWSER_PORT",
-    "ENTRY_PATH",
     "HEALTH_PATH",
     "MAX_API_BODY_BYTES",
-    "STATE_PATH",
-    "BrowserJourney",
+    "PREVIEW_RUNTIME_ID",
     "BrowserSurface",
     "create_server",
     "main",

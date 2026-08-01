@@ -23,9 +23,17 @@ from .run_store import (
     SQLiteRunStore,
     UnsupportedSQLiteRunDatabaseError,
 )
+from .tutor_continuations import (
+    MAX_TUTOR_CONTINUATION_BYTES,
+    SQLiteTutorContinuationStore,
+    TutorContinuationCorruptionError,
+    TutorContinuationStore,
+    UnsupportedSQLiteTutorContinuationDatabaseError,
+)
 
 __all__ = [
     "INDEX_VERSION",
+    "MAX_TUTOR_CONTINUATION_BYTES",
     "EventBatchError",
     "NamespacedSQLiteRunStore",
     "ProjectionConsistencyError",
@@ -36,9 +44,13 @@ __all__ = [
     "SQLiteEventStore",
     "SQLiteFtsRetrieval",
     "SQLiteRunStore",
+    "SQLiteTutorContinuationStore",
     "SequenceConflictError",
+    "TutorContinuationCorruptionError",
+    "TutorContinuationStore",
     "UnsupportedSQLiteDatabaseError",
     "UnsupportedSQLiteRunDatabaseError",
+    "UnsupportedSQLiteTutorContinuationDatabaseError",
     "compile_literal_query",
     "normalize_bm25_score",
     "observe_local_repository",

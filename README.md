@@ -138,6 +138,22 @@ Continue with `source list`, `ask`, the session commands, `export`, or
 stdout. The default repository is fully offline; only `ask` requires an
 explicitly configured model adapter.
 
+For a new Cardine repository using the fixed GPT-5.6 Luna baseline:
+
+```bash
+export OPENAI_API_KEY="..."
+study-agent init ./my-cardine-repository \
+  --model-adapter openai-gpt-5.6-luna \
+  --model-setting timeout_seconds=60 \
+  --credential-env OPENAI_API_KEY
+```
+
+The configuration stores only the environment-variable name. The adapter pins
+`gpt-5.6-luna`, the OpenAI endpoint, strict structured output, and
+`reasoning_effort: none`; repository configuration cannot redirect that
+identity to another model or endpoint. The unsuffixed `gpt-5.6` alias is not
+used because it routes to Sol.
+
 ## Built at OpenAI Build Week
 
 This project began as a medical student's frustration: a year of disconnected
@@ -183,5 +199,4 @@ independent semantic review. Network smoke tests are strictly opt-in.
 - License: [Apache-2.0](LICENSE)
 - Platform: Python 3.12/3.13 · stdlib-only runtime · CI on Ubuntu · Build Week
   verification on macOS arm64
-
 

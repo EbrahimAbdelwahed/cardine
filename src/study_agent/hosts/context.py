@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Protocol
 from study_agent.domain import CourseId, SessionId, TutorSnapshotV1
 from study_agent.domain._validation import JsonObject
 from study_agent.ports.assessment import LearnerEvidenceViewPort
+from study_agent.ports.session import TutorPresentationViewPort
 from study_agent.ports.tutor_snapshot import TutorSnapshotPort
 
 from .contracts import (
@@ -46,6 +47,11 @@ class CapabilityDiscoveryPort(Protocol):
     def discover(self) -> tuple[CapabilityManifestView, ...]: ...
 
 
+class HarnessToolDiscoveryPort(Protocol):
+    @property
+    def manifests(self) -> tuple[object, ...]: ...
+
+
 class TutorHostContextAssembler:
     """Compose existing immutable views without becoming another state owner."""
 
@@ -54,10 +60,14 @@ class TutorHostContextAssembler:
         snapshots: TutorSnapshotPort,
         evidence: LearnerEvidenceViewPort,
         capabilities: CapabilityDiscoveryPort,
+        presentations: TutorPresentationViewPort | None = None,
+        tools: HarnessToolDiscoveryPort | None = None,
     ) -> None:
         self._snapshots = snapshots
         self._evidence = evidence
         self._capabilities = capabilities
+        self._presentations = presentations
+        self._tools = tools
 
     def assemble(
         self,
@@ -85,12 +95,43 @@ class TutorHostContextAssembler:
                 key=lambda item: (item.identity, item.manifest_fingerprint),
             )
         )
+        tutor_snapshot = snapshot.to_json()
+        if self._tools is not None:
+            tutor_snapshot = {
+                **tutor_snapshot,
+                "harness_tools": tuple(
+                    {
+                        "name": str(getattr(item, "name")),
+                        "input_schema": getattr(item, "input_schema"),
+                    }
+                    for item in self._tools.manifests
+                ),
+            }
+        if self._presentations is not None:
+            tutor_snapshot = {
+                **tutor_snapshot,
+                "tutor_presentations": tuple(
+                    {
+                        "kind": item.kind.value,
+                        "content": item.content,
+                        "course_sequence": item.course_sequence,
+                        "in_reply_to_interaction_id": (
+                            None
+                            if item.in_reply_to_interaction_id is None
+                            else str(item.in_reply_to_interaction_id)
+                        ),
+                    }
+                    for item in self._presentations.presentations(
+                        course_id, session_id
+                    )
+                ),
+            }
         return TutorHostContext(
             course_id=str(course_id),
             session_id=str(session_id),
             tutor_snapshot_sequence=snapshot.high_water_sequence,
             learner_evidence_through_sequence=evidence.through_sequence,
-            tutor_snapshot=snapshot.to_json(),
+            tutor_snapshot=tutor_snapshot,
             learner_evidence=_evidence_json(evidence),
             advertised_capabilities=advertised,
             pending_continuation=pending_continuation,

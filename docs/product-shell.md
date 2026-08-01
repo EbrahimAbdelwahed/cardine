@@ -83,3 +83,7 @@ The implementation uses only the Python standard library and a packaged page:
 it provides an accessible, deterministic proof surface without a web framework
 or a second UI state owner. The terminal and browser surfaces share the same
 immutable view projection and offline anatomy journey.
+
+The complete repository-backed product has a separate private production
+topology. See [private production](private-production.md); do not use the
+stateless public-demo image for the authenticated product.

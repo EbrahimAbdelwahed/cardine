@@ -124,10 +124,17 @@ def test_decision_schema_is_closed_and_context_advertised() -> None:
     assert isinstance(decision, Mapping)
     branches = decision["anyOf"]
     assert isinstance(branches, tuple)
-    assert len(branches) == 5
+    assert len(branches) == 1
     serialized = json.dumps(schema, sort_keys=True, default=list)
-    assert "grounding.ask" in serialized
+    assert "answer_dialogue" in serialized
+    assert "assistant_message" not in serialized
+    assert "ask_learner" not in serialized
+    assert "start_capability" not in serialized
     assert "provider" not in serialized
+
+    available = decision_schema(_context(pending_continuation=None))
+    available_branches = available["properties"]["decision"]["anyOf"]  # type: ignore[index]
+    assert len(available_branches) == 4
 
 
 def test_context_rejects_sequence_owner_order_and_continuation_mismatches() -> None:
@@ -194,7 +201,12 @@ def test_closed_decision_union_round_trips_and_has_stable_fingerprint(
     decision: TutorDecision,
 ) -> None:
     encoded = decision_to_bytes(decision)
-    recovered = decision_from_bytes(encoded, _context())
+    context = (
+        _context()
+        if isinstance(decision, AnswerDialogueDecision)
+        else _context(pending_continuation=None)
+    )
+    recovered = decision_from_bytes(encoded, context)
 
     assert recovered == decision
     assert decision_fingerprint(recovered) == decision_fingerprint(decision)
@@ -205,12 +217,12 @@ def test_decisions_bind_equal_noninterned_capability_schema_and_exact_continuati
     assert equal_noninterned == _capability().id
     decision_from_bytes(
         decision_to_bytes(StartCapabilityDecision(equal_noninterned, {"topic": "heart"})),
-        _context(),
+        _context(pending_continuation=None),
     )
     with pytest.raises(ValueError, match="advertised schema"):
         decision_from_bytes(
             decision_to_bytes(StartCapabilityDecision(equal_noninterned, {"topic": 3})),
-            _context(),
+            _context(pending_continuation=None),
         )
     with pytest.raises(ValueError, match="exact pending"):
         decision_from_bytes(

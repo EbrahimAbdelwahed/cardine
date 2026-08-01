@@ -49,6 +49,7 @@ def model(
     response: HttpResponse | Exception,
     *,
     capabilities: ModelCapabilities | None = None,
+    structured_output_format: str = "json_schema",
 ) -> tuple[OpenAICompatibleModel, FakeTransport, OpenAICompatibleConfig]:
     transport = FakeTransport(response)
     config = OpenAICompatibleConfig(
@@ -57,6 +58,7 @@ def model(
         SECRET,
         capabilities=capabilities or ModelCapabilities(),
         extra_headers={"X-Client": "study-agent", "X-Secret": SECRET},
+        structured_output_format=structured_output_format,
     )
     return OpenAICompatibleModel(config, transport), transport, config
 
@@ -130,6 +132,36 @@ def test_native_structured_output_translation_and_strict_object_parsing() -> Non
     assert result.structured_output == {"answer": "supported"}
 
 
+def test_json_object_structured_output_translation_and_parsing() -> None:
+    adapter, transport, _ = model(
+        response(
+            {
+                "choices": [
+                    {
+                        "message": {"content": '{"answer":"supported"}'},
+                        "finish_reason": "stop",
+                    }
+                ]
+            }
+        ),
+        capabilities=ModelCapabilities(structured_output=True),
+        structured_output_format="json_object",
+    )
+    request = ModelRequest(
+        (ModelMessage(MessageRole.USER, "Return an answer as JSON."),),
+        StructuredOutputConstraint(
+            "answer",
+            {"type": "object", "required": ("answer",)},
+        ),
+    )
+
+    result = asyncio.run(adapter.generate(request))
+    sent: dict[str, Any] = json.loads(transport.calls[0][2])
+
+    assert sent["response_format"] == {"type": "json_object"}
+    assert result.structured_output == {"answer": "supported"}
+
+
 @pytest.mark.parametrize(
     ("status", "code", "retryable"),
     [
@@ -153,6 +185,28 @@ def test_http_errors_are_safe_redacted_and_retryable_by_category(
     combined = f"{caught.value!s} {caught.value!r} {config!r}"
     assert SECRET not in combined
     assert caught.value.__cause__ is None
+
+
+@pytest.mark.parametrize(
+    ("status", "provider_code", "code"),
+    [
+        (404, "model_not_found", ModelErrorCode.MODEL_UNAVAILABLE),
+        (404, "not_found", ModelErrorCode.ENDPOINT_INCOMPATIBLE),
+        (400, "unsupported_parameter", ModelErrorCode.ENDPOINT_INCOMPATIBLE),
+    ],
+)
+def test_provider_error_codes_distinguish_model_and_endpoint_without_leaking_body(
+    status: int, provider_code: str, code: ModelErrorCode
+) -> None:
+    adapter, _, config = model(
+        response({"error": {"code": provider_code, "message": SECRET}}, status)
+    )
+
+    with pytest.raises(ModelError) as caught:
+        asyncio.run(adapter.generate(ModelRequest((ModelMessage(MessageRole.USER, "q"),))))
+
+    assert caught.value.code is code
+    assert SECRET not in f"{caught.value!s} {caught.value!r} {config!r}"
 
 
 def test_injected_transport_exception_is_mapped_without_secret_chaining() -> None:

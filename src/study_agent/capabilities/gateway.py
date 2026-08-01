@@ -40,6 +40,7 @@ from .contracts import (
     TerminatedCapabilityOutcome,
     TutorCapabilityId,
 )
+from .fingerprints import capability_output_fingerprint, capability_retry_fingerprint
 from .registry import StudyCapabilityRegistry
 
 
@@ -135,6 +136,70 @@ class StudyCapabilityGateway:
             raise TypeError("continuation must be CapabilityContinuation")
         binding = self._binding(continuation.capability_id)
         return await self._resume_bound(binding, continuation, response, context)
+
+    def recover_completed(
+        self,
+        capability_identity: str,
+        manifest_fingerprint: str,
+        run_id: RunId,
+        output_fingerprint: str,
+        retry_receipt_fingerprint: str,
+        context: ExecutionContext,
+    ) -> JsonObject | None:
+        """Recover one closed completion without invoking the provider.
+
+        The caller supplies the original trusted execution context from the
+        host handoff.  Recovery re-checks the manifest, authority, exact retry
+        identity, run binding, persisted lifecycle, and output schema before
+        returning owner output.  It deliberately does not execute a model or
+        a capability tool.
+        """
+
+        if not isinstance(capability_identity, str) or not capability_identity:
+            raise TypeError("completion capability identity is invalid")
+        if not isinstance(manifest_fingerprint, str) or not manifest_fingerprint:
+            raise TypeError("completion manifest fingerprint is invalid")
+        if not isinstance(run_id, RunId):
+            raise TypeError("completion run id is invalid")
+        if not isinstance(output_fingerprint, str) or not output_fingerprint:
+            raise TypeError("completion output fingerprint is invalid")
+        if not isinstance(retry_receipt_fingerprint, str) or not retry_receipt_fingerprint:
+            raise TypeError("completion retry fingerprint is invalid")
+        if not isinstance(context, ExecutionContext):
+            raise TypeError("completion recovery context is invalid")
+        binding = next(
+            (
+                item
+                for item in self._bindings.values()
+                if item.manifest.identity == capability_identity
+            ),
+            None,
+        )
+        if binding is None or binding.manifest_fingerprint != manifest_fingerprint:
+            return None
+        try:
+            authority, retry = self._authorize(binding, context)
+        except (CapabilityGatewayError, TypeError, ValueError):
+            return None
+        if retry != retry_receipt_fingerprint:
+            return None
+        if _run_id(binding, authority, retry) != run_id:
+            return None
+        inspected = self._inspect_optional(binding, run_id)
+        if inspected is None or inspected.status is not RunStatus.COMPLETED:
+            return None
+        try:
+            outcome = self._observed(binding, inspected, authority, retry)
+        except (CapabilityGatewayError, TypeError, ValueError):
+            return None
+        if not isinstance(outcome, CompletedCapabilityOutcome):
+            return None
+        output = outcome.output
+        if not isinstance(output, Mapping):
+            return None
+        if capability_output_fingerprint(output) != output_fingerprint:
+            return None
+        return freeze_object(output)
 
     async def _resume_bound(
         self,
@@ -261,10 +326,12 @@ class StudyCapabilityGateway:
                 "grants": tuple(sorted(context.requested_capabilities)),
             },
         )
-        retry = _fingerprint(
-            "study-agent-capability-retry-v1",
-            {"idempotency_key": context.idempotency_key},
-        )
+        if context.idempotency_key is None:  # guarded above, for type narrowing
+            raise CapabilityGatewayError(
+                CapabilityGatewayErrorCode.INVALID_REQUEST,
+                "capability execution requires idempotency identity",
+            )
+        retry = capability_retry_fingerprint(context.idempotency_key)
         return authority, retry
 
     def _inspect_optional(
@@ -560,11 +627,15 @@ def _fingerprint(domain: str, value: JsonObject) -> str:
     return sha256(domain.encode("utf-8") + b"\0" + encoded).hexdigest()
 
 
+
+
 def _json_identity_fingerprint(value: JsonValue) -> str:
     encoded = json.dumps(
         _plain(value), sort_keys=True, separators=(",", ":"), ensure_ascii=False
     ).encode("utf-8")
     return sha256(b"study-agent-capability-json-identity-v1\0" + encoded).hexdigest()
+
+
 
 
 def _plain(value: JsonValue) -> object:

@@ -1,5 +1,18 @@
 """Application use cases and transaction boundaries."""
 
+from .capability_completion import (
+    CapabilityCompletionHandler,
+    CapabilityCompletionHandlerRegistry,
+    CapabilityCompletionProductReceipt,
+)
+from .conversation_turn import (
+    MAX_LEARNER_TURN_CHARS,
+    ConversationTurnApplication,
+    ConversationTurnCommand,
+    ConversationTurnError,
+    ConversationTurnErrorCode,
+    ConversationTurnResult,
+)
 from .export import (
     EXPORT_SCHEMA_VERSION,
     EXPORT_V2_SCHEMA_VERSION,
@@ -22,11 +35,34 @@ from .grounding_ask import (
     GroundingStudyEventKind,
 )
 from .harness import StudyHarness
+from .tool_surface import HarnessToolSurface
+from .study_readiness import (
+    AttributedValue,
+    ReadinessArtifactCount,
+    ReadinessBlueprint,
+    ReadinessConstraint,
+    ReadinessEvidence,
+    ReadinessEvidenceReference,
+    ReadinessRecall,
+    ReadinessSource,
+    StudyReadinessSnapshot,
+    StudyReadinessView,
+)
 
 __all__ = [
     "EXPORT_SCHEMA_VERSION",
     "EXPORT_V2_SCHEMA_VERSION",
     "EXPORT_V3_SCHEMA_VERSION",
+    "MAX_LEARNER_TURN_CHARS",
+    "AttributedValue",
+    "CapabilityCompletionHandler",
+    "CapabilityCompletionHandlerRegistry",
+    "CapabilityCompletionProductReceipt",
+    "ConversationTurnApplication",
+    "ConversationTurnCommand",
+    "ConversationTurnError",
+    "ConversationTurnErrorCode",
+    "ConversationTurnResult",
     "ExportBundle",
     "ExportBundleV2",
     "ExportBundleV3",
@@ -41,5 +77,15 @@ __all__ = [
     "GroundingEngineFactory",
     "GroundingStudyEvent",
     "GroundingStudyEventKind",
+    "ReadinessArtifactCount",
+    "ReadinessBlueprint",
+    "ReadinessConstraint",
+    "ReadinessEvidence",
+    "ReadinessEvidenceReference",
+    "ReadinessRecall",
+    "ReadinessSource",
     "StudyHarness",
+    "HarnessToolSurface",
+    "StudyReadinessSnapshot",
+    "StudyReadinessView",
 ]

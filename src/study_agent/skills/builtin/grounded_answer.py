@@ -48,7 +48,7 @@ GROUNDED_ANSWER_OUTPUT_SCHEMA = JsonSchema(
                     },
                 },
             },
-            "unsupported_information_note": {},
+            "unsupported_information_note": {"type": ("string", "null")},
         },
     }
 )

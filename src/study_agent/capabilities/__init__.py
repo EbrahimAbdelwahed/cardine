@@ -33,6 +33,7 @@ from .contracts import (
     TutorCapabilityId,
 )
 from .dispatch import FlashcardCapabilityDispatcher
+from .fingerprints import capability_output_fingerprint, capability_retry_fingerprint
 from .gateway import StudyCapabilityGateway
 from .registry import StudyCapabilityRegistry
 
@@ -67,6 +68,8 @@ __all__ = [
     "assess_understanding_binding",
     "builtin_capability_bindings",
     "builtin_tutor_validators",
+    "capability_output_fingerprint",
+    "capability_retry_fingerprint",
     "explain_concept_binding",
 ]
 

@@ -317,10 +317,19 @@ class GroundedSessionFinalizer:
         pins: PlaybookVersionPins,
         read_dependencies: tuple[ReadDependency, ...] = (),
         idempotency_key: str,
+        expected_sequence: int | None = None,
     ) -> AnswerRecord:
         session_id = _context_session(context)
         _trusted_context(context)
-        sequence = _current_sequence(self._events, context.course_id)
+        if expected_sequence is not None and (
+            type(expected_sequence) is not int or expected_sequence < 0
+        ):
+            raise SessionCommandError("expected_sequence must be a non-negative integer")
+        sequence = (
+            _current_sequence(self._events, context.course_id)
+            if expected_sequence is None
+            else None
+        )
         run = engine.recover(
             run_id=run_id,
             definition=definition,
@@ -343,6 +352,10 @@ class GroundedSessionFinalizer:
         existing = self._existing(context.course_id, session_id, run.run_id, idempotency_key)
         if existing is not None:
             return _same_or_conflict(existing, record)
+
+        if expected_sequence is not None:
+            sequence = expected_sequence
+        assert sequence is not None
 
         current_interactions = self._view.interactions(context.course_id, session_id)
         current_answers = self._view.answers(context.course_id, session_id)

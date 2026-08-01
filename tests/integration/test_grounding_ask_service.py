@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -166,6 +167,16 @@ class FailOnceFinalizer:
         return self.inner.finalize_grounded_run(**kwargs)  # type: ignore[arg-type]
 
 
+class AppendBeforeFinalize:
+    def __init__(self, inner: GroundedSessionFinalizer, append: Callable[[], object]) -> None:
+        self.inner = inner
+        self.append = append
+
+    def finalize_grounded_run(self, **kwargs: object):  # type: ignore[no-untyped-def]
+        self.append()
+        return self.inner.finalize_grounded_run(**kwargs)  # type: ignore[arg-type]
+
+
 def pins() -> VersionPins:
     return VersionPins(
         ArtifactReference(GROUNDED_ANSWER_SKILL.id, GROUNDED_ANSWER_SKILL.version),
@@ -263,6 +274,7 @@ def composition(
         engine_factory=factory,
         run_store=store,
         configuration=GroundingAskConfiguration(pins(), receipt),
+        events=events,
     )
     return service, events, retrieval, factory, wrapped, blobs
 
@@ -375,6 +387,60 @@ def test_changed_question_conflicts_before_any_new_effect(tmp_path: Path) -> Non
     assert caught.value.code is GroundingAskErrorCode.CONFLICT
     assert len(events.read(COURSE)) == before
     assert retrieval.search_calls == 1
+    blobs.close()
+
+
+def test_expected_sequence_rejects_external_append_before_retrieval_or_model(
+    tmp_path: Path,
+) -> None:
+    service, events, retrieval, factory, _, blobs = composition(tmp_path)
+    expected = len(events.read(COURSE))
+    service._session_service.record_note(  # type: ignore[attr-defined]
+        context(key="external-before"), "An external note advanced the stream."
+    )
+
+    with pytest.raises(GroundingAskError) as caught:
+        asyncio.run(
+            service.ask(
+                "What is absent from these notes?",
+                context(),
+                expected_sequence=expected,
+            )
+        )
+
+    assert caught.value.code is GroundingAskErrorCode.RETRYABLE_CONFLICT
+    assert retrieval.search_calls == 0
+    assert factory.created == 0
+    assert len(events.read(COURSE)) == expected + 2
+    blobs.close()
+
+
+def test_expected_sequence_rejects_append_after_model_without_answer_commit(
+    tmp_path: Path,
+) -> None:
+    service, events, retrieval, factory, finalizer, blobs = composition(tmp_path)
+    expected = len(events.read(COURSE))
+    service._finalizer = AppendBeforeFinalize(  # type: ignore[assignment]
+        finalizer,  # type: ignore[arg-type]
+        lambda: service._session_service.record_note(  # type: ignore[attr-defined]
+            context(key="external-during-model"), "An external note won the race."
+        ),
+    )
+
+    with pytest.raises(GroundingAskError) as caught:
+        asyncio.run(
+            service.ask(
+                "What is absent from these notes?",
+                context(),
+                expected_sequence=expected,
+            )
+        )
+
+    assert caught.value.code is GroundingAskErrorCode.RETRYABLE_CONFLICT
+    assert retrieval.search_calls == 1
+    assert factory.created == 1
+    assert len(events.read(COURSE)) == expected + 2
+    assert service._sessions.answers(COURSE, SESSION) == ()  # type: ignore[attr-defined]
     blobs.close()
 
 
