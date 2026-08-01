@@ -1120,6 +1120,23 @@
   .side-card__title { font-size: var(--text-lg); font-family: var(--font-body); font-weight: var(--weight-semibold); letter-spacing: 0; }
   .side-card__copy { color: var(--ink-soft); font-size: var(--text-md); }
 
+  /* Declared facts in the aside: label, value, provenance — one rhythm,
+     separated by a hairline instead of by bullets and line breaks. */
+  .side-list { display: grid; gap: var(--space-3); margin-top: var(--space-1); }
+  .side-list > li { display: grid; gap: var(--space-1); min-width: 0; }
+  .side-list > li + li { padding-top: var(--space-3); box-shadow: inset 0 1px 0 var(--line); }
+  .side-list__label { color: var(--ink); font-size: var(--text-md); font-weight: var(--weight-medium); line-height: var(--leading-snug); }
+  .side-list__value { color: var(--ink-soft); font-size: var(--text-md); line-height: var(--leading-snug); overflow-wrap: anywhere; }
+  .side-list__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+  .spec-group { margin-top: var(--space-3); }
+  .spec-group + .spec-group { margin-top: var(--space-4); padding-top: var(--space-4); box-shadow: inset 0 1px 0 var(--line); }
+  .spec-group__label {
+    color: var(--muted);
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-caps);
+    text-transform: uppercase;
+  }
+
   .status-pill {
     display: inline-flex;
     align-items: center;

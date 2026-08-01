@@ -96,6 +96,13 @@
     days_remaining: "giorni rimanenti",
   });
 
+  const ARTIFACT_LABELS = Object.freeze({
+    flashcard: "Flashcard",
+    assessment_item: "Domande di verifica",
+    exam_blueprint: "Struttura d’esame",
+    study_brief: "Scheda di studio",
+  });
+
   const state = {
     bootstrap: null,
     route: "oggi",
@@ -211,6 +218,24 @@
   function sourceRefs(...values) {
     const labels = [...new Set(values.map(sourceLabel).filter(Boolean))];
     return labels.length ? `<span class="source-ref">fonti: ${esc(labels.join(", "))}</span>` : "";
+  }
+
+  /* One fact in the aside: a label, an optional value, and its provenance. */
+  function sideItem(label, value, meta = "") {
+    return `<li><span class="side-list__label">${esc(label)}</span>${value ? `<span class="side-list__value">${esc(value)}</span>` : ""}${meta ? `<span class="side-list__meta">${meta}</span>` : ""}</li>`;
+  }
+
+  /* One panel, several groups. Six stacked cards for five short lists made
+     the aside twice as tall as the column it was meant to balance, and a
+     card that only says "nessuno" is not worth a card. */
+  function specGroup(label, rows) {
+    if (!rows) return "";
+    return `<div class="spec-group"><p class="spec-group__label">${esc(label)}</p><ul class="side-list">${rows}</ul></div>`;
+  }
+
+  function specPanel(kicker, title, groups, empty) {
+    const body = groups.filter(Boolean).join("");
+    return `<section class="side-card"><p class="section-kicker">${esc(kicker)}</p><h2 class="side-card__title">${esc(title)}</h2>${body || `<p class="side-card__copy">${esc(empty)}</p>`}</section>`;
   }
 
   function emptyState(title, copy, kind = "empty", actions = []) {
@@ -1605,46 +1630,51 @@
     const exam = object(first(readiness, ["exam"], plan));
     const dateValue = first(exam, ["date", "exam_date"], first(readiness, ["exam_date"], "Data non configurata"));
     const days = first(exam, ["days_remaining"], first(readiness, ["days_remaining"], null));
-    const goals = array(readiness.learning_goals).map((item) => `${esc(text(first(object(item), ["value"], item)))} ${sourceRef(item)}`).join("<br>") || "Nessun obiettivo configurato";
-    const styles = array(readiness.assessment_styles).map((item) => `${esc(text(first(object(item), ["value"], item)))} ${sourceRef(item)}`).join("<br>") || "Nessuno stile configurato";
     const constraints = array(readiness.constraints);
     const blueprints = array(readiness.blueprints);
     const counts = array(readiness.artifact_counts);
     const evidence = array(readiness.evidence);
     const recall = object(readiness.recall);
+    /* The declared parameters of the course: read-only facts with their own
+       provenance. They belong beside the page, not in the middle of it. */
+    const goalRows = array(readiness.learning_goals).map((item) =>
+      sideItem(text(first(object(item), ["value"], item)), "", sourceRef(item))).join("");
+    const styleRows = array(readiness.assessment_styles).map((item) =>
+      sideItem(text(first(object(item), ["value"], item)), "", sourceRef(item))).join("");
     const constraintRows = constraints.map((item) => {
       const row = object(item);
-      return `<li><strong>${esc(text(row.kind, "vincolo"))}</strong>: ${esc(text(row.value, "non dichiarato"))} ${pill(text(row.status, "active"))} ${sourceRef(row)}</li>`;
-    }).join("") || "<li>Non hai vincoli attivi.</li>";
+      return sideItem(text(row.kind, "vincolo"), text(row.value, "non dichiarato"), `${pill(text(row.status, "active"))}${sourceRef(row)}`);
+    }).join("");
     const blueprintRows = blueprints.map((item) => {
       const row = object(item);
       const observations = [...array(row.observed_topics), ...array(row.observed_formats)].map((value) => text(first(object(value), ["value"], ""))).filter(Boolean);
       const limitations = array(row.limitations).map((value) => text(value)).filter(Boolean);
-      return `<li><strong>Osservazione</strong> · campione ${esc(text(row.sample_size, "—"))}${observations.length ? ` · ${esc(observations.join(", "))}` : ""}${limitations.length ? ` · limiti: ${esc(limitations.join(", "))}` : ""} ${sourceRef(row)}</li>`;
-    }).join("") || "<li>Nessuna osservazione registrata sul formato d’esame.</li>";
-    const countRows = counts.map((item) => {
+      const detail = [observations.join(", "), limitations.length ? `limiti: ${limitations.join(", ")}` : ""].filter(Boolean).join(" · ");
+      return sideItem(`Campione di ${text(row.sample_size, "—")}`, detail, sourceRef(row));
+    }).join("");
+    // Four kinds all reading "0 proposte · 0 accettati" is noise, not
+    // information: only kinds the course actually produced are listed.
+    const countRows = counts.filter((item) => {
       const row = object(item);
-      return `<li>${esc(text(row.kind, "artefatto"))}: ${esc(text(row.pending, "0"))} proposte · ${esc(text(row.accepted, "0"))} accettati ${sourceRef(row)}</li>`;
-    }).join("") || "<li>Nessun materiale generato dal corso.</li>";
+      return Number(text(row.pending, "0")) > 0 || Number(text(row.accepted, "0")) > 0;
+    }).map((item) => {
+      const row = object(item);
+      const kind = text(row.kind, "artefatto");
+      return sideItem(ARTIFACT_LABELS[kind] || kind, `${text(row.pending, "0")} proposte · ${text(row.accepted, "0")} accettati`, sourceRef(row));
+    }).join("");
     const evidenceCopy = evidence.length ? `${evidence.length} evidenze registrate con i relativi riferimenti. ${sourceRef(evidence[0])}` : "Nessuna evidenza registrata dalle verifiche.";
     const recallCopy = recall.available ? `${esc(text(recall.due_count, "0"))} revisioni dovute.` : "Il ripasso programmato non è configurato.";
     const examSources = object(exam.sources);
-    const planTasks = [
-      ...array(readiness.learning_goals).slice(0, 8).map((item) => ({ label: `Obiettivo: ${text(first(object(item), ["value", "label"], item), "non dichiarato")}`, detail: "Obiettivo che hai dichiarato.", status: "open", status_label: "attivo" })),
-      ...constraints.slice(0, 8).map((item) => ({ label: `Vincolo: ${text(first(object(item), ["kind", "value"], item), "non dichiarato")}`, detail: "Vincolo restituito dal tuo contesto di studio.", status: text(first(object(item), ["status", "state"], "active"), "active"), status_label: statusLabel(text(first(object(item), ["status", "state"], "active"), "active")) })),
-    ];
-    if (!planTasks.length) planTasks.push({ label: "Nessun lavoro pianificato", detail: "Non ci sono obiettivi o vincoli attivi per questo corso.", status: "clear", status_label: "in pari" });
     const planInsights = evidence.slice(0, 6).map((item) => {
       const row = object(item);
       return { title: first(row, ["criterion", "concept", "label", "name"], "Evidenza"), detail: first(row, ["detail", "dimension", "disposition", "status"], "Evidenza canonica disponibile."), source: "registro delle verifiche" };
     });
     if (!planInsights.length) planInsights.push({ title: "Nessuna evidenza", detail: "Il corso non ha ancora prodotto evidenze da mostrare qui.", source: "stato dichiarato" });
-    const taskView = aiTaskList({ title: "Lavoro dichiarato", tasks: planTasks });
     const insightView = aiInsightDeck({ title: "Che cosa sappiamo finora", insights: planInsights });
     const recommendationView = days !== null && days !== undefined
       ? aiRecommendation({ title: "Scegli il prossimo passo", detail: `Il servizio riporta ${days} giorni di calendario configurati.`, prompt: "Aiutami a scegliere un prossimo passo dal piano", actionLabel: "Chiedimi una direzione" })
       : "";
-    setView("piano", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="plan-heading"><p class="section-kicker">fatti attribuiti · nessuna agenda</p><h1 class="section-title" id="plan-heading">Piano verso l'esame</h1><div class="fact-grid"><div class="side-card"><p class="section-kicker">data configurata</p><h2 class="side-card__title">${esc(text(dateValue, "Data non configurata"))}</h2><p class="side-card__copy">Aggiornata al ${esc(text(first(readiness, ["as_of_date"], "—")))}</p>${sourceRef(examSources.configured_date)}</div><div class="side-card"><p class="section-kicker">giorni di calendario</p><h2 class="side-card__title">${esc(days === null || days === undefined ? "non disponibile" : String(days))}</h2><p class="side-card__copy">Valore derivato dal servizio da data, conflitti e clock UTC.</p>${sourceRefs(object(examSources.days_remaining).as_of_date, object(examSources.days_remaining).configured_date, object(examSources.days_remaining).conflict_state)}</div></div>${taskView}${insightView}${recommendationView}<p class="section-copy"><strong>Obiettivi:</strong><br>${goals}<br><strong>Stili di verifica:</strong><br>${styles}</p><h2 class="section-subtitle">I tuoi vincoli</h2><ul class="plain-list">${constraintRows}</ul><h2 class="section-subtitle">Osservazioni sull’esame</h2><ul class="plain-list">${blueprintRows}</ul><h2 class="section-subtitle">Materiali generati</h2><ul class="plain-list">${countRows}</ul><p class="section-copy">${evidenceCopy} ${recallCopy} ${sourceRef(recall)}</p></section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">limite esplicito</p><h2 class="side-card__title">Nessun punteggio o priorità.</h2><p class="side-card__copy">Questa vista riporta osservazioni, vincoli e lavoro aperto; non genera agenda, copertura, retention o readiness score.</p></div></aside></section>`);
+    setView("piano", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="plan-heading"><p class="section-kicker">fatti attribuiti · nessuna agenda</p><h1 class="section-title" id="plan-heading">Piano verso l'esame</h1><div class="fact-grid"><div class="side-card"><p class="section-kicker">data configurata</p><h2 class="side-card__title">${esc(text(dateValue, "Data non configurata"))}</h2><p class="side-card__copy">Aggiornata al ${esc(text(first(readiness, ["as_of_date"], "—")))}</p>${sourceRef(examSources.configured_date)}</div><div class="side-card"><p class="section-kicker">giorni di calendario</p><h2 class="side-card__title">${esc(days === null || days === undefined ? "non disponibile" : String(days))}</h2><p class="side-card__copy">Valore derivato dal servizio da data, conflitti e clock UTC.</p>${sourceRefs(object(examSources.days_remaining).as_of_date, object(examSources.days_remaining).configured_date, object(examSources.days_remaining).conflict_state)}</div></div>${insightView}${recommendationView}<p class="section-copy">${evidenceCopy} ${recallCopy} ${sourceRef(recall)}</p></section><aside class="section-grid__side" aria-label="Come è configurato il corso">${specPanel("come è configurato", "Il corso in breve", [specGroup("Obiettivi", goalRows), specGroup("Come verrai valutato", styleRows), specGroup("I tuoi vincoli", constraintRows), specGroup("Osservazioni sul formato d’esame", blueprintRows), specGroup("Materiali generati", countRows)], "Questo corso non ha ancora obiettivi, vincoli o materiali configurati.")}<section class="side-card"><p class="section-kicker">limite esplicito</p><h2 class="side-card__title">Nessun punteggio o priorità</h2><p class="side-card__copy">Questa vista riporta osservazioni, vincoli e lavoro aperto; non genera agenda, copertura, retention o readiness score.</p></section></aside></section>`);
   }
 
   function renderConflitti(payload) {
