@@ -23,7 +23,7 @@ from threading import BoundedSemaphore, Lock, RLock
 from typing import cast
 from urllib.parse import unquote, urlsplit
 
-from study_agent.domain._validation import JsonObject
+from study_agent.domain._validation import JsonObject, JsonValue
 
 from .private_access import (
     AuthenticatedSession,
@@ -439,7 +439,7 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
                 )
                 self._send_json(
                     HTTPStatus(error.status_code),
-                    {"error": str(error), "code": error.diagnostic_code},
+                    _ui_error_payload(error),
                 )
                 return
             self._send_json(HTTPStatus.OK, payload)
@@ -505,7 +505,7 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
             )
             self._send_json(
                 HTTPStatus(error.status_code),
-                {"error": str(error), "code": error.diagnostic_code},
+                _ui_error_payload(error),
             )
             return
         except (UnicodeDecodeError, ValueError, RecursionError):
@@ -845,6 +845,14 @@ def _diagnostic_category(error: UiRequestError) -> str:
             else "repository_runtime_unavailable"
         )
     return "invalid_request"
+
+
+def _ui_error_payload(error: UiRequestError) -> JsonObject:
+    payload: dict[str, JsonValue] = {"error": str(error), "code": error.diagnostic_code}
+    if error.command_committed and error.request_id is not None:
+        payload["command_committed"] = True
+        payload["request_id"] = error.request_id
+    return payload
 
 
 def _json_bytes(payload: JsonObject) -> bytes:

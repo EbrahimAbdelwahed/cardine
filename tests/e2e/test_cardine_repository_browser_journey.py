@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import shutil
 import signal
 import socket
@@ -40,9 +41,12 @@ from study_agent.domain import (
     SessionId,
     SourceId,
 )
+from study_agent.domain._validation import JsonObject
 from study_agent.ports import (
     CancellationToken,
     ModelCapabilities,
+    ModelError,
+    ModelErrorCode,
     ModelFinishReason,
     ModelInvocation,
     ModelRequest,
@@ -80,22 +84,43 @@ API_PATHS = (
 class _BrowserModel:
     capabilities = ModelCapabilities(structured_output=True)
 
-    def __init__(self) -> None:
+    def __init__(self, *, fail_grounding_once: bool = False) -> None:
         self.requests: list[ModelRequest] = []
+        self._fail_grounding_once = fail_grounding_once
 
     async def generate(self, request: ModelRequest) -> ModelResponse:
         self.requests.append(request)
+        if request.metadata.get("prompt_id") == "explain_concept.v1":
+            if self._fail_grounding_once:
+                self._fail_grounding_once = False
+                raise ModelError(ModelErrorCode.TIMEOUT, "browser fixture timeout")
+            rendered = "\n".join(message.content for message in request.messages)
+            evidence = re.search(r'"evidence_id":"([^"]+)"', rendered)
+            assert evidence is not None
+            structured_output: JsonObject = {
+                "status": "answered",
+                "segments": (
+                    {
+                        "kind": "supported_claim",
+                        "text": "The aortic valve has three cusps.",
+                        "evidence_ids": (evidence.group(1),),
+                    },
+                ),
+                "unsupported_information_note": None,
+            }
+        else:
+            structured_output = {
+                "decision": {
+                    "kind": "assistant_message",
+                    "message": "ok",
+                }
+            }
         return ModelResponse(
             "",
             None,
             ModelFinishReason.STOP,
             ModelInvocation("browser-fixture", "1.0.0", "fixture", "browser"),
-            structured_output={
-                "decision": {
-                    "kind": "assistant_message",
-                    "message": "The aortic valve has three cusps.",
-                }
-            },
+            structured_output=structured_output,
         )
 
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
@@ -113,13 +138,14 @@ def _repository(
     tmp_path: Path,
     *,
     with_source: bool = True,
+    fail_grounding_once: bool = False,
 ) -> tuple[Path, ModelAdapterRegistry, _BrowserModel]:
     root = tmp_path / "repository"
     initialize_local_repository(
         root,
         LocalRepositoryConfig(ModelAdapterConfig("browser-fixture", {}, None)),
     )
-    model = _BrowserModel()
+    model = _BrowserModel(fail_grounding_once=fail_grounding_once)
     adapters = ModelAdapterRegistry(
         {"browser-fixture": lambda _config, _credential: model},
         versions={"browser-fixture": "1.0.0"},
@@ -438,7 +464,7 @@ def _assert_no_browser_errors(
 def test_repository_ui_full_route_keyboard_reload_and_process_restart(
     tmp_path: Path,
 ) -> None:
-    root, adapters, model = _repository(tmp_path)
+    root, adapters, model = _repository(tmp_path, fail_grounding_once=True)
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
 
     with _serve(application=app) as url, _real_browser(url) as browser:
@@ -448,13 +474,37 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
         browser.evaluate("document.querySelector('#session-entry-text').focus()")
         assert browser.evaluate("document.activeElement.id") == "session-entry-text"
 
-        browser.call("Input.insertText", text="Explain the aortic valve")
+        browser.call("Input.insertText", text="Read Valve notes")
         _press(browser, "Enter", 13)
+        browser.wait_for(
+            "!document.querySelector('[data-optimistic-turn]')"
+            " && document.querySelector('#global-alert-title').textContent"
+            " === 'Messaggio salvato, risposta non completata'"
+        )
+        assert len(model.requests) == 2
+        assert browser.evaluate(
+            "document.querySelectorAll('.thread-message--learner').length"
+        ) == 1
+        assert browser.evaluate(
+            "document.querySelectorAll('.thread-message--assistant').length"
+        ) == 0
+        assert (
+            browser.evaluate("document.querySelector('#view-root').dataset.scrollOwner")
+            == "conversation"
+        )
+        assert "Trascrizione compatta" not in cast(
+            str, browser.evaluate("document.querySelector('#view-root').innerText")
+        )
+
+        browser.evaluate("document.querySelector('#global-alert-actions button').click()")
         browser.wait_for(
             "!document.querySelector('[data-optimistic-turn]')"
             " && document.querySelectorAll('.thread-message--assistant').length === 1"
         )
-        assert model.requests and len(model.requests) == 1
+        assert len(model.requests) == 4
+        assert browser.evaluate(
+            "document.querySelectorAll('.thread-message--learner').length"
+        ) == 1
         assert browser.evaluate("document.activeElement.id") == "session-entry-text"
 
         browser.call("Page.reload", ignoreCache=True)
@@ -517,7 +567,9 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
         screenshot = browser.call("Page.captureScreenshot", format="png")
         png = base64.b64decode(cast(str, screenshot["data"]))
         assert png.startswith(b"\x89PNG\r\n\x1a\n")
-        _assert_no_browser_errors(browser)
+        _assert_no_browser_errors(
+            browser, allowed_error_suffixes=("/api/v1/session/turns",)
+        )
 
     restarted = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
     with _serve(application=restarted) as restarted_url, _real_browser(
@@ -531,7 +583,7 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
         assert "three cusps" in cast(
             str, browser.evaluate("document.querySelector('#view-root').innerText")
         )
-        assert len(model.requests) == 1
+        assert len(model.requests) == 4
         _assert_no_browser_errors(browser)
 
 

@@ -314,8 +314,54 @@ class SQLiteFtsRetrieval:
             sql, parameters = _search_sql(query, compiled)
             rows = connection.execute(sql, parameters).fetchall()
         evidence = tuple(self._resolve_row(row) for row in rows)
+        if not evidence:
+            evidence = self._exact_title_evidence(query, canonical)
         status = EvidenceStatus.SUFFICIENT if evidence else EvidenceStatus.INSUFFICIENT
         return _evidence_set(status, evidence, fingerprint, index_version)
+
+    def _exact_title_evidence(
+        self, query: RetrievalQuery, canonical: tuple[RetrievalDocument, ...]
+    ) -> tuple[RetrievalEvidence, ...]:
+        requested_title = query.text.strip().casefold()
+        matches = tuple(
+            document
+            for document in canonical
+            if document.course_id == query.course_id
+            and document.title.strip().casefold() == requested_title
+            and (query.include_superseded or document.is_current_revision)
+            and (not query.revision_ids or document.revision_id in query.revision_ids)
+            and (not query.source_kinds or document.source_kind in query.source_kinds)
+            and (not query.source_roles or document.source_role in query.source_roles)
+            and document.trust_level >= query.minimum_trust_level
+        )
+        ordered = sorted(
+            matches,
+            key=lambda item: (
+                str(item.source_id),
+                str(item.revision_id),
+                item.chunk.ordinal,
+                str(item.chunk.chunk_id),
+            ),
+        )[: query.limit]
+        return tuple(self._resolve_document(document) for document in ordered)
+
+    def _resolve_document(self, document: RetrievalDocument) -> RetrievalEvidence:
+        chunk = document.chunk
+        resolved = self._content.resolve(
+            Citation(
+                chunk.source_id,
+                chunk.revision_id,
+                chunk.chunk_id,
+                chunk.start_offset,
+                chunk.end_offset,
+                "retrieval-title-match",
+            )
+        )
+        if resolved.text != document.text:
+            raise RetrievalIndexIntegrityError(
+                "title-matched candidate does not resolve to canonical source content"
+            )
+        return RetrievalEvidence(chunk, resolved.citation, resolved.text, 1.0)
 
     def _resolve_row(self, row: tuple[object, ...]) -> RetrievalEvidence:
         try:

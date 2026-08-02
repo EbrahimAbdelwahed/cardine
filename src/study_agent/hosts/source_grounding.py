@@ -8,7 +8,6 @@ from collections.abc import Mapping
 from study_agent.ports.tutor_host import TutorDecisionPort, TutorInterruptionToken
 
 from .contracts import (
-    AssistantMessageDecision,
     StartCapabilityDecision,
     TutorDecision,
     TutorHostContext,
@@ -60,13 +59,16 @@ def _require_grounded_explanation(
 ) -> TutorDecision:
     """Select the advertised evidence-bound capability for an explicit source request."""
 
-    if not isinstance(decision, AssistantMessageDecision):
-        return decision
     learner_text = _latest_learner_text(context)
     if learner_text is None or not _is_source_explanation_request(learner_text):
         return decision
     if not _has_materials(context) or not any(
         item.id == _EXPLAIN_CAPABILITY_ID for item in context.advertised_capabilities
+    ):
+        return decision
+    if (
+        isinstance(decision, StartCapabilityDecision)
+        and decision.capability_id == _EXPLAIN_CAPABILITY_ID
     ):
         return decision
     return StartCapabilityDecision(

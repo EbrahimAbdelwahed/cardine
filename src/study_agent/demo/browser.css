@@ -303,6 +303,7 @@
     overscroll-behavior: contain;
     scroll-padding-block: var(--space-5);
   }
+  .view-root[data-scroll-owner="conversation"] { overflow: hidden; }
 
   /* Two-column section: one text column, one aside, both on the same
      baseline and both starting on the same left edge as the page title. */

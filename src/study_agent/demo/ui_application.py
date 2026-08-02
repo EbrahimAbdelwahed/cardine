@@ -163,10 +163,14 @@ class UiRequestError(ValueError):
         *,
         status_code: int = 400,
         diagnostic_code: str | None = None,
+        command_committed: bool = False,
+        request_id: str | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.diagnostic_code = diagnostic_code
+        self.command_committed = command_committed
+        self.request_id = request_id
 
 
 def _source_grounding_status(
@@ -465,7 +469,7 @@ class RepositoryUiApplication(UiApplicationPort):
             except UiRequestError:
                 raise
             except ConversationTurnError as error:
-                raise _conversation_ui_error(error) from error
+                raise _conversation_ui_error(error, request_id=request_id) from error
             except (CourseNotFoundError, SessionNotFoundError, FileNotFoundError) as error:
                 raise UiRequestError(
                     "selected course or session was not found", status_code=404
@@ -2458,7 +2462,9 @@ def _readiness_shell_status(snapshot: TutorSnapshotV1, readiness: StudyReadiness
     return "needs_review" if has_open_work else base
 
 
-def _conversation_ui_error(error: ConversationTurnError) -> UiRequestError:
+def _conversation_ui_error(
+    error: ConversationTurnError, *, request_id: str | None = None
+) -> UiRequestError:
     failure = error.failure_reason
     if failure is not None:
         status, message = {
@@ -2474,6 +2480,8 @@ def _conversation_ui_error(error: ConversationTurnError) -> UiRequestError:
             message,
             status_code=status,
             diagnostic_code=f"tutor_{failure}",
+            command_committed=error.learner_persisted,
+            request_id=request_id if error.learner_persisted else None,
         )
     status = {
         ConversationTurnErrorCode.INVALID_REQUEST: 400,
@@ -2511,7 +2519,13 @@ def _conversation_ui_error(error: ConversationTurnError) -> UiRequestError:
         if status == 503
         else None
     )
-    return UiRequestError(message, status_code=status, diagnostic_code=diagnostic_code)
+    return UiRequestError(
+        message,
+        status_code=status,
+        diagnostic_code=diagnostic_code,
+        command_committed=error.learner_persisted,
+        request_id=request_id if error.learner_persisted else None,
+    )
 
 
 def _unavailable(result: TutorSnapshotV1 | Mapping[str, object], message: str) -> JsonObject:

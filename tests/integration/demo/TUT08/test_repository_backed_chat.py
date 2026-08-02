@@ -676,19 +676,22 @@ def test_grounded_completion_is_recovered_and_persisted_as_canonical_presentatio
     assert reloaded[-1]["content"] == timeline[-1]["content"]
 
 
-def test_source_directed_question_cannot_be_reduced_to_a_minimal_assistant_message(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    "decision",
+    (
+        {"kind": "assistant_message", "message": "ok"},
+        {"kind": "ask_learner", "question": "Vuoi che proceda?"},
+        {"kind": "stop", "reason": "completed"},
+    ),
+)
+def test_source_directed_question_cannot_end_without_grounded_content(
+    tmp_path: Path, decision: JsonObject
 ) -> None:
-    """An explicit request to explain a source must enter the evidence-bound flow."""
+    """An explicit source request is grounded regardless of the model's first decision."""
 
     root, adapters, model = _repository(
         tmp_path,
-        (
-            {
-                "kind": "assistant_message",
-                "message": "ok",
-            },
-        ),
+        (decision,),
     )
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
     sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
@@ -708,7 +711,7 @@ def test_source_directed_question_cannot_be_reduced_to_a_minimal_assistant_messa
     assert receipt["status"] == "completed"
     timeline = cast(tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"])
     answer = str(timeline[-1]["content"])
-    assert answer != "ok"
+    assert answer not in {"ok", "Vuoi che proceda?"}
     assert "three cusps" in answer
     assert "Valve notes" in answer
     assert "chars " in answer
@@ -726,14 +729,14 @@ def test_read_request_with_course_materials_enters_the_grounded_flow(
     root, adapters, model = _repository(
         tmp_path,
         ({"kind": "assistant_message", "message": "ok"},),
-        source_content=b"Biochimica: la valvola aortica ha tre cuspidi.",
+        source_content=b"The aortic valve has three cusps.",
     )
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
     sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
 
     receipt = app.post(
         "/api/v1/session/turns",
-        _command("read-course-material", sequence, "Leggi biochimica"),
+        _command("read-course-material", sequence, "Leggi Valve notes"),
     )
 
     assert receipt["status"] == "completed"
@@ -906,21 +909,40 @@ def test_source_grounding_provider_rejection_preserves_its_safe_category(
                     "continuation_summary_json": None,
                 },
             },
+            {
+                "kind": "start_capability",
+                "capability_id": "explain_concept",
+                "inputs": {
+                    "query": "aortic",
+                    "target": "aortic valve",
+                    "language": "it",
+                    "learner_goal": None,
+                    "continuation_summary_json": None,
+                },
+            },
         ),
         explain_error=ModelError(ModelErrorCode.AUTHENTICATION, "fixture-secret"),
     )
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
     sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
 
+    command = _command(
+        "grounding-provider-rejected", sequence, "Leggi e spiega le cuspidi aortiche"
+    )
     with pytest.raises(UiRequestError) as rejected:
-        app.post(
-            "/api/v1/session/turns",
-            _command("grounding-provider-rejected", sequence, "Leggi e spiega le cuspidi aortiche"),
-        )
+        app.post("/api/v1/session/turns", command)
 
     assert rejected.value.status_code == 503
     assert rejected.value.diagnostic_code == "tutor_authentication"
+    assert rejected.value.command_committed is True
+    assert rejected.value.request_id == "grounding-provider-rejected"
     assert "fixture-secret" not in str(rejected.value)
+
+    _model._explain_error = None
+    retry = app.post("/api/v1/session/turns", command)
+    assert retry["status"] == "completed"
+    timeline = cast(tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"])
+    assert tuple(item["role"] for item in timeline) == ("learner", "assistant")
 
 
 def test_source_grounding_schema_rejection_is_a_protocol_error(

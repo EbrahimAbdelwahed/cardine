@@ -80,6 +80,7 @@ class ConversationTurnError(RuntimeError):
         message: str,
         *,
         failure_reason: str | None = None,
+        learner_persisted: bool = False,
     ) -> None:
         if not isinstance(code, ConversationTurnErrorCode):
             raise TypeError("conversation error code must use ConversationTurnErrorCode")
@@ -96,6 +97,7 @@ class ConversationTurnError(RuntimeError):
             raise ValueError("conversation failure reason is invalid")
         self.code = code
         self.failure_reason = failure_reason
+        self.learner_persisted = learner_persisted
         super().__init__(message)
 
 
@@ -317,6 +319,7 @@ class ConversationTurnApplication:
             principal_id=self._service_principal_id,
             idempotency_key=presentation_key,
         )
+        learner_persisted = False
         try:
             existing_presentation = self._existing_presentation(
                 context.course_id, session_id, host_turn_id, presentation_key
@@ -391,6 +394,7 @@ class ConversationTurnApplication:
             learner = self._turns.record_learner_turn(
                 command.content, learner_context, command.expected_sequence
             )
+            learner_persisted = True
             host_result = await self._runner.run(
                 context.course_id,
                 session_id,
@@ -491,27 +495,32 @@ class ConversationTurnApplication:
                     presentation,
                 )
             raise _host_error(host_result)
-        except ConversationTurnError:
+        except ConversationTurnError as error:
+            error.learner_persisted = error.learner_persisted or learner_persisted
             raise
         except IdempotencyConflictError as error:
             raise ConversationTurnError(
                 ConversationTurnErrorCode.CONFLICT,
                 "conversation request identity conflicts with canonical state",
+                learner_persisted=learner_persisted,
             ) from error
         except RetryableSessionConflictError as error:
             raise ConversationTurnError(
                 ConversationTurnErrorCode.RETRYABLE_CONFLICT,
                 "canonical session state advanced; retry safely",
+                learner_persisted=learner_persisted,
             ) from error
         except SessionCommandError as error:
             raise ConversationTurnError(
                 ConversationTurnErrorCode.CONFLICT,
                 "conversation command cannot be applied to this session",
+                learner_persisted=learner_persisted,
             ) from error
         except (LookupError, OSError, ValueError, RuntimeError) as error:
             raise ConversationTurnError(
                 ConversationTurnErrorCode.INCOMPATIBLE_RUNTIME,
                 "conversation runtime is unavailable",
+                learner_persisted=learner_persisted,
             ) from error
 
     def _terminal_status(

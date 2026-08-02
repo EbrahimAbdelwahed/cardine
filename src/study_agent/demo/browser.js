@@ -298,7 +298,11 @@
       const error = new Error(safeMessage);
       error.status = response.status;
       error.code = declaredCode;
-      error.payload = payload && typeof payload === "object" ? { code: declaredCode } : null;
+      error.payload = payload && typeof payload === "object" ? {
+        code: declaredCode,
+        commandCommitted: payload.command_committed === true,
+        requestId: text(payload.request_id, ""),
+      } : null;
       if (
         response.status === 401
         && state.auth.mode === "private"
@@ -1068,6 +1072,7 @@
     const snapshot = captureScroll();
     const activeId = document.activeElement instanceof HTMLElement ? document.activeElement.id : "";
     state.route = route;
+    root.dataset.scrollOwner = route === "sessione" ? "conversation" : "view";
     navActive(route);
     destroyPrimitiveEnhancements();
     patch(root, html);
@@ -1409,25 +1414,14 @@
       })
       : "";
     const continuationHtml = continuation && Object.keys(continuation).length ? `<div class="continuation"><p class="section-kicker">richiesta del tutor</p><p class="continuation__prompt">${esc(continuationPrompt)}</p>${continuationApproval}${continuationFingerprint ? entryForm("continuation-entry", "Risposta", "Scrivi la risposta…", "", `data-fingerprint="${esc(continuationFingerprint)}"`) : emptyState("Continuazione non disponibile", "Manca il riferimento necessario per riprendere la conversazione.")}</div>` : "";
-    const compactTranscript = messages.length
-      ? aiChatPanel({
-        title: "Trascrizione compatta",
-        status,
-        messages: displayMessages,
-        composer: false,
-      })
-      : emptyState(
-        "Trascrizione non disponibile",
-        "Per questa sessione il servizio espone solo lo stato, non i singoli turni."
-      );
-    const activityDisclosure = `<details class="ai-session-activity"><summary>Attività e trascrizione compatta</summary><div class="ai-session-activity__grid">${aiThinking({
+    const activityDisclosure = `<details class="ai-session-activity"><summary>Attività</summary><div class="ai-session-activity__grid">${aiThinking({
       summary: "Trace di ragionamento non esposto",
       hint: "Cardine mostra solo attività dichiarata dal contratto.",
       steps: [{ label: "Risposta canonica disponibile", detail: "Il servizio non espone il ragionamento interno del modello.", status: "unavailable" }],
     })}${aiToolStack({
       title: "Attività tecnica",
       tools: [{ label: "Strumenti usati", detail: "Il servizio non ha dichiarato strumenti usati in questa conversazione.", status: "unavailable" }],
-    })}${compactTranscript}</div></details>`;
+    })}</div></details>`;
     const createCourse = state.auth.authenticated
       ? `<button class="text-button" type="button" data-open-course-creation>Crea un corso</button>`
       : "";
@@ -1801,20 +1795,26 @@
       const nextComposer = originIsStillActive ? $("#session-entry-text") : null;
       if (nextComposer) nextComposer.focus({ preventScroll: true });
     } catch (error) {
+      const commandCommitted = Boolean(error.payload && error.payload.commandCommitted);
       if (isTutorTurn) {
         const failedContent = text(state.pendingTurn?.content);
         state.pendingTurn = null;
         removeOptimisticTurn();
-        if (failedContent) restoreFailedTurnDraft(failedContent, form);
+        if (!commandCommitted && failedContent) restoreFailedTurnDraft(failedContent, form);
       }
       setBusy(false);
       if (error.authExpired) return;
       if (commandNavigationVersion === state.navigationVersion) {
         if (isTutorTurn || error.status === 409) await refreshBootstrapCounts();
+        if (isTutorTurn && commandCommitted) await loadRoute("sessione");
         // One diagnosis, phrased once. The live region and the banner say
         // the same thing, so a screen reader and a screen never disagree.
         const conflict = error.status === 409;
-        const title = conflict ? "Lo stato è cambiato" : "Il messaggio non è stato inviato";
+        const title = conflict
+          ? "Lo stato è cambiato"
+          : commandCommitted
+            ? "Messaggio salvato, risposta non completata"
+            : "Il messaggio non è stato inviato";
         const detail = conflict
           ? "Ho aggiornato la sezione con lo stato corrente: puoi rieseguire lo stesso comando."
           : (isTutorTurn && MODEL_ERROR_MESSAGES[error.code])
