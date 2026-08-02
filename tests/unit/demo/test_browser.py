@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from typing import cast
 
@@ -157,16 +157,22 @@ def test_preview_runtime_marker_is_safe_and_versioned() -> None:
     assert "secret" not in PREVIEW_RUNTIME_ID.lower()
 
 
-def test_preview_diagnostics_are_bounded_and_redacted(capsys: pytest.CaptureFixture[str]) -> None:
+def test_preview_diagnostics_expose_only_tutor_decisions(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     surface = BrowserSurface(_RepositoryApplication())
 
     surface.diagnostic("/api/v1/session/turns", 503, "tutor_execution_failed")
     surface.diagnostic("/api/v1/session/turns", 503, "unsafe provider response")
 
-    entries = cast(Sequence[Mapping[str, object]], surface.diagnostics()["entries"])
-    assert len(entries) == 2
-    assert entries[0]["category"] == "tutor_execution_failed"
-    assert entries[1]["category"] == "invalid_request"
+    diagnostics = surface.diagnostics()
+    assert set(diagnostics) == {
+        "schema_version",
+        "latest_trace_id",
+        "turn_traces",
+        "retention",
+    }
+    assert diagnostics["turn_traces"] == ()
     output = capsys.readouterr().err
     assert "tutor_execution_failed" in output
     assert "unsafe provider response" not in output
@@ -179,6 +185,5 @@ def test_preview_diagnostics_keep_a_safe_model_failure_category(
 
     surface.diagnostic("/api/v1/session/turns", 502, "tutor_endpoint_incompatible")
 
-    entries = cast(Sequence[Mapping[str, object]], surface.diagnostics()["entries"])
-    assert entries[0]["category"] == "tutor_endpoint_incompatible"
+    assert "entries" not in surface.diagnostics()
     assert "tutor_endpoint_incompatible" in capsys.readouterr().err

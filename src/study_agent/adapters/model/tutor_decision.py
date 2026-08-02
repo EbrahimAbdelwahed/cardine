@@ -6,8 +6,8 @@ import json
 from collections.abc import Mapping
 from typing import cast
 
-from study_agent.diagnostics import record_turn_event
-from study_agent.domain._validation import JsonObject
+from study_agent.diagnostics import record_turn_decision
+from study_agent.domain._validation import JsonObject, JsonValue
 from study_agent.hosts import (
     TutorDecision,
     TutorHostContext,
@@ -63,7 +63,9 @@ class ModelTutorDecisionPort(TutorDecisionPort):
         if interruption.is_interrupted():
             raise ModelTutorDecisionError("tutor decision interrupted")
         schema = decision_schema(context)
-        provider_schema = cast(JsonObject, _provider_strict_schema(schema))
+        provider_schema = cast(
+            JsonObject, _provider_strict_schema(_provider_decision_schema(schema, context))
+        )
         provider_payload = json.dumps(
             {
                 **json.loads(context.to_bytes()),
@@ -109,32 +111,25 @@ class ModelTutorDecisionPort(TutorDecisionPort):
         if interruption.is_interrupted():
             raise ModelTutorDecisionError("tutor decision interrupted")
         if response.finish_reason is not ModelFinishReason.STOP:
-            record_turn_event(
-                "structured_output.decision", "failed", category="protocol_error"
-            )
             raise ModelTutorDecisionError(
                 "provider decision was incomplete",
                 failure_reason=ModelErrorCode.PROTOCOL_ERROR.value,
             )
         value = response.structured_output
         if not isinstance(value, Mapping) or set(value) != {"decision"}:
-            record_turn_event(
-                "structured_output.decision", "failed", category="protocol_error"
-            )
             raise ModelTutorDecisionError(
                 "provider decision was invalid",
                 failure_reason=ModelErrorCode.PROTOCOL_ERROR.value,
             )
         raw_decision = value["decision"]
         if not isinstance(raw_decision, Mapping):
-            record_turn_event(
-                "structured_output.decision", "failed", category="protocol_error"
-            )
             raise ModelTutorDecisionError(
                 "provider decision was invalid",
                 failure_reason=ModelErrorCode.PROTOCOL_ERROR.value,
             )
         try:
+            if raw_decision.get("kind") == "stop":
+                raise ValueError("provider stop decision is unavailable")
             cleaned_decision = _remove_provider_null_optionals(
                 raw_decision,
                 cast(JsonObject, schema["properties"])["decision"],
@@ -147,29 +142,13 @@ class ModelTutorDecisionPort(TutorDecisionPort):
                 separators=(",", ":"),
             ).encode("utf-8")
             decision = decision_from_bytes(encoded, context)
-            record_turn_event(
-                "structured_output.decision",
-                "passed",
-                details={"decision_kind": _decision_kind(decision)},
-            )
+            record_turn_decision(decision)
             return decision
         except (TypeError, ValueError, OverflowError):
-            record_turn_event(
-                "structured_output.decision", "failed", category="protocol_error"
-            )
             raise ModelTutorDecisionError(
                 "provider decision was invalid",
                 failure_reason=ModelErrorCode.PROTOCOL_ERROR.value,
             ) from None
-
-
-def _decision_kind(decision: TutorDecision) -> str:
-    return {
-        "AskLearnerDecision": "ask_learner",
-        "StartCapabilityDecision": "start_capability",
-        "InvokeToolDecision": "invoke_tool",
-        "StopDecision": "stop",
-    }.get(type(decision).__name__, "stop")
 
 
 def _plain(value: object) -> object:
@@ -204,6 +183,43 @@ def _provider_strict_schema(value: object) -> object:
     if isinstance(value, tuple):
         return tuple(_provider_strict_schema(item) for item in value)
     return value
+
+
+def _provider_decision_schema(
+    schema: Mapping[str, object], context: TutorHostContext
+) -> JsonObject:
+    """Remove the generic stop branch from Cardine's provider schema."""
+
+    if context.pending_continuation is not None:
+        return cast(JsonObject, schema)
+    properties = schema.get("properties")
+    if not isinstance(properties, Mapping):
+        return cast(JsonObject, schema)
+    decision = properties.get("decision")
+    if not isinstance(decision, Mapping):
+        return cast(JsonObject, schema)
+    branches = decision.get("anyOf")
+    if not isinstance(branches, tuple):
+        return cast(JsonObject, schema)
+    projected = cast(dict[str, JsonValue], dict(schema))
+    projected_properties = cast(dict[str, JsonValue], dict(properties))
+    projected_decision = cast(dict[str, JsonValue], dict(decision))
+    projected_decision["anyOf"] = tuple(
+        branch for branch in branches if not _is_stop_branch(branch)
+    )
+    projected_properties["decision"] = projected_decision
+    projected["properties"] = projected_properties
+    return projected
+
+
+def _is_stop_branch(value: object) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    properties = value.get("properties")
+    if not isinstance(properties, Mapping):
+        return False
+    kind = properties.get("kind")
+    return isinstance(kind, Mapping) and kind.get("enum") == ("stop",)
 
 
 def _remove_provider_null_optionals(value: object, schema: object) -> object:

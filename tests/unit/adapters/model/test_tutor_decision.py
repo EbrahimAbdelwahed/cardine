@@ -116,6 +116,12 @@ def test_decision_adapter_sends_canonical_context_and_returns_closed_decision() 
     assert provider_payload["course_id"] == context().course_id
     assert provider_payload["tutor_snapshot"] == context().tutor_snapshot
     assert provider_payload["decision_schema"]["additionalProperties"] is False
+    # Ordinary Cardine learner turns must always select a presentation-producing
+    # decision; the provider must not be offered any silent stop branch.
+    provider_decision_schema = json.dumps(
+        provider_payload["decision_schema"], sort_keys=True
+    )
+    assert '"stop"' not in provider_decision_schema
 
 
 def test_decision_adapter_makes_optional_input_fields_provider_strict_and_removes_nulls() -> None:
@@ -190,6 +196,9 @@ def _assert_all_object_fields_are_required(schema: object) -> None:
         },
         {"decision": {"kind": "start_capability", "capability_id": "invented", "inputs": {}}},
         {"other": {}},
+        {"decision": {"kind": "stop", "reason": "completed"}},
+        {"decision": {"kind": "stop", "reason": "needs_learner_input"}},
+        {"decision": {"kind": "stop", "reason": "no_safe_action"}},
     ),
 )
 def test_decision_adapter_rejects_output_outside_closed_context_schema(

@@ -282,7 +282,6 @@ def test_direct_message_restart_and_exact_retry_do_not_repeat_host_or_event(tmp_
 @pytest.mark.parametrize(
     ("mode", "expected_status"),
     (
-        ("completed", TutorHostRunStatus.COMPLETED),
         ("terminated", TutorHostRunStatus.TERMINATED),
     ),
 )
@@ -314,6 +313,24 @@ def test_status_only_terminal_retry_survives_restart_without_repeating_host(
             assert retry.presentation is None
             assert retry_runner.calls == []
             assert len(reopened.events.read(COURSE)) == event_count
+    finally:
+        repository.close()
+
+
+def test_completed_without_presentation_is_not_reported_as_success(
+    tmp_path: Path,
+) -> None:
+    repository, runner, _ = _open(tmp_path, "completed")
+    try:
+        sequence = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
+        with pytest.raises(ConversationTurnError):
+            asyncio.run(
+                _conversation(repository).turn(
+                    _command("terminal-without-presentation", sequence, "Hello")
+                )
+            )
+        assert repository.tutor_presentations.presentations(COURSE, SESSION) == ()
+        assert runner.calls
     finally:
         repository.close()
 
@@ -434,6 +451,10 @@ def test_learner_question_is_a_canonical_presentation(tmp_path: Path) -> None:
         assert result.presentation is not None
         assert result.presentation.kind is TutorPresentationKind.LEARNER_QUESTION
         assert result.presentation.content == "What structure should we compare?"
+        persisted = repository.tutor_presentations.presentations(COURSE, SESSION)
+        assert len(persisted) == 1
+        assert persisted[0].kind is TutorPresentationKind.LEARNER_QUESTION
+        assert persisted[0].content == "What structure should we compare?"
     finally:
         repository.close()
 

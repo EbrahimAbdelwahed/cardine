@@ -529,14 +529,17 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
                 "document.querySelector('[data-turn-trace][data-highlighted=true]').innerText"
             ),
         )
-        for expected in (
+        # Advanced diagnostics intentionally expose only the validated tutor
+        # decision, not the internal phase timeline or turn payload metadata.
+        assert "assistant_message" in trace_text
+        for excluded in (
             "model.grounding",
             "timeout",
             "ui.retry",
             "completed",
             "persistito: sì",
         ):
-            assert expected in trace_text
+            assert excluded not in trace_text
         for excluded in (
             "Read Valve notes",
             "The aortic valve has three cusps",

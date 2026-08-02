@@ -70,6 +70,7 @@ class _LunaWireTransport:
         self.calls.append(body)
         request = json.loads(body)
         schema_name = request["response_format"]["json_schema"]["name"]
+        content: JsonObject
         if schema_name == "explain_concept_draft":
             rendered = "\n".join(
                 str(message["content"]) for message in request["messages"]
@@ -575,6 +576,11 @@ def test_repository_chat_is_durable_idempotent_and_stale_safe(tmp_path: Path) ->
     assert len(model.requests) == 1
     assert _event_count(root, adapters) > initial_events
 
+    decision_before_retry = app.turn_traces.snapshot()
+    assert app.post("/api/v1/session/turns", command) == receipt
+    assert app.turn_traces.snapshot() == decision_before_retry
+    assert len(model.requests) == 1
+
     fresh = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
     session = fresh.get("/api/v1/session")
     timeline = cast(tuple[dict[str, object], ...], session["timeline"])
@@ -681,7 +687,6 @@ def test_grounded_completion_is_recovered_and_persisted_as_canonical_presentatio
     (
         {"kind": "assistant_message", "message": "ok"},
         {"kind": "ask_learner", "question": "Vuoi che proceda?"},
-        {"kind": "stop", "reason": "completed"},
     ),
 )
 def test_source_directed_question_cannot_end_without_grounded_content(
@@ -748,21 +753,18 @@ def test_read_request_with_course_materials_enters_the_grounded_flow(
     ]
     diagnostics = app.turn_traces.snapshot()
     trace = cast(tuple[dict[str, object], ...], diagnostics["turn_traces"])[-1]
-    events = cast(tuple[dict[str, object], ...], trace["events"])
-    phases = {str(event["phase"]) for event in events}
+    # Diagnostics report the validated model decision, not the host-side
+    # source-grounding rewrite that subsequently enforces capability routing.
+    assert trace["decision"] == {"kind": "assistant_message"}
     assert {
-        "api.accepted",
-        "learner.persist",
-        "model.decision",
-        "routing.source_intent",
-        "retrieval.search",
-        "model.grounding",
-        "structured_output.grounding",
-        "response.persist",
-        "api.response",
-    } <= phases
-    assert trace["final_status"] == "completed"
-    assert trace["learner_persisted"] is True
+        "events",
+        "final_status",
+        "learner_persisted",
+        "attempt_count",
+        "started_unix",
+        "updated_unix",
+        "payload",
+    }.isdisjoint(trace)
     encoded_trace = json.dumps(trace, sort_keys=True)
     assert "Leggi Valve notes" not in encoded_trace
     assert "The aortic valve has three cusps" not in encoded_trace
@@ -1134,7 +1136,7 @@ def test_repository_continuation_is_restored_resolved_and_exactly_retryable(
     response_command = _continuation_command(
         "clarify-response",
         cast(int, suspended["high_water_sequence"]),
-        "La morfologia delle cuspidi",
+        "Spiega la morfologia delle cuspidi dalle fonti",
     )
     resumed = restarted.post(
         f"/api/v1/session/continuations/{fingerprint}/responses",

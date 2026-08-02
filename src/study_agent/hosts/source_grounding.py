@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 
-from study_agent.diagnostics import record_turn_event
 from study_agent.ports.tutor_host import TutorDecisionPort, TutorInterruptionToken
 
 from .contracts import (
@@ -60,51 +59,20 @@ def _require_grounded_explanation(
 ) -> TutorDecision:
     """Select the advertised evidence-bound capability for an explicit source request."""
 
+    if context.pending_continuation is not None:
+        return decision
     learner_text = _latest_learner_text(context)
     if learner_text is None or not _is_source_explanation_request(learner_text):
-        record_turn_event(
-            "routing.source_intent", "skipped", details={"source_intent": False}
-        )
         return decision
-    materials = context.tutor_snapshot.get("materials")
-    material_count = len(materials) if isinstance(materials, tuple) else 0
     if not _has_materials(context) or not any(
         item.id == _EXPLAIN_CAPABILITY_ID for item in context.advertised_capabilities
     ):
-        record_turn_event(
-            "routing.source_intent",
-            "failed",
-            category="insufficient_evidence",
-            details={
-                "source_intent": True,
-                "has_materials": bool(material_count),
-                "material_count": material_count,
-            },
-        )
         return decision
     if (
         isinstance(decision, StartCapabilityDecision)
         and decision.capability_id == _EXPLAIN_CAPABILITY_ID
     ):
-        record_turn_event(
-            "routing.source_intent",
-            "routed",
-            details={
-                "source_intent": True,
-                "has_materials": True,
-                "material_count": material_count,
-            },
-        )
         return decision
-    record_turn_event(
-        "routing.source_intent",
-        "routed",
-        details={
-            "source_intent": True,
-            "has_materials": True,
-            "material_count": material_count,
-        },
-    )
     return StartCapabilityDecision(
         _EXPLAIN_CAPABILITY_ID,
         {

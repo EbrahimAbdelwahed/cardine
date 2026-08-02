@@ -990,11 +990,12 @@ class TutorHostRunner:
                     ),
                 )
             if isinstance(decision, StopDecision):
-                status = (
-                    TutorHostRunStatus.COMPLETED
-                    if decision.reason is TutorStopReason.COMPLETED
-                    else TutorHostRunStatus.STOPPED
-                )
+                if decision.reason is TutorStopReason.COMPLETED:
+                    status = TutorHostRunStatus.COMPLETED
+                elif decision.reason is TutorStopReason.NO_SAFE_ACTION:
+                    status = TutorHostRunStatus.STOPPED
+                else:  # pragma: no cover - closed enum contract
+                    return _failed()
                 return TutorHostRunResult(status)
 
             if isinstance(decision, InvokeToolDecision):

@@ -37,7 +37,6 @@ class TutorDecisionKind(StrEnum):
 
 class TutorStopReason(StrEnum):
     COMPLETED = "completed"
-    NEEDS_LEARNER_INPUT = "needs_learner_input"
     NO_SAFE_ACTION = "no_safe_action"
 
 
