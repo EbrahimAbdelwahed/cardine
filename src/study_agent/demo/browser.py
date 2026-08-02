@@ -23,6 +23,7 @@ from threading import BoundedSemaphore, Lock, RLock
 from typing import cast
 from urllib.parse import unquote, urlsplit
 
+from study_agent.diagnostics import TurnTraceStore
 from study_agent.domain._validation import JsonObject, JsonValue
 
 from .private_access import (
@@ -72,6 +73,7 @@ FONT_ASSETS = frozenset(
 )
 API_PREFIX = "/api/v1/"
 DIAGNOSTICS_PATH = "/api/v1/diagnostics"
+DIAGNOSTIC_TURN_EVENTS_PATH = "/api/v1/diagnostics/turn-events"
 LOCAL_OWNER_SETUP_PATH = "/api/v1/auth/setup-owner"
 # Source revisions are intentionally bounded by the UI application at 192 KiB.
 # Leave protocol headroom for the JSON envelope while keeping generic API bodies
@@ -103,6 +105,8 @@ class BrowserSurface:
         self._access_lock = RLock()
         self._diagnostics: deque[JsonObject] = deque(maxlen=24)
         self._diagnostics_lock = Lock()
+        traces = getattr(ui_application, "turn_traces", None)
+        self._turn_traces = traces if isinstance(traces, TurnTraceStore) else TurnTraceStore()
 
     @property
     def repository_backed(self) -> bool:
@@ -228,7 +232,7 @@ class BrowserSurface:
     def diagnostics(self) -> JsonObject:
         with self._diagnostics_lock:
             entries = tuple(dict(entry) for entry in self._diagnostics)
-        return {"schema_version": 1, "entries": entries}
+        return {**self._turn_traces.snapshot(), "entries": entries}
 
     def page(self) -> bytes:
         """Return the packaged page bytes without filesystem or network access."""
@@ -279,7 +283,21 @@ class BrowserSurface:
             }
         if path == DIAGNOSTICS_PATH:
             return self.diagnostics()
-        return (self._settings or self._ui).get(path)
+        if path == "/api/v1/settings" and self._settings is None:
+            return {
+                "schema_version": 1,
+                "status": "diagnostics_only",
+                "settings_available": False,
+                "model": {
+                    "label": "GPT-5.6 Luna",
+                    "credential_configured": False,
+                },
+            }
+        result = (self._settings or self._ui).get(path)
+        if path == "/api/v1/session":
+            latest = self._turn_traces.snapshot().get("latest_trace_id")
+            return {**result, "turn_trace_id": latest}
+        return result
 
     def api_post(
         self,
@@ -299,6 +317,13 @@ class BrowserSurface:
             if path == "/api/v1/auth/logout":
                 self._private_access.logout(session_token)
                 return {"schema_version": 1, "status": "logged_out"}
+        if path == DIAGNOSTIC_TURN_EVENTS_PATH:
+            trace_id = self._turn_traces.client_event(command)
+            return {
+                "schema_version": 1,
+                "status": "recorded" if trace_id is not None else "ignored",
+                "trace_id": trace_id,
+            }
         result = (self._settings or self._ui).post(path, command)
         if path == "/api/v1/settings/model/check" and result.get("status") == "error":
             reason = result.get("reason")
@@ -849,6 +874,8 @@ def _diagnostic_category(error: UiRequestError) -> str:
 
 def _ui_error_payload(error: UiRequestError) -> JsonObject:
     payload: dict[str, JsonValue] = {"error": str(error), "code": error.diagnostic_code}
+    if error.trace_id is not None:
+        payload["trace_id"] = error.trace_id
     if error.command_committed and error.request_id is not None:
         payload["command_committed"] = True
         payload["request_id"] = error.request_id

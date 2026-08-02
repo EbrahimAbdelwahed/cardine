@@ -126,6 +126,7 @@
     studySetup: null,
     lastTurn: null,
     authProbeUnavailable: false,
+    diagnosticTraceId: "",
   };
 
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -302,6 +303,7 @@
         code: declaredCode,
         commandCommitted: payload.command_committed === true,
         requestId: text(payload.request_id, ""),
+        traceId: text(payload.trace_id, ""),
       } : null;
       if (
         response.status === 401
@@ -321,6 +323,17 @@
       throw error;
     }
     return payload || {};
+  }
+
+  function recordTurnUiEvent({ requestId: request = "", traceId = "", phase, outcome }) {
+    const body = { phase, outcome };
+    if (traceId) body.trace_id = traceId;
+    else if (request) body.request_id = request;
+    else return Promise.resolve();
+    return fetchJson("/api/v1/diagnostics/turn-events", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }).catch(() => {});
   }
 
   function commandPayload(payload, request = requestId()) {
@@ -537,7 +550,7 @@
       ? "Chiave presente nel runtime: verifica la connessione prima di iniziare la chat."
       : "Nessuna chiave API configurata";
     const accountLabel = text(first(account, ["label", "email", "name", "username"], "Account personale"), "Account personale");
-    setView("impostazioni", `<section class="settings-surface" aria-labelledby="settings-heading"><p class="eyebrow">area privata · impostazioni</p><h1 id="settings-heading">Impostazioni</h1><p class="section-copy">Gestisci accesso, dati locali e modello.</p>${settings.error ? `<p class="field-error" role="alert"><span class="icon icon--warning-circle" aria-hidden="true"></span>${esc(settings.error)}</p>` : ""}<div class="settings-grid"><section class="settings-card"><h2>Account locale</h2><p>${esc(accountLabel)}</p><p>Uscire chiude questa sessione senza eliminare i dati locali.</p><div class="settings-card__actions"><button class="button button--quiet" type="button" data-auth-logout>Esci</button></div></section><section class="settings-card"><h2>Modello</h2><p>Modello attivo: <strong>${esc(modelLabel)}</strong>.</p><p>${esc(credentialStatus)}</p></section><section class="settings-card"><h2>Chiave API</h2><p>La chiave inserita qui resta disponibile fino al riavvio del servizio. Per mantenerla, configura <code>OPENAI_API_KEY</code> nel secret store del deployment. Cardine non mostra né restituisce il valore.</p><form id="settings-model-form" data-settings-credential autocomplete="off"><label for="settings-credential">Nuova chiave API</label><span class="password-field"><input id="settings-credential" name="api_key" type="password" autocomplete="new-password" spellcheck="false" placeholder="Incolla una nuova chiave" required aria-describedby="credential-settings-help"><button class="text-button" type="button" data-toggle-secret="settings-credential" aria-pressed="false">Mostra</button></span><p class="field-note" id="credential-settings-help">Cardine non scrive il valore nello storage del browser e svuota il campo subito dopo il salvataggio.</p><div class="settings-card__actions"><button class="button" type="submit">Salva nuova chiave</button><button class="button button--danger" type="button" data-settings-remove>Rimuovi chiave temporanea</button><span class="settings-card__status" id="credential-settings-status" role="status"></span></div></form></section><section class="settings-card"><h2>Diagnostica preview</h2><p>Mostra solo codici, route e orari locali: non include messaggi, fonti, cookie o chiavi.</p><div id="preview-diagnostics"><p class="field-note">Carico diagnostica locale…</p></div><div class="settings-card__actions"><button class="button button--quiet" type="button" data-diagnostics-refresh>Aggiorna diagnostica</button></div></section><section class="settings-card"><h2>Dati del corso</h2><p>I dati di studio restano nel repository locale e non vengono inclusi nelle impostazioni del browser.</p></section><section class="settings-card"><h2>Privacy</h2><p>Sessione e chiave temporanea vengono rimosse al riavvio. Cardine non salva segreti nello storage del browser.</p></section></div></section>`);
+    setView("impostazioni", `<section class="settings-surface" aria-labelledby="settings-heading"><p class="eyebrow">area privata · impostazioni</p><h1 id="settings-heading">Impostazioni</h1><p class="section-copy">Gestisci accesso, dati locali e modello.</p>${settings.error ? `<p class="field-error" role="alert"><span class="icon icon--warning-circle" aria-hidden="true"></span>${esc(settings.error)}</p>` : ""}<div class="settings-grid"><section class="settings-card"><h2>Account locale</h2><p>${esc(accountLabel)}</p><p>Uscire chiude questa sessione senza eliminare i dati locali.</p><div class="settings-card__actions"><button class="button button--quiet" type="button" data-auth-logout>Esci</button></div></section><section class="settings-card"><h2>Modello</h2><p>Modello attivo: <strong>${esc(modelLabel)}</strong>.</p><p>${esc(credentialStatus)}</p></section><section class="settings-card"><h2>Chiave API</h2><p>La chiave inserita qui resta disponibile fino al riavvio del servizio. Per mantenerla, configura <code>OPENAI_API_KEY</code> nel secret store del deployment. Cardine non mostra né restituisce il valore.</p><form id="settings-model-form" data-settings-credential autocomplete="off"><label for="settings-credential">Nuova chiave API</label><span class="password-field"><input id="settings-credential" name="api_key" type="password" autocomplete="new-password" spellcheck="false" placeholder="Incolla una nuova chiave" required aria-describedby="credential-settings-help"><button class="text-button" type="button" data-toggle-secret="settings-credential" aria-pressed="false">Mostra</button></span><p class="field-note" id="credential-settings-help">Cardine non scrive il valore nello storage del browser e svuota il campo subito dopo il salvataggio.</p><div class="settings-card__actions"><button class="button" type="submit">Salva nuova chiave</button><button class="button button--danger" type="button" data-settings-remove>Rimuovi chiave temporanea</button><span class="settings-card__status" id="credential-settings-status" role="status"></span></div></form></section><section class="settings-card settings-card--diagnostics"><h2>Diagnostica · Stato tutor</h2><p>Ogni turno mostra fasi, durata, esito e persistenza. Retention locale bounded; nessun testo, prompt, fonte, cookie, chiave o body provider.</p><div id="preview-diagnostics"><p class="field-note">Carico diagnostica locale…</p></div><div class="settings-card__actions"><button class="button button--quiet" type="button" data-diagnostics-refresh>Aggiorna diagnostica</button></div></section><section class="settings-card"><h2>Dati del corso</h2><p>I dati di studio restano nel repository locale e non vengono inclusi nelle impostazioni del browser.</p></section><section class="settings-card"><h2>Privacy</h2><p>Sessione e chiave temporanea vengono rimosse al riavvio. Cardine non salva segreti nello storage del browser.</p></section></div></section>`);
   }
 
   async function loadSettings(navigationVersion = state.navigationVersion) {
@@ -553,13 +566,19 @@
       if (navigationVersion !== state.navigationVersion) return;
       if (error.authExpired) return;
       renderSettings({ error: error.message });
+      enhanceSettingsSurface();
+      await loadDiagnostics(navigationVersion);
     }
   }
 
   function enhanceSettingsSurface() {
     const cards = $$(".settings-card", root);
     const modelCard = cards[1];
-    if (modelCard && !$("[data-settings-check]", modelCard)) {
+    const settingsAvailable = object(state.viewData).settings_available !== false;
+    if (!settingsAvailable && cards[2]) {
+      patch(cards[2], "<h2>Configurazione modello</h2><p>Disponibile soltanto nell’area privata della preview locale.</p>");
+    }
+    if (settingsAvailable && modelCard && !$("[data-settings-check]", modelCard)) {
       modelCard.insertAdjacentHTML("beforeend", `<div class="settings-card__actions"><button class="button button--quiet" type="button" data-settings-check>Verifica decisione tutor</button><span class="settings-card__status" id="model-check-status" role="status"></span></div>`);
     }
     if (!$("#workspace-card", root)) {
@@ -849,13 +868,32 @@
       const payload = object(await fetchJson("/api/v1/diagnostics"));
       if (navigationVersion !== state.navigationVersion) return;
       const entries = array(payload.entries);
-      patch(target, entries.length
-        ? `<ul class="plain-list">${entries.slice(-8).reverse().map((entry) => {
+      const traces = array(payload.turn_traces).slice().reverse();
+      const retention = object(payload.retention);
+      const traceHtml = traces.length ? traces.map((item) => {
+        const trace = object(item);
+        const traceId = text(trace.trace_id, "trace non disponibile");
+        const highlighted = traceId === state.diagnosticTraceId;
+        const events = array(trace.events);
+        const terminal = text(trace.final_status, "in_progress");
+        const persisted = trace.learner_persisted === true ? "sì" : "no";
+        return `<article class="turn-trace" data-turn-trace="${esc(traceId)}" data-highlighted="${highlighted}"><header><div><strong>${esc(traceId)}</strong><span>${esc(terminal)} · tentativi ${esc(text(trace.attempt_count, "0"))} · persistito: ${persisted}</span></div></header><ol>${events.map((event) => {
+          const row = object(event);
+          const category = text(row.category, "");
+          const duration = row.duration_ms === undefined ? "" : ` · ${text(row.duration_ms)} ms`;
+          return `<li><code>${esc(text(row.phase, "fase"))}</code><span>${esc(text(row.outcome, "evento"))}${category ? ` · ${esc(category)}` : ""}${esc(duration)}</span></li>`;
+        }).join("")}</ol></article>`;
+      }).join("") : `<p class="field-note">Nessun turno registrato in questa esecuzione.</p>`;
+      const legacy = entries.length
+        ? `<details><summary>Eventi HTTP generali</summary><ul class="plain-list">${entries.slice(-8).reverse().map((entry) => {
           const row = object(entry);
           const at = Number.isFinite(row.at_unix) ? new Date(row.at_unix * 1000).toLocaleTimeString() : "orario non disponibile";
           return `<li><code>${esc(text(row.category, "evento"))}</code> · ${esc(text(row.path, "route"))} · HTTP ${esc(text(row.status_code, "—"))} · ${esc(at)}</li>`;
-        }).join("")}</ul>`
-        : `<p class="field-note">Nessun errore registrato in questa esecuzione.</p>`);
+        }).join("")}</ul></details>` : "";
+      patch(target, `<p class="field-note">Memoria locale: ultimi ${esc(text(retention.max_traces, "24"))} turni, massimo ${esc(text(retention.max_events_per_trace, "64"))} eventi per turno. Payload acquisiti: no. Telemetria esterna: no.</p>${traceHtml}${legacy}`);
+      if (state.diagnosticTraceId) {
+        target.querySelector('[data-highlighted="true"]')?.scrollIntoView({ block: "nearest" });
+      }
     } catch (error) {
       patch(target, `<p class="field-note">Diagnostica non disponibile: ${esc(error.message)}</p>`);
     }
@@ -1373,6 +1411,11 @@
   }
 
   function renderSessione(payload) {
+    const reconciledTraceId = text(first(payload, ["turn_trace_id", "trace_id"], ""), "");
+    if (reconciledTraceId) {
+      state.diagnosticTraceId = reconciledTraceId;
+      recordTurnUiEvent({ traceId: reconciledTraceId, phase: "ui.reload", outcome: "reconciled" });
+    }
     const snapshot = object(first(payload, ["snapshot", "session", "view"], payload));
     const session = object(first(snapshot, ["session"], state.bootstrap?.session));
     const messageCandidates = array(
@@ -1425,12 +1468,15 @@
     const createCourse = state.auth.authenticated
       ? `<button class="text-button" type="button" data-open-course-creation>Crea un corso</button>`
       : "";
+    const tutorStatus = state.diagnosticTraceId
+      ? `<button class="text-button" type="button" data-open-turn-trace="${esc(state.diagnosticTraceId)}">Stato tutor</button>`
+      : "";
     setView("sessione", sessionShell({
       title: text(first(snapshot, ["title", "topic"], object(state.bootstrap?.course).title), "Sessione di studio"),
       subtitle: statusLabel(status),
       thread,
       extras: `${continuationHtml}${activityDisclosure}`,
-      actions: `${createCourse}<button class="text-button" type="button" data-route="fonti">Fonti</button>`,
+      actions: `${createCourse}${tutorStatus}<button class="text-button" type="button" data-route="fonti">Fonti</button>`,
       placeholder: "Rispondi al tutor…",
     }));
     updateContinuation(snapshot);
@@ -1766,6 +1812,7 @@
     if (isTutorTurn) {
       state.pendingTurn = { requestId: request, content: text(payload.content || payload.response) };
       renderOptimisticTurn(state.pendingTurn.content);
+      recordTurnUiEvent({ requestId: request, phase: "ui.optimistic_insert", outcome: "rendered" });
     }
     setBusy(true);
     setStatus(
@@ -1774,6 +1821,9 @@
     );
     try {
       const receipt = await fetchJson(endpoint, { method: "POST", body: JSON.stringify(commandPayload(payload, request)) });
+      const traceId = text(receipt.trace_id, "");
+      if (traceId) state.diagnosticTraceId = traceId;
+      if (isTutorTurn) recordTurnUiEvent({ traceId, requestId: request, phase: "ui.ack", outcome: "accepted" });
       updateSequence(first(receipt, ["high_water_sequence", "sequence"], state.highWaterSequence));
       const status = text(first(receipt, ["status", "shell_status"], "committed"), "committed");
       setStatus(status, `Comando ${statusLabel(status)}`);
@@ -1794,8 +1844,12 @@
       }
       const nextComposer = originIsStillActive ? $("#session-entry-text") : null;
       if (nextComposer) nextComposer.focus({ preventScroll: true });
+      if (isTutorTurn) recordTurnUiEvent({ traceId, requestId: request, phase: "ui.render", outcome: "rendered" });
     } catch (error) {
       const commandCommitted = Boolean(error.payload && error.payload.commandCommitted);
+      const traceId = text(error.payload?.traceId, "");
+      if (traceId) state.diagnosticTraceId = traceId;
+      if (isTutorTurn) recordTurnUiEvent({ traceId, requestId: request, phase: "ui.ack", outcome: "failed" });
       if (isTutorTurn) {
         const failedContent = text(state.pendingTurn?.content);
         state.pendingTurn = null;
@@ -1936,11 +1990,25 @@
     const actions = command
       ? [{
         label: "Riprova",
-        run: () => executeCommand(command.endpoint, command.payload, null, command.refreshRoute),
+        run: () => {
+          const traceId = text(error?.payload?.traceId || state.diagnosticTraceId, "");
+          recordTurnUiEvent({ traceId, requestId: command.requestId, phase: "ui.retry", outcome: "retried" });
+          return executeCommand(command.endpoint, command.payload, null, command.refreshRoute);
+        },
       }]
       : [];
+    const traceId = text(error?.payload?.traceId || state.diagnosticTraceId, "");
+    if (traceId) {
+      actions.push({
+        label: "Apri trace",
+        run: () => {
+          state.diagnosticTraceId = traceId;
+          return loadRoute("impostazioni");
+        },
+      });
+    }
     // A model failure is fixed in Settings, so offer the way there.
-    if (!conflict && error && MODEL_ERROR_MESSAGES[error.code]) {
+    if (!conflict && !traceId && error && MODEL_ERROR_MESSAGES[error.code]) {
       actions.push({ label: "Apri Impostazioni", run: () => loadRoute("impostazioni") });
     }
     showAlert({
@@ -2000,6 +2068,10 @@
     $$('[data-command]').forEach((control) => control.addEventListener("click", () => commandFromControl(control)));
     $$('[data-provenance]').forEach((control) => control.addEventListener("click", () => openProvenance(control.dataset.provenance)));
     $$('[data-retry-route]').forEach((control) => control.addEventListener("click", () => loadRoute(control.dataset.retryRoute)));
+    $$('[data-open-turn-trace]').forEach((control) => control.addEventListener("click", () => {
+      state.diagnosticTraceId = text(control.dataset.openTurnTrace, state.diagnosticTraceId);
+      loadRoute("impostazioni");
+    }));
   }
 
   /* The floor and the ceiling come from the stylesheet, so the box can

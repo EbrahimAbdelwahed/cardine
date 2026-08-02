@@ -14,6 +14,7 @@ from enum import StrEnum
 from hashlib import sha256
 from typing import Protocol
 
+from study_agent.diagnostics import record_turn_event
 from study_agent.domain import (
     CorrelationId,
     CourseId,
@@ -327,6 +328,10 @@ class ConversationTurnApplication:
             existing_learner = self._existing_learner(
                 context.course_id, session_id, learner_context
             )
+            record_turn_event(
+                "learner.lookup",
+                "hit" if existing_learner is not None else "miss",
+            )
             terminal_status = self._terminal_status(
                 context.course_id,
                 session_id,
@@ -395,12 +400,32 @@ class ConversationTurnApplication:
                 command.content, learner_context, command.expected_sequence
             )
             learner_persisted = True
+            record_turn_event(
+                "learner.persist",
+                "committed",
+                details={"idempotent_retry": existing_learner is not None},
+            )
             host_result = await self._runner.run(
                 context.course_id,
                 session_id,
                 host_turn_id,
                 interruption,
                 pending_fingerprint=pending_fingerprint,
+            )
+            record_turn_event(
+                "host.run",
+                "completed"
+                if host_result.status is TutorHostRunStatus.COMPLETED
+                else "terminated"
+                if host_result.status is TutorHostRunStatus.TERMINATED
+                else "failed"
+                if host_result.status in {
+                    TutorHostRunStatus.FAILED,
+                    TutorHostRunStatus.INTERRUPTED,
+                }
+                else "passed",
+                category=host_result.failure_reason,
+                details={"host_status": host_result.status.value},
             )
             if host_result.status is TutorHostRunStatus.COMPLETED:
                 presentation = self._recover_completion_presentation(
@@ -409,6 +434,9 @@ class ConversationTurnApplication:
                     host_result,
                     learner.id,
                 )
+                record_turn_event("response.compose", "completed")
+                if presentation is not None:
+                    record_turn_event("response.persist", "committed")
                 if presentation is None:
                     self._record_terminal_status(
                         context.course_id,
@@ -465,6 +493,8 @@ class ConversationTurnApplication:
                     in_reply_to_interaction_id=learner.id,
                     expected_sequence=receipt.observed_host_context_sequence,
                 )
+                record_turn_event("response.compose", "completed")
+                record_turn_event("response.persist", "committed")
                 if (
                     pending_fingerprint is not None
                     and host_result.status is not TutorHostRunStatus.SUSPENDED

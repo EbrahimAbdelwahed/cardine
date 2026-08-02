@@ -52,6 +52,7 @@ from study_agent.cli.repository import (
     ModelAdapterRegistry,
 )
 from study_agent.courses import ProjectionCourseView
+from study_agent.diagnostics import TurnTraceStore, record_turn_event
 from study_agent.domain import (
     ArtifactDecision,
     ArtifactRevisionId,
@@ -165,12 +166,14 @@ class UiRequestError(ValueError):
         diagnostic_code: str | None = None,
         command_committed: bool = False,
         request_id: str | None = None,
+        trace_id: str | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.diagnostic_code = diagnostic_code
         self.command_committed = command_committed
         self.request_id = request_id
+        self.trace_id = trace_id
 
 
 def _source_grounding_status(
@@ -213,6 +216,7 @@ class RepositoryUiApplication(UiApplicationPort):
         repository_opener: Callable[..., AbstractContextManager[LocalRepository]] = (
             LocalRepository.open
         ),
+        turn_traces: TurnTraceStore | None = None,
     ) -> None:
         self._repository = Path(repository)
         self._course_id = _identifier(course_id, CourseId, "course_id")
@@ -223,6 +227,7 @@ class RepositoryUiApplication(UiApplicationPort):
         self._recall_scheduler_factory = recall_scheduler_factory
         self._repository_opener = repository_opener
         self._lock = _repository_mutation_lock(self._repository)
+        self._turn_traces = turn_traces if turn_traces is not None else TurnTraceStore()
 
     @property
     def repository(self) -> Path:
@@ -235,6 +240,10 @@ class RepositoryUiApplication(UiApplicationPort):
     @property
     def session_id(self) -> SessionId:
         return self._session_id
+
+    @property
+    def turn_traces(self) -> TurnTraceStore:
+        return self._turn_traces
 
     def _workspace(self) -> JsonObject:
         with self._lock, self._open() as repository:
@@ -423,7 +432,7 @@ class RepositoryUiApplication(UiApplicationPort):
         payload_key = "content" if continuation_fingerprint is None else "response"
         request_id, expected_sequence, payload = _command(command, payload_key=payload_key)
         content = _bounded_content(payload.get(payload_key))
-        with self._lock:
+        with self._turn_traces.capture(request_id, expected_sequence) as trace_id, self._lock:
             try:
                 with self._open() as repository:
                     application = repository.tutor_conversation(
@@ -456,9 +465,16 @@ class RepositoryUiApplication(UiApplicationPort):
                             "continuation": result.pending_continuation,
                         },
                     )
+                    record_turn_event("api.response", "completed")
+                    self._turn_traces.terminal(
+                        trace_id,
+                        "terminated" if result.status.value == "terminated" else "completed",
+                        learner_persisted=True,
+                    )
                     return {
                         "schema_version": 1,
                         "request_id": request_id,
+                        "trace_id": trace_id,
                         "status": result.status.value,
                         "high_water_sequence": refreshed.high_water_sequence,
                         "result": session,
@@ -467,18 +483,41 @@ class RepositoryUiApplication(UiApplicationPort):
                         ),
                     }
             except UiRequestError:
+                self._turn_traces.terminal(
+                    trace_id, "failed", learner_persisted=False, category="invalid_request"
+                )
                 raise
             except ConversationTurnError as error:
-                raise _conversation_ui_error(error, request_id=request_id) from error
+                category = error.failure_reason or error.code.value
+                record_turn_event("api.response", "failed", category=category)
+                self._turn_traces.terminal(
+                    trace_id,
+                    "failed",
+                    learner_persisted=error.learner_persisted,
+                    category=category,
+                )
+                raise _conversation_ui_error(
+                    error, request_id=request_id, trace_id=trace_id
+                ) from error
             except (CourseNotFoundError, SessionNotFoundError, FileNotFoundError) as error:
+                self._turn_traces.terminal(
+                    trace_id, "failed", learner_persisted=False, category="invalid_request"
+                )
                 raise UiRequestError(
-                    "selected course or session was not found", status_code=404
+                    "selected course or session was not found",
+                    status_code=404,
+                    trace_id=trace_id,
                 ) from error
             except ModelAdapterConfigurationError as error:
+                record_turn_event("api.response", "failed", category="authentication")
+                self._turn_traces.terminal(
+                    trace_id, "failed", learner_persisted=False, category="authentication"
+                )
                 raise UiRequestError(
                     "configured model credential is unavailable",
                     status_code=503,
                     diagnostic_code="tutor_configuration",
+                    trace_id=trace_id,
                 ) from error
             except (
                 LocalRepositoryError,
@@ -486,8 +525,14 @@ class RepositoryUiApplication(UiApplicationPort):
                 ValueError,
                 RuntimeError,
             ) as error:
+                record_turn_event("api.response", "failed", category="internal")
+                self._turn_traces.terminal(
+                    trace_id, "failed", learner_persisted=False, category="internal"
+                )
                 raise UiRequestError(
-                    "repository runtime is unavailable", status_code=503
+                    "repository runtime is unavailable",
+                    status_code=503,
+                    trace_id=trace_id,
                 ) from error
 
     def _select_workspace(self, command: Mapping[str, object]) -> JsonObject:
@@ -2463,7 +2508,10 @@ def _readiness_shell_status(snapshot: TutorSnapshotV1, readiness: StudyReadiness
 
 
 def _conversation_ui_error(
-    error: ConversationTurnError, *, request_id: str | None = None
+    error: ConversationTurnError,
+    *,
+    request_id: str | None = None,
+    trace_id: str | None = None,
 ) -> UiRequestError:
     failure = error.failure_reason
     if failure is not None:
@@ -2482,6 +2530,7 @@ def _conversation_ui_error(
             diagnostic_code=f"tutor_{failure}",
             command_committed=error.learner_persisted,
             request_id=request_id if error.learner_persisted else None,
+            trace_id=trace_id,
         )
     status = {
         ConversationTurnErrorCode.INVALID_REQUEST: 400,
@@ -2525,6 +2574,7 @@ def _conversation_ui_error(
         diagnostic_code=diagnostic_code,
         command_committed=error.learner_persisted,
         request_id=request_id if error.learner_persisted else None,
+        trace_id=trace_id,
     )
 
 

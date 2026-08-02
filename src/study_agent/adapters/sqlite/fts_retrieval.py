@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 from collections.abc import Sequence
 from contextlib import closing
 from hashlib import sha256
 from pathlib import Path
 
+from study_agent.diagnostics import record_turn_event
 from study_agent.domain.identifiers import ChunkId, CourseId, RevisionId, SourceId
 from study_agent.domain.source import Citation, SourceChunk
 from study_agent.ports.retrieval import (
@@ -302,21 +304,40 @@ class SQLiteFtsRetrieval:
         )
 
     def search(self, query: RetrievalQuery) -> RetrievalEvidenceSet:
+        started = time.monotonic()
         canonical = self._audit_integrity()
         fingerprint = _query_fingerprint(query)
         index_version = _content_index_version(canonical)
         with closing(self._connect()) as connection:
             compiled = _compile_literal_query(connection, query.text)
             if compiled is None:
+                record_turn_event(
+                    "retrieval.search",
+                    "insufficient",
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                    details={"evidence_count": 0, "exact_title_match": False},
+                )
                 return _evidence_set(
                     EvidenceStatus.INSUFFICIENT, (), fingerprint, index_version
                 )
             sql, parameters = _search_sql(query, compiled)
             rows = connection.execute(sql, parameters).fetchall()
         evidence = tuple(self._resolve_row(row) for row in rows)
+        exact_title_match = False
         if not evidence:
             evidence = self._exact_title_evidence(query, canonical)
+            exact_title_match = bool(evidence)
         status = EvidenceStatus.SUFFICIENT if evidence else EvidenceStatus.INSUFFICIENT
+        record_turn_event(
+            "retrieval.search",
+            "sufficient" if evidence else "insufficient",
+            duration_ms=int((time.monotonic() - started) * 1000),
+            details={
+                "evidence_count": len(evidence),
+                "candidate_count": len(rows),
+                "exact_title_match": exact_title_match,
+            },
+        )
         return _evidence_set(status, evidence, fingerprint, index_version)
 
     def _exact_title_evidence(

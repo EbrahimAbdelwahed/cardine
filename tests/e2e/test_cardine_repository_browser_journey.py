@@ -495,8 +495,20 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
         assert "Trascrizione compatta" not in cast(
             str, browser.evaluate("document.querySelector('#view-root').innerText")
         )
+        assert set(
+            cast(
+                list[str],
+                browser.evaluate(
+                    "Array.from(document.querySelectorAll('#global-alert-actions button'))"
+                    ".map(button => button.textContent)"
+                ),
+            )
+        ) == {"Riprova", "Apri trace"}
 
-        browser.evaluate("document.querySelector('#global-alert-actions button').click()")
+        browser.evaluate(
+            "Array.from(document.querySelectorAll('#global-alert-actions button'))"
+            ".find(button => button.textContent === 'Riprova').click()"
+        )
         browser.wait_for(
             "!document.querySelector('[data-optimistic-turn]')"
             " && document.querySelectorAll('.thread-message--assistant').length === 1"
@@ -506,6 +518,33 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
             "document.querySelectorAll('.thread-message--learner').length"
         ) == 1
         assert browser.evaluate("document.activeElement.id") == "session-entry-text"
+        browser.evaluate("document.querySelector('[data-open-turn-trace]').click()")
+        browser.wait_for(
+            "document.querySelector('[data-route=impostazioni].is-active')"
+            " && Boolean(document.querySelector('[data-turn-trace][data-highlighted=true]'))"
+        )
+        trace_text = cast(
+            str,
+            browser.evaluate(
+                "document.querySelector('[data-turn-trace][data-highlighted=true]').innerText"
+            ),
+        )
+        for expected in (
+            "model.grounding",
+            "timeout",
+            "ui.retry",
+            "completed",
+            "persistito: sì",
+        ):
+            assert expected in trace_text
+        for excluded in (
+            "Read Valve notes",
+            "The aortic valve has three cusps",
+            "browser fixture timeout",
+        ):
+            assert excluded not in trace_text
+        browser.evaluate("document.querySelector('[data-route=sessione]').click()")
+        browser.wait_for("Boolean(document.querySelector('#session-entry-text'))")
 
         browser.call("Page.reload", ignoreCache=True)
         browser.wait_for("Boolean(document.querySelector('#entry:not([disabled])'))")

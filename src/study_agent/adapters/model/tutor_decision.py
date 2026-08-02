@@ -6,6 +6,7 @@ import json
 from collections.abc import Mapping
 from typing import cast
 
+from study_agent.diagnostics import record_turn_event
 from study_agent.domain._validation import JsonObject
 from study_agent.hosts import (
     TutorDecision,
@@ -108,18 +109,27 @@ class ModelTutorDecisionPort(TutorDecisionPort):
         if interruption.is_interrupted():
             raise ModelTutorDecisionError("tutor decision interrupted")
         if response.finish_reason is not ModelFinishReason.STOP:
+            record_turn_event(
+                "structured_output.decision", "failed", category="protocol_error"
+            )
             raise ModelTutorDecisionError(
                 "provider decision was incomplete",
                 failure_reason=ModelErrorCode.PROTOCOL_ERROR.value,
             )
         value = response.structured_output
         if not isinstance(value, Mapping) or set(value) != {"decision"}:
+            record_turn_event(
+                "structured_output.decision", "failed", category="protocol_error"
+            )
             raise ModelTutorDecisionError(
                 "provider decision was invalid",
                 failure_reason=ModelErrorCode.PROTOCOL_ERROR.value,
             )
         raw_decision = value["decision"]
         if not isinstance(raw_decision, Mapping):
+            record_turn_event(
+                "structured_output.decision", "failed", category="protocol_error"
+            )
             raise ModelTutorDecisionError(
                 "provider decision was invalid",
                 failure_reason=ModelErrorCode.PROTOCOL_ERROR.value,
@@ -136,12 +146,30 @@ class ModelTutorDecisionPort(TutorDecisionPort):
                 sort_keys=True,
                 separators=(",", ":"),
             ).encode("utf-8")
-            return decision_from_bytes(encoded, context)
+            decision = decision_from_bytes(encoded, context)
+            record_turn_event(
+                "structured_output.decision",
+                "passed",
+                details={"decision_kind": _decision_kind(decision)},
+            )
+            return decision
         except (TypeError, ValueError, OverflowError):
+            record_turn_event(
+                "structured_output.decision", "failed", category="protocol_error"
+            )
             raise ModelTutorDecisionError(
                 "provider decision was invalid",
                 failure_reason=ModelErrorCode.PROTOCOL_ERROR.value,
             ) from None
+
+
+def _decision_kind(decision: TutorDecision) -> str:
+    return {
+        "AskLearnerDecision": "ask_learner",
+        "StartCapabilityDecision": "start_capability",
+        "InvokeToolDecision": "invoke_tool",
+        "StopDecision": "stop",
+    }.get(type(decision).__name__, "stop")
 
 
 def _plain(value: object) -> object:

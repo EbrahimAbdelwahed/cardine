@@ -746,6 +746,26 @@ def test_read_request_with_course_materials_enters_the_grounded_flow(
         "tutor_decision.v1",
         "explain_concept.v1",
     ]
+    diagnostics = app.turn_traces.snapshot()
+    trace = cast(tuple[dict[str, object], ...], diagnostics["turn_traces"])[-1]
+    events = cast(tuple[dict[str, object], ...], trace["events"])
+    phases = {str(event["phase"]) for event in events}
+    assert {
+        "api.accepted",
+        "learner.persist",
+        "model.decision",
+        "routing.source_intent",
+        "retrieval.search",
+        "model.grounding",
+        "structured_output.grounding",
+        "response.persist",
+        "api.response",
+    } <= phases
+    assert trace["final_status"] == "completed"
+    assert trace["learner_persisted"] is True
+    encoded_trace = json.dumps(trace, sort_keys=True)
+    assert "Leggi Valve notes" not in encoded_trace
+    assert "The aortic valve has three cusps" not in encoded_trace
 
 
 def test_invalid_tutor_decision_reports_a_protocol_error_not_a_key_error(
