@@ -27,7 +27,19 @@ from .event_store import SQLiteConnectionGuard, _writable_nofollow_uri
 
 INDEX_VERSION = "sqlite-fts5-unicode61-v1"
 RETRIEVAL_STRATEGY_ID = "sqlite_fts5_bm25"
-RETRIEVAL_STRATEGY_VERSION = "1.0.0"
+RETRIEVAL_STRATEGY_VERSION = "1.1.0"
+_MAX_RELEVANCE_QUERY_TERMS = 6
+_MAX_RELEVANCE_SOURCE_TERMS = 32
+_RELEVANCE_CANDIDATE_LIMIT = 64
+_QUERY_STOP_WORDS = frozenset(
+    {
+        "a", "about", "and", "briefly", "by", "can", "could", "di", "e", "explain",
+        "fonte", "fonti", "from", "il", "in", "instructions", "la", "le", "materiale",
+        "materiali", "of", "or", "please", "prompt", "source", "spiega", "spiegami",
+        "the", "to", "uploaded", "what", "with", "ignore", "previous", "developer",
+        "assistant", "drop", "table", "column", "value",
+    }
+)
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS retrieval_documents (
     chunk_id TEXT PRIMARY KEY,
@@ -74,6 +86,12 @@ def compile_literal_query(text: str) -> str | None:
 def _compile_literal_query(connection: sqlite3.Connection, text: str) -> str | None:
     """Tokenize with the same SQLite FTS5 unicode61 configuration as the index."""
 
+    return _quote_query_tokens(_literal_query_tokens(connection, text))
+
+
+def _literal_query_tokens(connection: sqlite3.Connection, text: str) -> tuple[str, ...]:
+    """Return inert unicode61 terms in learner order."""
+
     connection.execute(
         "CREATE VIRTUAL TABLE temp.retrieval_query_tokens "
         "USING fts5(text, tokenize='unicode61')"
@@ -83,12 +101,15 @@ def _compile_literal_query(connection: sqlite3.Connection, text: str) -> str | N
         "USING fts5vocab(retrieval_query_tokens, 'instance')"
     )
     connection.execute("INSERT INTO retrieval_query_tokens(text) VALUES (?)", (text,))
-    tokens = tuple(
+    return tuple(
         str(row[0])
         for row in connection.execute(
             "SELECT term FROM retrieval_query_vocab ORDER BY doc, offset"
         )
     )
+
+
+def _quote_query_tokens(tokens: tuple[str, ...]) -> str | None:
     if not tokens:
         return None
     return " AND ".join(f'"{token.replace(chr(34), chr(34) * 2)}"' for token in tokens)
@@ -305,17 +326,30 @@ class SQLiteFtsRetrieval:
         canonical = self._audit_integrity()
         fingerprint = _query_fingerprint(query)
         index_version = _content_index_version(canonical)
+        title_evidence = self._exact_title_evidence(query, canonical)
+        if title_evidence:
+            return _evidence_set(
+                EvidenceStatus.SUFFICIENT, title_evidence, fingerprint, index_version
+            )
         with closing(self._connect()) as connection:
-            compiled = _compile_literal_query(connection, query.text)
-            if compiled is None:
+            tokens = _literal_query_tokens(connection, query.text)
+            informative_tokens = _informative_query_tokens(tokens)
+            if not informative_tokens:
                 return _evidence_set(
                     EvidenceStatus.INSUFFICIENT, (), fingerprint, index_version
                 )
-            sql, parameters = _search_sql(query, compiled)
-            rows = connection.execute(sql, parameters).fetchall()
-        evidence = tuple(self._resolve_row(row) for row in rows)
-        if not evidence:
-            evidence = self._exact_title_evidence(query, canonical)
+            rows: tuple[tuple[object, ...], ...] = ()
+            if len(informative_tokens) <= _MAX_RELEVANCE_QUERY_TERMS:
+                compiled = _quote_query_tokens(informative_tokens)
+                if compiled is not None:
+                    sql, parameters = _search_sql(query, compiled)
+                    rows = tuple(connection.execute(sql, parameters).fetchall())
+            evidence = tuple(self._resolve_row(row) for row in rows)
+            if not evidence:
+                relevance_rows = _bounded_relevance_rows(
+                    connection, query, informative_tokens
+                )
+                evidence = tuple(self._resolve_row(row) for row in relevance_rows)
         status = EvidenceStatus.SUFFICIENT if evidence else EvidenceStatus.INSUFFICIENT
         return _evidence_set(status, evidence, fingerprint, index_version)
 
@@ -522,6 +556,68 @@ def _search_sql(query: RetrievalQuery, compiled: str) -> tuple[str, tuple[object
     """
     parameters.append(query.limit)
     return sql, tuple(parameters)
+
+
+def _bounded_relevance_rows(
+    connection: sqlite3.Connection,
+    query: RetrievalQuery,
+    tokens: tuple[str, ...],
+) -> tuple[tuple[object, ...], ...]:
+    """Recover concise agent queries without broadening arbitrary learner text."""
+
+    unique_tokens = tuple(dict.fromkeys(tokens))[:_MAX_RELEVANCE_SOURCE_TERMS]
+    if len(unique_tokens) < 2:
+        return ()
+    candidate_query = RetrievalQuery(
+        query.course_id,
+        query.text,
+        limit=max(query.limit, _RELEVANCE_CANDIDATE_LIMIT),
+        revision_ids=query.revision_ids,
+        minimum_trust_level=query.minimum_trust_level,
+        source_kinds=query.source_kinds,
+        source_roles=query.source_roles,
+        include_superseded=query.include_superseded,
+    )
+    token_rows: list[tuple[int, str, tuple[tuple[object, ...], ...]]] = []
+    for position, token in enumerate(unique_tokens):
+        compiled = _quote_query_tokens((token,))
+        if compiled is None:  # pragma: no cover - non-empty token contract
+            continue
+        sql, parameters = _search_sql(candidate_query, compiled)
+        rows = tuple(connection.execute(sql, parameters).fetchall())
+        if rows:
+            token_rows.append((position, token, rows))
+    selected = tuple(
+        sorted(token_rows, key=lambda item: (len(item[2]), item[0], item[1]))[
+            :_MAX_RELEVANCE_QUERY_TERMS
+        ]
+    )
+    if len(selected) < 2:
+        return ()
+    matches: dict[str, list[tuple[object, ...]]] = {}
+    for _position, _token, rows in selected:
+        for row in rows:
+            matches.setdefault(str(row[2]), []).append(row)
+    minimum_coverage = 2
+    ranked = tuple(
+        sorted(
+            (
+                (len(rows), sum(float(str(row[1])) for row in rows), rows[0])
+                for rows in matches.values()
+                if len(rows) >= minimum_coverage
+            ),
+            key=lambda item: (-item[0], item[1], str(item[2][2])),
+        )
+    )
+    return tuple(item[2] for item in ranked[: query.limit])
+
+
+def _informative_query_tokens(tokens: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(
+        token
+        for token in dict.fromkeys(tokens)
+        if token not in _QUERY_STOP_WORDS
+    )
 
 
 def _metadata_tuple(document: RetrievalDocument) -> tuple[object, ...]:

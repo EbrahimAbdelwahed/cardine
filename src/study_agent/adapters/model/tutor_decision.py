@@ -30,8 +30,8 @@ from study_agent.ports.tutor_host import (
     TutorInterruptionToken,
 )
 from study_agent.prompts.tutor_decision_v1 import (
-    TUTOR_DECISION_INSTRUCTION,
     TUTOR_DECISION_PROMPT,
+    tutor_decision_instruction,
 )
 
 MAX_DECISION_OUTPUT_TOKENS = 2_048
@@ -78,7 +78,13 @@ class ModelTutorDecisionPort(TutorDecisionPort):
         )
         request = ModelRequest(
             (
-                ModelMessage(MessageRole.SYSTEM, TUTOR_DECISION_INSTRUCTION),
+                ModelMessage(
+                    MessageRole.SYSTEM,
+                    tutor_decision_instruction(
+                        _advertised_capability_ids(schema),
+                        _advertised_tool_names(schema),
+                    ),
+                ),
                 ModelMessage(MessageRole.USER, provider_payload),
             ),
             StructuredOutputConstraint(
@@ -149,6 +155,56 @@ class ModelTutorDecisionPort(TutorDecisionPort):
                 "provider decision was invalid",
                 failure_reason=ModelErrorCode.PROTOCOL_ERROR.value,
             ) from None
+
+
+def _advertised_capability_ids(schema: JsonObject) -> tuple[str, ...]:
+    return _advertised_operation_names(
+        schema, kind_value="start_capability", name_field="capability_id"
+    )
+
+
+def _advertised_tool_names(schema: JsonObject) -> tuple[str, ...]:
+    return _advertised_operation_names(
+        schema, kind_value="invoke_tool", name_field="tool_name"
+    )
+
+
+def _advertised_operation_names(
+    schema: JsonObject, *, kind_value: str, name_field: str
+) -> tuple[str, ...]:
+    properties = schema.get("properties")
+    if not isinstance(properties, Mapping):
+        return ()
+    decision = properties.get("decision")
+    if not isinstance(decision, Mapping):
+        return ()
+    branches = decision.get("anyOf")
+    if not isinstance(branches, tuple):
+        return ()
+    names: list[str] = []
+    for branch in branches:
+        if not isinstance(branch, Mapping):
+            continue
+        branch_properties = branch.get("properties")
+        if not isinstance(branch_properties, Mapping):
+            continue
+        kind_schema = branch_properties.get("kind")
+        operation_name = branch_properties.get(name_field)
+        if (
+            not isinstance(kind_schema, Mapping)
+            or kind_schema.get("enum") != (kind_value,)
+        ):
+            continue
+        if not isinstance(operation_name, Mapping):
+            continue
+        enum = operation_name.get("enum")
+        if (
+            isinstance(enum, tuple)
+            and len(enum) == 1
+            and isinstance(enum[0], str)
+        ):
+            names.append(enum[0])
+    return tuple(sorted(set(names)))
 
 
 def _plain(value: object) -> object:
