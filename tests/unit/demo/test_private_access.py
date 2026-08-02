@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import threading
 from collections.abc import Callable
 from typing import cast
@@ -9,10 +10,12 @@ import pytest
 
 from study_agent.demo.private_access import (
     DEFAULT_SESSION_TTL_SECONDS,
+    MIN_PASSWORD_LENGTH,
     LoginRateLimited,
     PrivateAccessController,
     PrivateAccessError,
     hash_password,
+    main,
 )
 
 PASSWORD = "correct horse battery staple"
@@ -49,6 +52,40 @@ def test_hash_is_versioned_and_verifies_with_bounded_scrypt_parameters() -> None
     assert access.verify_password(PASSWORD)
     assert not access.verify_password("wrong password")
     assert not access.verify_password("x" * 4_097)
+
+
+@pytest.mark.parametrize("password", ("x" * (MIN_PASSWORD_LENGTH - 1), ""))
+def test_password_creation_requires_the_minimum_length(password: str) -> None:
+    with pytest.raises(ValueError, match="at least"):
+        hash_password(password, n=2, r=1, p=1, salt=SALT)
+
+
+def test_verification_keeps_compatibility_with_a_legacy_short_password_hash() -> None:
+    legacy_password = "legacy"
+    digest = hashlib.scrypt(legacy_password.encode("utf-8"), salt=SALT, n=2, r=1, p=1, dklen=32)
+    encoded = "$".join(
+        (
+            "scrypt",
+            "v1",
+            "N=2,r=1,p=1",
+            base64.urlsafe_b64encode(SALT).rstrip(b"=").decode("ascii"),
+            base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii"),
+        )
+    )
+
+    access = PrivateAccessController(encoded)
+    assert access.verify_password(legacy_password)
+
+
+def test_password_hash_cli_rejects_short_creation(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        "study_agent.demo.private_access.getpass.getpass", lambda _prompt: "too-short"
+    )
+
+    assert main([]) == 2
+    assert "at least" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(

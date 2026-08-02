@@ -13,12 +13,14 @@ import base64
 import json
 import os
 import shutil
+import signal
 import socket
 import struct
 import subprocess
 import time
 from collections.abc import AsyncIterator, Iterator, Mapping
-from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager, suppress
 from http.cookiejar import Cookie, CookieJar
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -37,8 +39,8 @@ from study_agent.cli.repository import (
     ModelAdapterBuilder,
     ModelAdapterRegistry,
 )
-from study_agent.demo.browser import create_server
-from study_agent.demo.ui_application import RepositoryUiApplication
+from study_agent.demo.browser import _BrowserServer, create_server
+from study_agent.demo.ui_application import RepositoryUiApplication, UiApplicationPort
 from study_agent.domain import (
     CorrelationId,
     CourseId,
@@ -47,6 +49,7 @@ from study_agent.domain import (
     PrincipalKind,
     SessionId,
 )
+from study_agent.domain._validation import JsonObject
 from study_agent.ports import (
     CancellationToken,
     ModelCapabilities,
@@ -156,6 +159,19 @@ class Client:
         return self.request(path, method="POST", payload=payload, headers=headers)
 
 
+class _LocalSetupApplication(UiApplicationPort):
+    mode = "local_repository"
+
+    def get(self, path: str) -> JsonObject:
+        if path != "/api/v1/bootstrap":
+            raise AssertionError(path)
+        return {"schema_version": 1, "mode": self.mode}
+
+    def post(self, path: str, command: Mapping[str, object]) -> JsonObject:
+        del command
+        raise AssertionError(path)
+
+
 def _private_server(
     repository: Path, model_adapters: ModelAdapterRegistry
 ) -> ThreadingHTTPServer:
@@ -254,6 +270,30 @@ def _free_port() -> int:
         return cast(int, probe.getsockname()[1])
 
 
+@contextmanager
+def _serve_local_owner_setup() -> Iterator[tuple[str, str]]:
+    try:
+        server = create_server(
+            "127.0.0.1",
+            0,
+            ui_application=_LocalSetupApplication(),
+            local_owner_setup=True,
+        )
+    except PermissionError as error:
+        pytest.skip(f"local sockets are unavailable: {error}")
+    token = cast(_BrowserServer, server).surface.local_owner_setup_token
+    assert isinstance(token, str)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = cast(tuple[str, int], server.server_address)
+    try:
+        yield f"http://{host}:{port}", token
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+        server.server_close()
+
+
 def _csrf(client: Client) -> str:
     response = client.request("/api/v1/auth/session")
     assert response.status == 200, response.body
@@ -328,6 +368,55 @@ def test_private_http_rejects_missing_or_cross_origin_mutations_and_bad_hosts() 
         bad_host = client.request("/health", headers={"Host": "evil.example"})
         assert bad_host.status == 421
         assert bad_host.json == {"error": "host is not allowed"}
+
+
+def test_local_owner_setup_http_requires_out_of_band_one_time_token() -> None:
+    with _serve_local_owner_setup() as (url, token):
+        client = Client(url)
+        setup_probe = client.request("/api/v1/auth/session")
+        assert setup_probe.status == 200
+        assert token not in setup_probe.body
+        page = client.request("/")
+        assert page.status == 200
+        assert token not in page.body
+
+        missing = client.post(
+            "/api/v1/auth/setup-owner", {"password": PASSWORD}
+        )
+        wrong = client.post(
+            "/api/v1/auth/setup-owner",
+            {"password": PASSWORD, "bootstrap_token": "wrong"},
+        )
+        assert missing.status == wrong.status == 403
+        assert token not in missing.body
+        assert token not in wrong.body
+
+        correct = client.post(
+            "/api/v1/auth/setup-owner",
+            {"password": PASSWORD, "bootstrap_token": token},
+        )
+        assert correct.status == 200, correct.body
+        assert token not in correct.body
+
+        replay = Client(url).post(
+            "/api/v1/auth/setup-owner",
+            {"password": PASSWORD, "bootstrap_token": token},
+        )
+        assert replay.status == 403
+        assert token not in replay.body
+
+
+def test_local_owner_setup_http_token_is_race_safe() -> None:
+    with _serve_local_owner_setup() as (url, token):
+        def submit() -> int:
+            return Client(url).post(
+                "/api/v1/auth/setup-owner",
+                {"password": PASSWORD, "bootstrap_token": token},
+            ).status
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            statuses = list(pool.map(lambda _: submit(), range(2)))
+        assert sorted(statuses) == [200, 403]
 
 
 def test_runtime_key_replace_remove_is_write_only_and_redacted() -> None:
@@ -462,6 +551,7 @@ def _browser(url: str) -> Iterator[_Browser]:
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            start_new_session=True,
         )
         try:
             endpoint = f"http://127.0.0.1:{port}/json/list"
@@ -485,11 +575,19 @@ def _browser(url: str) -> Iterator[_Browser]:
             yield browser
             browser.close()
         finally:
-            process.terminate()
+            if hasattr(os, "killpg"):
+                with suppress(ProcessLookupError):
+                    os.killpg(process.pid, signal.SIGTERM)
+            else:
+                process.terminate()
             try:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                process.kill()
+                if hasattr(os, "killpg"):
+                    with suppress(ProcessLookupError):
+                        os.killpg(process.pid, signal.SIGKILL)
+                else:
+                    process.kill()
                 process.wait(timeout=5)
 
 

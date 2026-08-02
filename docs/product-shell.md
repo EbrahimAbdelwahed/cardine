@@ -84,5 +84,10 @@ The authenticated browser deployment uses `Dockerfile.production` and
 `cardine-shell-web` accepts `--host`, `--port`, `--repository`, `--course-id`,
 `--session-id`, `--private`, `--local-owner-setup`, and `--production`.
 `--local-owner-setup` is restricted to a loopback bind and keeps the verifier
-and runtime credentials in memory. There is no `--public-demo` command-line
-flag.
+and runtime credentials in memory. On startup Cardine prints one high-entropy
+bootstrap token to stderr. Copy that token into the setup form together with
+the new owner password. Treat terminal output containing the token as secret
+and ephemeral: do not persist, share, or capture it in logs. The token is
+consumed atomically after the first successful setup and is never returned by
+the page or API. There is no `--public-demo`
+command-line flag.

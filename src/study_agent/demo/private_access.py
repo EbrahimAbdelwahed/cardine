@@ -30,6 +30,7 @@ DEFAULT_SESSION_TTL_SECONDS = 8 * 60 * 60
 DEFAULT_MAX_SESSIONS = 64
 DEFAULT_LOGIN_WINDOW_SECONDS = 60.0
 DEFAULT_LOGIN_ATTEMPTS = 5
+MIN_PASSWORD_LENGTH = 12
 DEV_SESSION_COOKIE = "cardine_session"
 PRODUCTION_SESSION_COOKIE = "__Host-cardine_session"
 
@@ -72,16 +73,16 @@ def hash_password(
 ) -> str:
     """Create a versioned scrypt hash suitable for deployment configuration."""
 
-    _validate_password(password)
+    _validate_password_for_creation(password)
     _validate_scrypt_parameters(n, r, p)
     actual_salt = secrets.token_bytes(16) if salt is None else bytes(salt)
     if not 16 <= len(actual_salt) <= 64:
         raise ValueError("salt must contain between 16 and 64 bytes")
-    digest = hashlib.scrypt(
-        password.encode("utf-8"), salt=actual_salt, n=n, r=r, p=p, dklen=32
-    )
+    digest = hashlib.scrypt(password.encode("utf-8"), salt=actual_salt, n=n, r=r, p=p, dklen=32)
+
     def encoded(value: bytes) -> str:
         return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
+
     return f"{PASSWORD_HASH_PREFIX}$N={n},r={r},p={p}${encoded(actual_salt)}${encoded(digest)}"
 
 
@@ -228,8 +229,10 @@ class PrivateAccessController:
 
     def csrf_valid(self, session_token: str | None, csrf_token: str | None) -> bool:
         session = self.session(session_token)
-        return session is not None and isinstance(csrf_token, str) and hmac.compare_digest(
-            session.csrf_token, csrf_token
+        return (
+            session is not None
+            and isinstance(csrf_token, str)
+            and hmac.compare_digest(session.csrf_token, csrf_token)
         )
 
     def logout(self, session_token: str | None) -> None:
@@ -245,8 +248,7 @@ class PrivateAccessController:
             raise ValueError("session_token must be non-empty")
         age = self._session_ttl if max_age is None else max_age
         value = (
-            f"{self.cookie_name}={session_token}; HttpOnly; SameSite=Strict; "
-            f"Path=/; Max-Age={age}"
+            f"{self.cookie_name}={session_token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={age}"
         )
         if self._production:
             value += "; Secure"
@@ -260,7 +262,7 @@ class PrivateAccessController:
 
     def _verify(self, password: str) -> bool:
         try:
-            _validate_password(password)
+            _validate_password_for_verification(password)
             salt, expected, n, r, p = self._parsed_hash
             actual = hashlib.scrypt(
                 password.encode("utf-8"), salt=salt, n=n, r=r, p=p, dklen=len(expected)
@@ -280,7 +282,17 @@ class PrivateAccessController:
         }
 
 
-def _validate_password(password: str) -> None:
+def _validate_password_for_creation(password: str) -> None:
+    if not isinstance(password, str) or len(password) < MIN_PASSWORD_LENGTH or len(password) > 4096:
+        raise ValueError(
+            f"password must be non-empty, contain at least {MIN_PASSWORD_LENGTH} "
+            "characters, and be bounded"
+        )
+
+
+def _validate_password_for_verification(password: str) -> None:
+    """Keep accepting hashes made before the creation minimum was introduced."""
+
     if not isinstance(password, str) or not password or len(password) > 4096:
         raise ValueError("password must be non-empty and bounded")
 
@@ -356,12 +368,17 @@ def main(argv: list[str] | None = None) -> int:
         if not hmac.compare_digest(first, second):
             print("passwords do not match", file=sys.stderr)
             return 2
-    print(hash_password(first))
+    try:
+        print(hash_password(first))
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     return 0
 
 
 __all__ = [
     "DEV_SESSION_COOKIE",
+    "MIN_PASSWORD_LENGTH",
     "PRODUCTION_SESSION_COOKIE",
     "AuthenticatedSession",
     "LoginRateLimited",

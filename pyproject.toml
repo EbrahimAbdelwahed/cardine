@@ -46,6 +46,7 @@ study-agent-private-password-hash = "study_agent.demo.private_access:main"
 
 [project.optional-dependencies]
 dev = [
+  "build==1.3.0",
   "mypy>=1.15",
   "pytest>=8.3",
   "ruff>=0.11",

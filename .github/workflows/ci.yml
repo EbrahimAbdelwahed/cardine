@@ -18,13 +18,14 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: ${{ matrix.python-version }}
-      - run: python -m pip install --disable-pip-version-check -e '.[dev]'
-      - run: python -m pytest
-      - run: python -m ruff check .
-      - run: python -m mypy
-      - run: python -m pip install --disable-pip-version-check build
-      - run: python -m build --wheel --sdist --outdir dist
-      - run: python scripts/verify_cardine_wheel.py dist/cardine-*.whl
+      # Keep the resolver and every development tool reproducible from uv.lock.
+      - run: python -m pip install --disable-pip-version-check 'uv==0.9.15'
+      - run: uv sync --frozen --extra dev
+      - run: uv run --frozen --extra dev python -m pytest
+      - run: uv run --frozen --extra dev python -m ruff check .
+      - run: uv run --frozen --extra dev python -m mypy
+      - run: uv run --frozen --extra dev python -m build --wheel --sdist --outdir dist
+      - run: uv run --frozen --extra dev python scripts/verify_cardine_wheel.py dist/cardine-*.whl dist/cardine-*.tar.gz
       - run: python -m venv clean-install
       - run: clean-install/bin/python -m pip install --disable-pip-version-check dist/*.whl
       - run: clean-install/bin/cardine --help
@@ -58,15 +59,17 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: ${{ matrix.python-version }}
-      - run: python -m pip install --disable-pip-version-check -e '.[dev,recall]'
+      - run: python -m pip install --disable-pip-version-check 'uv==0.9.15'
+      - run: uv sync --frozen --extra dev --extra recall
       - run: >-
-          python -m pytest
+          uv run --frozen --extra dev --extra recall python -m pytest
           tests/unit/adapters/scheduling/test_py_fsrs.py
           tests/integration/test_recall_real_fsrs_e2e.py
           tests/architecture/test_fsrs_adapter_boundaries.py
           tests/architecture/test_recall_boundaries.py
-      - run: python -m pip install --disable-pip-version-check build
-      - run: python -m build --wheel --outdir dist
+      - run: >-
+          uv run --frozen --extra dev --extra recall
+          python -m build --wheel --outdir dist
       - run: python -m venv clean-recall-install
       - run: >-
           clean-recall-install/bin/python -m pip install
@@ -91,13 +94,15 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: ${{ matrix.python-version }}
-      - run: python -m pip install --disable-pip-version-check -e '.[dev,pdf]'
+      - run: python -m pip install --disable-pip-version-check 'uv==0.9.15'
+      - run: uv sync --frozen --extra dev --extra pdf
       - run: >-
-          python -m pytest
+          uv run --frozen --extra dev --extra pdf python -m pytest
           tests/integration/adapters/workarounds/test_pdf_markdown_real.py
           tests/adversarial/adapters/workarounds/test_worker_renderer_architecture.py
-      - run: python -m pip install --disable-pip-version-check build
-      - run: python -m build --wheel --outdir dist
+      - run: >-
+          uv run --frozen --extra dev --extra pdf
+          python -m build --wheel --outdir dist
       - run: python -m venv clean-pdf-install
       - run: >-
           clean-pdf-install/bin/python -m pip install

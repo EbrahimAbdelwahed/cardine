@@ -8,8 +8,10 @@ the configured canonical repository application.
 from __future__ import annotations
 
 import argparse
+import hmac
 import json
 import os
+import secrets
 import sys
 import time
 from collections import deque
@@ -80,6 +82,7 @@ MAX_API_BODY_BYTES = 262_144
 MAX_CONCURRENT_REQUESTS = 32
 REQUEST_SOCKET_TIMEOUT_SECONDS = 10.0
 MIN_LOCAL_OWNER_PASSWORD_CHARS = 12
+MAX_LOCAL_OWNER_SETUP_TOKEN_CHARS = 128
 
 SocketRequest = socket | tuple[bytes, socket]
 
@@ -100,6 +103,7 @@ class BrowserSurface:
         self._settings = settings_application
         self._runtime_credentials = runtime_credentials
         self._local_setup_origin: str | None = None
+        self._local_setup_token: str | None = None
         self._access_lock = RLock()
         self._diagnostics: deque[JsonObject] = deque(maxlen=24)
         self._diagnostics_lock = Lock()
@@ -128,6 +132,13 @@ class BrowserSurface:
     def setup_required(self) -> bool:
         return self._private_access is None and self._local_setup_origin is not None
 
+    @property
+    def local_owner_setup_token(self) -> str | None:
+        """Return the one-time setup token through the composition seam only."""
+
+        with self._access_lock:
+            return self._local_setup_token
+
     def enable_local_owner_setup(self, canonical_origin: str) -> None:
         """Allow one owner to activate a loopback-only private session.
 
@@ -143,9 +154,10 @@ class BrowserSurface:
             # ``configure_local_owner`` passes it to the access controller
             # before any session or credential store is activated.
             self._local_setup_origin = canonical_origin
+            self._local_setup_token = secrets.token_urlsafe(32)
 
     def configure_local_owner(
-        self, password: str, *, client_id: str
+        self, password: str, *, bootstrap_token: str, client_id: str
     ) -> AuthenticatedSession:
         """Turn an unconfigured loopback preview into an authenticated shell."""
 
@@ -156,8 +168,11 @@ class BrowserSurface:
             )
         with self._access_lock:
             origin = self._local_setup_origin
-            if origin is None:
-                raise UiRequestError("owner setup is not available", status_code=404)
+            expected_token = self._local_setup_token
+            if origin is None or expected_token is None:
+                raise UiRequestError("owner setup token is invalid", status_code=403)
+            if not _setup_token_matches(bootstrap_token, expected_token):
+                raise UiRequestError("owner setup token is invalid", status_code=403)
             access = PrivateAccessController(
                 hash_password(password), canonical_origin=origin
             )
@@ -172,6 +187,7 @@ class BrowserSurface:
                 ),
             )
             self._local_setup_origin = None
+            self._local_setup_token = None
         return session
 
     def diagnostic(self, path: str, status_code: int, category: str) -> None:
@@ -577,10 +593,18 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
         }
 
     def _setup_local_owner(self, command: Mapping[str, object]) -> JsonObject:
-        if set(command) != {"password"} or not isinstance(command.get("password"), str):
+        password = command.get("password")
+        bootstrap_token = command.get("bootstrap_token")
+        if not isinstance(password, str):
             raise UiRequestError("choose an owner password", status_code=400)
+        if not isinstance(bootstrap_token, str):
+            raise UiRequestError("owner setup token is invalid", status_code=403)
+        if set(command) != {"password", "bootstrap_token"}:
+            raise UiRequestError("invalid owner setup request", status_code=400)
         session = self.server.surface.configure_local_owner(
-            cast(str, command["password"]), client_id=self.client_address[0]
+            password,
+            bootstrap_token=bootstrap_token,
+            client_id=self.client_address[0],
         )
         access = self.server.surface.private_access
         if access is None:  # pragma: no cover - defensive invariant
@@ -715,6 +739,14 @@ def serve(
     )
     bound_host, bound_port = cast(tuple[str, int], server.server_address)
     print(f"Cardine product shell: http://{bound_host}:{bound_port}/")
+    if local_owner_setup:
+        token = cast(_BrowserServer, server).surface.local_owner_setup_token
+        if token is not None:
+            print(
+                f"Cardine local owner setup token: {token}",
+                file=sys.stderr,
+                flush=True,
+            )
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -852,6 +884,14 @@ def _json_bytes(payload: JsonObject) -> bytes:
         allow_nan=False,
         default=list,
     ).encode("utf-8")
+
+
+def _setup_token_matches(candidate: str, expected: str) -> bool:
+    """Compare a bounded setup token without exposing the expected value."""
+
+    if not isinstance(candidate, str) or len(candidate) > MAX_LOCAL_OWNER_SETUP_TOKEN_CHARS:
+        return False
+    return hmac.compare_digest(candidate, expected)
 
 
 def _is_json_content_type(value: str | None) -> bool:

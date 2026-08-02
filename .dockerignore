@@ -18,6 +18,13 @@ build
 dist
 dev
 study-agent-ui
+docs/design-source
+.beads
+.cardine-ui-preview
+/state
+/blobs
+/exports
+/runtime
 tests
 **/__pycache__
 *.pyc
