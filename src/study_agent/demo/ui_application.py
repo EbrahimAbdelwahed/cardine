@@ -470,9 +470,14 @@ class RepositoryUiApplication(UiApplicationPort):
                 raise UiRequestError(
                     "selected course or session was not found", status_code=404
                 ) from error
+            except ModelAdapterConfigurationError as error:
+                raise UiRequestError(
+                    "configured model credential is unavailable",
+                    status_code=503,
+                    diagnostic_code="tutor_configuration",
+                ) from error
             except (
                 LocalRepositoryError,
-                ModelAdapterConfigurationError,
                 OSError,
                 ValueError,
                 RuntimeError,
@@ -745,15 +750,7 @@ class RepositoryUiApplication(UiApplicationPort):
                     "scope": "tutor_decision",
                 }
         except ModelError as error:
-            reason = {
-                ModelErrorCode.AUTHENTICATION: "invalid_credential",
-                ModelErrorCode.RATE_LIMITED: "rate_limited",
-                ModelErrorCode.TIMEOUT: "timeout",
-                ModelErrorCode.MODEL_UNAVAILABLE: "model_unavailable",
-                ModelErrorCode.ENDPOINT_INCOMPATIBLE: "endpoint_incompatible",
-                ModelErrorCode.UNAVAILABLE: "provider_unavailable",
-                ModelErrorCode.PROTOCOL_ERROR: "provider_protocol_error",
-            }.get(error.code, "model_unavailable")
+            reason = _model_check_reason(error.code.value)
             return {
                 "schema_version": 1,
                 "request_id": request_id,
@@ -769,13 +766,14 @@ class RepositoryUiApplication(UiApplicationPort):
                 "reason": "configuration",
                 "message": "Configura una chiave API valida per il modello selezionato.",
             }
-        except (OSError, RuntimeError, ValueError):
+        except (OSError, RuntimeError, ValueError) as error:
+            reason = _model_check_reason(getattr(error, "failure_reason", None))
             return {
                 "schema_version": 1,
                 "request_id": request_id,
                 "status": "error",
-                "reason": "provider_unavailable",
-                "message": "Il provider non è raggiungibile in questo momento.",
+                "reason": reason,
+                "message": _model_check_message(reason),
             }
 
     def _post_artifact_decision(
@@ -2322,6 +2320,18 @@ def _model_check_message(reason: str) -> str:
     }.get(reason, "Il modello non è disponibile.")
 
 
+def _model_check_reason(failure_reason: object) -> str:
+    return {
+        ModelErrorCode.AUTHENTICATION.value: "invalid_credential",
+        ModelErrorCode.RATE_LIMITED.value: "rate_limited",
+        ModelErrorCode.TIMEOUT.value: "timeout",
+        ModelErrorCode.MODEL_UNAVAILABLE.value: "model_unavailable",
+        ModelErrorCode.ENDPOINT_INCOMPATIBLE.value: "endpoint_incompatible",
+        ModelErrorCode.UNAVAILABLE.value: "provider_unavailable",
+        ModelErrorCode.PROTOCOL_ERROR.value: "provider_protocol_error",
+    }.get(failure_reason, "provider_unavailable")
+
+
 def _timeline_item(item: object) -> JsonObject:
     kind = getattr(getattr(item, "kind", None), "value", "system")
     role = {"learner": "learner", "assistant": "assistant", "note": "system"}.get(
@@ -2480,13 +2490,28 @@ def _conversation_ui_error(error: ConversationTurnError) -> UiRequestError:
         if error.code is ConversationTurnErrorCode.RETRYABLE_CONFLICT
         else "request conflicts with canonical session state"
         if status == 409
+        else "tutor execution did not produce a validated response"
+        if error.code in {
+            ConversationTurnErrorCode.FAILED,
+            ConversationTurnErrorCode.INTERRUPTED,
+        }
         else "repository runtime is unavailable"
         if status == 503
         else "request is invalid"
         if status == 400
         else "request is not available"
     )
-    return UiRequestError(message, status_code=status)
+    diagnostic_code = (
+        "tutor_execution_failed"
+        if error.code in {
+            ConversationTurnErrorCode.FAILED,
+            ConversationTurnErrorCode.INTERRUPTED,
+        }
+        else "repository_runtime_unavailable"
+        if status == 503
+        else None
+    )
+    return UiRequestError(message, status_code=status, diagnostic_code=diagnostic_code)
 
 
 def _unavailable(result: TutorSnapshotV1 | Mapping[str, object], message: str) -> JsonObject:

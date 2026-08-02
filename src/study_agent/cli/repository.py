@@ -100,6 +100,7 @@ from study_agent.grounding import (
 )
 from study_agent.hosts import (
     HostActionIdentity,
+    SourceGroundedTutorDecisionPort,
     TutorCapabilityCompletionReference,
     TutorHostContextAssembler,
     TutorHostLimits,
@@ -961,7 +962,7 @@ class LocalRepository:
             self._model_adapters.artifact(self.config.model.adapter_id),
         )
         runner = TutorHostRunner(
-            ModelTutorDecisionPort(model),
+            SourceGroundedTutorDecisionPort(ModelTutorDecisionPort(model)),
             self.tutor_snapshots,
             self.learner_evidence,
             gateway,

@@ -73,6 +73,17 @@ from .runtime import (
 )
 
 _CHECKPOINT_SCHEMA_VERSION = 1
+_SAFE_MODEL_FAILURE_REASONS = frozenset(
+    {
+        ModelErrorCode.AUTHENTICATION.value,
+        ModelErrorCode.MODEL_UNAVAILABLE.value,
+        ModelErrorCode.ENDPOINT_INCOMPATIBLE.value,
+        ModelErrorCode.RATE_LIMITED.value,
+        ModelErrorCode.TIMEOUT.value,
+        ModelErrorCode.PROTOCOL_ERROR.value,
+        ModelErrorCode.UNAVAILABLE.value,
+    }
+)
 
 
 class PlaybookEngine:
@@ -617,6 +628,10 @@ class PlaybookEngine:
                     )
             except PlaybookEngineError as error:
                 cancelled = error.failure.code is EngineErrorCode.CANCELLED
+                trace_details: JsonObject = {"error_code": error.failure.code.value}
+                model_failure_reason = _model_failure_reason_from_failure(error.failure)
+                if model_failure_reason is not None:
+                    trace_details["model_failure_reason"] = model_failure_reason
                 mutable_traces.append(
                     self._trace(
                         step,
@@ -625,7 +640,7 @@ class PlaybookEngine:
                             if cancelled
                             else StepTraceStatus.FAILED
                         ),
-                        {"error_code": error.failure.code.value},
+                        trace_details,
                     )
                 )
                 failed_checkpoint = self._checkpoint(
@@ -821,13 +836,13 @@ class PlaybookEngine:
                     )
                 self._raise(
                     EngineErrorCode.MODEL_ERROR,
-                    f"model execution failed: {type(error).__name__}",
+                    f"model execution failed: {_safe_model_failure_reason(error)}",
                     step.id,
                 )
-            except Exception as error:
+            except Exception:
                 self._raise(
                     EngineErrorCode.MODEL_ERROR,
-                    f"model execution failed: {type(error).__name__}",
+                    f"model execution failed: {ModelErrorCode.UNAVAILABLE.value}",
                     step.id,
                 )
             if (
@@ -869,7 +884,20 @@ class PlaybookEngine:
             else:
                 value = response.content
             frozen_value = freeze_json(value)
-            _validate_schema(step.output_schema.value, frozen_value, "model output", step.id)
+            try:
+                _validate_schema(step.output_schema.value, frozen_value, "model output", step.id)
+            except PlaybookEngineError as error:
+                if error.failure.code is not EngineErrorCode.SCHEMA_ERROR:
+                    raise
+                # The model completed the transport exchange but violated the
+                # requested structured-output contract.  Keep that fact in
+                # the closed, safe model-failure channel instead of allowing
+                # the capability gateway to collapse it into an opaque 503.
+                self._raise(
+                    EngineErrorCode.MODEL_ERROR,
+                    f"model execution failed: {ModelErrorCode.PROTOCOL_ERROR.value}",
+                    step.id,
+                )
             fallback_receipts: tuple[JsonObject, ...] = ()
             if structured_fallback is not None:
                 fallback_receipts = await self._run_fallback_validators(
@@ -1432,12 +1460,21 @@ def _validate_checkpoint_shape(
         _checkpoint_error("checkpoint trace prefix does not match playbook definition")
     if checkpoint.status in {RunStatus.CANCELLED, RunStatus.FAILED}:
         terminal = traces[-1]
-        if set(terminal.details) != {"error_code"}:
-            _checkpoint_error("terminal trace error receipt fields are invalid")
         try:
             error_code = EngineErrorCode(cast(str, terminal.details["error_code"]))
         except (TypeError, ValueError):
             _checkpoint_error("terminal trace error code is invalid")
+        allowed_error_fields = {"error_code"}
+        if error_code is EngineErrorCode.MODEL_ERROR and "model_failure_reason" in terminal.details:
+            allowed_error_fields.add("model_failure_reason")
+        if set(terminal.details) != allowed_error_fields:
+            _checkpoint_error("terminal trace error receipt fields are invalid")
+        model_failure_reason = terminal.details.get("model_failure_reason")
+        if model_failure_reason is not None and (
+            error_code is not EngineErrorCode.MODEL_ERROR
+            or model_failure_reason not in _SAFE_MODEL_FAILURE_REASONS
+        ):
+            _checkpoint_error("terminal trace model failure reason is invalid")
         if checkpoint.status is RunStatus.CANCELLED:
             if error_code is not EngineErrorCode.CANCELLED:
                 _checkpoint_error("cancelled checkpoint requires a cancelled trace error")
@@ -1845,3 +1882,21 @@ def _schema_error(message: str, step_id: str | None = None) -> NoReturn:
     raise PlaybookEngineError(
         EngineFailure(EngineErrorCode.SCHEMA_ERROR, message, step_id)
     )
+
+
+def _safe_model_failure_reason(error: ModelError) -> str:
+    """Persist only the closed adapter failure category, never provider text."""
+
+    if error.code.value in _SAFE_MODEL_FAILURE_REASONS:
+        return error.code.value
+    return ModelErrorCode.UNAVAILABLE.value
+
+
+def _model_failure_reason_from_failure(failure: EngineFailure) -> str | None:
+    if failure.code is not EngineErrorCode.MODEL_ERROR:
+        return None
+    prefix = "model execution failed: "
+    if not failure.message.startswith(prefix):
+        return None
+    candidate = failure.message.removeprefix(prefix)
+    return candidate if candidate in _SAFE_MODEL_FAILURE_REASONS else None

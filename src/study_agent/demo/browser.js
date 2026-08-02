@@ -61,6 +61,8 @@
     tutor_timeout: "Il provider non ha risposto entro il tempo previsto.",
     tutor_protocol_error: "Il provider ha restituito una risposta non compatibile.",
     tutor_unavailable: "Il provider del modello non è disponibile in questo momento.",
+    tutor_configuration: "Configura una chiave API valida in Impostazioni prima di inviare messaggi.",
+    tutor_execution_failed: "Il tutor non ha prodotto una risposta valida. Apri Diagnostica e riprova; la chiave non è necessariamente la causa.",
     tutor_internal_error: "La chat ha riscontrato un errore interno. Riprova; consulta Diagnostica se persiste.",
   });
 
@@ -1464,8 +1466,8 @@
     const thinkingView = thinking.length ? aiThinking({ steps: thinking, summary: "Come ho costruito questa risposta" }) : "";
     const toolsView = tools.length ? aiToolStack({ tools, title: "Attività dichiarata" }) : "";
     const fineTune = showFineTune ? aiFineTune({
-      title: "Continua nel modo che ti serve",
-      detail: "Queste opzioni preparano solo un follow-up locale.",
+      title: "Continua",
+      detail: "Ogni opzione prepara un follow-up nel campo di scrittura, senza inviarlo.",
       styles: [
         { label: "Più breve", prompt: "Rispondi di nuovo in modo più breve e diretto." },
         { label: "Con esempi", prompt: "Rispondi di nuovo usando esempi clinici concreti." },
@@ -1817,7 +1819,7 @@
           ? "Ho aggiornato la sezione con lo stato corrente: puoi rieseguire lo stesso comando."
           : (isTutorTurn && MODEL_ERROR_MESSAGES[error.code])
             || (error.status === 503 && isTutorTurn
-              ? "Il tutor non ha prodotto una risposta verificata. Controlla la chiave del modello in Impostazioni."
+              ? "Il tutor non ha prodotto una risposta verificata. Apri Diagnostica e riprova."
               : text(error.message, "Il servizio locale non ha risposto."));
         setStatus(conflict ? "stale" : "error", `${title}. ${detail}`, { alert: false });
         showCommandError(error, { title, detail });

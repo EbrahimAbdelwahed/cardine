@@ -1703,7 +1703,11 @@ class TutorHostRunner:
         if isinstance(outcome, CancelledCapabilityOutcome):
             return TutorHostRunResult(TutorHostRunStatus.CANCELLED, receipt)
         if isinstance(outcome, FailedCapabilityOutcome):
-            return TutorHostRunResult(TutorHostRunStatus.FAILED, receipt)
+            return TutorHostRunResult(
+                TutorHostRunStatus.FAILED,
+                receipt,
+                failure_reason=outcome.failure_reason,
+            )
         return TutorHostRunResult(TutorHostRunStatus.FAILED, receipt)
 
 

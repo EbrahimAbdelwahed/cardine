@@ -16,6 +16,7 @@ from study_agent.hosts import (
 from study_agent.ports import (
     MessageRole,
     ModelError,
+    ModelErrorCode,
     ModelFinishReason,
     ModelMessage,
     ModelPort,
@@ -101,17 +102,28 @@ class ModelTutorDecisionPort(TutorDecisionPort):
                 "provider request failed", failure_reason=error.code.value
             ) from None
         except Exception:
-            raise ModelTutorDecisionError("provider request failed") from None
+            raise ModelTutorDecisionError(
+                "provider request failed", failure_reason=ModelErrorCode.UNAVAILABLE.value
+            ) from None
         if interruption.is_interrupted():
             raise ModelTutorDecisionError("tutor decision interrupted")
         if response.finish_reason is not ModelFinishReason.STOP:
-            raise ModelTutorDecisionError("provider decision was incomplete")
+            raise ModelTutorDecisionError(
+                "provider decision was incomplete",
+                failure_reason=ModelErrorCode.PROTOCOL_ERROR.value,
+            )
         value = response.structured_output
         if not isinstance(value, Mapping) or set(value) != {"decision"}:
-            raise ModelTutorDecisionError("provider decision was invalid")
+            raise ModelTutorDecisionError(
+                "provider decision was invalid",
+                failure_reason=ModelErrorCode.PROTOCOL_ERROR.value,
+            )
         raw_decision = value["decision"]
         if not isinstance(raw_decision, Mapping):
-            raise ModelTutorDecisionError("provider decision was invalid")
+            raise ModelTutorDecisionError(
+                "provider decision was invalid",
+                failure_reason=ModelErrorCode.PROTOCOL_ERROR.value,
+            )
         try:
             cleaned_decision = _remove_provider_null_optionals(
                 raw_decision,
@@ -126,7 +138,10 @@ class ModelTutorDecisionPort(TutorDecisionPort):
             ).encode("utf-8")
             return decision_from_bytes(encoded, context)
         except (TypeError, ValueError, OverflowError):
-            raise ModelTutorDecisionError("provider decision was invalid") from None
+            raise ModelTutorDecisionError(
+                "provider decision was invalid",
+                failure_reason=ModelErrorCode.PROTOCOL_ERROR.value,
+            ) from None
 
 
 def _plain(value: object) -> object:

@@ -88,8 +88,7 @@
   .ai-records-table,
   .ai-filter-table,
   .ai-insight-deck,
-  .ai-code-block,
-  .ai-fine-tune {
+  .ai-code-block {
     display: grid;
     width: 100%;
     gap: var(--space-4);
@@ -126,7 +125,7 @@
   }
   .ai-answer h2, .ai-approval h2, .ai-recommendation h2, .ai-context-grid h2,
   .ai-diff-table h2, .ai-records-table h2, .ai-filter-table h2,
-  .ai-insight-deck h2, .ai-task-list h2, .ai-tool-stack h2, .ai-fine-tune h2,
+  .ai-insight-deck h2, .ai-task-list h2, .ai-tool-stack h2,
   .ai-chat-panel h2 {
     font-family: var(--font-body);
     font-size: var(--text-lg);
@@ -135,7 +134,6 @@
   }
   .ai-approval p:not(.ai-eyebrow),
   .ai-recommendation p:not(.ai-eyebrow),
-  .ai-fine-tune p:not(.ai-eyebrow),
   .ai-loading p:not(.ai-eyebrow) {
     max-width: var(--measure);
     color: var(--ink-soft);
@@ -534,14 +532,29 @@
   .ai-code-block [data-copy-state="copied"]::after { content: " · copiato"; }
 
   /* ---- Fine tune -------------------------------------------------------- */
-  .ai-fine-tune { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
-  .ai-fine-tune__copy { display: grid; gap: var(--space-1); min-width: 0; }
-  .ai-fine-tune__options { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
-  .ai-fine-tune__option.is-selected { color: var(--accent-text); background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
+  /* A single quiet line under an answer, not a surface of its own: no card, no
+     heading, no sentence, and chips one step smaller than a primary control. */
+  .ai-fine-tune {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    margin-top: var(--space-3);
+  }
+  .ai-fine-tune__label { color: var(--muted); font-size: var(--text-sm); line-height: 1; }
+  .ai-fine-tune__options { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .ai-fine-tune__option {
+    min-height: 28px;
+    padding-inline: var(--space-2);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-regular);
+    box-shadow: inset 0 0 0 1px var(--line);
+  }
+  .ai-fine-tune__option.is-selected { color: var(--ink); background: var(--surface-hover); box-shadow: inset 0 0 0 1px var(--line-strong); }
+  /* Density is a visual choice; a thumb still needs a full target. */
+  @media (pointer: coarse) { .ai-fine-tune__option { min-height: 44px; } }
 
   @media (max-width: 700px) {
-    .ai-fine-tune { grid-template-columns: minmax(0, 1fr); }
-    .ai-fine-tune__options { justify-content: flex-start; }
     .ai-chat-panel__message { max-width: 92%; }
     .ai-filter-table__toolbar { align-items: stretch; flex-direction: column; }
     .ai-insight-deck > header { align-items: flex-start; flex-direction: column; gap: var(--space-3); }
