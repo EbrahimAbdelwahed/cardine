@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -30,6 +30,7 @@ from study_agent.hosts import (
     TutorCompletionHandoffState,
     TutorContinuationRecord,
     TutorHostContext,
+    TutorHostContextAssembler,
     TutorHostLimits,
     TutorHostRunner,
     TutorHostRunStatus,
@@ -41,6 +42,7 @@ from study_agent.playbooks import (
     VerifiedRunRecord,
     VersionPins,
 )
+from study_agent.ports import TutorCapabilityGatewayPort, TutorDecisionPort
 from study_agent.skills import ArtifactReference, SemanticVersion
 
 SHA_A = "a" * 64
@@ -324,15 +326,15 @@ def _runner(
     explode_decision: bool = False,
 ) -> TutorHostRunner:
     return TutorHostRunner(
-        _DecisionPort(decision, explode=explode_decision),
+        cast(TutorDecisionPort, _DecisionPort(decision, explode=explode_decision)),
         None,
         None,
-        gateway,  # type: ignore[arg-type]
+        cast(TutorCapabilityGatewayPort, gateway),
         _Authority(),
         _Identity(),
         continuation_store or _ContinuationStore(),
         TutorHostLimits(2, 1, 1, 128),
-        context_assembler=assembler or _Assembler(),  # type: ignore[arg-type]
+        context_assembler=cast(TutorHostContextAssembler, assembler or _Assembler()),
         completion_handoff_store=store,
     )
 
@@ -504,15 +506,15 @@ def test_namespaced_handoff_slots_isolate_same_turn_across_scope() -> None:
     first = _run(_runner(decision, _Gateway(), store), turn="shared")
     assert first.status is TutorHostRunStatus.COMPLETED
     other_runner = TutorHostRunner(
-        _DecisionPort(decision),
+        cast(TutorDecisionPort, _DecisionPort(decision)),
         None,
         None,
-        _Gateway(),
+        cast(TutorCapabilityGatewayPort, _Gateway()),
         _Authority(),
         _Identity(),
         _ContinuationStore(),
         TutorHostLimits(1, 1, 1, 128),
-        context_assembler=_Assembler(),
+        context_assembler=cast(TutorHostContextAssembler, _Assembler()),
         completion_handoff_store=store,
     )
     other = asyncio.run(

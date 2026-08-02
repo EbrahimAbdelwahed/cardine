@@ -395,7 +395,7 @@ def test_expected_sequence_rejects_external_append_before_retrieval_or_model(
 ) -> None:
     service, events, retrieval, factory, _, blobs = composition(tmp_path)
     expected = len(events.read(COURSE))
-    service._session_service.record_note(  # type: ignore[attr-defined]
+    service._session_service.record_note(
         context(key="external-before"), "An external note advanced the stream."
     )
 
@@ -420,10 +420,13 @@ def test_expected_sequence_rejects_append_after_model_without_answer_commit(
 ) -> None:
     service, events, retrieval, factory, finalizer, blobs = composition(tmp_path)
     expected = len(events.read(COURSE))
-    service._finalizer = AppendBeforeFinalize(  # type: ignore[assignment]
-        finalizer,  # type: ignore[arg-type]
-        lambda: service._session_service.record_note(  # type: ignore[attr-defined]
+    service._finalizer = cast(
+        GroundedSessionFinalizer,
+        AppendBeforeFinalize(
+        cast(GroundedSessionFinalizer, finalizer),
+        lambda: service._session_service.record_note(
             context(key="external-during-model"), "An external note won the race."
+        ),
         ),
     )
 
@@ -440,7 +443,7 @@ def test_expected_sequence_rejects_append_after_model_without_answer_commit(
     assert retrieval.search_calls == 1
     assert factory.created == 1
     assert len(events.read(COURSE)) == expected + 2
-    assert service._sessions.answers(COURSE, SESSION) == ()  # type: ignore[attr-defined]
+    assert service._sessions.answers(COURSE, SESSION) == ()
     blobs.close()
 
 

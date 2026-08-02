@@ -1740,10 +1740,13 @@ def _validate_schema_definition(schema: JsonObject, path: str = "schema") -> Non
         _schema_error(f"unsupported schema keyword at {path}: {unsupported[0]}")
     schema_type = schema.get("type")
     if schema_type is not None:
+        schema_types: tuple[str, ...]
         if isinstance(schema_type, str):
             schema_types = (schema_type,)
         elif isinstance(schema_type, tuple) and schema_type:
-            schema_types = schema_type
+            if any(not isinstance(item, str) for item in schema_type):
+                _schema_error(f"unsupported schema type at {path}")
+            schema_types = tuple(item for item in schema_type if isinstance(item, str))
         else:
             _schema_error(f"unsupported schema type at {path}")
         if any(

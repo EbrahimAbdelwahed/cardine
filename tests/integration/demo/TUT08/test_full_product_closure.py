@@ -1,14 +1,13 @@
 """Release-closure journeys for the repository-backed Cardine surface.
 
 These checks exercise ``RepositoryUiApplication`` directly for precise route,
-retry, stale, restart, and public-demo assertions.  The companion
+retry, stale, and restart assertions.  The companion
 ``tests/e2e/test_cardine_repository_browser_journey.py`` runs the same product
 boundary in a real browser; the static assertions here are supplemental.
 """
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -19,7 +18,6 @@ import pytest
 from study_agent.adapters.filesystem import initialize_local_repository
 from study_agent.cli.repository import LocalRepository, ModelAdapterRegistry
 from study_agent.demo.ui_application import (
-    DemoUiApplication,
     RepositoryUiApplication,
     UiRequestError,
 )
@@ -84,7 +82,7 @@ class _ClosureModel:
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
         del request
         if False:  # pragma: no cover - keeps this method an async generator
-            yield ModelStreamEvent(None)  # type: ignore[arg-type]
+            yield ModelStreamEvent(None)
         raise AssertionError("closure fixture does not stream")
 
     async def cancel(self, token: CancellationToken) -> None:
@@ -163,7 +161,7 @@ def test_repository_route_control_matrix_and_restart_safe_chat(tmp_path: Path) -
         assert payload["schema_version"] == 1, route
         if "high_water_sequence" in payload:
             assert isinstance(payload["high_water_sequence"], int), route
-            assert cast(int, payload["high_water_sequence"]) <= sequence, route
+            assert payload["high_water_sequence"] <= sequence, route
     assert responses["fonti"]["status"] == "ready"
     assert responses["proposte"]["status"] == "empty"
     assert responses["verifiche"]["status"] == "empty"
@@ -192,44 +190,6 @@ def test_repository_route_control_matrix_and_restart_safe_chat(tmp_path: Path) -
         )
     assert stale.value.status_code == 409
     assert len(model.requests) == 1
-
-
-def test_public_demo_is_stateless_sanitized_and_mutations_are_blocked() -> None:
-    demo = DemoUiApplication()
-    before = demo.get("/api/v1/bootstrap")
-    before_sequence = before["high_water_sequence"]
-
-    for path in ROUTES.values():
-        payload = demo.get(path)
-        encoded = json.dumps(payload, sort_keys=True)
-        assert payload["schema_version"] == 1
-        assert "/private/" not in encoded
-        assert "api_key" not in encoded.lower()
-        assert "authorization" not in encoded.lower()
-        assert "raw_output" not in encoded
-
-    with pytest.raises(UiRequestError) as blocked:
-        demo.post(
-            "/api/v1/artifacts/revision/decisions",
-            _command("public-artifact", int(before_sequence), {"decision": "accepted"}),
-        )
-    assert blocked.value.status_code == 405
-
-    # A demo submission returns a new presentation value only; the cached GET
-    # view and its sequence remain unchanged across the equivalent reload.
-    result = demo.post(
-        "/api/v1/session/turns",
-        _command(
-            "public-chat",
-            int(before_sequence),
-            {"content": "private learner question that must not persist"},
-        ),
-    )
-    assert result["status"] == "demo_completed"
-    assert result["result"]["persistence"] == "stateless_public_demo"
-    after = demo.get("/api/v1/session")
-    assert after["learner_entry"] != "private learner question that must not persist"
-    assert demo.get("/api/v1/bootstrap")["high_water_sequence"] == before_sequence
 
 
 def test_browser_control_matrix_keyboard_and_responsive_contracts() -> None:
@@ -268,10 +228,11 @@ def test_browser_control_matrix_keyboard_and_responsive_contracts() -> None:
     assert '${hasResponse ? "" : " disabled"}' in javascript
     assert "submit.disabled = control.type === \"checkbox\"" in javascript
     assert "if (submit) submit.disabled = !text(control.value).trim();" in javascript
-    for token in ("--ink-subtle:", "--ink-muted:", "--surface-hover:"):
+    for token in ("--ink-soft:", "--surface-hover:"):
         assert token in css
         assert token in css.split("@media (prefers-color-scheme: dark)", 1)[1]
     assert 'event.key === "Escape"' in javascript
     assert "@media (prefers-reduced-motion: reduce)" in css
     assert "overflow-wrap: anywhere" in css
-    assert "@media (max-width: 900px)" in css
+    assert "@media (max-width: 1080px)" in css
+    assert "@media (max-width: 700px)" in css

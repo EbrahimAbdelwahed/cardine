@@ -133,7 +133,12 @@ def test_decision_schema_is_closed_and_context_advertised() -> None:
     assert "provider" not in serialized
 
     available = decision_schema(_context(pending_continuation=None))
-    available_branches = available["properties"]["decision"]["anyOf"]  # type: ignore[index]
+    available_properties = available["properties"]
+    assert isinstance(available_properties, Mapping)
+    available_decision = available_properties["decision"]
+    assert isinstance(available_decision, Mapping)
+    available_branches = available_decision["anyOf"]
+    assert isinstance(available_branches, tuple)
     assert len(available_branches) == 4
 
 

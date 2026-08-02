@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+from typing import cast
+
 import pytest
 
 from study_agent.demo.browser import (
@@ -102,7 +105,8 @@ def test_loopback_owner_setup_activates_private_settings_without_exposing_a_secr
         "csrf_token": session.csrf_token,
     }
     settings = surface.api_get("/api/v1/settings", session_token=session.session_token)
-    assert settings["model"]["credential_configured"] is False
+    model = cast(Mapping[str, object], settings["model"])
+    assert model["credential_configured"] is False
     surface.api_post(
         "/api/v1/settings/model/credential",
         {"api_key": "test-runtime-key"},
@@ -131,7 +135,7 @@ def test_preview_diagnostics_are_bounded_and_redacted(capsys: pytest.CaptureFixt
     surface.diagnostic("/api/v1/session/turns", 503, "tutor_execution_failed")
     surface.diagnostic("/api/v1/session/turns", 503, "unsafe provider response")
 
-    entries = surface.diagnostics()["entries"]
+    entries = cast(Sequence[Mapping[str, object]], surface.diagnostics()["entries"])
     assert len(entries) == 2
     assert entries[0]["category"] == "tutor_execution_failed"
     assert entries[1]["category"] == "invalid_request"
@@ -147,5 +151,6 @@ def test_preview_diagnostics_keep_a_safe_model_failure_category(
 
     surface.diagnostic("/api/v1/session/turns", 502, "tutor_endpoint_incompatible")
 
-    assert surface.diagnostics()["entries"][0]["category"] == "tutor_endpoint_incompatible"
+    entries = cast(Sequence[Mapping[str, object]], surface.diagnostics()["entries"])
+    assert entries[0]["category"] == "tutor_endpoint_incompatible"
     assert "tutor_endpoint_incompatible" in capsys.readouterr().err

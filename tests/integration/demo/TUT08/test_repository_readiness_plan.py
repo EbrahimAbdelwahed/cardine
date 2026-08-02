@@ -5,15 +5,33 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
-from test_repository_materials_artifacts_context import (
-    COURSE,
-    ORIGIN,
-    SESSION,
-    _context,
-    _repository,
-)
+if TYPE_CHECKING:
+    from tests.integration.demo.TUT08.test_repository_materials_artifacts_context import (
+        COURSE,
+        ORIGIN,
+        SESSION,
+        _context,
+        _repository,
+    )
+else:
+    try:
+        from tests.integration.demo.TUT08.test_repository_materials_artifacts_context import (
+            COURSE,
+            ORIGIN,
+            SESSION,
+            _context,
+            _repository,
+        )
+    except ModuleNotFoundError:
+        from test_repository_materials_artifacts_context import (
+            COURSE,
+            ORIGIN,
+            SESSION,
+            _context,
+            _repository,
+        )
 
 from study_agent.cli.repository import LocalRepository
 from study_agent.demo.ui_application import RepositoryUiApplication
@@ -97,7 +115,10 @@ def test_browser_plan_uses_server_values_without_date_math() -> None:
     assert 'endpoint: "/api/v1/plan"' in javascript
     assert "function renderPlan(payload)" in javascript
     assert "days_remaining" in javascript
-    assert "new Date(" not in javascript
+    render_plan = javascript.split("function renderPlan(payload)", 1)[1].split(
+        "function renderConflitti(payload)", 1
+    )[0]
+    assert "new Date(" not in render_plan
     assert "readiness score" in javascript
     assert "function sourceRef(value)" in javascript
     assert 'aria-label="Lavoro aperto oggi"' in javascript
@@ -112,7 +133,8 @@ def test_session_read_uses_captured_presentations_not_live_view(tmp_path: Path) 
 
     @contextmanager
     def opener(path: Path, **kwargs: object) -> Iterator[LocalRepository]:
-        with LocalRepository.open(path, **kwargs) as repository:
+        del kwargs
+        with LocalRepository.open(path) as repository:
             repository.tutor_presentations = _ForbiddenLiveView()  # type: ignore[assignment]
             yield repository
 

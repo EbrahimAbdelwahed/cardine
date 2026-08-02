@@ -6,7 +6,7 @@ from study_agent.application.capability_completion import (
     CapabilityCompletionHandlerRegistry,
     CapabilityCompletionProductReceipt,
 )
-from study_agent.domain import RunId
+from study_agent.domain import ExecutionContext, RunId
 from study_agent.hosts import TutorCapabilityCompletionReference
 
 
@@ -21,7 +21,12 @@ def _reference() -> TutorCapabilityCompletionReference:
 
 
 class _Handler:
-    def recover(self, reference: TutorCapabilityCompletionReference):
+    def recover(
+        self,
+        reference: TutorCapabilityCompletionReference,
+        context: ExecutionContext | None = None,
+    ) -> CapabilityCompletionProductReceipt:
+        del context
         return CapabilityCompletionProductReceipt(
             reference.capability_identity,
             reference.run_id,
@@ -31,7 +36,12 @@ class _Handler:
 
 
 class _OwnerRecovery:
-    def recover(self, reference: TutorCapabilityCompletionReference):
+    def recover(
+        self,
+        reference: TutorCapabilityCompletionReference,
+        context: ExecutionContext | None = None,
+    ) -> CapabilityCompletionProductReceipt | None:
+        del context
         if reference.output_fingerprint != "b" * 64:
             return None
         return CapabilityCompletionProductReceipt(

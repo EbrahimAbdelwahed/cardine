@@ -14,6 +14,7 @@ from collections.abc import Callable
 from contextlib import closing
 from pathlib import Path
 from threading import Lock
+from typing import cast
 from urllib.parse import quote
 
 from study_agent.domain import CourseId, SessionId
@@ -262,7 +263,7 @@ class _SerializedConnectionGuard:
         except BaseException:
             self._lock.release()
             raise
-        return _LockedConnection(connection, self._lock)
+        return cast(sqlite3.Connection, _LockedConnection(connection, self._lock))
 
 
 class _LockedConnection:

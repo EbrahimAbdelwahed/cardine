@@ -146,7 +146,7 @@ def test_projection_capture_is_immutable_and_reused_once() -> None:
     with pytest.raises((FrozenInstanceError, TypeError, AttributeError)):
         snapshot.learning_goals += ("mutate",)
     with pytest.raises(TypeError):
-        snapshot.sources["projection"] = snapshot.source  # type: ignore[index]
+        snapshot.sources["projection"] = snapshot.source
 
 
 def test_equivalent_projection_and_clock_are_byte_equivalent() -> None:

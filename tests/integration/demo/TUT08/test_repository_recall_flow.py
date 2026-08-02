@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import AbstractContextManager
 from dataclasses import replace
 from pathlib import Path
 from typing import cast
@@ -17,7 +18,6 @@ from study_agent.artifacts import (
 )
 from study_agent.cli.repository import LocalRepository
 from study_agent.demo.ui_application import (
-    DemoUiApplication,
     RepositoryUiApplication,
     UiRequestError,
 )
@@ -262,8 +262,10 @@ def _seed(root: Path) -> ArtifactRevisionId:
         return proposal.pending()[0].id
 
 
-def _opener(scheduler: SchedulingPolicyPort) -> Callable[..., object]:
-    def open_repository(root: Path, **_: object) -> object:
+def _opener(
+    scheduler: SchedulingPolicyPort,
+) -> Callable[..., AbstractContextManager[LocalRepository]]:
+    def open_repository(root: Path, **_: object) -> AbstractContextManager[LocalRepository]:
         return LocalRepository.open(root, recall_scheduler=scheduler)
 
     return open_repository
@@ -292,9 +294,12 @@ def _accept(
     request_id: str,
 ) -> dict[str, object]:
     sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
-    return app.post(
-        f"/api/v1/artifacts/{revision_id}/decisions",
-        _command(request_id, sequence, {"decision": "accepted"}),
+    return cast(
+        dict[str, object],
+        app.post(
+            f"/api/v1/artifacts/{revision_id}/decisions",
+            _command(request_id, sequence, {"decision": "accepted"}),
+        ),
     )
 
 
@@ -502,16 +507,6 @@ def test_stale_invalid_target_and_public_demo_are_no_write_paths(
     assert missing.value.status_code in {400, 409}
     assert len(scheduler.calls) == calls
 
-    public = DemoUiApplication()
-    assert public.get("/api/v1/recall/due")["status"] == "unavailable"
-    with pytest.raises(UiRequestError) as blocked:
-        public.post(
-            f"/api/v1/recall/{revision_id}/reviews",
-            _command("public", 0, {"rating": "good"}),
-        )
-    assert blocked.value.status_code == 405
-
-
 def test_later_course_session_can_review_enrolled_card(tmp_path: Path) -> None:
     root = tmp_path / "repository"
     revision_id = _seed(root)
@@ -549,7 +544,9 @@ def test_recall_unconfigured_and_factory_failure_are_honest(
     plain = RepositoryUiApplication(root, COURSE, SESSION)
     assert plain.get("/api/v1/recall/due")["status"] == "not_configured"
 
-    def failing_repository(root_path: Path, **_: object) -> object:
+    def failing_repository(
+        root_path: Path, **_: object
+    ) -> AbstractContextManager[LocalRepository]:
         def factory() -> SchedulingPolicyPort:
             raise RuntimeError("optional scheduler missing")
 

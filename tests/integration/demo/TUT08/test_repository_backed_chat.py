@@ -5,6 +5,7 @@ import re
 from collections.abc import AsyncIterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from http.client import HTTPConnection
+from pathlib import Path
 from threading import Thread
 from typing import cast
 
@@ -128,9 +129,9 @@ class _FixtureModel:
 
 
 def _repository(
-    tmp_path,
+    tmp_path: Path,
     decisions: tuple[JsonObject, ...] | None = None,
-):
+) -> tuple[Path, ModelAdapterRegistry, _FixtureModel]:
     root = tmp_path / "repository"
     initialize_local_repository(
         root,
@@ -177,7 +178,7 @@ def _repository(
     return root, adapters, model
 
 
-def _event_count(root, adapters) -> int:
+def _event_count(root: Path, adapters: ModelAdapterRegistry) -> int:
     with LocalRepository.open(root, model_adapters=adapters) as repository:
         return len(repository.events.read(COURSE))
 
@@ -225,8 +226,8 @@ def _workspace_command(
     }
 
 
-def test_repository_workspace_lists_selects_and_manages_course_sessions(tmp_path) -> None:
-    root, adapters, model = _repository(tmp_path)
+def test_repository_workspace_lists_selects_and_manages_course_sessions(tmp_path: Path) -> None:
+    root, adapters, _model = _repository(tmp_path)
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
 
     workspace = app.get("/api/v1/workspace")
@@ -271,7 +272,7 @@ def test_repository_workspace_lists_selects_and_manages_course_sessions(tmp_path
     }
 
 
-def test_tutor_invokes_the_same_harness_source_adapter_and_records_timeline(tmp_path) -> None:
+def test_tutor_invokes_the_same_harness_source_adapter_and_records_timeline(tmp_path: Path) -> None:
     root, adapters, model = _repository(
         tmp_path,
         decisions=(
@@ -281,7 +282,7 @@ def test_tutor_invokes_the_same_harness_source_adapter_and_records_timeline(tmp_
                 "arguments": {
                     "title": "Corso creato dal tutor",
                     "language": "it",
-                    "learning_goals": ["Impostare il percorso"],
+                    "learning_goals": ("Impostare il percorso",),
                 },
             },
             {
@@ -317,19 +318,23 @@ def test_tutor_invokes_the_same_harness_source_adapter_and_records_timeline(tmp_
         receipts.append(
             app.post(
                 "/api/v1/session/turns",
-                _command(request_id, int(before["high_water_sequence"]), content),
+                _command(request_id, cast(int, before["high_water_sequence"]), content),
             )
         )
     receipt = receipts[-1]
 
     assert receipt["status"] == "assistant_message"
     materials = app.get("/api/v1/materials")
-    assert any(item["title"] == "Tutor notes" for item in cast(tuple[dict[str, object], ...], materials["items"]))
+    material_items = cast(tuple[dict[str, object], ...], materials["items"])
+    assert any(item["title"] == "Tutor notes" for item in material_items)
     session = app.get("/api/v1/session")
-    assert any(item["kind"] == "assistant_message" for item in cast(tuple[dict[str, object], ...], session["timeline"]))
+    timeline = cast(tuple[dict[str, object], ...], session["timeline"])
+    assert any(item["kind"] == "assistant_message" for item in timeline)
     workspace = app.get("/api/v1/workspace")
-    assert any(item["title"] == "Corso creato dal tutor" for item in cast(tuple[dict[str, object], ...], workspace["courses"]))
-    assert any(item["id"] == str(SESSION) for item in cast(tuple[dict[str, object], ...], workspace["courses"])[0]["sessions"])
+    courses = cast(tuple[dict[str, object], ...], workspace["courses"])
+    assert any(item["title"] == "Corso creato dal tutor" for item in courses)
+    course_sessions = cast(tuple[dict[str, object], ...], courses[0]["sessions"])
+    assert any(item["id"] == str(SESSION) for item in course_sessions)
 
     selected = app.post(
         "/api/v1/workspace/select",
@@ -356,7 +361,7 @@ def test_tutor_invokes_the_same_harness_source_adapter_and_records_timeline(tmp_
     _assert_provider_strict_schema(model.requests[-1].structured_output.schema)
 
 
-def test_chat_course_creation_creates_starts_selects_and_reconciles_retry(tmp_path) -> None:
+def test_chat_course_creation_creates_starts_selects_and_reconciles_retry(tmp_path: Path) -> None:
     root, adapters, _model = _repository(tmp_path)
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
     command = _workspace_command(
@@ -387,7 +392,7 @@ def test_chat_course_creation_creates_starts_selects_and_reconciles_retry(tmp_pa
     assert app.post("/api/v1/chat/course-creation", command) == receipt
 
 
-def test_chat_course_creation_requires_explicit_confirmation(tmp_path) -> None:
+def test_chat_course_creation_requires_explicit_confirmation(tmp_path: Path) -> None:
     root, adapters, _model = _repository(tmp_path)
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
 
@@ -409,7 +414,7 @@ def test_chat_course_creation_requires_explicit_confirmation(tmp_path) -> None:
         )
 
 
-def test_repository_source_upload_ingests_text_and_reconciles_retry(tmp_path) -> None:
+def test_repository_source_upload_ingests_text_and_reconciles_retry(tmp_path: Path) -> None:
     root, adapters, _model = _repository(tmp_path)
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
     command = _workspace_command(
@@ -426,7 +431,7 @@ def test_repository_source_upload_ingests_text_and_reconciles_retry(tmp_path) ->
 
     assert receipt["status"] == "emitted"
     assert cast(dict[str, object], receipt["source"])["title"] == "Lezione uno"
-    assert cast(dict[str, object], receipt["source"])["chunk_count"] >= 1
+    assert cast(int, cast(dict[str, object], receipt["source"])["chunk_count"]) >= 1
     repeated = app.post("/api/v1/sources/upload", command)
     assert repeated["status"] == "idempotent"
     assert repeated["high_water_sequence"] == receipt["high_water_sequence"]
@@ -434,11 +439,11 @@ def test_repository_source_upload_ingests_text_and_reconciles_retry(tmp_path) ->
     assert {item["title"] for item in materials} == {"Valve notes", "Lezione uno"}
 
 
-def test_repository_source_upload_rejects_unsupported_files(tmp_path) -> None:
+def test_repository_source_upload_rejects_unsupported_files(tmp_path: Path) -> None:
     root, adapters, _model = _repository(tmp_path)
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
 
-    with pytest.raises(UiRequestError, match="only .txt and .md"):
+    with pytest.raises(UiRequestError, match=r"only \.txt and \.md"):
         app.post(
             "/api/v1/sources/upload",
             _workspace_command(
@@ -464,7 +469,7 @@ class _CountingUiApplication:
         return self._delegate.post(path, command)
 
 
-def test_repository_chat_is_durable_idempotent_and_stale_safe(tmp_path) -> None:
+def test_repository_chat_is_durable_idempotent_and_stale_safe(tmp_path: Path) -> None:
     root, adapters, model = _repository(tmp_path)
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
 
@@ -482,7 +487,7 @@ def test_repository_chat_is_durable_idempotent_and_stale_safe(tmp_path) -> None:
     initial_events = _event_count(root, adapters)
     receipt = app.post("/api/v1/session/turns", command)
     assert receipt["status"] == "assistant_message"
-    assert receipt["high_water_sequence"] > initial_sequence
+    assert cast(int, receipt["high_water_sequence"]) > initial_sequence
     assert len(model.requests) == 1
     assert _event_count(root, adapters) > initial_events
 
@@ -525,7 +530,7 @@ def test_repository_chat_is_durable_idempotent_and_stale_safe(tmp_path) -> None:
     assert _event_count(root, adapters) == events_before_changed
 
 
-def test_workspace_selection_failure_keeps_the_last_canonical_pair(tmp_path) -> None:
+def test_workspace_selection_failure_keeps_the_last_canonical_pair(tmp_path: Path) -> None:
     root, adapters, _model = _repository(tmp_path)
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
 
@@ -549,7 +554,7 @@ def test_workspace_selection_failure_keeps_the_last_canonical_pair(tmp_path) -> 
 
 
 def test_grounded_completion_is_recovered_and_persisted_as_canonical_presentation(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     root, adapters, model = _repository(
         tmp_path,
@@ -587,7 +592,9 @@ def test_grounded_completion_is_recovered_and_persisted_as_canonical_presentatio
     assert reloaded[-1]["content"] == timeline[-1]["content"]
 
 
-def test_materials_are_not_presented_as_groundable_when_source_text_is_missing(tmp_path) -> None:
+def test_materials_are_not_presented_as_groundable_when_source_text_is_missing(
+    tmp_path: Path,
+) -> None:
     root, adapters, _model = _repository(tmp_path)
     with LocalRepository.open(root, model_adapters=adapters) as repository:
         record = repository.for_course(COURSE).content.catalog()[0]
@@ -602,7 +609,7 @@ def test_materials_are_not_presented_as_groundable_when_source_text_is_missing(t
     assert materials["items"] == ()
 
 
-def test_repository_chat_serializes_new_requests_at_one_sequence(tmp_path) -> None:
+def test_repository_chat_serializes_new_requests_at_one_sequence(tmp_path: Path) -> None:
     root, adapters, model = _repository(tmp_path)
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
     initial_sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
@@ -635,7 +642,7 @@ def test_repository_chat_serializes_new_requests_at_one_sequence(tmp_path) -> No
 
 
 def test_second_tutor_decision_receives_redacted_canonical_presentation_history(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     root, adapters, model = _repository(tmp_path)
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
@@ -670,7 +677,7 @@ def test_second_tutor_decision_receives_redacted_canonical_presentation_history(
 
 
 def test_repository_continuation_is_restored_resolved_and_exactly_retryable(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     root, adapters, model = _repository(
         tmp_path,
@@ -700,7 +707,9 @@ def test_repository_continuation_is_restored_resolved_and_exactly_retryable(
     )
 
     assert suspended["status"] == "suspended"
-    continuation = cast(dict[str, object], cast(dict, suspended["result"])["continuation"])
+    continuation = cast(
+        dict[str, object], cast(dict[str, object], suspended["result"])["continuation"]
+    )
     fingerprint = cast(str, continuation["fingerprint"])
     assert continuation["prompt"] == "Which concept or aspect should the explanation target?"
     response_schema = cast(dict[str, object], continuation["response_schema"])
@@ -725,13 +734,13 @@ def test_repository_continuation_is_restored_resolved_and_exactly_retryable(
     )
 
     assert resumed["status"] == "completed"
-    assert cast(dict, resumed["result"])["continuation"] is None
+    assert cast(dict[str, object], resumed["result"])["continuation"] is None
     assert restarted.get("/api/v1/session")["continuation"] is None
     assert len(model.requests) == 3
 
 
 def test_wrong_continuation_routes_fail_before_provider_or_canonical_write(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     root, adapters, model = _repository(tmp_path)
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
@@ -754,7 +763,7 @@ def test_wrong_continuation_routes_fail_before_provider_or_canonical_write(
 
 
 def test_source_change_invalidates_suspended_capability_dependencies(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     root, adapters, model = _repository(
         tmp_path,
@@ -783,7 +792,9 @@ def test_source_change_invalidates_suspended_capability_dependencies(
         "/api/v1/session/turns",
         _command("source-stale-start", initial, "Spiegami la valvola aortica"),
     )
-    continuation = cast(dict, cast(dict, suspended["result"])["continuation"])
+    continuation = cast(
+        dict[str, object], cast(dict[str, object], suspended["result"])["continuation"]
+    )
     fingerprint = cast(str, continuation["fingerprint"])
 
     with LocalRepository.open(root, model_adapters=adapters) as repository:
@@ -808,7 +819,7 @@ def test_source_change_invalidates_suspended_capability_dependencies(
     )
 
     assert result["status"] == "assistant_message"
-    assert cast(dict, result["result"])["continuation"] is None
+    assert cast(dict[str, object], result["result"])["continuation"] is None
     assert len(model.requests) == 3
     assert not any(
         request.metadata.get("prompt_id") == "explain_concept.v1"
@@ -816,7 +827,7 @@ def test_source_change_invalidates_suspended_capability_dependencies(
     )
 
 
-def test_repository_application_is_reachable_over_http(tmp_path) -> None:
+def test_repository_application_is_reachable_over_http(tmp_path: Path) -> None:
     root, adapters, _model = _repository(tmp_path)
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
     try:
@@ -840,7 +851,11 @@ def test_repository_application_is_reachable_over_http(tmp_path) -> None:
         health_response = connection.getresponse()
         health = json.loads(health_response.read())
         assert health_response.status == 200
-        assert health == {"mode": "local_repository", "status": "ok"}
+        assert health == {
+            "mode": "local_repository",
+            "status": "ok",
+            "runtime_id": "cardine-local-source-grounding-v2",
+        }
         connection.close()
     finally:
         server.shutdown()
@@ -848,7 +863,7 @@ def test_repository_application_is_reachable_over_http(tmp_path) -> None:
         server.server_close()
 
 
-def test_repository_http_rejects_unsafe_posts_before_application(tmp_path) -> None:
+def test_repository_http_rejects_unsafe_posts_before_application(tmp_path: Path) -> None:
     root, adapters, model = _repository(tmp_path)
     application = _CountingUiApplication(
         RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)

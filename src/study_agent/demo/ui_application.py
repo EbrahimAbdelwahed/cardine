@@ -29,11 +29,16 @@ from study_agent.artifacts import (
     ProjectionArtifactView,
     RetryableArtifactConflictError,
 )
+from study_agent.artifacts.content import AssessmentItemContent
 from study_agent.artifacts.events import decision_command_fingerprint
 from study_agent.assessments import (
     AssessmentCommandError,
     AssessmentConflictError,
+    AssessmentSnapshot,
+    AttemptRecord,
     FreeResponse,
+    GradeContestRecord,
+    GradeRecord,
     MultipleChoiceResponse,
     ProjectionAssessmentView,
     ProjectionLearnerEvidenceView,
@@ -71,9 +76,9 @@ from study_agent.domain import (
     recall_event_id_for,
     review_id_for,
 )
-from study_agent.domain._validation import JsonObject
+from study_agent.domain._validation import JsonObject, JsonValue
+from study_agent.domain.identifiers import Identifier
 from study_agent.hosts import PendingContinuationDescriptor, TutorContinuationRecord
-from study_agent.retrieval import SourceContentError
 from study_agent.ports import (
     CourseNotFoundError,
     ModelError,
@@ -92,6 +97,7 @@ from study_agent.recall import (
     RetryableRecallConflictError,
 )
 from study_agent.recall.events import REVIEW_RECORDED, SCHEDULE_APPLIED
+from study_agent.retrieval import SourceContentError
 from study_agent.sessions import ProjectionTutorPresentationView
 from study_agent.state import PayloadValidationError, Projection
 from study_agent.study_context import (
@@ -121,6 +127,7 @@ MAX_SOURCE_TITLE_CHARS = 240
 _REPOSITORY_LOCKS_GUARD = Lock()
 _REPOSITORY_MUTATION_LOCKS: dict[Path, Lock] = {}
 
+
 class UiApplicationPort(Protocol):
     """Small transport-independent boundary consumed by ``BrowserSurface``."""
 
@@ -129,6 +136,22 @@ class UiApplicationPort(Protocol):
     def get(self, path: str) -> JsonObject: ...
 
     def post(self, path: str, command: Mapping[str, object]) -> JsonObject: ...
+
+
+class _HarnessToolSurface(Protocol):
+    async def invoke(
+        self, name: str, arguments: JsonObject, context: ExecutionContext
+    ) -> object: ...
+
+
+class _HarnessToolRepository(Protocol):
+    def harness_tools(self) -> _HarnessToolSurface: ...
+
+
+def _harness_tools(repository: LocalRepository) -> _HarnessToolSurface:
+    """Expose the repository's product surface with a typed local boundary."""
+
+    return cast(_HarnessToolRepository, repository).harness_tools()
 
 
 class UiRequestError(ValueError):
@@ -260,19 +283,19 @@ class RepositoryUiApplication(UiApplicationPort):
         try:
             with self._lock, self._open() as repository:
                 readiness_projection, snapshot = self._captured_state(repository)
+
                 def captured(_course_id: CourseId) -> Projection:
                     return readiness_projection
+
                 profile = ProjectionCourseView(captured).get(self._course_id)
                 artifacts = ProjectionArtifactView(captured).get(self._course_id)
                 assessment = ProjectionAssessmentView(captured).get(self._course_id)
-                evidence = ProjectionLearnerEvidenceView(
-                    ProjectionAssessmentView(captured)
-                ).get(self._course_id)
+                evidence = ProjectionLearnerEvidenceView(ProjectionAssessmentView(captured)).get(
+                    self._course_id
+                )
                 context = ProjectionStudyContextView(captured).get(self._course_id)
                 recall_snapshot = ProjectionRecallView(captured).get(self._course_id)
-                recall_projection = (
-                    readiness_projection if path == "/api/v1/recall/due" else None
-                )
+                recall_projection = readiness_projection if path == "/api/v1/recall/due" else None
                 readiness = repository.study_readiness.from_projection(
                     readiness_projection,
                     repository.clock,
@@ -376,9 +399,7 @@ class RepositoryUiApplication(UiApplicationPort):
             and assessment_contest is None
             and context_kind is None
         ):
-            raise UiRequestError(
-                "mutation is not available in repository mode", status_code=405
-            )
+            raise UiRequestError("mutation is not available in repository mode", status_code=405)
         if artifact_revision is not None:
             return self._post_artifact_decision(artifact_revision, command)
         if recall_enrollment is not None:
@@ -396,9 +417,7 @@ class RepositoryUiApplication(UiApplicationPort):
         if context_kind is not None:
             return self._post_context_resolution(context_kind, command)
         payload_key = "content" if continuation_fingerprint is None else "response"
-        request_id, expected_sequence, payload = _command(
-            command, payload_key=payload_key
-        )
+        request_id, expected_sequence, payload = _command(command, payload_key=payload_key)
         content = _bounded_content(payload.get(payload_key))
         with self._lock:
             try:
@@ -414,9 +433,7 @@ class RepositoryUiApplication(UiApplicationPort):
                     result = asyncio.run(
                         application.turn(turn)
                         if continuation_fingerprint is None
-                        else application.resume_continuation(
-                            continuation_fingerprint, turn
-                        )
+                        else application.resume_continuation(continuation_fingerprint, turn)
                     )
                     projection, refreshed = self._captured_state(repository)
 
@@ -442,9 +459,7 @@ class RepositoryUiApplication(UiApplicationPort):
                         "high_water_sequence": refreshed.high_water_sequence,
                         "result": session,
                         "presentation_id": (
-                            None
-                            if result.presentation is None
-                            else str(result.presentation.id)
+                            None if result.presentation is None else str(result.presentation.id)
                         ),
                     }
             except UiRequestError:
@@ -538,7 +553,7 @@ class RepositoryUiApplication(UiApplicationPort):
             MAX_WORKSPACE_GOAL_CHARS,
             allow_empty=True,
         )
-        profile = CourseProfile(
+        _ = CourseProfile(
             course_id,
             title,
             language,
@@ -547,7 +562,7 @@ class RepositoryUiApplication(UiApplicationPort):
         )
         with self._lock, self._open() as repository:
             result = asyncio.run(
-                repository.harness_tools().invoke(
+                _harness_tools(repository).invoke(
                     "course.create",
                     {
                         "course_id": str(course_id),
@@ -589,9 +604,7 @@ class RepositoryUiApplication(UiApplicationPort):
         if payload.get("confirmed") is not True:
             raise UiRequestError("course creation requires explicit confirmation")
         course_id = _workspace_identifier(payload.get("course_id"), CourseId, "course_id")
-        session_id = _workspace_identifier(
-            payload.get("session_id"), SessionId, "session_id"
-        )
+        session_id = _workspace_identifier(payload.get("session_id"), SessionId, "session_id")
         title = _workspace_text(payload.get("title"), "title", MAX_WORKSPACE_TITLE_CHARS)
         language = _workspace_text(
             payload.get("language"), "language", MAX_WORKSPACE_LANGUAGE_CHARS
@@ -609,7 +622,7 @@ class RepositoryUiApplication(UiApplicationPort):
             MAX_WORKSPACE_GOAL_CHARS,
             allow_empty=True,
         )
-        profile = CourseProfile(
+        _ = CourseProfile(
             course_id,
             title,
             language,
@@ -618,7 +631,7 @@ class RepositoryUiApplication(UiApplicationPort):
         )
         with self._lock, self._open() as repository:
             course_result = asyncio.run(
-                repository.harness_tools().invoke(
+                _harness_tools(repository).invoke(
                     "course.create",
                     {
                         "course_id": str(course_id),
@@ -632,7 +645,7 @@ class RepositoryUiApplication(UiApplicationPort):
             )
             created = _surface_profile(course_result)
             session_result = asyncio.run(
-                repository.harness_tools().invoke(
+                _harness_tools(repository).invoke(
                     "session.start",
                     {"session_id": str(session_id)},
                     _workspace_context(f"{request_id}-session", course_id, session_id),
@@ -665,16 +678,14 @@ class RepositoryUiApplication(UiApplicationPort):
         request_id, _expected_sequence, payload = _workspace_command(
             command, required_keys={"filename", "title", "content"}
         )
-        filename = _workspace_text(
-            payload.get("filename"), "filename", MAX_SOURCE_FILENAME_CHARS
-        )
+        filename = _workspace_text(payload.get("filename"), "filename", MAX_SOURCE_FILENAME_CHARS)
         title = _workspace_text(payload.get("title"), "title", MAX_SOURCE_TITLE_CHARS)
         content = _source_upload_content(payload.get("content"))
         with self._lock:
             try:
                 with self._open() as repository:
                     surface_result = asyncio.run(
-                        repository.harness_tools().invoke(
+                        _harness_tools(repository).invoke(
                             "source.ingest",
                             {"filename": filename, "title": title, "content": content},
                             ExecutionContext(
@@ -714,9 +725,7 @@ class RepositoryUiApplication(UiApplicationPort):
                 ) from error
 
     def _check_model(self, command: Mapping[str, object]) -> JsonObject:
-        request_id, _expected_sequence, payload = _workspace_command(
-            command, required_keys=set()
-        )
+        request_id, _expected_sequence, payload = _workspace_command(command, required_keys=set())
         if payload:
             raise UiRequestError("model check payload must be empty")
         try:
@@ -726,9 +735,7 @@ class RepositoryUiApplication(UiApplicationPort):
                 application = repository.tutor_conversation(
                     self._course_id, session_id=self._session_id
                 )
-                asyncio.run(
-                    application.verify_model_readiness(self._course_id, self._session_id)
-                )
+                asyncio.run(application.verify_model_readiness(self._course_id, self._session_id))
                 return {
                     "schema_version": 1,
                     "request_id": request_id,
@@ -781,7 +788,7 @@ class RepositoryUiApplication(UiApplicationPort):
             "rejected": ArtifactDecision.REJECT,
             "accept": ArtifactDecision.ACCEPT,
             "reject": ArtifactDecision.REJECT,
-        }.get(decision_raw)
+        }.get(decision_raw if isinstance(decision_raw, str) else "")
         if decision is None:
             raise UiRequestError("artifact decision is invalid")
         with self._lock:
@@ -857,9 +864,7 @@ class RepositoryUiApplication(UiApplicationPort):
     def _post_recall_enrollment(
         self, revision_id: str, command: Mapping[str, object]
     ) -> JsonObject:
-        request_id, expected_sequence, _payload = _command(
-            command, payload_key=None
-        )
+        request_id, expected_sequence, _payload = _command(command, payload_key=None)
         try:
             target = ArtifactRevisionId(revision_id)
         except ValueError as error:
@@ -867,9 +872,7 @@ class RepositoryUiApplication(UiApplicationPort):
         with self._lock:
             try:
                 with self._open() as repository:
-                    repository.sessions.get_session(
-                        self._course_id, self._session_id
-                    )
+                    repository.sessions.get_session(self._course_id, self._session_id)
                     composition = repository.recall_composition
                     if not composition.availability.available or composition.service is None:
                         raise UiRequestError(
@@ -880,9 +883,7 @@ class RepositoryUiApplication(UiApplicationPort):
                     enrollment_event_id = recall_event_id_for(
                         self._course_id,
                         self._session_id,
-                        _enrollment_idempotency_key(
-                            self._course_id, self._session_id, target
-                        ),
+                        _enrollment_idempotency_key(self._course_id, self._session_id, target),
                         SCHEDULE_APPLIED,
                     )
                     retry = any(
@@ -897,9 +898,7 @@ class RepositoryUiApplication(UiApplicationPort):
                             request_id,
                             PrincipalKind.SERVICE,
                             "enrollment",
-                            _enrollment_idempotency_key(
-                                self._course_id, self._session_id, target
-                            ),
+                            _enrollment_idempotency_key(self._course_id, self._session_id, target),
                         ),
                         expected_sequence,
                     )
@@ -946,21 +945,20 @@ class RepositoryUiApplication(UiApplicationPort):
                     "repository runtime is unavailable", status_code=503
                 ) from error
 
-    def _post_recall_review(
-        self, revision_id: str, command: Mapping[str, object]
-    ) -> JsonObject:
+    def _post_recall_review(self, revision_id: str, command: Mapping[str, object]) -> JsonObject:
         request_id, expected_sequence, payload = _command(command, payload_key="rating")
         try:
             target = ArtifactRevisionId(revision_id)
-            rating = RecallRating(payload["rating"])
+            rating_raw = payload["rating"]
+            if not isinstance(rating_raw, str):
+                raise TypeError("recall rating must be text")
+            rating = RecallRating(rating_raw)
         except (KeyError, TypeError, ValueError) as error:
             raise UiRequestError("recall rating is invalid") from error
         with self._lock:
             try:
                 with self._open() as repository:
-                    repository.sessions.get_session(
-                        self._course_id, self._session_id
-                    )
+                    repository.sessions.get_session(self._course_id, self._session_id)
                     composition = repository.recall_composition
                     if not composition.availability.available or composition.service is None:
                         raise UiRequestError(
@@ -1002,18 +1000,18 @@ class RepositoryUiApplication(UiApplicationPort):
                     def captured(_course_id: CourseId) -> Projection:
                         return projection
 
-                    recall_snapshot = ProjectionRecallView(captured).get(
-                        self._course_id
-                    )
+                    recall_snapshot = ProjectionRecallView(captured).get(self._course_id)
                     next_schedule = _next_schedule_payload(
                         recall_snapshot, target, self._session_id, request_id
                     )
-                    result_payload = _recall_payload(
-                        refreshed,
-                        composition,
-                        ProjectionArtifactView(captured).get(self._course_id),
-                        projection=projection,
-                        clock=repository.clock,
+                    result_payload = dict(
+                        _recall_payload(
+                            refreshed,
+                            composition,
+                            ProjectionArtifactView(captured).get(self._course_id),
+                            projection=projection,
+                            clock=repository.clock,
+                        )
                     )
                     result_payload["next_schedule"] = next_schedule
                     return {
@@ -1059,9 +1057,7 @@ class RepositoryUiApplication(UiApplicationPort):
                         ),
                         expected_sequence,
                     )
-                    sequence, payload_result = self._captured_assessment_payload(
-                        repository
-                    )
+                    sequence, payload_result = self._captured_assessment_payload(repository)
                     return {
                         "schema_version": 1,
                         "request_id": request_id,
@@ -1087,16 +1083,15 @@ class RepositoryUiApplication(UiApplicationPort):
     def _post_assessment_attempt(
         self, presentation_id: str, command: Mapping[str, object]
     ) -> JsonObject:
-        request_id, expected_sequence, payload = _command(
-            command, payload_key="response"
-        )
+        request_id, expected_sequence, payload = _command(command, payload_key="response")
         with self._lock:
             try:
                 with self._open() as repository:
                     assessment = repository.assessments.get(self._course_id)
                     presentation = assessment.presentation(PresentationId(presentation_id))
                     response = _canonical_browser_response(
-                        payload.get("response"), presentation.content.format,
+                        payload.get("response"),
+                        presentation.content.format,
                         presentation.content.options,
                     )
                     repository.assessment_service.record_attempt(
@@ -1108,9 +1103,7 @@ class RepositoryUiApplication(UiApplicationPort):
                         ),
                         expected_sequence,
                     )
-                    sequence, payload_result = self._captured_assessment_payload(
-                        repository
-                    )
+                    sequence, payload_result = self._captured_assessment_payload(repository)
                     return {
                         "schema_version": 1,
                         "request_id": request_id,
@@ -1135,9 +1128,7 @@ class RepositoryUiApplication(UiApplicationPort):
                     "repository runtime is unavailable", status_code=503
                 ) from error
 
-    def _post_assessment_grade(
-        self, attempt_id: str, command: Mapping[str, object]
-    ) -> JsonObject:
+    def _post_assessment_grade(self, attempt_id: str, command: Mapping[str, object]) -> JsonObject:
         request_id, expected_sequence, payload = _command(
             command, payload_key=None, allow_empty_payload=True
         )
@@ -1179,12 +1170,12 @@ class RepositoryUiApplication(UiApplicationPort):
                             },
                         }
                     result = repository.assessment_service.grade_closed(
-                        attempt.id, context, expected_sequence,
+                        attempt.id,
+                        context,
+                        expected_sequence,
                         supersedes_grade_id=supersedes,
                     )
-                    sequence, payload_result = self._captured_assessment_payload(
-                        repository
-                    )
+                    sequence, payload_result = self._captured_assessment_payload(repository)
                     return {
                         "schema_version": 1,
                         "request_id": request_id,
@@ -1208,9 +1199,7 @@ class RepositoryUiApplication(UiApplicationPort):
                     "repository runtime is unavailable", status_code=503
                 ) from error
 
-    def _post_assessment_contest(
-        self, grade_id: str, command: Mapping[str, object]
-    ) -> JsonObject:
+    def _post_assessment_contest(self, grade_id: str, command: Mapping[str, object]) -> JsonObject:
         request_id, expected_sequence, payload = _command(command, payload_key="reason")
         reason = payload.get("reason")
         if not isinstance(reason, str) or not reason.strip():
@@ -1226,9 +1215,7 @@ class RepositoryUiApplication(UiApplicationPort):
                         ),
                         expected_sequence,
                     )
-                    sequence, payload_result = self._captured_assessment_payload(
-                        repository
-                    )
+                    sequence, payload_result = self._captured_assessment_payload(repository)
                     return {
                         "schema_version": 1,
                         "request_id": request_id,
@@ -1250,9 +1237,7 @@ class RepositoryUiApplication(UiApplicationPort):
                     "repository runtime is unavailable", status_code=503
                 ) from error
 
-    def _post_context_resolution(
-        self, kind_raw: str, command: Mapping[str, object]
-    ) -> JsonObject:
+    def _post_context_resolution(self, kind_raw: str, command: Mapping[str, object]) -> JsonObject:
         request_id, expected_sequence, payload = _command(
             command, payload_key="selected_statement_id"
         )
@@ -1314,9 +1299,7 @@ class RepositoryUiApplication(UiApplicationPort):
         repository.sessions.get_session(self._course_id, self._session_id)
         return repository.tutor_snapshots.get(self._course_id, self._session_id)
 
-    def _captured_state(
-        self, repository: LocalRepository
-    ) -> tuple[Projection, TutorSnapshotV1]:
+    def _captured_state(self, repository: LocalRepository) -> tuple[Projection, TutorSnapshotV1]:
         """Capture one coherent event HWM for a complete response DTO."""
 
         for _attempt in range(3):
@@ -1326,9 +1309,7 @@ class RepositoryUiApplication(UiApplicationPort):
                 return projection, snapshot
         raise UiRequestError("repository changed during read; retry", status_code=409)
 
-    def _captured_assessment_payload(
-        self, repository: LocalRepository
-    ) -> tuple[int, JsonObject]:
+    def _captured_assessment_payload(self, repository: LocalRepository) -> tuple[int, JsonObject]:
         projection, snapshot = self._captured_state(repository)
 
         def captured(_course_id: CourseId) -> Projection:
@@ -1339,9 +1320,7 @@ class RepositoryUiApplication(UiApplicationPort):
             self._assessments(
                 snapshot,
                 {
-                    "assessment": ProjectionAssessmentView(captured).get(
-                        self._course_id
-                    ),
+                    "assessment": ProjectionAssessmentView(captured).get(self._course_id),
                     "artifacts": ProjectionArtifactView(captured).get(self._course_id),
                 },
             ),
@@ -1395,6 +1374,8 @@ class RepositoryUiApplication(UiApplicationPort):
     @staticmethod
     def _bootstrap(snapshot: TutorSnapshotV1, metadata: Mapping[str, object]) -> JsonObject:
         readiness = cast(StudyReadinessSnapshot, metadata["readiness"])
+        source_grounding = cast(Mapping[str, object], metadata["source_grounding"])
+        grounding_status = str(source_grounding.get("status", "unavailable"))
         artifact_counts = tuple(getattr(readiness, "artifact_counts", ()))
         recall = getattr(readiness, "recall", None)
         conflicted_kinds = {
@@ -1403,11 +1384,9 @@ class RepositoryUiApplication(UiApplicationPort):
             if getattr(row, "status", "") == "conflicted"
         }
         due_count = getattr(recall, "due_count", None)
-        pending_proposals = sum(
-            int(getattr(item, "pending", 0)) for item in artifact_counts
-        )
+        pending_proposals = sum(int(getattr(item, "pending", 0)) for item in artifact_counts)
         shell_status = _readiness_shell_status(snapshot, readiness)
-        readiness_payload = readiness.to_json()
+        readiness_payload = cast(JsonObject, readiness.to_json())
         assessment_count = sum(
             int(getattr(item, "accepted", 0))
             for item in artifact_counts
@@ -1440,7 +1419,7 @@ class RepositoryUiApplication(UiApplicationPort):
             },
             "materials": {
                 "count": len(snapshot.materials),
-                "grounding_status": metadata["source_grounding"]["status"],
+                "grounding_status": grounding_status,
                 "items": tuple(
                     {
                         "title": item.title,
@@ -1452,7 +1431,7 @@ class RepositoryUiApplication(UiApplicationPort):
             },
             "onboarding": {
                 "needs_study_intent": bool(snapshot.materials)
-                and metadata["source_grounding"]["status"] == "available"
+                and grounding_status == "available"
                 and not any(
                     getattr(getattr(item, "kind", None), "value", None) == "learner"
                     for item in snapshot.timeline
@@ -1472,7 +1451,7 @@ class RepositoryUiApplication(UiApplicationPort):
                 for item in presentations
                 if hasattr(item, "course_sequence")
             )
-        canonical_timeline.sort(key=lambda item: int(item["course_sequence"]))
+        canonical_timeline.sort(key=lambda item: int(cast(int, item["course_sequence"])))
         continuation = metadata.get("continuation")
         return {
             "schema_version": 1,
@@ -1495,7 +1474,9 @@ class RepositoryUiApplication(UiApplicationPort):
     def _materials(snapshot: TutorSnapshotV1, metadata: Mapping[str, object]) -> JsonObject:
         grounding = cast(Mapping[str, object], metadata["source_grounding"])
         groundable = grounding["status"] == "available"
-        items = tuple(
+        items = cast(
+            tuple[JsonObject, ...],
+            tuple(
             {
                 "source_id": str(item.source_id),
                 "revision_id": str(item.current_revision_id),
@@ -1512,6 +1493,7 @@ class RepositoryUiApplication(UiApplicationPort):
                 },
             }
             for item in snapshot.materials
+            ),
         )
         return {
             "schema_version": 1,
@@ -1530,7 +1512,6 @@ class RepositoryUiApplication(UiApplicationPort):
             ),
         }
 
-
     @staticmethod
     def _artifacts(snapshot: TutorSnapshotV1, metadata: Mapping[str, object]) -> JsonObject:
         return _artifact_payload(
@@ -1543,8 +1524,8 @@ class RepositoryUiApplication(UiApplicationPort):
     @staticmethod
     def _assessments(snapshot: TutorSnapshotV1, metadata: Mapping[str, object]) -> JsonObject:
         return _assessment_payload(
-            cast(object, metadata["assessment"]),
-            cast(object, metadata["artifacts"]),
+            cast(AssessmentSnapshot, metadata["assessment"]),
+            cast(ArtifactSnapshot, metadata["artifacts"]),
             session_id=snapshot.session_id,
         )
 
@@ -1568,9 +1549,7 @@ class RepositoryUiApplication(UiApplicationPort):
         readiness = cast(StudyReadinessSnapshot, metadata["readiness"])
         payload = cast(JsonObject, readiness.to_json())
         status = (
-            "conflicted"
-            if getattr(readiness, "deadline_status", "") == "conflicted"
-            else "ready"
+            "conflicted" if getattr(readiness, "deadline_status", "") == "conflicted" else "ready"
         )
         return {
             **payload,
@@ -1578,9 +1557,7 @@ class RepositoryUiApplication(UiApplicationPort):
             "shell_status": _readiness_shell_status(snapshot, readiness),
             "high_water_sequence": readiness.sequence,
             "readiness": payload,
-            "message": (
-                "Canonical constraints and observations; no agenda or score is inferred."
-            ),
+            "message": ("Canonical constraints and observations; no agenda or score is inferred."),
         }
 
 
@@ -1594,18 +1571,10 @@ def _artifact_payload(
     batches = snapshot.batches
     revisions = snapshot.revisions
     selected_batches = tuple(item for item in batches if item.session_id == session_id)
-    revision_ids = {
-        revision_id
-        for batch in selected_batches
-        for revision_id in batch.revision_ids
-    }
-    selected_revisions = tuple(
-        item for item in revisions if item.id in revision_ids
-    )
+    revision_ids = {revision_id for batch in selected_batches for revision_id in batch.revision_ids}
+    selected_revisions = tuple(item for item in revisions if item.id in revision_ids)
     batch_by_revision = {
-        revision_id: batch
-        for batch in selected_batches
-        for revision_id in batch.revision_ids
+        revision_id: batch for batch in selected_batches for revision_id in batch.revision_ids
     }
     rows = tuple(
         _artifact_revision_row(
@@ -1634,30 +1603,28 @@ def _artifact_payload(
 
 
 def _assessment_payload(
-    assessment: object,
-    artifacts: object,
+    assessment: AssessmentSnapshot,
+    artifacts: ArtifactSnapshot,
     *,
     session_id: SessionId | None = None,
 ) -> JsonObject:
     """Map canonical assessment state to learner-safe presentation DTOs."""
 
-    presentations = tuple(getattr(assessment, "presentations", ()))
-    attempts = tuple(getattr(assessment, "attempts", ()))
-    grades = tuple(getattr(assessment, "grades", ()))
-    contests = tuple(getattr(assessment, "contests", ()))
-    revisions = {
-        item.id: item for item in tuple(getattr(artifacts, "revisions", ()))
+    presentations = assessment.presentations
+    attempts = assessment.attempts
+    grades = assessment.grades
+    contests: tuple[GradeContestRecord, ...] = assessment.contests
+    revisions = {item.id: item for item in artifacts.revisions}
+    batches = {item.id: item for item in artifacts.batches}
+    attempts_by_presentation: dict[PresentationId, AttemptRecord] = {
+        item.presentation_id: item for item in attempts
     }
-    batches = {item.id: item for item in tuple(getattr(artifacts, "batches", ())) }
-    attempts_by_presentation = {item.presentation_id: item for item in attempts}
-    grades_by_attempt: dict[object, list[object]] = {}
-    for grade in grades:
-        grades_by_attempt.setdefault(grade.attempt_id, []).append(grade)
+    grades_by_attempt: dict[AttemptId, list[GradeRecord]] = {}
+    for grade_record in grades:
+        grades_by_attempt.setdefault(grade_record.attempt_id, []).append(grade_record)
     contested = {item.grade_id for item in contests}
     rows: list[JsonObject] = []
-    for presentation in sorted(
-        presentations, key=lambda item: (item.presented_at, str(item.id))
-    ):
+    for presentation in sorted(presentations, key=lambda item: (item.presented_at, str(item.id))):
         if session_id is not None and presentation.session_id != session_id:
             continue
         revision = revisions.get(presentation.revision_id)
@@ -1671,7 +1638,7 @@ def _assessment_payload(
         attempt = attempts_by_presentation.get(presentation.id)
         active_grade = None
         historical_grade = None
-        grade_history: list[object] = []
+        grade_history: list[GradeRecord] = []
         if attempt is not None:
             history = sorted(
                 grades_by_attempt.get(attempt.id, []),
@@ -1719,9 +1686,7 @@ def _assessment_payload(
                 "status": item.status.value,
                 "lifecycle": item.lifecycle.value,
                 "supersedes_grade_id": (
-                    None
-                    if item.supersedes_grade_id is None
-                    else str(item.supersedes_grade_id)
+                    None if item.supersedes_grade_id is None else str(item.supersedes_grade_id)
                 ),
                 "active": item.lifecycle is GradeLifecycle.ACTIVE,
                 "contested": item.id in contested,
@@ -1733,14 +1698,17 @@ def _assessment_payload(
             }
             for item in grade_history
         )
-        public_contests = tuple(
-            {
-                "grade_id": str(item.grade_id),
-                "disposition": "contested",
-                "contested_at": item.contested_at.isoformat(),
-                "event_sequence": item.event_sequence,
-            }
-            for item in contest_history
+        public_contests = cast(
+            tuple[JsonObject, ...],
+            tuple(
+                {
+                    "grade_id": str(item.grade_id),
+                    "disposition": "contested",
+                    "contested_at": item.contested_at.isoformat(),
+                    "event_sequence": item.event_sequence,
+                }
+                for item in contest_history
+            ),
         )
         can_attempt = attempt is None
         can_grade = (
@@ -1792,6 +1760,8 @@ def _assessment_payload(
             if revision_key in presented_revision_ids:
                 continue
             content = revision.content.content
+            if not isinstance(content, AssessmentItemContent):
+                continue
             rows.append(
                 {
                     "presentation_id": None,
@@ -1882,7 +1852,7 @@ def _artifact_revision_row(
 ) -> JsonObject:
     provenance = revision.provenance
     commitments = provenance.source_commitments
-    row: JsonObject = {
+    row: dict[str, JsonValue] = {
         "revision_id": str(revision.id),
         "artifact_id": str(revision.artifact_id),
         "batch_id": str(revision.batch_id),
@@ -1892,15 +1862,9 @@ def _artifact_revision_row(
         "kind": revision.kind.value,
         "status": revision.status.value,
         "proposed_at": revision.proposed_at.isoformat(),
-        "decided_at": (
-            None
-            if revision.decided_at is None
-            else revision.decided_at.isoformat()
-        ),
+        "decided_at": (None if revision.decided_at is None else revision.decided_at.isoformat()),
         "prior_revision_id": (
-            None
-            if revision.prior_revision_id is None
-            else str(revision.prior_revision_id)
+            None if revision.prior_revision_id is None else str(revision.prior_revision_id)
         ),
         "provenance": {
             "origin": provenance.origin.value,
@@ -1952,8 +1916,8 @@ def _recall_payload(
     clock: ClockPort | None = None,
 ) -> JsonObject:
     availability = getattr(composition, "availability", None)
-    availability_json = (
-        availability.to_json()
+    availability_json: JsonObject = (
+        cast(JsonObject, availability.to_json())
         if availability is not None and callable(getattr(availability, "to_json", None))
         else {
             "available": False,
@@ -1975,9 +1939,7 @@ def _recall_payload(
         if clock is None:
             raise ValueError("captured recall projection requires a clock")
         due_view = DueRecallView(projection_loader, clock)
-        joined_artifacts = ProjectionArtifactView(projection_loader).get(
-            snapshot.course_id
-        )
+        joined_artifacts = ProjectionArtifactView(projection_loader).get(snapshot.course_id)
         watermark = projection.sequence
     if availability_json.get("code") == "available" and due_view is not None:
         for due in due_view.due(snapshot.course_id):
@@ -2001,9 +1963,9 @@ def _recall_payload(
                     "start_offset": item.start_offset,
                     "end_offset": item.end_offset,
                 }
-                for item in tuple(
-                    getattr(revision.provenance, "source_commitments", ())
-                )[:MAX_RECALL_PROVENANCE_ITEMS]
+                for item in tuple(getattr(revision.provenance, "source_commitments", ()))[
+                    :MAX_RECALL_PROVENANCE_ITEMS
+                ]
             )
             rows.append(
                 {
@@ -2052,9 +2014,7 @@ def _next_schedule_payload(
     session_id: SessionId,
     request_id: str,
 ) -> JsonObject:
-    review_id = review_id_for(
-        snapshot.course_id, session_id, revision_id, request_id
-    )
+    review_id = review_id_for(snapshot.course_id, session_id, revision_id, request_id)
     schedules = tuple(
         item
         for item in snapshot.schedules
@@ -2228,7 +2188,7 @@ def _context_resolution_kind(path: str) -> str | None:
     return value
 
 
-def _identifier[T](value: str | T, identifier_type: type[T], name: str) -> T:
+def _identifier[T: Identifier](value: str | T, identifier_type: type[T], name: str) -> T:
     if isinstance(value, identifier_type):
         return value
     if not isinstance(value, str) or not value or value != value.strip():
@@ -2290,7 +2250,9 @@ def _source_upload_content(value: object) -> str:
     return value
 
 
-def _workspace_identifier[T](value: object, identifier_type: type[T], name: str) -> T:
+def _workspace_identifier[T: Identifier](
+    value: object, identifier_type: type[T], name: str
+) -> T:
     normalized = _workspace_text(value, name, MAX_WORKSPACE_ID_CHARS)
     try:
         return identifier_type(normalized)
@@ -2413,9 +2375,7 @@ def _active_continuation(
             continue
         try:
             record = TutorContinuationRecord.from_bytes(
-                repository.tutor_continuations.load(
-                    course_id, session_id, fingerprint
-                )
+                repository.tutor_continuations.load(course_id, session_id, fingerprint)
             )
         except (KeyError, OSError, RuntimeError, ValueError):
             continue
@@ -2435,11 +2395,11 @@ def _continuation_dto(value: object) -> JsonObject | None:
     }
 
 
-def _thaw_json(value: object) -> object:
+def _thaw_json(value: JsonValue) -> JsonValue:
     if isinstance(value, Mapping):
         return {str(key): _thaw_json(item) for key, item in value.items()}
     if isinstance(value, tuple):
-        return [_thaw_json(item) for item in value]
+        return cast(JsonValue, [_thaw_json(item) for item in value])
     return value
 
 
@@ -2449,10 +2409,7 @@ def _continuation_fingerprint(path: str) -> str | None:
     if not path.startswith(prefix) or not path.endswith(suffix):
         return None
     value = path[len(prefix) : -len(suffix)]
-    if (
-        len(value) != 64
-        or any(character not in "0123456789abcdef" for character in value)
-    ):
+    if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
         raise UiRequestError("continuation fingerprint is invalid")
     return value
 
@@ -2475,9 +2432,7 @@ def _repository_mutation_lock(repository: Path) -> Lock:
         return lock
 
 
-def _readiness_shell_status(
-    snapshot: TutorSnapshotV1, readiness: StudyReadinessSnapshot
-) -> str:
+def _readiness_shell_status(snapshot: TutorSnapshotV1, readiness: StudyReadinessSnapshot) -> str:
     base = _shell_status(snapshot)
     if base != "ready":
         return base
@@ -2539,9 +2494,7 @@ def _unavailable(result: TutorSnapshotV1 | Mapping[str, object], message: str) -
         "schema_version": 1,
         "status": "unavailable",
         "high_water_sequence": (
-            result.high_water_sequence
-            if isinstance(result, TutorSnapshotV1)
-            else _sequence(result)
+            result.high_water_sequence if isinstance(result, TutorSnapshotV1) else _sequence(result)
         ),
         "items": (),
         "message": message,
@@ -2641,11 +2594,7 @@ def _bounded_content(value: object) -> str:
     if not isinstance(value, str):
         raise UiRequestError("content is invalid")
     content = value.strip()
-    if (
-        not content
-        or len(content) > MAX_LEARNER_ENTRY_CHARS
-        or not _is_utf8(content)
-    ):
+    if not content or len(content) > MAX_LEARNER_ENTRY_CHARS or not _is_utf8(content):
         raise UiRequestError("content is invalid")
     return content
 
@@ -2681,11 +2630,7 @@ def _mapping(value: object) -> Mapping[str, object]:
 def _objects(value: object) -> tuple[JsonObject, ...]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         return ()
-    return tuple(
-        cast(JsonObject, dict(item))
-        for item in value
-        if isinstance(item, Mapping)
-    )
+    return tuple(cast(JsonObject, dict(item)) for item in value if isinstance(item, Mapping))
 
 
 def _strings(value: object) -> tuple[str, ...]:
@@ -2705,7 +2650,9 @@ def _surface_value(result: object) -> JsonObject:
     if error is not None:
         code = getattr(error, "code", None)
         status = 409 if getattr(code, "value", "") in {"conflict", "retryable_conflict"} else 400
-        raise UiRequestError(str(getattr(error, "message", "study operation failed")), status_code=status)
+        raise UiRequestError(
+            str(getattr(error, "message", "study operation failed")), status_code=status
+        )
     value = getattr(result, "value", None)
     if not isinstance(value, Mapping):
         raise UiRequestError("study operation returned an invalid result", status_code=503)
@@ -2725,8 +2672,8 @@ def _surface_profile(result: object) -> CourseProfile:
         CourseId(str(raw["id"])),
         str(raw["title"]),
         str(raw["language"]),
-        learning_goals=tuple(str(item) for item in raw.get("learning_goals", ())),
-        assessment_styles=tuple(str(item) for item in raw.get("assessment_styles", ())),
+        learning_goals=_strings(raw.get("learning_goals")),
+        assessment_styles=_strings(raw.get("assessment_styles")),
     )
 
 

@@ -6,17 +6,22 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from types import MappingProxyType
+from typing import cast
 
 from study_agent.artifacts import ExamBlueprintContent, ProjectionArtifactView
+from study_agent.artifacts.content import EvidenceObservation
+from study_agent.artifacts.contracts import ArtifactSnapshot
 from study_agent.assessments import (
     ProjectionAssessmentView,
     ProjectionLearnerEvidenceView,
 )
+from study_agent.assessments.evidence import LearnerEvidenceSnapshot
 from study_agent.courses import ProjectionCourseView
 from study_agent.domain import (
     CourseId,
     StatementStatus,
     StudyArtifactKind,
+    StudyContextSnapshot,
     StudyStatementKind,
 )
 from study_agent.ports.clock import ClockPort
@@ -290,7 +295,7 @@ class StudyReadinessView:
         projection = (
             self._projection
             if isinstance(self._projection, Projection)
-            else self._projection(course_id)
+            else self._projection(cast(CourseId, course_id))
         )
         if not isinstance(projection, Projection):
             raise TypeError("projection loader returned invalid projection")
@@ -339,11 +344,9 @@ class StudyReadinessView:
             if course.exam_date is None
             else "configured"
         )
-        days_remaining = (
-            None
-            if deadline_status != "configured"
-            else (course.exam_date - now.date()).days
-        )
+        days_remaining = None
+        if not deadline_conflicted and course.exam_date is not None:
+            days_remaining = (course.exam_date - now.date()).days
         return StudyReadinessSnapshot(
             projection.course_id,
             projection.sequence,
@@ -397,7 +400,9 @@ class StudyReadinessView:
         )
 
 
-def _constraints(snapshot: object, source: ReadinessSource) -> tuple[ReadinessConstraint, ...]:
+def _constraints(
+    snapshot: StudyContextSnapshot, source: ReadinessSource
+) -> tuple[ReadinessConstraint, ...]:
     conflicts = {item.kind for item in snapshot.conflicts}
     rows = []
     for statement in snapshot.statements:
@@ -428,7 +433,9 @@ def _constraints(snapshot: object, source: ReadinessSource) -> tuple[ReadinessCo
     return tuple(sorted(rows, key=lambda item: (item.kind, item.statement_id or "")))
 
 
-def _blueprints(snapshot: object, source: ReadinessSource) -> tuple[ReadinessBlueprint, ...]:
+def _blueprints(
+    snapshot: ArtifactSnapshot, source: ReadinessSource
+) -> tuple[ReadinessBlueprint, ...]:
     rows = []
     for revision in snapshot.accepted(StudyArtifactKind.EXAM_BLUEPRINT):
         content = revision.content.content
@@ -447,7 +454,7 @@ def _blueprints(snapshot: object, source: ReadinessSource) -> tuple[ReadinessBlu
     return tuple(sorted(rows, key=lambda item: item.revision_id))
 
 
-def _observation(value: object) -> Mapping[str, object]:
+def _observation(value: EvidenceObservation) -> Mapping[str, object]:
     return MappingProxyType(
         {
             "value": value.value,
@@ -456,7 +463,9 @@ def _observation(value: object) -> Mapping[str, object]:
     )
 
 
-def _counts(snapshot: object, source: ReadinessSource) -> tuple[ReadinessArtifactCount, ...]:
+def _counts(
+    snapshot: ArtifactSnapshot, source: ReadinessSource
+) -> tuple[ReadinessArtifactCount, ...]:
     pending = snapshot.pending()
     accepted = snapshot.accepted()
     return tuple(
@@ -470,7 +479,9 @@ def _counts(snapshot: object, source: ReadinessSource) -> tuple[ReadinessArtifac
     )
 
 
-def _evidence(snapshot: object, source: ReadinessSource) -> tuple[ReadinessEvidence, ...]:
+def _evidence(
+    snapshot: LearnerEvidenceSnapshot, source: ReadinessSource
+) -> tuple[ReadinessEvidence, ...]:
     return tuple(
         ReadinessEvidence(
             item.dimension.value,

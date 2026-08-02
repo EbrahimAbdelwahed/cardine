@@ -360,6 +360,7 @@ class _BrowserServer(ThreadingHTTPServer):
 
 class _BrowserRequestHandler(BaseHTTPRequestHandler):
     server: _BrowserServer
+    _pending_cookie: str | None = None
 
     # The browser is a local reference surface.  Suppress request logging so a
     # learner's free-form text is not copied to a terminal log by default.

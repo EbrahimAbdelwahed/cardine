@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import base64
 import threading
+from collections.abc import Callable
+from typing import cast
 
 import pytest
 
@@ -17,10 +19,25 @@ PASSWORD = "correct horse battery staple"
 SALT = b"0123456789abcdef"
 
 
-def _controller(**kwargs: object) -> PrivateAccessController:
+def _controller(
+    *,
+    canonical_origin: str = "http://127.0.0.1:8765",
+    production: bool = False,
+    session_ttl_seconds: int = DEFAULT_SESSION_TTL_SECONDS,
+    max_sessions: int = 16,
+    login_window_seconds: float = 60.0,
+    max_login_attempts: int = 5,
+    clock: Callable[[], float] | None = None,
+) -> PrivateAccessController:
     return PrivateAccessController(
         hash_password(PASSWORD, n=2, r=1, p=1, salt=SALT),
-        **kwargs,
+        canonical_origin=canonical_origin,
+        production=production,
+        session_ttl_seconds=session_ttl_seconds,
+        max_sessions=max_sessions,
+        login_window_seconds=login_window_seconds,
+        max_login_attempts=max_login_attempts,
+        **({} if clock is None else {"clock": clock}),
     )
 
 
@@ -48,7 +65,13 @@ def test_hash_rejects_unbounded_parameters(kwargs: dict[str, object], message: s
     options: dict[str, object] = {"n": 2, "r": 1, "p": 1, "salt": SALT}
     options.update(kwargs)
     with pytest.raises(ValueError, match=message):
-        hash_password(PASSWORD, **options)
+        hash_password(
+            PASSWORD,
+            n=cast(int, options["n"]),
+            r=cast(int, options["r"]),
+            p=cast(int, options["p"]),
+            salt=cast(bytes, options["salt"]),
+        )
 
 
 @pytest.mark.parametrize(

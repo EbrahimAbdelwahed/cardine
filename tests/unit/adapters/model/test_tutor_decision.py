@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import AsyncIterator
 
 import pytest
 
@@ -13,6 +14,7 @@ from study_agent.hosts import (
     TutorHostContext,
 )
 from study_agent.ports import (
+    CancellationToken,
     ModelCapabilities,
     ModelError,
     ModelErrorCode,
@@ -20,6 +22,7 @@ from study_agent.ports import (
     ModelInvocation,
     ModelRequest,
     ModelResponse,
+    ModelStreamEvent,
 )
 from study_agent.ports.tutor_host import RetryableTutorDecisionError
 
@@ -44,6 +47,16 @@ class Model:
         if isinstance(self.outcome, BaseException):
             raise self.outcome
         return self.outcome
+
+    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
+        del request
+        if False:  # pragma: no cover - protocol-only async generator
+            yield None
+        raise AssertionError("the decision adapter does not stream")
+
+    async def cancel(self, token: CancellationToken) -> None:
+        del token
+        raise AssertionError("the decision adapter does not cancel model requests")
 
 
 class InterruptingModel(Model):

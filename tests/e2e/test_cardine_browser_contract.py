@@ -12,16 +12,19 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from html.parser import HTMLParser
 from pathlib import Path
 from threading import Thread
+from typing import cast
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import pytest
 
 from study_agent.demo.browser import ICON_ASSETS, create_server
+from study_agent.demo.ui_application import UiRequestError
+from study_agent.domain._validation import JsonObject
 
 DEMO_DIR = Path(__file__).parents[2] / "src" / "study_agent" / "demo"
 ROUTES = {
@@ -35,6 +38,42 @@ ROUTES = {
     "piano": "/api/v1/plan",
     "conflitti": "/api/v1/context/conflicts",
 }
+
+
+class _ContractApplication:
+    """Small closed application seam for transport and packaged-surface checks."""
+
+    mode = "local_repository"
+
+    def get(self, path: str) -> JsonObject:
+        if path == "/api/v1/bootstrap":
+            return {
+                "schema_version": 1,
+                "shell_status": "ready",
+                "high_water_sequence": 2,
+            }
+        if path in {
+            "/api/v1/artifacts",
+            "/api/v1/assessments",
+            "/api/v1/recall/due",
+            "/api/v1/plan",
+        }:
+            return {
+                "schema_version": 1,
+                "status": "unavailable",
+                "items": (),
+                "message": "Not configured for this transport fixture.",
+            }
+        if path in ROUTES.values():
+            return {"schema_version": 1, "status": "ready"}
+        raise UiRequestError("route not found", status_code=404)
+
+    def post(self, path: str, command: Mapping[str, object]) -> JsonObject:
+        if path != "/api/v1/session/turns":
+            raise UiRequestError("route not found", status_code=404)
+        if command.get("expected_sequence") != 2:
+            raise UiRequestError("expected sequence is stale", status_code=409)
+        return {"schema_version": 1, "status": "committed"}
 
 
 class _RouteParser(HTMLParser):
@@ -74,12 +113,14 @@ class _RouteParser(HTMLParser):
 @pytest.fixture()
 def browser_url() -> Iterator[str]:
     try:
-        server = create_server("127.0.0.1", 0)
+        server = create_server(
+            "127.0.0.1", 0, ui_application=_ContractApplication()
+        )
     except PermissionError as error:
         pytest.skip(f"local sockets are unavailable in this test sandbox: {error}")
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    host, port = server.server_address
+    host, port = cast(tuple[str, int], server.server_address)
     try:
         yield f"http://{host}:{port}"
     finally:
@@ -129,7 +170,7 @@ def test_real_http_surface_serves_every_navigation_route(browser_url: str) -> No
     page_status, page_body, _ = _get(browser_url, "/")
     assert page_status == 200
     assert isinstance(page_body, str)
-    assert "<title>Cardine · Study Agent</title>" in page_body
+    assert "<title>Cardine</title>" in page_body
 
     for route, endpoint in ROUTES.items():
         status, payload, _ = _get(browser_url, endpoint)
@@ -204,21 +245,20 @@ def test_unavailable_routes_are_honest_and_isolated(browser_url: str) -> None:
 
     javascript = (DEMO_DIR / "browser.js").read_text(encoding="utf-8")
     assert "function renderUnavailable(route)" in javascript
-    assert "Nessuna degradazione globale" in javascript
+    assert "Il resto del corso funziona" in javascript
     assert "Piano non disponibile" in javascript
 
 
 def test_error_surface_has_retry_path_and_unknown_api_fails_closed(browser_url: str) -> None:
     status, payload, _ = _get(browser_url, "/api/v1/does-not-exist")
     assert status == 404
-    assert payload == {"error": "route not found"}
+    assert payload == {"error": "route not found", "code": None}
 
     javascript = (DEMO_DIR / "browser.js").read_text(encoding="utf-8")
     assert "function renderError(route, error)" in javascript
-    assert 'data-retry-route="${escapeAttribute(route)}"' in javascript
+    assert 'data-retry-route="${esc(route)}"' in javascript
     assert 'kind === "error" ? "error-state"' in javascript
-    assert 'data-retry-command' in javascript
-    assert 'message.setAttribute("role", "alert")' in javascript
+    assert 'node.setAttribute("role", "alert")' in javascript
 
     sequence_status, bootstrap, _ = _get(browser_url, ROUTES["oggi"])
     assert sequence_status == 200
@@ -236,7 +276,7 @@ def test_error_surface_has_retry_path_and_unknown_api_fails_closed(browser_url: 
         },
     )
     assert stale_status == 409
-    assert stale_payload == {"error": "expected sequence is stale"}
+    assert stale_payload == {"error": "expected sequence is stale", "code": None}
 
 
 def test_accessibility_contract_has_labels_focus_targets_and_live_status() -> None:

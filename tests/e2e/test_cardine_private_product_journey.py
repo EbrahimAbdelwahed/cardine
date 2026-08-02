@@ -17,9 +17,9 @@ import socket
 import struct
 import subprocess
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import AsyncIterator, Iterator, Mapping
 from contextlib import contextmanager
-from http.cookiejar import CookieJar
+from http.cookiejar import Cookie, CookieJar
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -32,7 +32,11 @@ from urllib.request import HTTPCookieProcessor, Request, build_opener, urlopen
 import pytest
 
 from study_agent.adapters.filesystem import initialize_local_repository
-from study_agent.cli.repository import LocalRepository, ModelAdapterRegistry
+from study_agent.cli.repository import (
+    LocalRepository,
+    ModelAdapterBuilder,
+    ModelAdapterRegistry,
+)
 from study_agent.demo.browser import create_server
 from study_agent.demo.ui_application import RepositoryUiApplication
 from study_agent.domain import (
@@ -88,7 +92,7 @@ class _PrivateFixtureModel:
             structured_output=structured_output,
         )
 
-    async def stream(self, request: ModelRequest):
+    async def stream(self, request: ModelRequest) -> AsyncIterator[object]:
         del request
         if False:  # pragma: no cover - protocol-only async generator
             yield None
@@ -137,9 +141,13 @@ class Client:
         )
         try:
             with self.opener.open(request, timeout=5) as response:
-                return Response(response.status, response.headers, response.read().decode())
+                return Response(
+                    response.status,
+                    dict(response.headers.items()),
+                    response.read().decode(),
+                )
         except HTTPError as error:
-            return Response(error.code, error.headers, error.read().decode())
+            return Response(error.code, dict(error.headers.items()), error.read().decode())
 
     def post(self, path: str, payload: object, *, csrf: str | None = None) -> Response:
         headers = {"Origin": self.base_url}
@@ -192,7 +200,11 @@ def _serve_private() -> Iterator[str]:
         )
         model = _PrivateFixtureModel()
         model_adapters = ModelAdapterRegistry(
-            {"private-fixture": lambda _config, _credential: model},
+            {
+                "private-fixture": cast(
+                    ModelAdapterBuilder, lambda _config, _credential: model
+                )
+            },
             versions={"private-fixture": "1.0.0"},
         )
         with LocalRepository.open(repository, model_adapters=model_adapters) as local:
@@ -229,7 +241,7 @@ def _serve_private() -> Iterator[str]:
             server.server_close()
 
 
-def _cookie(client: Client) -> object:
+def _cookie(client: Client) -> Cookie | None:
     return next(iter(client.cookies), None)
 
 
@@ -267,8 +279,8 @@ def test_private_http_access_login_csrf_logout_and_protected_routes() -> None:
         assert cookie is not None
         assert cookie.name in {"__Host-cardine_session", "cardine_session"}
         assert cookie.value
-        assert "HttpOnly" in cookie._rest
-        assert cookie._rest.get("SameSite", "").lower() == "strict"
+        assert cookie.has_nonstandard_attr("HttpOnly")
+        assert cookie.get_nonstandard_attr("SameSite", "").lower() == "strict"
         assert "session" not in login.body.lower() or "authenticated" in login.body.lower()
 
         csrf = _csrf(client)
@@ -285,6 +297,34 @@ def test_private_http_access_login_csrf_logout_and_protected_routes() -> None:
         assert logout.status == 200, logout.body
         assert client.request("/api/v1/settings").status in {401, 403}
         assert client.post("/api/v1/auth/logout", {}, csrf=csrf).status in {401, 403}
+
+
+def test_private_http_rejects_missing_or_cross_origin_mutations_and_bad_hosts() -> None:
+    """Private transport remains same-origin and rejects DNS-rebinding hosts."""
+
+    with _serve_private() as url:
+        client = Client(url)
+
+        missing_origin = client.request(
+            "/api/v1/auth/login",
+            method="POST",
+            payload={"password": PASSWORD},
+        )
+        assert missing_origin.status == 403
+        assert "origin" in missing_origin.body
+
+        cross_origin = client.request(
+            "/api/v1/auth/login",
+            method="POST",
+            payload={"password": PASSWORD},
+            headers={"Origin": "http://evil.example"},
+        )
+        assert cross_origin.status == 403
+        assert "origin" in cross_origin.body
+
+        bad_host = client.request("/health", headers={"Host": "evil.example"})
+        assert bad_host.status == 421
+        assert bad_host.json == {"error": "host is not allowed"}
 
 
 def test_runtime_key_replace_remove_is_write_only_and_redacted() -> None:
@@ -569,8 +609,11 @@ def test_private_browser_routes_composer_scope_keyboard_draft_and_mobile() -> No
                 mobile=True,
             )
             assert (
-                browser.evaluate(
+                cast(
+                    int,
+                    browser.evaluate(
                     "Math.max(document.documentElement.scrollWidth,document.body.scrollWidth)-innerWidth"
+                    ),
                 )
                 <= 1
             )

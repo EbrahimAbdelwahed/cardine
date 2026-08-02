@@ -587,7 +587,11 @@ def decision_to_json(decision: TutorDecision) -> JsonObject:
     if isinstance(decision, AssistantMessageDecision):
         return {"kind": decision.kind.value, "message": decision.message}
     if isinstance(decision, InvokeToolDecision):
-        return {"kind": decision.kind.value, "tool_name": decision.tool_name, "arguments": decision.arguments}
+        return {
+            "kind": decision.kind.value,
+            "tool_name": decision.tool_name,
+            "arguments": decision.arguments,
+        }
     if isinstance(decision, StopDecision):
         return {"kind": decision.kind.value, "reason": decision.reason.value}
     raise TypeError("unsupported tutor decision")
@@ -721,7 +725,9 @@ def decision_from_bytes(data: bytes, context: TutorHostContext) -> TutorDecision
         decision = AssistantMessageDecision(_string(raw, "message"))
     elif kind is TutorDecisionKind.INVOKE_TOOL:
         _exact(raw, {"kind", "tool_name", "arguments"}, "tool decision")
-        decision = InvokeToolDecision(_string(raw, "tool_name"), _object(raw["arguments"], "arguments"))
+        decision = InvokeToolDecision(
+            _string(raw, "tool_name"), _object(raw["arguments"], "arguments")
+        )
     else:
         _exact(raw, {"kind", "reason"}, "stop decision")
         decision = StopDecision(TutorStopReason(_string(raw, "reason")))
@@ -733,9 +739,7 @@ def validate_decision(decision: TutorDecision, context: TutorHostContext) -> Non
     if context.pending_continuation is not None and not isinstance(
         decision, AnswerDialogueDecision
     ):
-        raise ValueError(
-            "pending continuation requires an exact dialogue answer decision"
-        )
+        raise ValueError("pending continuation requires an exact dialogue answer decision")
     if isinstance(decision, StartCapabilityDecision):
         descriptor = next(
             (item for item in context.advertised_capabilities if item.id == decision.capability_id),
@@ -756,11 +760,15 @@ def validate_decision(decision: TutorDecision, context: TutorHostContext) -> Non
         except ValueError as error:
             raise ValueError("dialogue response violates the pending schema") from error
     elif isinstance(decision, InvokeToolDecision):
-        descriptor = next((item for item in _context_tools(context) if item["name"] == decision.tool_name), None)
-        if descriptor is None:
+        tool_descriptor = next(
+            (item for item in _context_tools(context) if item["name"] == decision.tool_name), None
+        )
+        if tool_descriptor is None:
             raise ValueError("decision names an unadvertised harness tool")
         try:
-            _validate_json(decision.arguments, descriptor["input_schema"])
+            _validate_json(
+                decision.arguments, cast(JsonObject, tool_descriptor["input_schema"])
+            )
         except ValueError as error:
             raise ValueError("tool arguments violate the advertised schema") from error
 
@@ -774,8 +782,8 @@ def _context_tools(context: TutorHostContext) -> tuple[JsonObject, ...]:
         if not isinstance(item, Mapping):
             continue
         try:
-            name = _string(cast(JsonObject, item), "name")
-            schema = _object(cast(JsonObject, item)["input_schema"], "input_schema")
+            name = _string(item, "name")
+            schema = _object(item["input_schema"], "input_schema")
             _validate_schema_definition(schema)
         except (KeyError, TypeError, ValueError):
             continue
@@ -859,9 +867,7 @@ _SENSITIVE_TOKENS = frozenset(
     }
 )
 
-_START_AUTHORITY_TOKENS = frozenset(
-    {"repository", "course_id", "session_id", "principal_id"}
-)
+_START_AUTHORITY_TOKENS = frozenset({"repository", "course_id", "session_id", "principal_id"})
 
 
 def _reject_sensitive_structure(value: JsonValue, path: str) -> None:

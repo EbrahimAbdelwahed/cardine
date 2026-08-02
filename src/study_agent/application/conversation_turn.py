@@ -18,6 +18,7 @@ from study_agent.domain import (
     CorrelationId,
     CourseId,
     ExecutionContext,
+    InteractionId,
     InteractionRecord,
     PrincipalKind,
     SessionId,
@@ -599,7 +600,7 @@ class ConversationTurnApplication:
         course_id: CourseId,
         session_id: SessionId,
         host_result: TutorHostRunResult,
-        learner_id: object,
+        learner_id: InteractionId,
     ) -> TutorPresentationRecord | None:
         reference = host_result.completion_reference
         retry = host_result.retry_receipt
@@ -867,7 +868,10 @@ def _decode_terminal_receipt(
     }
     if any(raw.get(key) != value for key, value in expected.items()):
         raise ValueError("terminal conversation receipt scope is incompatible")
-    status = TutorHostRunStatus(raw.get("status"))
+    raw_status = raw.get("status")
+    if not isinstance(raw_status, str):
+        raise ValueError("terminal conversation receipt status is invalid")
+    status = TutorHostRunStatus(raw_status)
     if status not in {
         TutorHostRunStatus.COMPLETED,
         TutorHostRunStatus.TERMINATED,

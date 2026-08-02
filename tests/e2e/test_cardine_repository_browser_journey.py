@@ -404,17 +404,19 @@ def _assert_no_browser_errors(
         or (
             (
                 event.get("method") == "Log.entryAdded"
-                and cast(dict[str, object], event.get("params", {}))
-                .get("entry", {})
-                .get("level")
+                and cast(
+                    dict[str, object],
+                    cast(dict[str, object], event.get("params", {})).get("entry", {}),
+                ).get("level")
                 == "error"
             )
             and not any(
                 cast(
                     str,
-                    cast(dict[str, object], event.get("params", {}))
-                    .get("entry", {})
-                    .get("url", ""),
+                    cast(
+                        dict[str, object],
+                        cast(dict[str, object], event.get("params", {})).get("entry", {}),
+                    ).get("url", ""),
                 ).endswith(suffix)
                 for suffix in allowed_error_suffixes
             )
@@ -438,7 +440,10 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
 
         browser.call("Input.insertText", text="Explain the aortic valve")
         _press(browser, "Enter", 13)
-        browser.wait_for("!document.querySelector('[data-optimistic-turn]') && document.querySelectorAll('.thread-message--assistant').length === 1")
+        browser.wait_for(
+            "!document.querySelector('[data-optimistic-turn]')"
+            " && document.querySelectorAll('.thread-message--assistant').length === 1"
+        )
         assert model.requests and len(model.requests) == 1
         assert browser.evaluate("document.activeElement.id") == "session-entry-text"
 
@@ -530,10 +535,12 @@ def test_repository_browser_source_first_setup_uploads_a_text_source(tmp_path: P
             "document.querySelector('[data-source-upload] textarea').value="
             "'# Emodinamica\\n\\nLa gittata cardiaca contribuisce alla pressione arteriosa.';"
             "document.querySelector('[data-source-upload] input[name=title]').value='Emodinamica';"
-            "document.querySelector('[data-source-upload]').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}))"
+            "document.querySelector('[data-source-upload]')"
+            ".dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}))"
         )
         browser.wait_for("Boolean(document.querySelector('[data-study-setup]'))")
-        assert "Emodinamica" in cast(str, browser.evaluate("document.querySelector('#view-root').innerText"))
+        view_text = cast(str, browser.evaluate("document.querySelector('#view-root').innerText"))
+        assert "Emodinamica" in view_text
         _assert_no_browser_errors(browser)
 
 
@@ -542,7 +549,9 @@ def test_browser_has_no_stateless_demo_routes(tmp_path: Path) -> None:
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
     with _serve(application=app) as url, _real_browser(url) as browser:
         statuses = browser.evaluate(
-            "(async () => JSON.stringify(await Promise.all(['/api/state','/api/entry'].map(async path => ({path,status:(await fetch(path,{method:'POST'})).status})))))()",
+            "(async () => JSON.stringify(await Promise.all("
+            "['/api/state','/api/entry'].map(async path => ({"
+            "path,status:(await fetch(path,{method:'POST'})).status})))))()",
             await_promise=True,
         )
         assert '"status":404' in cast(str, statuses)

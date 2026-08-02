@@ -18,6 +18,7 @@ from study_agent.demo.ui_application import RepositoryUiApplication, UiRequestEr
 from study_agent.domain import (
     Actor,
     ArtifactReadDependency,
+    ArtifactRevisionId,
     CorrelationId,
     CourseId,
     CourseProfile,
@@ -228,7 +229,9 @@ def test_repository_c2_revision_retry_recovers_superseded_predecessor(
     )
 
     with LocalRepository.open(root) as repository:
-        predecessor = repository.artifacts.get(COURSE).revision(revision_id)
+        predecessor = repository.artifacts.get(COURSE).revision(
+            cast(ArtifactRevisionId, revision_id)
+        )
         commitment = predecessor.provenance.source_commitments
         sequence = repository.events.read(COURSE)[-1].course_sequence
         v2 = repository.artifact_service.record_human_revision(

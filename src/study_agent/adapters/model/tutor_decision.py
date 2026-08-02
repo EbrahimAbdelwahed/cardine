@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from typing import cast
 
+from study_agent.domain._validation import JsonObject
 from study_agent.hosts import (
     TutorDecision,
     TutorHostContext,
@@ -59,7 +61,7 @@ class ModelTutorDecisionPort(TutorDecisionPort):
         if interruption.is_interrupted():
             raise ModelTutorDecisionError("tutor decision interrupted")
         schema = decision_schema(context)
-        provider_schema = _provider_strict_schema(schema)
+        provider_schema = cast(JsonObject, _provider_strict_schema(schema))
         provider_payload = json.dumps(
             {
                 **json.loads(context.to_bytes()),
@@ -107,15 +109,16 @@ class ModelTutorDecisionPort(TutorDecisionPort):
         value = response.structured_output
         if not isinstance(value, Mapping) or set(value) != {"decision"}:
             raise ModelTutorDecisionError("provider decision was invalid")
-        decision = value["decision"]
-        if not isinstance(decision, Mapping):
+        raw_decision = value["decision"]
+        if not isinstance(raw_decision, Mapping):
             raise ModelTutorDecisionError("provider decision was invalid")
         try:
-            decision = _remove_provider_null_optionals(
-                decision, schema["properties"]["decision"]
+            cleaned_decision = _remove_provider_null_optionals(
+                raw_decision,
+                cast(JsonObject, schema["properties"])["decision"],
             )
             encoded = json.dumps(
-                _plain(decision),
+                _plain(cleaned_decision),
                 ensure_ascii=False,
                 allow_nan=False,
                 sort_keys=True,

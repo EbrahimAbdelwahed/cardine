@@ -35,7 +35,6 @@ from .grounding_ask import (
     GroundingStudyEventKind,
 )
 from .harness import StudyHarness
-from .tool_surface import HarnessToolSurface
 from .study_readiness import (
     AttributedValue,
     ReadinessArtifactCount,
@@ -48,6 +47,7 @@ from .study_readiness import (
     StudyReadinessSnapshot,
     StudyReadinessView,
 )
+from .tool_surface import HarnessToolSurface
 
 __all__ = [
     "EXPORT_SCHEMA_VERSION",
@@ -77,6 +77,7 @@ __all__ = [
     "GroundingEngineFactory",
     "GroundingStudyEvent",
     "GroundingStudyEventKind",
+    "HarnessToolSurface",
     "ReadinessArtifactCount",
     "ReadinessBlueprint",
     "ReadinessConstraint",
@@ -85,7 +86,6 @@ __all__ = [
     "ReadinessRecall",
     "ReadinessSource",
     "StudyHarness",
-    "HarnessToolSurface",
     "StudyReadinessSnapshot",
     "StudyReadinessView",
 ]

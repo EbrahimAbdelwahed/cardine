@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
 
@@ -14,7 +15,6 @@ from study_agent.artifacts import (
 )
 from study_agent.cli.repository import LocalRepository
 from study_agent.demo.ui_application import (
-    DemoUiApplication,
     RepositoryUiApplication,
     UiRequestError,
 )
@@ -206,7 +206,7 @@ def _command(
     }
 
 
-def _items(payload: dict[str, object]) -> tuple[dict[str, object], ...]:
+def _items(payload: Mapping[str, object]) -> tuple[dict[str, object], ...]:
     return cast(tuple[dict[str, object], ...], payload["items"])
 
 
@@ -219,7 +219,7 @@ def _response_payload(format_name: str, response_value: object) -> dict[str, obj
     return {"kind": format_name, field: response_value}
 
 
-def _events(root: Path):
+def _events(root: Path) -> tuple[DomainEvent, ...]:
     with LocalRepository.open(root) as repository:
         return tuple(repository.events.read(COURSE))
 
@@ -426,15 +426,6 @@ def test_assessment_retry_restart_stale_malformed_cross_session_and_public_demo_
     assert cross.value.status_code in {400, 409}
     assert len(_events(root)) == invalid_event_count
 
-    public = DemoUiApplication()
-    with pytest.raises(UiRequestError) as unavailable:
-        public.post(
-            "/api/v1/assessments/presentation/attempts",
-            _command("public", 0, {}),
-        )
-    assert unavailable.value.status_code == 405
-
-
 def test_free_response_needs_review_state_survives_get_and_restart_without_grade(
     tmp_path: Path,
 ) -> None:
@@ -591,13 +582,13 @@ def test_evidence_is_canonical_and_preserves_contest_and_supersession_history(
             <= set(reference)
             for reference in references
         )
-    references = [
+    all_references = [
         reference
         for estimate in estimates
         for reference in cast(tuple[dict[str, object], ...], estimate["references"])
     ]
-    assert any(reference["grade_id"] == grade_id for reference in references)
-    assert any(reference["grade_id"] == successor_id for reference in references)
+    assert any(reference["grade_id"] == grade_id for reference in all_references)
+    assert any(reference["grade_id"] == successor_id for reference in all_references)
     assert any(
         reference["grade_id"] == grade_id
         and reference["disposition"] in {"contested", "superseded"}

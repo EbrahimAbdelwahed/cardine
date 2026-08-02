@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
+from typing import cast
 
 import pytest
 
@@ -53,6 +54,7 @@ from study_agent.playbooks import (
     VerifiedRunRecord,
     VersionPins,
 )
+from study_agent.ports import TutorCapabilityGatewayPort
 from study_agent.skills import ArtifactReference, SemanticVersion
 
 SHA_A = "a" * 64
@@ -1340,7 +1342,7 @@ def test_pending_continuation_rejects_non_dialogue_decisions_without_deleting(
         ScriptedTutorDecisionPort(((context.fingerprint, decision),)),  # type: ignore[arg-type]
         None,
         None,
-        gateway,
+        cast(TutorCapabilityGatewayPort, gateway),
         _Authority(),
         _Identity(),
         store,

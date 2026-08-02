@@ -10,12 +10,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from hashlib import sha256
-from typing import Protocol
+from typing import Protocol, cast
 
 from study_agent.courses import course_profile_manifest
-from study_agent.ingestion import TextIngestionError
+from study_agent.courses.service import CourseService
 from study_agent.domain import (
-    CorrelationId,
     CourseId,
     CourseProfile,
     ExecutionContext,
@@ -24,8 +23,32 @@ from study_agent.domain import (
     SourceId,
 )
 from study_agent.domain._validation import JsonObject
-from study_agent.tools import IdempotencyMode, ToolEffect, ToolError, ToolErrorCode, ToolManifest, ToolResult
-from study_agent.tools.schema import SchemaValidationError, validate_json, validate_schema_definition
+from study_agent.ingestion import TextIngestionError
+from study_agent.ingestion.service import TextIngestionService
+from study_agent.ports import (
+    ArtifactViewPort,
+    AssessmentViewPort,
+    CourseCatalogPort,
+    EventStore,
+    LearnerEvidenceViewPort,
+    StudyContextViewPort,
+)
+from study_agent.recall.composition import RecallComposition
+from study_agent.sessions.service import SessionService
+from study_agent.state import Projection
+from study_agent.tools import (
+    IdempotencyMode,
+    ToolEffect,
+    ToolError,
+    ToolErrorCode,
+    ToolManifest,
+    ToolResult,
+)
+from study_agent.tools.schema import (
+    SchemaValidationError,
+    validate_json,
+    validate_schema_definition,
+)
 
 
 class HarnessToolOwner(Protocol):
@@ -46,6 +69,14 @@ class HarnessToolOwner(Protocol):
     def for_course(self, course_id: CourseId) -> object: ...
 
     def study_tools(self, course_id: CourseId) -> object: ...
+
+
+class _CourseServices(Protocol):
+    ingestion: TextIngestionService
+
+
+class _EventProjectionStore(EventStore, Protocol):
+    def projection(self, course_id: CourseId) -> Projection: ...
 
 
 _ERRORS = tuple(ToolErrorCode)
@@ -75,10 +106,35 @@ def _profile_schema() -> JsonObject:
             "exam_date": {"type": ("string", "null")},
             "assessment_styles": _array(_TEXT),
             "learning_goals": _array(_TEXT),
-            "source_policy": _object({"allowed_roles": _array(_TEXT), "minimum_trust_level": {"type": "integer", "minimum": 0, "maximum": 100}}, ("allowed_roles", "minimum_trust_level")),
-            "terminology_policy": _object({"entries": _array(_object({"concept": _TEXT, "preferred_term": _TEXT}, ("concept", "preferred_term")))}, ("entries",)),
+            "source_policy": _object(
+                {
+                    "allowed_roles": _array(_TEXT),
+                    "minimum_trust_level": {"type": "integer", "minimum": 0, "maximum": 100},
+                },
+                ("allowed_roles", "minimum_trust_level"),
+            ),
+            "terminology_policy": _object(
+                {
+                    "entries": _array(
+                        _object(
+                            {"concept": _TEXT, "preferred_term": _TEXT},
+                            ("concept", "preferred_term"),
+                        )
+                    )
+                },
+                ("entries",),
+            ),
         },
-        ("id", "title", "language", "exam_date", "assessment_styles", "learning_goals", "source_policy", "terminology_policy"),
+        (
+            "id",
+            "title",
+            "language",
+            "exam_date",
+            "assessment_styles",
+            "learning_goals",
+            "source_policy",
+            "terminology_policy",
+        ),
     )
 
 
@@ -155,11 +211,16 @@ class HarnessToolSurface:
                 validate_json(result.value, operation.manifest.output_schema)
             return result
         except (SchemaValidationError, TypeError, ValueError):
-            return _failure(ToolErrorCode.INVALID_ARGUMENTS, "tool arguments violate the study contract")
+            return _failure(
+                ToolErrorCode.INVALID_ARGUMENTS, "tool arguments violate the study contract"
+            )
         except LookupError:
             return _failure(ToolErrorCode.NOT_FOUND, "requested study state was not found")
         except TextIngestionError as error:
-            return _failure(ToolErrorCode.CONFLICT if error.retryable else ToolErrorCode.INVALID_ARGUMENTS, str(error))
+            return _failure(
+                ToolErrorCode.CONFLICT if error.retryable else ToolErrorCode.INVALID_ARGUMENTS,
+                str(error),
+            )
         except Exception:
             return _failure(ToolErrorCode.EXECUTION_FAILED, "canonical operation failed safely")
 
@@ -186,14 +247,27 @@ class HarnessToolSurface:
                 self._create_course,
             ),
             _Operation(
-                _manifest("course.list", _object({}), output_schema=_object({"courses": _array(_profile_schema())}, ("courses",)), effect=ToolEffect.READ_ONLY, capability="study:read"),
+                _manifest(
+                    "course.list",
+                    _object({}),
+                    output_schema=_object({"courses": _array(_profile_schema())}, ("courses",)),
+                    effect=ToolEffect.READ_ONLY,
+                    capability="study:read",
+                ),
                 self._list_courses,
             ),
             _Operation(
                 _manifest(
                     "session.start",
                     _object({"session_id": _TEXT}, ("session_id",)),
-                    output_schema=_object({"id": _TEXT, "status": _TEXT, "high_water_sequence": {"type": "integer", "minimum": 0}}, ("id", "status", "high_water_sequence")),
+                    output_schema=_object(
+                        {
+                            "id": _TEXT,
+                            "status": _TEXT,
+                            "high_water_sequence": {"type": "integer", "minimum": 0},
+                        },
+                        ("id", "status", "high_water_sequence"),
+                    ),
                     effect=ToolEffect.CANONICAL_WRITE,
                     capability="session:write",
                     idempotency=IdempotencyMode.REQUIRED,
@@ -203,19 +277,131 @@ class HarnessToolSurface:
             _Operation(
                 _manifest(
                     "source.ingest",
-                    _object({"filename": _TEXT, "title": _TEXT, "content": _TEXT}, ("filename", "title", "content")),
-                    output_schema=_object({"status": _TEXT, "source_id": _TEXT, "revision_id": _TEXT, "title": _TEXT, "chunk_count": {"type": "integer", "minimum": 0}, "high_water_sequence": {"type": "integer", "minimum": 0}}, ("status", "source_id", "revision_id", "title", "chunk_count", "high_water_sequence")),
+                    _object(
+                        {"filename": _TEXT, "title": _TEXT, "content": _TEXT},
+                        ("filename", "title", "content"),
+                    ),
+                    output_schema=_object(
+                        {
+                            "status": _TEXT,
+                            "source_id": _TEXT,
+                            "revision_id": _TEXT,
+                            "title": _TEXT,
+                            "chunk_count": {"type": "integer", "minimum": 0},
+                            "high_water_sequence": {"type": "integer", "minimum": 0},
+                        },
+                        (
+                            "status",
+                            "source_id",
+                            "revision_id",
+                            "title",
+                            "chunk_count",
+                            "high_water_sequence",
+                        ),
+                    ),
                     effect=ToolEffect.CANONICAL_WRITE,
                     capability="source:write",
                     idempotency=IdempotencyMode.REQUIRED,
                 ),
                 self._ingest_source,
             ),
-            _Operation(_manifest("context.get", _object({}), output_schema=_object({"sequence": {"type": "integer", "minimum": 0}, "statement_count": {"type": "integer", "minimum": 0}, "conflict_count": {"type": "integer", "minimum": 0}}, ("sequence", "statement_count", "conflict_count")), effect=ToolEffect.READ_ONLY, capability="study:read"), self._context),
-            _Operation(_manifest("recall.get", _object({}), output_schema=_object({"available": _BOOL, "sequence": {"type": "integer", "minimum": 0}, "enrollment_count": {"type": "integer", "minimum": 0}, "review_count": {"type": "integer", "minimum": 0}}, ("available", "sequence", "enrollment_count", "review_count")), effect=ToolEffect.READ_ONLY, capability="study:read"), self._recall),
-            _Operation(_manifest("artifact.get", _object({}), output_schema=_object({"sequence": {"type": "integer", "minimum": 0}, "pending_revision_ids": _array(_TEXT), "accepted_revision_ids": _array(_TEXT)}, ("sequence", "pending_revision_ids", "accepted_revision_ids")), effect=ToolEffect.READ_ONLY, capability="study:read"), self._artifacts),
-            _Operation(_manifest("assessment.get", _object({}), output_schema=_object({"sequence": {"type": "integer", "minimum": 0}, "presentations": _array(_TEXT), "attempts": _array(_TEXT), "grades": _array(_TEXT)}, ("sequence", "presentations", "attempts", "grades")), effect=ToolEffect.READ_ONLY, capability="study:read"), self._assessments),
-            _Operation(_manifest("evidence.get", _object({}), output_schema=_object({"through_sequence": {"type": "integer", "minimum": 0}, "estimates": _array(_object({"dimension": _TEXT, "key": _TEXT, "label": _TEXT, "numerator": {"type": "integer", "minimum": 0}, "denominator": {"type": "integer", "minimum": 0}}, ("dimension", "key", "label", "numerator", "denominator")))}, ("through_sequence", "estimates")), effect=ToolEffect.READ_ONLY, capability="study:read"), self._evidence),
+            _Operation(
+                _manifest(
+                    "context.get",
+                    _object({}),
+                    output_schema=_object(
+                        {
+                            "sequence": {"type": "integer", "minimum": 0},
+                            "statement_count": {"type": "integer", "minimum": 0},
+                            "conflict_count": {"type": "integer", "minimum": 0},
+                        },
+                        ("sequence", "statement_count", "conflict_count"),
+                    ),
+                    effect=ToolEffect.READ_ONLY,
+                    capability="study:read",
+                ),
+                self._context,
+            ),
+            _Operation(
+                _manifest(
+                    "recall.get",
+                    _object({}),
+                    output_schema=_object(
+                        {
+                            "available": _BOOL,
+                            "sequence": {"type": "integer", "minimum": 0},
+                            "enrollment_count": {"type": "integer", "minimum": 0},
+                            "review_count": {"type": "integer", "minimum": 0},
+                        },
+                        ("available", "sequence", "enrollment_count", "review_count"),
+                    ),
+                    effect=ToolEffect.READ_ONLY,
+                    capability="study:read",
+                ),
+                self._recall,
+            ),
+            _Operation(
+                _manifest(
+                    "artifact.get",
+                    _object({}),
+                    output_schema=_object(
+                        {
+                            "sequence": {"type": "integer", "minimum": 0},
+                            "pending_revision_ids": _array(_TEXT),
+                            "accepted_revision_ids": _array(_TEXT),
+                        },
+                        ("sequence", "pending_revision_ids", "accepted_revision_ids"),
+                    ),
+                    effect=ToolEffect.READ_ONLY,
+                    capability="study:read",
+                ),
+                self._artifacts,
+            ),
+            _Operation(
+                _manifest(
+                    "assessment.get",
+                    _object({}),
+                    output_schema=_object(
+                        {
+                            "sequence": {"type": "integer", "minimum": 0},
+                            "presentations": _array(_TEXT),
+                            "attempts": _array(_TEXT),
+                            "grades": _array(_TEXT),
+                        },
+                        ("sequence", "presentations", "attempts", "grades"),
+                    ),
+                    effect=ToolEffect.READ_ONLY,
+                    capability="study:read",
+                ),
+                self._assessments,
+            ),
+            _Operation(
+                _manifest(
+                    "evidence.get",
+                    _object({}),
+                    output_schema=_object(
+                        {
+                            "through_sequence": {"type": "integer", "minimum": 0},
+                            "estimates": _array(
+                                _object(
+                                    {
+                                        "dimension": _TEXT,
+                                        "key": _TEXT,
+                                        "label": _TEXT,
+                                        "numerator": {"type": "integer", "minimum": 0},
+                                        "denominator": {"type": "integer", "minimum": 0},
+                                    },
+                                    ("dimension", "key", "label", "numerator", "denominator"),
+                                )
+                            ),
+                        },
+                        ("through_sequence", "estimates"),
+                    ),
+                    effect=ToolEffect.READ_ONLY,
+                    capability="study:read",
+                ),
+                self._evidence,
+            ),
         )
 
     def _create_course(self, arguments: JsonObject, context: ExecutionContext) -> ToolResult:
@@ -226,16 +412,18 @@ class HarnessToolSurface:
             course_id,
             str(arguments["title"]),
             str(arguments["language"]),
-            learning_goals=tuple(arguments["learning_goals"]),
-            assessment_styles=tuple(arguments.get("assessment_styles", ())),
+            learning_goals=cast(tuple[str, ...], arguments["learning_goals"]),
+            assessment_styles=cast(
+                tuple[str, ...], arguments.get("assessment_styles", ())
+            ),
         )
-        created = self._owner.course_service.create(profile, context)
+        created = cast(CourseService, self._owner.course_service).create(profile, context)
         return ToolResult.success({"profile": course_profile_manifest(created)})
 
     def _list_courses(self, _arguments: JsonObject, _context: ExecutionContext) -> ToolResult:
         courses = tuple(
             course_profile_manifest(item)
-            for item in self._owner.course_catalog.list_courses()
+            for item in cast(CourseCatalogPort, self._owner.course_catalog).list_courses()
         )
         return ToolResult.success({"courses": courses})
 
@@ -243,9 +431,13 @@ class HarnessToolSurface:
         session_id = SessionId(str(arguments["session_id"]))
         if context.session_id != session_id:
             return _failure(ToolErrorCode.UNAUTHORIZED, "session authority is host-derived")
-        session = self._owner.session_service.start(context)
-        sequence = self._owner.events.projection(context.course_id).sequence
-        return ToolResult.success({"id": str(session.id), "status": session.status.value, "high_water_sequence": sequence})
+        session = cast(SessionService, self._owner.session_service).start(context)
+        sequence = cast(_EventProjectionStore, self._owner.events).projection(
+            context.course_id
+        ).sequence
+        return ToolResult.success(
+            {"id": str(session.id), "status": session.status.value, "high_water_sequence": sequence}
+        )
 
     def _ingest_source(self, arguments: JsonObject, context: ExecutionContext) -> ToolResult:
         filename, title, content = (str(arguments[key]) for key in ("filename", "title", "content"))
@@ -253,7 +445,7 @@ class HarnessToolSurface:
         source_id = SourceId(
             "source-upload-sha256:" + sha256(filename.encode("utf-8") + b"\0" + encoded).hexdigest()
         )
-        course = self._owner.for_course(context.course_id)
+        course = cast(_CourseServices, self._owner.for_course(context.course_id))
         result = course.ingestion.ingest(
             filename=filename,
             content=encoded,
@@ -276,7 +468,9 @@ class HarnessToolSurface:
         )
 
     def _context(self, _arguments: JsonObject, context: ExecutionContext) -> ToolResult:
-        snapshot = self._owner.study_context.get(context.course_id)
+        snapshot = cast(StudyContextViewPort, self._owner.study_context).get(
+            context.course_id
+        )
         return ToolResult.success(
             {
                 "sequence": snapshot.sequence,
@@ -286,7 +480,7 @@ class HarnessToolSurface:
         )
 
     def _recall(self, _arguments: JsonObject, context: ExecutionContext) -> ToolResult:
-        composition = self._owner.recall_composition
+        composition = cast(RecallComposition, self._owner.recall_composition)
         snapshot = composition.view.get(context.course_id)
         return ToolResult.success(
             {
@@ -298,7 +492,7 @@ class HarnessToolSurface:
         )
 
     def _artifacts(self, _arguments: JsonObject, context: ExecutionContext) -> ToolResult:
-        snapshot = self._owner.artifacts.get(context.course_id)
+        snapshot = cast(ArtifactViewPort, self._owner.artifacts).get(context.course_id)
         return ToolResult.success(
             {
                 "sequence": snapshot.sequence,
@@ -308,7 +502,7 @@ class HarnessToolSurface:
         )
 
     def _assessments(self, _arguments: JsonObject, context: ExecutionContext) -> ToolResult:
-        snapshot = self._owner.assessments.get(context.course_id)
+        snapshot = cast(AssessmentViewPort, self._owner.assessments).get(context.course_id)
         return ToolResult.success(
             {
                 "sequence": snapshot.sequence,
@@ -319,7 +513,9 @@ class HarnessToolSurface:
         )
 
     def _evidence(self, _arguments: JsonObject, context: ExecutionContext) -> ToolResult:
-        snapshot = self._owner.learner_evidence.get(context.course_id)
+        snapshot = cast(LearnerEvidenceViewPort, self._owner.learner_evidence).get(
+            context.course_id
+        )
         return ToolResult.success(
             {
                 "through_sequence": snapshot.through_sequence,

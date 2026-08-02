@@ -28,6 +28,7 @@ from study_agent.domain import (
     SessionId,
     SourceId,
 )
+from study_agent.domain._validation import JsonObject
 from study_agent.domain.grounding import AnswerStatus
 from study_agent.ports import (
     CancellationToken,
@@ -359,7 +360,7 @@ def test_luna_registry_rejects_an_alternate_credential_environment() -> None:
     ),
 )
 def test_luna_registry_rejects_missing_or_overridable_fixed_settings(
-    settings: dict[str, object],
+    settings: JsonObject,
 ) -> None:
     registry = __import__(
         "study_agent.cli", fromlist=["default_model_adapters"]

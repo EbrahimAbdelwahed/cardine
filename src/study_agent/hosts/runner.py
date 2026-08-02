@@ -905,8 +905,8 @@ class TutorHostRunner:
             if context is None:
                 return _interrupted_result(selected, retry_receipt)
 
-            replaying = handoff is not None
-            if replaying:
+            retry_action: HostRetryReceipt | None = None
+            if handoff is not None:
                 if context.fingerprint != handoff.context_fingerprint:
                     return _failed(handoff.retry_receipt)
                 try:
@@ -1048,7 +1048,7 @@ class TutorHostRunner:
                     return _failed()
                 capability_identity = capability.identity
                 capability_manifest_fingerprint = capability.manifest_fingerprint
-                if replaying:
+                if handoff is not None:
                     if handoff.capability_identity != capability_identity:
                         return _failed(handoff.retry_receipt)
                     retry_action = handoff.retry_receipt
@@ -1134,7 +1134,7 @@ class TutorHostRunner:
                     ),
                     None,
                 )
-                if replaying:
+                if handoff is not None:
                     if handoff.action.get("kind") != "resume":
                         return _failed(handoff.retry_receipt)
                     retry_action = handoff.retry_receipt

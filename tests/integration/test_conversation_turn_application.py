@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from study_agent.application import (
+    ConversationTurnApplication,
     ConversationTurnCommand,
     ConversationTurnError,
     ConversationTurnErrorCode,
@@ -26,11 +29,13 @@ from study_agent.domain import (
 from study_agent.hosts import (
     PendingContinuationDescriptor,
     TutorContinuationRecord,
+    TutorHostRunner,
     TutorHostRunResult,
     TutorHostRunStatus,
     TutorPresentationReceipt,
 )
 from study_agent.playbooks import ToolBehaviorPin, VersionPins
+from study_agent.ports import TutorContinuationStore, TutorSnapshotPort
 from study_agent.skills import ArtifactReference, SemanticVersion
 
 COURSE = CourseId("conversation-course")
@@ -40,9 +45,10 @@ SHA = "a" * 64
 
 @dataclass
 class _Runner:
-    snapshots: object
-    continuation_store: object
+    snapshots: TutorSnapshotPort
+    continuation_store: TutorContinuationStore
     mode: str = "message"
+    completion_handoff_store: object | None = None
 
     def __post_init__(self) -> None:
         self.calls: list[tuple[str, str | None]] = []
@@ -215,9 +221,21 @@ def _open(tmp_path: Path, runner_mode: str = "message") -> tuple[LocalRepository
     )
     runner = _Runner(repository.tutor_snapshots, repository.tutor_continuations, runner_mode)
     repository.conversation = repository.conversation_application(
-        runner, continuation_store=repository.tutor_continuations
+        cast(TutorHostRunner, runner), continuation_store=repository.tutor_continuations
     )
     return repository, runner, root
+
+
+def _conversation(repository: LocalRepository) -> ConversationTurnApplication:
+    conversation = repository.conversation
+    assert conversation is not None
+    return conversation
+
+
+def _compose(repository: LocalRepository, runner: _Runner) -> ConversationTurnApplication:
+    return repository.conversation_application(
+        cast(TutorHostRunner, runner), continuation_store=repository.tutor_continuations
+    )
 
 
 def _command(
@@ -242,7 +260,7 @@ def test_direct_message_restart_and_exact_retry_do_not_repeat_host_or_event(tmp_
     try:
         initial = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
         command = _command("request-1", initial, "Hello tutor")
-        first = asyncio.run(repository.conversation.turn(command))
+        first = asyncio.run(_conversation(repository).turn(command))
         assert first.presentation is not None
         assert first.presentation.kind is TutorPresentationKind.ASSISTANT_MESSAGE
         event_count = len(repository.events.read(COURSE))
@@ -251,10 +269,8 @@ def test_direct_message_restart_and_exact_retry_do_not_repeat_host_or_event(tmp_
                 reopened.tutor_snapshots,
                 reopened.tutor_continuations,
             )
-            reopened.conversation = reopened.conversation_application(
-                retry_runner, continuation_store=reopened.tutor_continuations
-            )
-            retry = asyncio.run(reopened.conversation.turn(command))
+            reopened.conversation = _compose(reopened, retry_runner)
+            retry = asyncio.run(_conversation(reopened).turn(command))
             assert retry.presentation == first.presentation
             assert len(runner.calls) == 1
             assert retry_runner.calls == []
@@ -279,7 +295,7 @@ def test_status_only_terminal_retry_survives_restart_without_repeating_host(
     try:
         sequence = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
         command = _command(f"terminal-{mode}", sequence, "Bounded terminal turn")
-        first = asyncio.run(repository.conversation.turn(command))
+        first = asyncio.run(_conversation(repository).turn(command))
         event_count = len(repository.events.read(COURSE))
         assert first.status is expected_status
         assert first.presentation is None
@@ -291,10 +307,8 @@ def test_status_only_terminal_retry_survives_restart_without_repeating_host(
                 reopened.tutor_continuations,
                 mode,
             )
-            reopened.conversation = reopened.conversation_application(
-                retry_runner, continuation_store=reopened.tutor_continuations
-            )
-            retry = asyncio.run(reopened.conversation.turn(command))
+            reopened.conversation = _compose(reopened, retry_runner)
+            retry = asyncio.run(_conversation(reopened).turn(command))
 
             assert retry.status is expected_status
             assert retry.presentation is None
@@ -308,7 +322,9 @@ def test_repository_composition_requires_explicit_continuation_store(tmp_path: P
     repository, runner, _ = _open(tmp_path)
     try:
         with pytest.raises(TypeError, match="continuation_store"):
-            repository.conversation_application(runner)
+            cast(Callable[..., object], repository.conversation_application)(
+                cast(TutorHostRunner, runner)
+            )
     finally:
         repository.close()
 
@@ -320,8 +336,8 @@ def test_repository_composition_rejects_a_different_continuation_store_object(
     try:
         with pytest.raises(TypeError, match="exact continuation store"):
             repository.conversation_application(
-                runner,
-                continuation_store=object(),  # type: ignore[arg-type]
+                cast(TutorHostRunner, runner),
+                continuation_store=cast(TutorContinuationStore, object()),
             )
     finally:
         repository.close()
@@ -334,9 +350,7 @@ def test_repository_composition_rejects_a_runner_with_a_different_handoff_store(
     try:
         runner.completion_handoff_store = object()
         with pytest.raises(TypeError, match="exact completion handoff store"):
-            repository.conversation_application(
-                runner, continuation_store=repository.tutor_continuations
-            )
+            _compose(repository, runner)
     finally:
         repository.close()
 
@@ -347,18 +361,20 @@ def test_retry_of_resolved_resume_survives_lost_response_and_deleted_store_recor
     repository, runner, _ = _open(tmp_path, "suspend")
     try:
         sequence = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
-        first = asyncio.run(repository.conversation.turn(_command("request-1", sequence, "Start")))
+        first = asyncio.run(
+            _conversation(repository).turn(_command("request-1", sequence, "Start"))
+        )
         assert first.pending_continuation is not None
         fingerprint = first.pending_continuation.fingerprint
         resume_sequence = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
         resume_command = _command("request-2", resume_sequence, "Answer")
-        resumed = asyncio.run(repository.conversation.resume(fingerprint, resume_command))
+        resumed = asyncio.run(_conversation(repository).resume(fingerprint, resume_command))
         assert resumed.presentation is not None
         assert len(runner.calls) == 2
         assert runner.calls[0][1] is None
         assert runner.calls[1][1] == fingerprint
 
-        retry = asyncio.run(repository.conversation.resume(fingerprint, resume_command))
+        retry = asyncio.run(_conversation(repository).resume(fingerprint, resume_command))
 
         assert retry.presentation == resumed.presentation
         assert retry.presentations == resumed.presentations
@@ -372,13 +388,13 @@ def test_retry_returns_command_bound_presentation_when_later_turn_exists(tmp_pat
     try:
         first_sequence = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
         first_command = _command("request-1", first_sequence, "First")
-        first = asyncio.run(repository.conversation.turn(first_command))
+        first = asyncio.run(_conversation(repository).turn(first_command))
         second_sequence = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
         second = asyncio.run(
-            repository.conversation.turn(_command("request-2", second_sequence, "Second"))
+            _conversation(repository).turn(_command("request-2", second_sequence, "Second"))
         )
 
-        retry = asyncio.run(repository.conversation.turn(first_command))
+        retry = asyncio.run(_conversation(repository).turn(first_command))
 
         assert len(runner.calls) == 2
         assert len(retry.presentations) == 2
@@ -394,13 +410,13 @@ def test_same_request_changed_content_conflicts_and_stale_new_request_skips_host
     repository, runner, _ = _open(tmp_path)
     try:
         sequence = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
-        asyncio.run(repository.conversation.turn(_command("request-1", sequence, "Original")))
+        asyncio.run(_conversation(repository).turn(_command("request-1", sequence, "Original")))
         with pytest.raises(ConversationTurnError) as changed:
-            asyncio.run(repository.conversation.turn(_command("request-1", sequence, "Changed")))
+            asyncio.run(_conversation(repository).turn(_command("request-1", sequence, "Changed")))
         assert changed.value.code is ConversationTurnErrorCode.CONFLICT
         calls = len(runner.calls)
         with pytest.raises(ConversationTurnError) as stale:
-            asyncio.run(repository.conversation.turn(_command("request-2", sequence, "Stale")))
+            asyncio.run(_conversation(repository).turn(_command("request-2", sequence, "Stale")))
         assert stale.value.code is ConversationTurnErrorCode.RETRYABLE_CONFLICT
         assert len(runner.calls) == calls
     finally:
@@ -412,7 +428,7 @@ def test_learner_question_is_a_canonical_presentation(tmp_path: Path) -> None:
     try:
         sequence = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
         result = asyncio.run(
-            repository.conversation.turn(_command("question-1", sequence, "Explain"))
+            _conversation(repository).turn(_command("question-1", sequence, "Explain"))
         )
         assert result.status is TutorHostRunStatus.NEEDS_LEARNER_INPUT
         assert result.presentation is not None
@@ -426,19 +442,21 @@ def test_suspend_restart_resume_and_resolved_continuation_is_inactive(tmp_path: 
     repository, _runner, root = _open(tmp_path, "suspend")
     try:
         sequence = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
-        first = asyncio.run(repository.conversation.turn(_command("request-1", sequence, "Start")))
+        first = asyncio.run(
+            _conversation(repository).turn(_command("request-1", sequence, "Start"))
+        )
         assert first.pending_continuation is not None
         fingerprint = first.pending_continuation.fingerprint
         with LocalRepository.open(root) as reopened:
             resumed_runner = _Runner(
                 reopened.tutor_snapshots, reopened.tutor_continuations, "message"
             )
-            reopened.conversation = reopened.conversation_application(
-                resumed_runner, continuation_store=reopened.tutor_continuations
-            )
+            reopened.conversation = _compose(reopened, resumed_runner)
             sequence = reopened.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
             resumed = asyncio.run(
-                reopened.conversation.resume(fingerprint, _command("request-2", sequence, "Answer"))
+                _conversation(reopened).resume(
+                    fingerprint, _command("request-2", sequence, "Answer")
+                )
             )
             assert resumed.presentation is not None
             assert resumed.pending_continuation is None
@@ -454,20 +472,22 @@ def test_missing_operational_continuation_is_degraded_and_unresumable(
     repository, _runner, _ = _open(tmp_path, "suspend")
     try:
         sequence = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
-        first = asyncio.run(repository.conversation.turn(_command("request-1", sequence, "Start")))
+        first = asyncio.run(
+            _conversation(repository).turn(_command("request-1", sequence, "Start"))
+        )
         assert first.pending_continuation is not None
         fingerprint = first.pending_continuation.fingerprint
         repository.tutor_continuations.delete(COURSE, SESSION, fingerprint)
         assert (
             asyncio.run(
-                repository.conversation.turn(_command("request-1", sequence, "Start"))
+                _conversation(repository).turn(_command("request-1", sequence, "Start"))
             ).pending_continuation
             is None
         )
         interactions_before_resume = repository.sessions.interactions(COURSE, SESSION)
         with pytest.raises(ConversationTurnError) as missing:
             asyncio.run(
-                repository.conversation.resume(
+                _conversation(repository).resume(
                     fingerprint, _command("request-2", sequence + 1, "Answer")
                 )
             )
@@ -484,7 +504,7 @@ def test_concurrent_new_requests_at_one_sequence_have_one_canonical_winner(tmp_p
 
         async def submit(request_id: str) -> object:
             try:
-                return await repository.conversation.turn(
+                return await _conversation(repository).turn(
                     _command(request_id, sequence, request_id)
                 )
             except ConversationTurnError as error:
@@ -520,7 +540,7 @@ def test_unsuccessful_host_results_commit_no_presentation(
         sequence = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
         with pytest.raises(ConversationTurnError) as error:
             asyncio.run(
-                repository.conversation.turn(_command(f"request-{mode}", sequence, "Hello"))
+                _conversation(repository).turn(_command(f"request-{mode}", sequence, "Hello"))
             )
         assert error.value.code is code
         assert repository.tutor_presentations.presentations(COURSE, SESSION) == ()
@@ -542,12 +562,12 @@ def test_request_identity_is_scoped_to_session(tmp_path: Path) -> None:
             )
         )
         first_seq = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
-        asyncio.run(repository.conversation.turn(_command("same-request", first_seq, "One")))
+        asyncio.run(_conversation(repository).turn(_command("same-request", first_seq, "One")))
         second_seq = repository.tutor_snapshots.get(
             COURSE, SessionId("session-2")
         ).high_water_sequence
         asyncio.run(
-            repository.conversation.turn(
+            _conversation(repository).turn(
                 _command("same-request", second_seq, "Two", SessionId("session-2"))
             )
         )

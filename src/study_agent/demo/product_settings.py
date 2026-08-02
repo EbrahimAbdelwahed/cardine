@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator, Mapping
 from threading import RLock
-from typing import cast
+from typing import TypeVar, cast, overload
 
 from study_agent.domain._validation import JsonObject
 
@@ -14,6 +14,7 @@ from .ui_application import UiApplicationPort, UiRequestError
 MAX_RUNTIME_CREDENTIAL_CHARS = 4096
 LUNA_MODEL_LABEL = "GPT-5.6 Luna"
 LUNA_ADAPTER_ID = "openai-gpt-5.6-luna"
+_T = TypeVar("_T")
 
 
 class RuntimeCredentialStore(Mapping[str, str]):
@@ -47,7 +48,13 @@ class RuntimeCredentialStore(Mapping[str, str]):
         with self._lock:
             self._override = None
 
-    def get(self, key: str, default: str | None = None) -> str | None:
+    @overload
+    def get(self, key: str) -> str | None: ...
+
+    @overload
+    def get(self, key: str, default: _T) -> str | _T: ...
+
+    def get(self, key: str, default: _T | None = None) -> str | _T | None:
         if key != "OPENAI_API_KEY":
             return self._base.get(key, default)
         with self._lock:

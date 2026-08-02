@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, cast
 
 from study_agent.adapters.filesystem import (
     FilesystemBlobStore,
@@ -67,6 +67,9 @@ from study_agent.assessments import (
 )
 from study_agent.capabilities import (
     EXPLAIN_CONCEPT_MANIFEST,
+    CapabilityContinuation,
+    CapabilityManifest,
+    CapabilityOutcome,
     StudyCapabilityGateway,
     TutorCapabilityId,
     builtin_tutor_validators,
@@ -88,8 +91,9 @@ from study_agent.domain import (
     PrincipalKind,
     ResolvedCitation,
     SessionId,
+    SourceCommitment,
 )
-from study_agent.domain._validation import JsonObject
+from study_agent.domain._validation import JsonObject, JsonValue
 from study_agent.grounding import (
     EvidenceSufficiencyValidator,
     GroundedAnswerIntegrityValidator,
@@ -149,6 +153,14 @@ from study_agent.tools import BoundSourceSearchExecutor
 from study_agent.tutor_snapshot import TutorSnapshotReader
 
 if TYPE_CHECKING:
+    from study_agent.application import HarnessToolSurface
+    from study_agent.artifacts.contracts import (
+        ServiceDecisionPolicyReceipt,
+        ServiceDecisionPolicyRequest,
+        VerifiedGeneratedArtifactBatch,
+    )
+    from study_agent.domain import RunId
+    from study_agent.hosts.context import HarnessToolManifestView
     from study_agent.tools import StudyToolRegistry
 
 _V1 = SemanticVersion.parse("1.0.0")
@@ -178,9 +190,11 @@ class _RepositoryTutorGateway:
     ) -> CapabilityCompletionProductReceipt | None:
         """Recover one verified explain output without invoking the provider."""
 
-        if reference.capability_identity != (
-            f"{EXPLAIN_CONCEPT_MANIFEST.id.value}@{EXPLAIN_CONCEPT_MANIFEST.version.major}"
-        ) or reference.manifest_fingerprint != EXPLAIN_CONCEPT_MANIFEST.fingerprint:
+        if (
+            reference.capability_identity
+            != (f"{EXPLAIN_CONCEPT_MANIFEST.id.value}@{EXPLAIN_CONCEPT_MANIFEST.version.major}")
+            or reference.manifest_fingerprint != EXPLAIN_CONCEPT_MANIFEST.fingerprint
+        ):
             return None
         if context is None:
             return None
@@ -200,7 +214,7 @@ class _RepositoryTutorGateway:
         except Exception:
             return None
 
-    def discover(self) -> tuple[object, ...]:
+    def discover(self) -> tuple[CapabilityManifest, ...]:
         return (EXPLAIN_CONCEPT_MANIFEST,)
 
     async def start(
@@ -208,23 +222,19 @@ class _RepositoryTutorGateway:
         capability_id: TutorCapabilityId,
         inputs: JsonObject,
         context: ExecutionContext,
-    ) -> object:
-        return await self._gateway(inputs, context).start(
-            capability_id, inputs, context
-        )
+    ) -> CapabilityOutcome:
+        return await self._gateway(inputs, context).start(capability_id, inputs, context)
 
     async def resume(
         self,
-        continuation: object,
-        response: object,
+        continuation: CapabilityContinuation,
+        response: JsonValue,
         context: ExecutionContext,
-    ) -> object:
+    ) -> CapabilityOutcome:
         inputs = getattr(continuation, "inputs", None)
         if not isinstance(inputs, Mapping):
             raise TypeError("continuation inputs are invalid")
-        return await self._gateway(inputs, context).resume(
-            continuation, response, context
-        )
+        return await self._gateway(inputs, context).resume(continuation, response, context)
 
     def _gateway(
         self, inputs: Mapping[str, object], context: ExecutionContext
@@ -291,11 +301,7 @@ class _RepositoryTutorGateway:
             registries=RuntimeRegistries(
                 (search,),
                 builtin_tutor_validators(course.content),
-                (
-                    PromptComposerRegistration(
-                        binding.pins.prompt, CanonicalPromptComposer()
-                    ),
-                ),
+                (PromptComposerRegistration(binding.pins.prompt, CanonicalPromptComposer()),),
             ),
             run_store=repository.runs,
             clock=repository.clock,
@@ -305,8 +311,7 @@ class _RepositoryTutorGateway:
 
 def _completion_output_fingerprint(value: Mapping[str, object]) -> str:
     return sha256(
-        b"study-agent-capability-output-v1\0"
-        + canonical_json_bytes(value)  # type: ignore[arg-type]
+        b"study-agent-capability-output-v1\0" + canonical_json_bytes(value)  # type: ignore[arg-type]
     ).hexdigest()
 
 
@@ -338,9 +343,22 @@ def _explanation_product_receipt(
             chunk_id = citation.get("chunk_id")
             locator = citation.get("locator")
             quote = citation.get("quoted_snippet")
-            if not all(
-                isinstance(value, str) and value and value == value.strip()
-                for value in (source_id, revision_id, chunk_id, locator, quote)
+            if not (
+                isinstance(source_id, str)
+                and source_id
+                and source_id == source_id.strip()
+                and isinstance(revision_id, str)
+                and revision_id
+                and revision_id == revision_id.strip()
+                and isinstance(chunk_id, str)
+                and chunk_id
+                and chunk_id == chunk_id.strip()
+                and isinstance(locator, str)
+                and locator
+                and locator == locator.strip()
+                and isinstance(quote, str)
+                and quote
+                and quote == quote.strip()
             ):
                 return None
             labels.append(f"{locator}\n«{quote[:240]}»")
@@ -362,11 +380,11 @@ def _explanation_product_receipt(
 class _RepositoryTutorToolGateway:
     """Host-owned bridge from a validated tutor decision to harness tools."""
 
-    def __init__(self, repository: "LocalRepository") -> None:
+    def __init__(self, repository: LocalRepository) -> None:
         self._repository = repository
 
     @property
-    def manifests(self) -> tuple[object, ...]:
+    def manifests(self) -> tuple[HarnessToolManifestView, ...]:
         return self._repository.harness_tools().manifests
 
     async def invoke(
@@ -388,8 +406,7 @@ class _RepositoryTutorToolGateway:
             # deterministically derives a new course stream from this exact
             # turn, so it cannot redirect a write to another learner course.
             target_course = CourseId(
-                "course-tutor-sha256:"
-                + sha256(f"{course_id}:{host_turn_id}".encode("utf-8")).hexdigest()
+                "course-tutor-sha256:" + sha256(f"{course_id}:{host_turn_id}".encode()).hexdigest()
             )
             target_session = None
         return await surface.invoke(
@@ -528,9 +545,7 @@ class ModelAdapterRegistry:
             ) from error
 
 
-def default_model_adapters(
-    *, allow_configurable_endpoints: bool = False
-) -> ModelAdapterRegistry:
+def default_model_adapters(*, allow_configurable_endpoints: bool = False) -> ModelAdapterRegistry:
     """Return safe built-ins; arbitrary endpoints require explicit host opt-in."""
 
     builders: dict[str, ModelAdapterBuilder] = {
@@ -559,9 +574,7 @@ def _openai_compatible_model(config: ModelAdapterConfig, credential: str | None)
     endpoint = config.settings["endpoint_url"]
     model_id = config.settings["model_id"]
     timeout = config.settings["timeout_seconds"]
-    structured_output_format = config.settings.get(
-        "structured_output_format", "json_schema"
-    )
+    structured_output_format = config.settings.get("structured_output_format", "json_schema")
     if not isinstance(endpoint, str) or not isinstance(model_id, str):
         raise ModelAdapterConfigurationError("model endpoint and id must be text")
     if not isinstance(timeout, (int, float)) or isinstance(timeout, bool):
@@ -587,9 +600,7 @@ def _openai_compatible_model(config: ModelAdapterConfig, credential: str | None)
         raise ModelAdapterConfigurationError("model adapter configuration is invalid") from error
 
 
-def _openai_gpt56_luna_model(
-    config: ModelAdapterConfig, credential: str | None
-) -> ModelPort:
+def _openai_gpt56_luna_model(config: ModelAdapterConfig, credential: str | None) -> ModelPort:
     if set(config.settings) != {"timeout_seconds"}:
         raise ModelAdapterConfigurationError(
             "GPT-5.6 Luna settings must contain only timeout_seconds"
@@ -598,13 +609,9 @@ def _openai_gpt56_luna_model(
     if not isinstance(timeout, (int, float)) or isinstance(timeout, bool):
         raise ModelAdapterConfigurationError("model timeout must be numeric")
     if config.credential_env != "OPENAI_API_KEY" or credential is None:
-        raise ModelAdapterConfigurationError(
-            "GPT-5.6 Luna adapter requires OPENAI_API_KEY"
-        )
+        raise ModelAdapterConfigurationError("GPT-5.6 Luna adapter requires OPENAI_API_KEY")
     try:
-        return OpenAIGpt56LunaModel(
-            OpenAIGpt56LunaConfig(credential, float(timeout))
-        )
+        return OpenAIGpt56LunaModel(OpenAIGpt56LunaConfig(credential, float(timeout)))
     except ValueError as error:
         raise ModelAdapterConfigurationError(
             "GPT-5.6 Luna adapter configuration is invalid"
@@ -693,7 +700,7 @@ class _RepositorySourceCatalog:
         document = self.canonical_document(citation.chunk_id)
         return CourseSourceContent(document.course_id, self._events, self._blobs).resolve(citation)
 
-    def contains(self, course_id: CourseId, commitment: object) -> bool:
+    def contains(self, course_id: CourseId, commitment: SourceCommitment) -> bool:
         """Check a source commitment against the canonical current catalog."""
 
         if getattr(commitment, "source_id", None) is None:
@@ -714,13 +721,13 @@ class _RepositorySourceCatalog:
 class _UnconfiguredGeneratedBatchOwner:
     """Explicitly unavailable until a lesson/exam owner is composed."""
 
-    def recover(self, run_id: object, context: object) -> object:
+    def recover(self, run_id: RunId, context: ExecutionContext) -> VerifiedGeneratedArtifactBatch:
         del run_id, context
         raise RuntimeError("generated artifact owner is not configured")
 
 
 class _UnconfiguredArtifactDecisionPolicy:
-    def decide(self, request: object) -> object:
+    def decide(self, request: ServiceDecisionPolicyRequest) -> ServiceDecisionPolicyReceipt:
         del request
         raise RuntimeError("service artifact decision policy is not configured")
 
@@ -744,9 +751,7 @@ class LocalRepository:
         if recall_scheduler is not None and recall_scheduler_factory is not None:
             raise TypeError("recall_scheduler and recall_scheduler_factory are mutually exclusive")
         if tutor_host_runner is not None and tutor_continuation_store is None:
-            raise TypeError(
-                "tutor_host_runner requires an explicit tutor_continuation_store"
-            )
+            raise TypeError("tutor_host_runner requires an explicit tutor_continuation_store")
         if observation is None:
             validate_local_repository_layout(paths)
             persisted = LocalRepositoryConfig.load(paths.config)
@@ -813,9 +818,7 @@ class LocalRepository:
         self.events = SQLiteEventStore(
             events_database, registry, connection_identity_guard=events_guard
         )
-        self.runs = SQLiteRunStore(
-            runs_database, connection_identity_guard=runs_guard
-        )
+        self.runs = SQLiteRunStore(runs_database, connection_identity_guard=runs_guard)
         self._source_catalog = _RepositorySourceCatalog(
             self.events.list_course_ids, self.events, self.blobs
         )
@@ -918,10 +921,7 @@ class LocalRepository:
             else completion_handoff_store
         )
         runner_handoff_store = getattr(runner, "completion_handoff_store", None)
-        if (
-            runner_handoff_store is not None
-            and runner_handoff_store is not selected_handoff_store
-        ):
+        if runner_handoff_store is not None and runner_handoff_store is not selected_handoff_store:
             raise TypeError(
                 "repository composition requires the runner's exact completion handoff store"
             )
@@ -956,9 +956,7 @@ class LocalRepository:
         gateway = _RepositoryTutorGateway(
             self,
             course_id,
-            session_id
-            if session_id is not None
-            else self.sessions.list_sessions(course_id)[0].id,
+            session_id if session_id is not None else self.sessions.list_sessions(course_id)[0].id,
             model,
             self._model_adapters.artifact(self.config.model.adapter_id),
         )
@@ -989,8 +987,7 @@ class LocalRepository:
         handlers = CapabilityCompletionHandlerRegistry(
             (
                 (
-                    f"{EXPLAIN_CONCEPT_MANIFEST.id.value}@"
-                    f"{EXPLAIN_CONCEPT_MANIFEST.version.major}",
+                    f"{EXPLAIN_CONCEPT_MANIFEST.id.value}@{EXPLAIN_CONCEPT_MANIFEST.version.major}",
                     EXPLAIN_CONCEPT_MANIFEST.fingerprint,
                     gateway,
                 ),
@@ -1197,15 +1194,16 @@ class LocalRepository:
             grounding=GroundingAskServiceProvider(resolve_grounding),
         )
 
-    def harness_tools(self):
+    def harness_tools(self) -> HarnessToolSurface:
         """Compose Cardine's private product operations once per repository.
 
         This does not replace the released seven-tool public registry; it is
         the shared canonical surface for the repository UI and tutor host.
         """
         from study_agent.application import HarnessToolSurface
+        from study_agent.application.tool_surface import HarnessToolOwner
 
-        return HarnessToolSurface(self)
+        return HarnessToolSurface(cast(HarnessToolOwner, self))
 
     def close(self) -> None:
         self.blobs.close()

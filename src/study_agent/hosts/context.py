@@ -49,7 +49,15 @@ class CapabilityDiscoveryPort(Protocol):
 
 class HarnessToolDiscoveryPort(Protocol):
     @property
-    def manifests(self) -> tuple[object, ...]: ...
+    def manifests(self) -> tuple[HarnessToolManifestView, ...]: ...
+
+
+class HarnessToolManifestView(Protocol):
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def input_schema(self) -> JsonObject: ...
 
 
 class TutorHostContextAssembler:
@@ -101,8 +109,8 @@ class TutorHostContextAssembler:
                 **tutor_snapshot,
                 "harness_tools": tuple(
                     {
-                        "name": str(getattr(item, "name")),
-                        "input_schema": getattr(item, "input_schema"),
+                        "name": str(item.name),
+                        "input_schema": item.input_schema,
                     }
                     for item in self._tools.manifests
                 ),
@@ -121,9 +129,7 @@ class TutorHostContextAssembler:
                             else str(item.in_reply_to_interaction_id)
                         ),
                     }
-                    for item in self._presentations.presentations(
-                        course_id, session_id
-                    )
+                    for item in self._presentations.presentations(course_id, session_id)
                 ),
             }
         return TutorHostContext(
