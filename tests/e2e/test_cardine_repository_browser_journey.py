@@ -11,12 +11,13 @@ import base64
 import json
 import os
 import shutil
+import signal
 import socket
 import struct
 import subprocess
 import time
 from collections.abc import AsyncIterator, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Thread
@@ -329,6 +330,7 @@ def _real_browser(url: str) -> Iterator[_DevTools]:
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            start_new_session=True,
         )
         try:
             endpoint = f"http://127.0.0.1:{port}/json/list"
@@ -366,11 +368,19 @@ def _real_browser(url: str) -> Iterator[_DevTools]:
             yield browser
             browser.close()
         finally:
-            process.terminate()
+            if hasattr(os, "killpg"):
+                with suppress(ProcessLookupError):
+                    os.killpg(process.pid, signal.SIGTERM)
+            else:
+                process.terminate()
             try:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                process.kill()
+                if hasattr(os, "killpg"):
+                    with suppress(ProcessLookupError):
+                        os.killpg(process.pid, signal.SIGKILL)
+                else:
+                    process.kill()
                 process.wait(timeout=5)
 
 
