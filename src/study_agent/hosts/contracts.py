@@ -450,7 +450,7 @@ class TutorCapabilityCompletionReference:
 
 @dataclass(frozen=True, slots=True)
 class TutorPresentationReceipt:
-    """Closed proof emitted only after the host decision boundary is validated."""
+    """Closed proof emitted by a trusted host or application settlement boundary."""
 
     host_turn_id: str
     kind: TutorPresentationKind

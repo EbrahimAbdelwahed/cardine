@@ -105,6 +105,7 @@ from study_agent.hosts import (
     TutorHostContextAssembler,
     TutorHostLimits,
     TutorHostRunner,
+    TutorHostRunStatus,
 )
 from study_agent.ingestion import TextIngestionService, register_source_revision_events
 from study_agent.playbooks import (
@@ -165,6 +166,26 @@ if TYPE_CHECKING:
     from study_agent.tools import StudyToolRegistry
 
 _V1 = SemanticVersion.parse("1.0.0")
+
+_INSUFFICIENT_EVIDENCE_MESSAGE = (
+    "Non ho trovato evidenze sufficienti nei materiali disponibili per rispondere. "
+    "Prova a indicare una fonte o a riformulare la richiesta."
+)
+_GENERIC_TUTOR_FAILURE_MESSAGE = (
+    "Non sono riuscito a completare questa risposta. "
+    "Riprova tra poco oppure riformula la richiesta."
+)
+
+
+def _cardine_fallback_message(
+    status: TutorHostRunStatus, failure_reason: str | None
+) -> str:
+    """Return localized learner-safe copy without exposing operational details."""
+
+    del failure_reason
+    if status in {TutorHostRunStatus.TERMINATED, TutorHostRunStatus.STOPPED}:
+        return _INSUFFICIENT_EVIDENCE_MESSAGE
+    return _GENERIC_TUTOR_FAILURE_MESSAGE
 
 
 class _RepositoryTutorGateway:
@@ -937,6 +958,7 @@ class LocalRepository:
             continuation_store,
             completion_handlers=completion_handlers,
             completion_handoff_store=selected_handoff_store,
+            fallback_message_policy=_cardine_fallback_message,
         )
 
     def tutor_conversation(

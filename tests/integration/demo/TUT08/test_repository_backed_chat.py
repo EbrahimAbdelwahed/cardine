@@ -145,12 +145,25 @@ class _FixtureModel:
             match = _EVIDENCE_ID.search(rendered)
             if match is None:
                 raise AssertionError("fixture expected canonical evidence")
+            explain_output = self._explain_output
+            if explain_output == {"fixture": "long-supported-answer"}:
+                explain_output = {
+                    "status": "answered",
+                    "segments": (
+                        {
+                            "kind": "supported_claim",
+                            "text": "A" * 4_001,
+                            "evidence_ids": (match.group(1),),
+                        },
+                    ),
+                    "unsupported_information_note": None,
+                }
             return ModelResponse(
                 "",
                 None,
                 ModelFinishReason.STOP,
                 ModelInvocation("fixture", "1.0.0", "fixture", "fixture-explain"),
-                structured_output=self._explain_output or {
+                structured_output=explain_output or {
                     "status": "answered",
                     "segments": (
                         {
@@ -682,6 +695,44 @@ def test_grounded_completion_is_recovered_and_persisted_as_canonical_presentatio
     assert reloaded[-1]["content"] == timeline[-1]["content"]
 
 
+def test_unrenderable_grounded_completion_still_returns_a_visible_chat_message(
+    tmp_path: Path,
+) -> None:
+    root, adapters, model = _repository(
+        tmp_path,
+        (
+            {
+                "kind": "start_capability",
+                "capability_id": "explain_concept",
+                "inputs": {
+                    "query": "aortic",
+                    "target": "aortic valve",
+                    "language": "en",
+                    "learner_goal": None,
+                    "continuation_summary_json": None,
+                },
+            },
+        ),
+        explain_output={"fixture": "long-supported-answer"},
+    )
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+
+    receipt = app.post(
+        "/api/v1/session/turns",
+        _command("grounded-fallback", sequence, "Spiegami la valvola aortica"),
+    )
+
+    assert receipt["status"] == "completed"
+    assert receipt["presentation_id"] is not None
+    timeline = cast(
+        tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"]
+    )
+    assert timeline[-1]["role"] == "assistant"
+    assert "Non sono riuscito" in str(timeline[-1]["content"])
+    assert len(model.requests) == 2
+
+
 @pytest.mark.parametrize(
     "decision",
     (
@@ -770,7 +821,7 @@ def test_read_request_with_course_materials_enters_the_grounded_flow(
     assert "The aortic valve has three cusps" not in encoded_trace
 
 
-def test_invalid_tutor_decision_reports_a_protocol_error_not_a_key_error(
+def test_invalid_tutor_decision_returns_a_visible_safe_fallback(
     tmp_path: Path,
 ) -> None:
     root, adapters, _model = _repository(
@@ -784,14 +835,16 @@ def test_invalid_tutor_decision_reports_a_protocol_error_not_a_key_error(
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
     sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
 
-    with pytest.raises(UiRequestError) as rejected:
-        app.post(
-            "/api/v1/session/turns",
-            _command("invalid-tutor-decision", sequence, "Leggi biochimica"),
-        )
+    receipt = app.post(
+        "/api/v1/session/turns",
+        _command("invalid-tutor-decision", sequence, "Leggi biochimica"),
+    )
 
-    assert rejected.value.status_code == 502
-    assert rejected.value.diagnostic_code == "tutor_protocol_error"
+    assert receipt["status"] == "failed"
+    assert receipt["presentation_id"] is not None
+    timeline = cast(tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"])
+    assert timeline[-1]["role"] == "assistant"
+    assert "Non sono riuscito" in str(timeline[-1]["content"])
 
 
 def test_luna_wire_response_completes_a_repository_backed_chat_turn(
@@ -914,7 +967,7 @@ def test_missing_runtime_key_has_a_configuration_diagnostic_not_a_generic_503(
     assert rejected.value.diagnostic_code == "tutor_configuration"
 
 
-def test_source_grounding_provider_rejection_preserves_its_safe_category(
+def test_source_grounding_provider_rejection_returns_a_visible_safe_fallback(
     tmp_path: Path,
 ) -> None:
     root, adapters, _model = _repository(
@@ -951,23 +1004,39 @@ def test_source_grounding_provider_rejection_preserves_its_safe_category(
     command = _command(
         "grounding-provider-rejected", sequence, "Leggi e spiega le cuspidi aortiche"
     )
-    with pytest.raises(UiRequestError) as rejected:
-        app.post("/api/v1/session/turns", command)
+    rejected = app.post("/api/v1/session/turns", command)
 
-    assert rejected.value.status_code == 503
-    assert rejected.value.diagnostic_code == "tutor_authentication"
-    assert rejected.value.command_committed is True
-    assert rejected.value.request_id == "grounding-provider-rejected"
-    assert "fixture-secret" not in str(rejected.value)
+    assert rejected["status"] == "failed"
+    assert rejected["presentation_id"] is not None
+    first_timeline = cast(
+        tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"]
+    )
+    assert first_timeline[-1]["role"] == "assistant"
+    assert "Non sono riuscito" in str(first_timeline[-1]["content"])
+    assert "fixture-secret" not in str(rejected)
+    assert "fixture-secret" not in str(first_timeline)
 
     _model._explain_error = None
-    retry = app.post("/api/v1/session/turns", command)
+    retry_sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+    retry = app.post(
+        "/api/v1/session/turns",
+        _command(
+            "grounding-provider-retry",
+            retry_sequence,
+            "Leggi e spiega le cuspidi aortiche",
+        ),
+    )
     assert retry["status"] == "completed"
     timeline = cast(tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"])
-    assert tuple(item["role"] for item in timeline) == ("learner", "assistant")
+    assert tuple(item["role"] for item in timeline) == (
+        "learner",
+        "assistant",
+        "learner",
+        "assistant",
+    )
 
 
-def test_source_grounding_schema_rejection_is_a_protocol_error(
+def test_source_grounding_schema_rejection_returns_a_visible_safe_fallback(
     tmp_path: Path,
 ) -> None:
     """A malformed second structured response is not an opaque tutor failure."""
@@ -992,14 +1061,16 @@ def test_source_grounding_schema_rejection_is_a_protocol_error(
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
     sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
 
-    with pytest.raises(UiRequestError) as rejected:
-        app.post(
-            "/api/v1/session/turns",
-            _command("grounding-schema-rejected", sequence, "Leggi e spiega le cuspidi aortiche"),
-        )
+    receipt = app.post(
+        "/api/v1/session/turns",
+        _command("grounding-schema-rejected", sequence, "Leggi e spiega le cuspidi aortiche"),
+    )
 
-    assert rejected.value.status_code == 502
-    assert rejected.value.diagnostic_code == "tutor_protocol_error"
+    assert receipt["status"] == "failed"
+    assert receipt["presentation_id"] is not None
+    timeline = cast(tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"])
+    assert timeline[-1]["role"] == "assistant"
+    assert "Non sono riuscito" in str(timeline[-1]["content"])
 
 
 def test_materials_are_not_presented_as_groundable_when_source_text_is_missing(

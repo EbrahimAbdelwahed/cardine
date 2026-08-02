@@ -8,6 +8,7 @@ presentations remain owned by :class:`SessionTurnService`.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, replace
 from enum import StrEnum
@@ -15,6 +16,7 @@ from hashlib import sha256
 from typing import Protocol
 
 from study_agent.domain import (
+    MAX_TUTOR_PRESENTATION_TEXT,
     CorrelationId,
     CourseId,
     ExecutionContext,
@@ -58,6 +60,23 @@ from .capability_completion import (
 )
 
 MAX_LEARNER_TURN_CHARS = 4_000
+_FALLBACK_TERMINAL_STATUSES = frozenset(
+    {
+        TutorHostRunStatus.COMPLETED,
+        TutorHostRunStatus.TERMINATED,
+        TutorHostRunStatus.CANCELLED,
+        TutorHostRunStatus.FAILED,
+        TutorHostRunStatus.STOPPED,
+        TutorHostRunStatus.INTERRUPTED,
+        TutorHostRunStatus.BUDGET_EXHAUSTED,
+    }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _TerminalSettlement:
+    status: TutorHostRunStatus
+    fallback_message: str | None
 
 
 class ConversationTurnErrorCode(StrEnum):
@@ -128,14 +147,14 @@ class ConversationTurnCommand:
 
 @dataclass(frozen=True, slots=True)
 class ConversationTurnResult:
-    """Fresh canonical state returned after a successful host presentation."""
+    """Fresh canonical state returned with the presentation for this learner turn."""
 
     snapshot: TutorSnapshotV1
     learner_turn: InteractionRecord
     presentations: tuple[TutorPresentationRecord, ...]
     status: TutorHostRunStatus
+    selected_presentation: TutorPresentationRecord
     pending_continuation: PendingContinuationDescriptor | None = None
-    selected_presentation: TutorPresentationRecord | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.snapshot, TutorSnapshotV1):
@@ -147,10 +166,10 @@ class ConversationTurnResult:
         object.__setattr__(self, "presentations", tuple(self.presentations))
         if any(not isinstance(item, TutorPresentationRecord) for item in self.presentations):
             raise TypeError("conversation result presentations are invalid")
-        if self.selected_presentation is not None and not isinstance(
-            self.selected_presentation, TutorPresentationRecord
-        ):
-            raise TypeError("conversation result selected presentation is invalid")
+        if not isinstance(self.selected_presentation, TutorPresentationRecord):
+            raise TypeError("conversation result requires a selected presentation")
+        if self.selected_presentation not in self.presentations:
+            raise ValueError("selected presentation is missing from canonical history")
         if not isinstance(self.status, TutorHostRunStatus):
             raise TypeError("conversation result status is invalid")
         if self.pending_continuation is not None and not isinstance(
@@ -167,7 +186,7 @@ class ConversationTurnResult:
         return self.snapshot.high_water_sequence
 
     @property
-    def presentation(self) -> TutorPresentationRecord | None:
+    def presentation(self) -> TutorPresentationRecord:
         """The presentation produced by (or already committed for) this command."""
 
         return self.selected_presentation
@@ -197,6 +216,7 @@ class ConversationTurnApplication:
         service_principal_id: str = "study-agent-tutor-host",
         completion_handlers: CapabilityCompletionHandlerRegistry | None = None,
         completion_handoff_store: TutorCompletionHandoffStore | None = None,
+        fallback_message_policy: Callable[[TutorHostRunStatus, str | None], str],
     ) -> None:
         self._turns = turns
         self._runner = runner
@@ -226,6 +246,9 @@ class ConversationTurnApplication:
             else completion_handoff_store
         )
         self._completion_handlers = completion_handlers or CapabilityCompletionHandlerRegistry()
+        if not callable(fallback_message_policy):
+            raise TypeError("conversation application requires a fallback message policy")
+        self._fallback_message_policy = fallback_message_policy
         require_text(service_principal_id, "service_principal_id")
         self._service_principal_id = service_principal_id
 
@@ -327,14 +350,15 @@ class ConversationTurnApplication:
             existing_learner = self._existing_learner(
                 context.course_id, session_id, learner_context
             )
-            terminal_status = self._terminal_status(
+            terminal_settlement = self._terminal_settlement(
                 context.course_id,
                 session_id,
                 host_turn_id,
                 command.content,
                 pending_fingerprint,
             )
-            if terminal_status is not None:
+            if terminal_settlement is not None:
+                terminal_status = terminal_settlement.status
                 if existing_learner is None:
                     raise ConversationTurnError(
                         ConversationTurnErrorCode.INCOMPATIBLE_RUNTIME,
@@ -345,21 +369,31 @@ class ConversationTurnApplication:
                         ConversationTurnErrorCode.CONFLICT,
                         "conversation request identity conflicts with learner content",
                     )
-                if (
-                    terminal_status is TutorHostRunStatus.COMPLETED
-                    and existing_presentation is None
-                ):
-                    raise ConversationTurnError(
-                        ConversationTurnErrorCode.FAILED,
-                        "completed conversation receipt has no tutor presentation",
-                        learner_persisted=True,
+                if existing_presentation is None:
+                    existing_presentation = self._record_fallback_presentation(
+                        context.course_id,
+                        session_id,
+                        host_turn_id,
+                        command.content,
+                        pending_fingerprint,
+                        terminal_status,
+                        existing_learner,
+                        service_context,
+                        presentation_key,
+                        failure_reason=None,
+                        fallback_message=terminal_settlement.fallback_message,
                     )
+                elif pending_fingerprint is not None and self._continuations is not None:
+                    with suppress(KeyError, OSError, RuntimeError, ValueError):
+                        self._continuations.delete(
+                            context.course_id, session_id, pending_fingerprint
+                        )
                 return self._result(
                     context.course_id,
                     session_id,
                     existing_learner,
                     terminal_status,
-                    None,
+                    existing_presentation,
                 )
             if existing_presentation is not None:
                 if existing_learner is None:
@@ -404,13 +438,19 @@ class ConversationTurnApplication:
                 command.content, learner_context, command.expected_sequence
             )
             learner_persisted = True
-            host_result = await self._runner.run(
-                context.course_id,
-                session_id,
-                host_turn_id,
-                interruption,
-                pending_fingerprint=pending_fingerprint,
-            )
+            try:
+                host_result = await self._runner.run(
+                    context.course_id,
+                    session_id,
+                    host_turn_id,
+                    interruption,
+                    pending_fingerprint=pending_fingerprint,
+                )
+            except Exception:
+                # Once the learner turn exists, an operational host failure is
+                # represented by a safe canonical chat outcome.  Provider and
+                # runtime details remain outside learner-visible state.
+                host_result = TutorHostRunResult(TutorHostRunStatus.FAILED)
             if host_result.status is TutorHostRunStatus.COMPLETED:
                 presentation = self._recover_completion_presentation(
                     context.course_id,
@@ -419,10 +459,17 @@ class ConversationTurnApplication:
                     learner.id,
                 )
                 if presentation is None:
-                    raise ConversationTurnError(
-                        ConversationTurnErrorCode.FAILED,
-                        "completed host result has no tutor presentation",
-                        learner_persisted=True,
+                    presentation = self._record_fallback_presentation(
+                        context.course_id,
+                        session_id,
+                        host_turn_id,
+                        command.content,
+                        pending_fingerprint,
+                        host_result.status,
+                        learner,
+                        service_context,
+                        presentation_key,
+                        failure_reason=host_result.failure_reason,
                     )
                 if pending_fingerprint is not None and self._continuations is not None:
                     with suppress(KeyError, OSError, RuntimeError, ValueError):
@@ -437,22 +484,24 @@ class ConversationTurnApplication:
                     presentation,
                 )
             if host_result.status is TutorHostRunStatus.TERMINATED:
-                # Termination is an honest bounded status (for example an
-                # insufficient-evidence gate), not a tutor message.
-                self._record_terminal_status(
+                presentation = self._record_fallback_presentation(
                     context.course_id,
                     session_id,
                     host_turn_id,
                     command.content,
                     pending_fingerprint,
-                    TutorHostRunStatus.TERMINATED,
+                    host_result.status,
+                    learner,
+                    service_context,
+                    presentation_key,
+                    failure_reason=host_result.failure_reason,
                 )
                 return self._result(
                     context.course_id,
                     session_id,
                     learner,
                     TutorHostRunStatus.TERMINATED,
-                    None,
+                    presentation,
                 )
             if host_result.status in {
                 TutorHostRunStatus.ASSISTANT_MESSAGE,
@@ -461,9 +510,24 @@ class ConversationTurnApplication:
             }:
                 receipt = host_result.presentation_receipt
                 if receipt is None:
-                    raise ConversationTurnError(
-                        ConversationTurnErrorCode.FAILED,
-                        "host result did not carry a validated presentation",
+                    presentation = self._record_fallback_presentation(
+                        context.course_id,
+                        session_id,
+                        host_turn_id,
+                        command.content,
+                        pending_fingerprint,
+                        TutorHostRunStatus.FAILED,
+                        learner,
+                        service_context,
+                        presentation_key,
+                        failure_reason=host_result.failure_reason,
+                    )
+                    return self._result(
+                        context.course_id,
+                        session_id,
+                        learner,
+                        TutorHostRunStatus.FAILED,
+                        presentation,
                     )
                 self._turns.record_tutor_presentation(
                     context=service_context,
@@ -500,7 +564,27 @@ class ConversationTurnApplication:
                     host_result.status,
                     presentation,
                 )
-            raise _host_error(host_result)
+            if host_result.status is TutorHostRunStatus.IN_PROGRESS:
+                raise _host_error(host_result)
+            presentation = self._record_fallback_presentation(
+                context.course_id,
+                session_id,
+                host_turn_id,
+                command.content,
+                pending_fingerprint,
+                host_result.status,
+                learner,
+                service_context,
+                presentation_key,
+                failure_reason=host_result.failure_reason,
+            )
+            return self._result(
+                context.course_id,
+                session_id,
+                learner,
+                host_result.status,
+                presentation,
+            )
         except ConversationTurnError as error:
             error.learner_persisted = error.learner_persisted or learner_persisted
             raise
@@ -529,14 +613,14 @@ class ConversationTurnApplication:
                 learner_persisted=learner_persisted,
             ) from error
 
-    def _terminal_status(
+    def _terminal_settlement(
         self,
         course_id: CourseId,
         session_id: SessionId,
         host_turn_id: str,
         content: str,
         pending_fingerprint: str | None,
-    ) -> TutorHostRunStatus | None:
+    ) -> _TerminalSettlement | None:
         if self._completion_handoffs is None:
             return None
         key = _terminal_receipt_key(course_id, session_id, host_turn_id)
@@ -561,6 +645,7 @@ class ConversationTurnApplication:
         content: str,
         pending_fingerprint: str | None,
         status: TutorHostRunStatus,
+        fallback_message: str,
     ) -> None:
         if self._completion_handoffs is None:
             raise ConversationTurnError(
@@ -575,6 +660,7 @@ class ConversationTurnApplication:
             content,
             pending_fingerprint,
             status,
+            fallback_message,
         )
         if self._completion_handoffs.create(key, payload):
             return
@@ -585,7 +671,21 @@ class ConversationTurnApplication:
                 ConversationTurnErrorCode.INCOMPATIBLE_RUNTIME,
                 "terminal conversation receipt could not be persisted",
             ) from error
-        if existing != payload:
+        try:
+            existing_settlement = _decode_terminal_receipt(
+                existing,
+                course_id,
+                session_id,
+                host_turn_id,
+                content,
+                pending_fingerprint,
+            )
+        except (TypeError, ValueError):
+            existing_settlement = None
+        if existing_settlement is None or (
+            existing_settlement.status is not status
+            or existing_settlement.fallback_message not in {None, fallback_message}
+        ):
             raise ConversationTurnError(
                 ConversationTurnErrorCode.CONFLICT,
                 "terminal conversation receipt conflicts with canonical state",
@@ -597,18 +697,91 @@ class ConversationTurnApplication:
         session_id: SessionId,
         learner: InteractionRecord,
         status: TutorHostRunStatus,
-        presentation: TutorPresentationRecord | None,
+        presentation: TutorPresentationRecord,
     ) -> ConversationTurnResult:
         snapshot = self._snapshots.get(course_id, session_id)
         rows = self._presentations.presentations(course_id, session_id)
         return ConversationTurnResult(
-            snapshot,
-            learner,
-            rows,
-            status,
-            self._active_pending(course_id, session_id, rows),
-            presentation,
+            snapshot=snapshot,
+            learner_turn=learner,
+            presentations=rows,
+            status=status,
+            selected_presentation=presentation,
+            pending_continuation=self._active_pending(course_id, session_id, rows),
         )
+
+    def _record_fallback_presentation(
+        self,
+        course_id: CourseId,
+        session_id: SessionId,
+        host_turn_id: str,
+        learner_content: str,
+        pending_fingerprint: str | None,
+        status: TutorHostRunStatus,
+        learner: InteractionRecord,
+        service_context: ExecutionContext,
+        presentation_key: str,
+        *,
+        failure_reason: str | None,
+        fallback_message: str | None = None,
+    ) -> TutorPresentationRecord:
+        """Commit a safe visible outcome for a terminal host path."""
+
+        if status not in _FALLBACK_TERMINAL_STATUSES:
+            raise ConversationTurnError(
+                ConversationTurnErrorCode.INCOMPATIBLE_RUNTIME,
+                "host status cannot be converted to a fallback presentation",
+                learner_persisted=True,
+            )
+        resolved_message = self._fallback_message_policy(status, failure_reason)
+        _validate_fallback_message(resolved_message)
+        if fallback_message is not None and fallback_message != resolved_message:
+            raise ConversationTurnError(
+                ConversationTurnErrorCode.INCOMPATIBLE_RUNTIME,
+                "terminal fallback policy does not match canonical settlement",
+                learner_persisted=True,
+            )
+        self._record_terminal_status(
+            course_id,
+            session_id,
+            host_turn_id,
+            learner_content,
+            pending_fingerprint,
+            status,
+            resolved_message,
+        )
+        observed_sequence = self._snapshots.get(course_id, session_id).high_water_sequence
+        receipt = TutorPresentationReceipt(
+            host_turn_id=host_turn_id,
+            kind=TutorPresentationKind.ASSISTANT_MESSAGE,
+            content=resolved_message,
+            observed_host_context_sequence=observed_sequence,
+            host_context_fingerprint=sha256(
+                f"cardine-fallback-context-v1\0{course_id}\0{session_id}\0{host_turn_id}".encode()
+            ).hexdigest(),
+            decision_fingerprint=sha256(
+                f"cardine-fallback-decision-v1\0{host_turn_id}\0{status.value}".encode()
+            ).hexdigest(),
+        )
+        self._turns.record_tutor_presentation(
+            context=service_context,
+            receipt=receipt,
+            in_reply_to_interaction_id=learner.id,
+            expected_sequence=observed_sequence,
+        )
+        if pending_fingerprint is not None and self._continuations is not None:
+            with suppress(KeyError, OSError, RuntimeError, ValueError):
+                self._continuations.delete(course_id, session_id, pending_fingerprint)
+        presentation = self._existing_presentation(
+            course_id, session_id, host_turn_id, presentation_key
+        )
+        if presentation is None:
+            raise ConversationTurnError(
+                ConversationTurnErrorCode.INCOMPATIBLE_RUNTIME,
+                "fallback tutor presentation was not committed",
+                learner_persisted=True,
+            )
+        return presentation
 
     def _recover_completion_presentation(
         self,
@@ -833,21 +1006,21 @@ def _terminal_receipt_bytes(
     content: str,
     pending_fingerprint: str | None,
     status: TutorHostRunStatus,
+    fallback_message: str,
 ) -> bytes:
-    if status not in {
-        TutorHostRunStatus.COMPLETED,
-        TutorHostRunStatus.TERMINATED,
-    }:
+    if status not in _FALLBACK_TERMINAL_STATUSES:
         raise ValueError("terminal conversation receipt status is invalid")
+    _validate_fallback_message(fallback_message)
     return canonical_json_bytes(
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "course_id": str(course_id),
             "session_id": str(session_id),
             "host_turn_id": host_turn_id,
             "content_sha256": sha256(content.encode()).hexdigest(),
             "pending_fingerprint": pending_fingerprint,
             "status": status.value,
+            "fallback_message": fallback_message,
         }
     )
 
@@ -859,11 +1032,14 @@ def _decode_terminal_receipt(
     host_turn_id: str,
     content: str,
     pending_fingerprint: str | None,
-) -> TutorHostRunStatus:
+) -> _TerminalSettlement:
     if not isinstance(payload, bytes):
         raise ValueError("terminal conversation receipt must be bytes")
     raw = json.loads(payload)
-    if not isinstance(raw, dict) or set(raw) != {
+    if not isinstance(raw, dict):
+        raise ValueError("terminal conversation receipt shape is invalid")
+    schema_version = raw.get("schema_version")
+    common_fields = {
         "schema_version",
         "course_id",
         "session_id",
@@ -871,10 +1047,13 @@ def _decode_terminal_receipt(
         "content_sha256",
         "pending_fingerprint",
         "status",
-    }:
+    }
+    expected_fields = (
+        common_fields if schema_version == 1 else common_fields | {"fallback_message"}
+    )
+    if schema_version not in {1, 2} or set(raw) != expected_fields:
         raise ValueError("terminal conversation receipt shape is invalid")
     expected = {
-        "schema_version": 1,
         "course_id": str(course_id),
         "session_id": str(session_id),
         "host_turn_id": host_turn_id,
@@ -887,12 +1066,22 @@ def _decode_terminal_receipt(
     if not isinstance(raw_status, str):
         raise ValueError("terminal conversation receipt status is invalid")
     status = TutorHostRunStatus(raw_status)
-    if status not in {
-        TutorHostRunStatus.COMPLETED,
-        TutorHostRunStatus.TERMINATED,
-    }:
+    allowed_statuses = (
+        {TutorHostRunStatus.COMPLETED, TutorHostRunStatus.TERMINATED}
+        if schema_version == 1
+        else _FALLBACK_TERMINAL_STATUSES
+    )
+    if status not in allowed_statuses:
         raise ValueError("terminal conversation receipt status is invalid")
-    return status
+    fallback_message = raw.get("fallback_message")
+    if schema_version == 2 and not isinstance(fallback_message, str):
+        raise ValueError("terminal fallback message is invalid")
+    if isinstance(fallback_message, str):
+        _validate_fallback_message(fallback_message)
+    return _TerminalSettlement(
+        status,
+        fallback_message if isinstance(fallback_message, str) else None,
+    )
 
 
 def _validate_content(content: object) -> None:
@@ -900,6 +1089,14 @@ def _validate_content(content: object) -> None:
         raise ValueError("conversation content must be bounded non-blank text")
     if len(content) > MAX_LEARNER_TURN_CHARS:
         raise ValueError("conversation content exceeds its bound")
+
+
+def _validate_fallback_message(message: object) -> None:
+    if not isinstance(message, str):
+        raise TypeError("terminal fallback message must be text")
+    require_text(message, "terminal fallback message")
+    if len(message) > MAX_TUTOR_PRESENTATION_TEXT:
+        raise ValueError("terminal fallback message exceeds presentation bounds")
 
 
 def _validate_sequence(sequence: object) -> None:
@@ -923,19 +1120,12 @@ def _status_for_presentation(record: TutorPresentationRecord) -> TutorHostRunSta
 
 
 def _host_error(result: TutorHostRunResult) -> ConversationTurnError:
-    if result.status is TutorHostRunStatus.INTERRUPTED:
-        code = ConversationTurnErrorCode.INTERRUPTED
-        message = "tutor execution was interrupted"
-    elif result.status in {
-        TutorHostRunStatus.IN_PROGRESS,
-        TutorHostRunStatus.BUDGET_EXHAUSTED,
-    }:
-        code = ConversationTurnErrorCode.FAILED
-        message = "tutor execution did not produce a validated presentation"
-    else:
-        code = ConversationTurnErrorCode.FAILED
-        message = "tutor execution did not produce a validated presentation"
-    return ConversationTurnError(code, message, failure_reason=result.failure_reason)
+    return ConversationTurnError(
+        ConversationTurnErrorCode.FAILED,
+        "tutor execution is still in progress",
+        failure_reason=result.failure_reason,
+        learner_persisted=True,
+    )
 
 
 __all__ = [

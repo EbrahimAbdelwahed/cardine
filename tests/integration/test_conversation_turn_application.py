@@ -65,11 +65,19 @@ class _Runner:
     ) -> TutorHostRunResult:
         del interruption
         self.calls.append((host_turn_id, pending_fingerprint))
-        if self.mode in {"failed", "interrupted", "budget"}:
+        if self.mode == "raise":
+            raise RuntimeError("private runner detail")
+        if self.mode == "message_without_receipt":
+            return TutorHostRunResult(
+                TutorHostRunStatus.ASSISTANT_MESSAGE,
+                learner_text="uncommitted host text",
+            )
+        if self.mode in {"failed", "interrupted", "budget", "in_progress"}:
             status = {
                 "failed": TutorHostRunStatus.FAILED,
                 "interrupted": TutorHostRunStatus.INTERRUPTED,
                 "budget": TutorHostRunStatus.BUDGET_EXHAUSTED,
+                "in_progress": TutorHostRunStatus.IN_PROGRESS,
             }[self.mode]
             return TutorHostRunResult(status)
         if self.mode in {"completed", "terminated"}:
@@ -297,7 +305,9 @@ def test_status_only_terminal_retry_survives_restart_without_repeating_host(
         first = asyncio.run(_conversation(repository).turn(command))
         event_count = len(repository.events.read(COURSE))
         assert first.status is expected_status
-        assert first.presentation is None
+        assert first.presentation is not None
+        assert first.presentation.kind is TutorPresentationKind.ASSISTANT_MESSAGE
+        assert "evidenze sufficienti" in first.presentation.content
         assert len(runner.calls) == 1
 
         with LocalRepository.open(root) as reopened:
@@ -310,26 +320,31 @@ def test_status_only_terminal_retry_survives_restart_without_repeating_host(
             retry = asyncio.run(_conversation(reopened).turn(command))
 
             assert retry.status is expected_status
-            assert retry.presentation is None
+            assert retry.presentation == first.presentation
             assert retry_runner.calls == []
             assert len(reopened.events.read(COURSE)) == event_count
     finally:
         repository.close()
 
 
-def test_completed_without_presentation_is_not_reported_as_success(
+def test_completed_without_recoverable_output_gets_a_visible_fallback(
     tmp_path: Path,
 ) -> None:
     repository, runner, _ = _open(tmp_path, "completed")
     try:
         sequence = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
-        with pytest.raises(ConversationTurnError):
-            asyncio.run(
-                _conversation(repository).turn(
-                    _command("terminal-without-presentation", sequence, "Hello")
-                )
+        result = asyncio.run(
+            _conversation(repository).turn(
+                _command("terminal-without-presentation", sequence, "Hello")
             )
-        assert repository.tutor_presentations.presentations(COURSE, SESSION) == ()
+        )
+        assert result.status is TutorHostRunStatus.COMPLETED
+        assert result.presentation is not None
+        assert result.presentation.kind is TutorPresentationKind.ASSISTANT_MESSAGE
+        assert "Non sono riuscito" in result.presentation.content
+        assert repository.tutor_presentations.presentations(COURSE, SESSION) == (
+            result.presentation,
+        )
         assert runner.calls
     finally:
         repository.close()
@@ -546,26 +561,53 @@ def test_concurrent_new_requests_at_one_sequence_have_one_canonical_winner(tmp_p
 
 
 @pytest.mark.parametrize(
-    "mode,code",
+    "mode,expected_status,expected_text",
     [
-        ("failed", ConversationTurnErrorCode.FAILED),
-        ("interrupted", ConversationTurnErrorCode.INTERRUPTED),
-        ("budget", ConversationTurnErrorCode.FAILED),
+        ("failed", TutorHostRunStatus.FAILED, "Non sono riuscito"),
+        ("interrupted", TutorHostRunStatus.INTERRUPTED, "Non sono riuscito"),
+        ("budget", TutorHostRunStatus.BUDGET_EXHAUSTED, "Non sono riuscito"),
+        ("raise", TutorHostRunStatus.FAILED, "Non sono riuscito"),
+        ("message_without_receipt", TutorHostRunStatus.FAILED, "Non sono riuscito"),
     ],
 )
-def test_unsuccessful_host_results_commit_no_presentation(
-    tmp_path: Path, mode: str, code: ConversationTurnErrorCode
+def test_unsuccessful_host_results_commit_a_visible_fallback(
+    tmp_path: Path,
+    mode: str,
+    expected_status: TutorHostRunStatus,
+    expected_text: str,
 ) -> None:
     repository, runner, _ = _open(tmp_path, mode)
     try:
         sequence = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
-        with pytest.raises(ConversationTurnError) as error:
-            asyncio.run(
-                _conversation(repository).turn(_command(f"request-{mode}", sequence, "Hello"))
-            )
-        assert error.value.code is code
-        assert repository.tutor_presentations.presentations(COURSE, SESSION) == ()
+        result = asyncio.run(
+            _conversation(repository).turn(_command(f"request-{mode}", sequence, "Hello"))
+        )
+        assert result.status is expected_status
+        assert result.presentation is not None
+        assert result.presentation.kind is TutorPresentationKind.ASSISTANT_MESSAGE
+        assert expected_text in result.presentation.content
+        assert repository.tutor_presentations.presentations(COURSE, SESSION) == (
+            result.presentation,
+        )
         assert runner.calls
+    finally:
+        repository.close()
+
+
+def test_in_progress_remains_retryable_without_settling_the_turn(tmp_path: Path) -> None:
+    repository, runner, _ = _open(tmp_path, "in_progress")
+    try:
+        sequence = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
+        command = _command("request-in-progress", sequence, "Hello")
+
+        for _attempt in range(2):
+            with pytest.raises(ConversationTurnError) as error:
+                asyncio.run(_conversation(repository).turn(command))
+            assert error.value.code is ConversationTurnErrorCode.FAILED
+            assert error.value.learner_persisted is True
+
+        assert len(runner.calls) == 2
+        assert repository.tutor_presentations.presentations(COURSE, SESSION) == ()
     finally:
         repository.close()
 
