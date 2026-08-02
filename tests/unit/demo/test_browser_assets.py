@@ -140,6 +140,10 @@ def test_private_workspace_and_model_check_surfaces_are_wired() -> None:
         "password_confirm",
     ):
         assert marker in javascript
+    # The local setup is entirely in-browser.  A stale reference to the
+    # removed bootstrap-token control aborts submission before the request.
+    assert "bootstrapToken" not in javascript
+    assert "bootstrap_token" not in javascript
 
 
 def test_private_chat_can_open_and_confirm_course_creation() -> None:

@@ -14,7 +14,6 @@ from study_agent.demo.browser import (
     create_server,
 )
 from study_agent.demo.product_settings import RuntimeCredentialStore
-from study_agent.demo.ui_application import UiRequestError
 from study_agent.domain._validation import JsonObject
 
 
@@ -72,7 +71,7 @@ def test_browser_page_bytes_are_static_and_accessible() -> None:
     assert 'id="global-alert"' in decoded
     assert b":root" in BrowserSurface(_RepositoryApplication()).asset("browser.css")
     assert b'"use strict";' in BrowserSurface(_RepositoryApplication()).asset("browser.js")
-    assert b'name="bootstrap_token"' in BrowserSurface(_RepositoryApplication()).asset("browser.js")
+    assert b'data-auth-setup' in BrowserSurface(_RepositoryApplication()).asset("browser.js")
     assert b".ai-loading" in BrowserSurface(_RepositoryApplication()).asset("ai-primitives.css")
     assert b"CardineAI" in BrowserSurface(_RepositoryApplication()).asset("ai-primitives.js")
     assert BrowserSurface(_RepositoryApplication()).asset("icons/plus.svg").startswith(b"<svg")
@@ -103,29 +102,10 @@ def test_loopback_owner_setup_activates_private_settings_without_exposing_a_secr
     with pytest.raises(ValueError, match="at least"):
         surface.configure_local_owner(
             "x" * (MIN_LOCAL_OWNER_PASSWORD_CHARS - 1),
-            bootstrap_token=cast(str, surface.local_owner_setup_token),
             client_id="test",
         )
 
-    token = surface.local_owner_setup_token
-    assert isinstance(token, str) and len(token) >= 32
-    assert token not in surface.page().decode("utf-8")
-    with pytest.raises(UiRequestError, match="token is invalid"):
-        surface.configure_local_owner(
-            "correct horse battery staple",
-            bootstrap_token=cast(str, None),
-            client_id="test",
-        )
-    with pytest.raises(UiRequestError, match="token is invalid"):
-        surface.configure_local_owner(
-            "correct horse battery staple",
-            bootstrap_token="wrong",
-            client_id="test",
-        )
-
-    session = surface.configure_local_owner(
-        "correct horse battery staple", bootstrap_token=token, client_id="test"
-    )
+    session = surface.configure_local_owner("correct horse battery staple", client_id="test")
     assert surface.mode == "private"
     assert surface.api_get("/api/v1/auth/session", session_token=session.session_token) == {
         "schema_version": 1,
@@ -145,20 +125,16 @@ def test_loopback_owner_setup_activates_private_settings_without_exposing_a_secr
     assert credentials.configured is True
     assert credentials.get("OPENAI_API_KEY") == "test-runtime-key"
     assert "password" not in repr(surface.private_access).lower()
-    assert surface.local_owner_setup_token is None
 
 
-def test_local_owner_setup_token_is_atomic_and_one_time() -> None:
+def test_local_owner_setup_is_atomic_and_one_time() -> None:
     surface = BrowserSurface(_RepositoryApplication())
     surface.enable_local_owner_setup("http://127.0.0.1:8765")
-    token = surface.local_owner_setup_token
-    assert isinstance(token, str)
 
     def configure() -> bool:
         try:
             surface.configure_local_owner(
                 "correct horse battery staple",
-                bootstrap_token=token,
                 client_id="race",
             )
         except Exception:

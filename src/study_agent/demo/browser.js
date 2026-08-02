@@ -518,7 +518,7 @@
   function renderOwnerSetup(errorMessage = "") {
     state.route = "login";
     navActive("login");
-    setView("login", `<section class="login-surface" aria-labelledby="setup-heading"><p class="eyebrow">Cardine · configurazione locale</p><h1 id="setup-heading">Proteggi questa preview</h1><p class="section-copy">Scegli una password per aprire l’area privata. La password, il suo verificatore e le chiavi API restano solo nella memoria del servizio e vengono rimossi al riavvio.</p><form class="login-surface__form" id="owner-setup-form" data-auth-setup><label for="setup-bootstrap-token">Token di avvio</label><input id="setup-bootstrap-token" name="bootstrap_token" type="password" autocomplete="off" spellcheck="false" required aria-describedby="setup-token-help"><p class="field-note" id="setup-token-help">Copia qui il token mostrato una sola volta nel terminale dal comando di avvio.</p><label for="setup-password">Password</label><span class="password-field"><input id="setup-password" name="password" type="password" autocomplete="new-password" minlength="12" required><button class="text-button" type="button" data-toggle-secret="setup-password" aria-pressed="false">Mostra</button></span><label for="setup-password-confirm">Conferma password</label><span class="password-field"><input id="setup-password-confirm" name="password_confirm" type="password" autocomplete="new-password" minlength="12" required><button class="text-button" type="button" data-toggle-secret="setup-password-confirm" aria-pressed="false">Mostra</button></span><p class="field-error" id="setup-error" ${errorMessage ? "" : "hidden"} role="alert"><span class="icon icon--warning-circle" aria-hidden="true"></span><span>${esc(errorMessage)}</span></p><button class="button" type="submit">Attiva area privata</button></form><p class="login-surface__note">Usa almeno 12 caratteri. Cardine non salva il token o la password nel browser né nel repository.</p></section>`);
+    setView("login", `<section class="login-surface" aria-labelledby="setup-heading"><p class="eyebrow">Cardine · configurazione locale</p><h1 id="setup-heading">Proteggi questa preview</h1><p class="section-copy">Scegli una password per aprire l’area privata. La password, il suo verificatore e le chiavi API restano solo nella memoria del servizio e vengono rimossi al riavvio.</p><form class="login-surface__form" id="owner-setup-form" data-auth-setup><label for="setup-password">Password</label><span class="password-field"><input id="setup-password" name="password" type="password" autocomplete="new-password" minlength="12" required><button class="text-button" type="button" data-toggle-secret="setup-password" aria-pressed="false">Mostra</button></span><label for="setup-password-confirm">Conferma password</label><span class="password-field"><input id="setup-password-confirm" name="password_confirm" type="password" autocomplete="new-password" minlength="12" required><button class="text-button" type="button" data-toggle-secret="setup-password-confirm" aria-pressed="false">Mostra</button></span><p class="field-error" id="setup-error" ${errorMessage ? "" : "hidden"} role="alert"><span class="icon icon--warning-circle" aria-hidden="true"></span><span>${esc(errorMessage)}</span></p><button class="button" type="submit">Attiva area privata</button></form><p class="login-surface__note">Usa almeno 12 caratteri. Cardine non salva la password nel browser né nel repository.</p></section>`);
     $("#setup-password")?.focus({ preventScroll: true });
   }
 
@@ -730,21 +730,11 @@
   }
 
   async function setupOwner(form) {
-    const bootstrapToken = form.elements.namedItem("bootstrap_token");
     const password = form.elements.namedItem("password");
     const confirmation = form.elements.namedItem("password_confirm");
     const errorNode = $("#setup-error", form);
     const submit = $('button[type="submit"]', form);
-    if (!(bootstrapToken instanceof HTMLInputElement) || !(password instanceof HTMLInputElement) || !(confirmation instanceof HTMLInputElement)) return;
-    if (!bootstrapToken.value.trim()) {
-      bootstrapToken.setAttribute("aria-invalid", "true");
-      if (errorNode) {
-        errorNode.hidden = false;
-        errorNode.textContent = "Incolla il token di avvio mostrato nel terminale.";
-      }
-      bootstrapToken.focus({ preventScroll: true });
-      return;
-    }
+    if (!(password instanceof HTMLInputElement) || !(confirmation instanceof HTMLInputElement)) return;
     if (!password.value || password.value.length < 12 || password.value !== confirmation.value) {
       password.setAttribute("aria-invalid", "true");
       confirmation.setAttribute("aria-invalid", "true");
@@ -754,7 +744,6 @@
           ? "Le password non coincidono."
           : "Scegli una password di almeno 12 caratteri.";
       }
-      bootstrapToken.value = "";
       password.focus({ preventScroll: true });
       return;
     }
@@ -762,7 +751,7 @@
     try {
       await fetchJson("/api/v1/auth/setup-owner", {
         method: "POST",
-        body: JSON.stringify({ password: password.value, bootstrap_token: bootstrapToken.value }),
+        body: JSON.stringify({ password: password.value }),
       });
       const auth = await loadAuthSession();
       if (!auth.authenticated || auth.mode !== "private") throw new Error("L’area privata non è stata attivata.");
@@ -777,7 +766,6 @@
     } finally {
       password.value = "";
       confirmation.value = "";
-      bootstrapToken.value = "";
       if (submit) submit.disabled = false;
     }
   }
