@@ -664,6 +664,28 @@ def test_private_browser_routes_composer_scope_keyboard_draft_and_mobile() -> No
         assert cast(
             str, browser.evaluate("document.querySelector('#global-alert-title').innerText")
         ).strip() != ""
+        # A validated tutor protocol failure is not a key failure.  Exercise
+        # the same browser transport envelope emitted by the repository turn
+        # endpoint and ensure the user sees the specific next diagnosis.
+        browser.evaluate(
+            "window.fetch=()=>Promise.resolve(new Response("
+            "JSON.stringify({code:'tutor_protocol_error'}),"
+            "{status:502,headers:{'Content-Type':'application/json'}}))"
+        )
+        browser.evaluate(
+            "document.querySelector('#session-entry-text')"
+            ".dispatchEvent(new KeyboardEvent("
+            "'keydown',{key:'Enter',bubbles:true}))"
+        )
+        browser.wait(
+            "document.querySelector('#global-alert').innerText"
+            ".includes('risposta non compatibile')"
+        )
+        assert (
+            "chiave del modello" not in cast(
+                str, browser.evaluate("document.querySelector('#global-alert').innerText")
+            ).lower()
+        )
         browser.evaluate("window.fetch=window.__cardineOriginalFetch")
         _click(browser, "#global-alert-dismiss")
         assert browser.evaluate("document.querySelector('#global-alert').hidden") is True

@@ -52,6 +52,7 @@ from study_agent.cli.repository import (
     ModelAdapterRegistry,
 )
 from study_agent.courses import ProjectionCourseView
+from study_agent.diagnostics import TurnTraceStore, record_turn_event
 from study_agent.domain import (
     ArtifactDecision,
     ArtifactRevisionId,
@@ -163,10 +164,16 @@ class UiRequestError(ValueError):
         *,
         status_code: int = 400,
         diagnostic_code: str | None = None,
+        command_committed: bool = False,
+        request_id: str | None = None,
+        trace_id: str | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.diagnostic_code = diagnostic_code
+        self.command_committed = command_committed
+        self.request_id = request_id
+        self.trace_id = trace_id
 
 
 def _source_grounding_status(
@@ -209,6 +216,7 @@ class RepositoryUiApplication(UiApplicationPort):
         repository_opener: Callable[..., AbstractContextManager[LocalRepository]] = (
             LocalRepository.open
         ),
+        turn_traces: TurnTraceStore | None = None,
     ) -> None:
         self._repository = Path(repository)
         self._course_id = _identifier(course_id, CourseId, "course_id")
@@ -219,6 +227,7 @@ class RepositoryUiApplication(UiApplicationPort):
         self._recall_scheduler_factory = recall_scheduler_factory
         self._repository_opener = repository_opener
         self._lock = _repository_mutation_lock(self._repository)
+        self._turn_traces = turn_traces if turn_traces is not None else TurnTraceStore()
 
     @property
     def repository(self) -> Path:
@@ -231,6 +240,10 @@ class RepositoryUiApplication(UiApplicationPort):
     @property
     def session_id(self) -> SessionId:
         return self._session_id
+
+    @property
+    def turn_traces(self) -> TurnTraceStore:
+        return self._turn_traces
 
     def _workspace(self) -> JsonObject:
         with self._lock, self._open() as repository:
@@ -419,7 +432,7 @@ class RepositoryUiApplication(UiApplicationPort):
         payload_key = "content" if continuation_fingerprint is None else "response"
         request_id, expected_sequence, payload = _command(command, payload_key=payload_key)
         content = _bounded_content(payload.get(payload_key))
-        with self._lock:
+        with self._turn_traces.capture(request_id, expected_sequence) as trace_id, self._lock:
             try:
                 with self._open() as repository:
                     application = repository.tutor_conversation(
@@ -452,9 +465,16 @@ class RepositoryUiApplication(UiApplicationPort):
                             "continuation": result.pending_continuation,
                         },
                     )
+                    record_turn_event("api.response", "completed")
+                    self._turn_traces.terminal(
+                        trace_id,
+                        "terminated" if result.status.value == "terminated" else "completed",
+                        learner_persisted=True,
+                    )
                     return {
                         "schema_version": 1,
                         "request_id": request_id,
+                        "trace_id": trace_id,
                         "status": result.status.value,
                         "high_water_sequence": refreshed.high_water_sequence,
                         "result": session,
@@ -463,22 +483,56 @@ class RepositoryUiApplication(UiApplicationPort):
                         ),
                     }
             except UiRequestError:
+                self._turn_traces.terminal(
+                    trace_id, "failed", learner_persisted=False, category="invalid_request"
+                )
                 raise
             except ConversationTurnError as error:
-                raise _conversation_ui_error(error) from error
+                category = error.failure_reason or error.code.value
+                record_turn_event("api.response", "failed", category=category)
+                self._turn_traces.terminal(
+                    trace_id,
+                    "failed",
+                    learner_persisted=error.learner_persisted,
+                    category=category,
+                )
+                raise _conversation_ui_error(
+                    error, request_id=request_id, trace_id=trace_id
+                ) from error
             except (CourseNotFoundError, SessionNotFoundError, FileNotFoundError) as error:
+                self._turn_traces.terminal(
+                    trace_id, "failed", learner_persisted=False, category="invalid_request"
+                )
                 raise UiRequestError(
-                    "selected course or session was not found", status_code=404
+                    "selected course or session was not found",
+                    status_code=404,
+                    trace_id=trace_id,
+                ) from error
+            except ModelAdapterConfigurationError as error:
+                record_turn_event("api.response", "failed", category="authentication")
+                self._turn_traces.terminal(
+                    trace_id, "failed", learner_persisted=False, category="authentication"
+                )
+                raise UiRequestError(
+                    "configured model credential is unavailable",
+                    status_code=503,
+                    diagnostic_code="tutor_configuration",
+                    trace_id=trace_id,
                 ) from error
             except (
                 LocalRepositoryError,
-                ModelAdapterConfigurationError,
                 OSError,
                 ValueError,
                 RuntimeError,
             ) as error:
+                record_turn_event("api.response", "failed", category="internal")
+                self._turn_traces.terminal(
+                    trace_id, "failed", learner_persisted=False, category="internal"
+                )
                 raise UiRequestError(
-                    "repository runtime is unavailable", status_code=503
+                    "repository runtime is unavailable",
+                    status_code=503,
+                    trace_id=trace_id,
                 ) from error
 
     def _select_workspace(self, command: Mapping[str, object]) -> JsonObject:
@@ -745,15 +799,7 @@ class RepositoryUiApplication(UiApplicationPort):
                     "scope": "tutor_decision",
                 }
         except ModelError as error:
-            reason = {
-                ModelErrorCode.AUTHENTICATION: "invalid_credential",
-                ModelErrorCode.RATE_LIMITED: "rate_limited",
-                ModelErrorCode.TIMEOUT: "timeout",
-                ModelErrorCode.MODEL_UNAVAILABLE: "model_unavailable",
-                ModelErrorCode.ENDPOINT_INCOMPATIBLE: "endpoint_incompatible",
-                ModelErrorCode.UNAVAILABLE: "provider_unavailable",
-                ModelErrorCode.PROTOCOL_ERROR: "provider_protocol_error",
-            }.get(error.code, "model_unavailable")
+            reason = _model_check_reason(error.code.value)
             return {
                 "schema_version": 1,
                 "request_id": request_id,
@@ -769,13 +815,14 @@ class RepositoryUiApplication(UiApplicationPort):
                 "reason": "configuration",
                 "message": "Configura una chiave API valida per il modello selezionato.",
             }
-        except (OSError, RuntimeError, ValueError):
+        except (OSError, RuntimeError, ValueError) as error:
+            reason = _model_check_reason(getattr(error, "failure_reason", None))
             return {
                 "schema_version": 1,
                 "request_id": request_id,
                 "status": "error",
-                "reason": "provider_unavailable",
-                "message": "Il provider non è raggiungibile in questo momento.",
+                "reason": reason,
+                "message": _model_check_message(reason),
             }
 
     def _post_artifact_decision(
@@ -2322,6 +2369,18 @@ def _model_check_message(reason: str) -> str:
     }.get(reason, "Il modello non è disponibile.")
 
 
+def _model_check_reason(failure_reason: object) -> str:
+    return {
+        ModelErrorCode.AUTHENTICATION.value: "invalid_credential",
+        ModelErrorCode.RATE_LIMITED.value: "rate_limited",
+        ModelErrorCode.TIMEOUT.value: "timeout",
+        ModelErrorCode.MODEL_UNAVAILABLE.value: "model_unavailable",
+        ModelErrorCode.ENDPOINT_INCOMPATIBLE.value: "endpoint_incompatible",
+        ModelErrorCode.UNAVAILABLE.value: "provider_unavailable",
+        ModelErrorCode.PROTOCOL_ERROR.value: "provider_protocol_error",
+    }.get(failure_reason, "provider_unavailable")
+
+
 def _timeline_item(item: object) -> JsonObject:
     kind = getattr(getattr(item, "kind", None), "value", "system")
     role = {"learner": "learner", "assistant": "assistant", "note": "system"}.get(
@@ -2448,7 +2507,12 @@ def _readiness_shell_status(snapshot: TutorSnapshotV1, readiness: StudyReadiness
     return "needs_review" if has_open_work else base
 
 
-def _conversation_ui_error(error: ConversationTurnError) -> UiRequestError:
+def _conversation_ui_error(
+    error: ConversationTurnError,
+    *,
+    request_id: str | None = None,
+    trace_id: str | None = None,
+) -> UiRequestError:
     failure = error.failure_reason
     if failure is not None:
         status, message = {
@@ -2464,6 +2528,9 @@ def _conversation_ui_error(error: ConversationTurnError) -> UiRequestError:
             message,
             status_code=status,
             diagnostic_code=f"tutor_{failure}",
+            command_committed=error.learner_persisted,
+            request_id=request_id if error.learner_persisted else None,
+            trace_id=trace_id,
         )
     status = {
         ConversationTurnErrorCode.INVALID_REQUEST: 400,
@@ -2480,13 +2547,35 @@ def _conversation_ui_error(error: ConversationTurnError) -> UiRequestError:
         if error.code is ConversationTurnErrorCode.RETRYABLE_CONFLICT
         else "request conflicts with canonical session state"
         if status == 409
+        else "tutor execution did not produce a validated response"
+        if error.code in {
+            ConversationTurnErrorCode.FAILED,
+            ConversationTurnErrorCode.INTERRUPTED,
+        }
         else "repository runtime is unavailable"
         if status == 503
         else "request is invalid"
         if status == 400
         else "request is not available"
     )
-    return UiRequestError(message, status_code=status)
+    diagnostic_code = (
+        "tutor_execution_failed"
+        if error.code in {
+            ConversationTurnErrorCode.FAILED,
+            ConversationTurnErrorCode.INTERRUPTED,
+        }
+        else "repository_runtime_unavailable"
+        if status == 503
+        else None
+    )
+    return UiRequestError(
+        message,
+        status_code=status,
+        diagnostic_code=diagnostic_code,
+        command_committed=error.learner_persisted,
+        request_id=request_id if error.learner_persisted else None,
+        trace_id=trace_id,
+    )
 
 
 def _unavailable(result: TutorSnapshotV1 | Mapping[str, object], message: str) -> JsonObject:

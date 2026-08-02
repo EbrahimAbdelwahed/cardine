@@ -294,6 +294,7 @@ class StaleCapabilityOutcome:
 class FailedCapabilityOutcome:
     run_id: RunId
     message: str
+    failure_reason: str | None = None
     status: CapabilityOutcomeStatus = field(
         default=CapabilityOutcomeStatus.FAILED, init=False
     )
@@ -302,6 +303,16 @@ class FailedCapabilityOutcome:
         if not isinstance(self.run_id, RunId):
             raise TypeError("failed outcome run_id must be RunId")
         require_text(self.message, "failed outcome message")
+        if self.failure_reason is not None and self.failure_reason not in {
+            "authentication",
+            "model_unavailable",
+            "endpoint_incompatible",
+            "rate_limited",
+            "timeout",
+            "protocol_error",
+            "unavailable",
+        }:
+            raise ValueError("failed outcome failure reason is invalid")
 
 
 type CapabilityOutcome = (

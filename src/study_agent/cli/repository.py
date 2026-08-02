@@ -82,6 +82,7 @@ from study_agent.courses import (
     course_profile_manifest,
     register_course_events,
 )
+from study_agent.diagnostics import record_turn_event, trace_model
 from study_agent.domain import (
     ChunkId,
     Citation,
@@ -100,6 +101,7 @@ from study_agent.grounding import (
 )
 from study_agent.hosts import (
     HostActionIdentity,
+    SourceGroundedTutorDecisionPort,
     TutorCapabilityCompletionReference,
     TutorHostContextAssembler,
     TutorHostLimits,
@@ -166,6 +168,24 @@ if TYPE_CHECKING:
 _V1 = SemanticVersion.parse("1.0.0")
 
 
+def _record_grounding_outcome(outcome: CapabilityOutcome) -> None:
+    status = outcome.status.value
+    if status == "completed":
+        record_turn_event("structured_output.grounding", "passed")
+    elif status == "terminated":
+        record_turn_event(
+            "structured_output.grounding",
+            "insufficient",
+            category="insufficient_evidence",
+        )
+    elif status == "failed":
+        record_turn_event(
+            "structured_output.grounding",
+            "failed",
+            category=getattr(outcome, "failure_reason", None) or "internal",
+        )
+
+
 class _RepositoryTutorGateway:
     """Request-bound real explain capability over canonical repository reads."""
 
@@ -223,7 +243,9 @@ class _RepositoryTutorGateway:
         inputs: JsonObject,
         context: ExecutionContext,
     ) -> CapabilityOutcome:
-        return await self._gateway(inputs, context).start(capability_id, inputs, context)
+        outcome = await self._gateway(inputs, context).start(capability_id, inputs, context)
+        _record_grounding_outcome(outcome)
+        return outcome
 
     async def resume(
         self,
@@ -234,7 +256,9 @@ class _RepositoryTutorGateway:
         inputs = getattr(continuation, "inputs", None)
         if not isinstance(inputs, Mapping):
             raise TypeError("continuation inputs are invalid")
-        return await self._gateway(inputs, context).resume(continuation, response, context)
+        outcome = await self._gateway(inputs, context).resume(continuation, response, context)
+        _record_grounding_outcome(outcome)
+        return outcome
 
     def _gateway(
         self, inputs: Mapping[str, object], context: ExecutionContext
@@ -952,7 +976,9 @@ class LocalRepository:
             return self.conversation
         if self.config.model is None:
             raise ModelAdapterConfigurationError("no model adapter is configured")
-        model = self._model_adapters.create(self.config.model, self._environment)
+        model = trace_model(
+            self._model_adapters.create(self.config.model, self._environment)
+        )
         gateway = _RepositoryTutorGateway(
             self,
             course_id,
@@ -961,7 +987,7 @@ class LocalRepository:
             self._model_adapters.artifact(self.config.model.adapter_id),
         )
         runner = TutorHostRunner(
-            ModelTutorDecisionPort(model),
+            SourceGroundedTutorDecisionPort(ModelTutorDecisionPort(model)),
             self.tutor_snapshots,
             self.learner_evidence,
             gateway,

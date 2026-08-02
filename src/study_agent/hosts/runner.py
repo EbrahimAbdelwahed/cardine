@@ -863,6 +863,7 @@ class TutorHostRunner:
         if _interrupted(interruption):
             return _interrupted_result()
 
+        generation = 1
         try:
             handoff = self._load_handoff(course_id, session_id, host_turn_id)
         except (OSError, RuntimeError, TypeError, ValueError):
@@ -872,6 +873,8 @@ class TutorHostRunner:
         if handoff is not None and handoff.state is TutorCompletionHandoffState.COMPLETED:
             return self._result_from_handoff(handoff)
         if handoff is not None and handoff.state is TutorCompletionHandoffState.STALE:
+            generation = handoff.generation + 1
+            retry_receipt = None
             handoff = None
 
         selected: TutorContinuationRecord | None = None
@@ -885,7 +888,6 @@ class TutorHostRunner:
 
         decisions = 0
         stale_refreshes = 0
-        generation = 1
         while True:
             if _interrupted(interruption):
                 return _interrupted_result(selected, retry_receipt)
@@ -1703,7 +1705,11 @@ class TutorHostRunner:
         if isinstance(outcome, CancelledCapabilityOutcome):
             return TutorHostRunResult(TutorHostRunStatus.CANCELLED, receipt)
         if isinstance(outcome, FailedCapabilityOutcome):
-            return TutorHostRunResult(TutorHostRunStatus.FAILED, receipt)
+            return TutorHostRunResult(
+                TutorHostRunStatus.FAILED,
+                receipt,
+                failure_reason=outcome.failure_reason,
+            )
         return TutorHostRunResult(TutorHostRunStatus.FAILED, receipt)
 
 

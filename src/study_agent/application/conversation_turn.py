@@ -14,6 +14,7 @@ from enum import StrEnum
 from hashlib import sha256
 from typing import Protocol
 
+from study_agent.diagnostics import record_turn_event
 from study_agent.domain import (
     CorrelationId,
     CourseId,
@@ -80,6 +81,7 @@ class ConversationTurnError(RuntimeError):
         message: str,
         *,
         failure_reason: str | None = None,
+        learner_persisted: bool = False,
     ) -> None:
         if not isinstance(code, ConversationTurnErrorCode):
             raise TypeError("conversation error code must use ConversationTurnErrorCode")
@@ -96,6 +98,7 @@ class ConversationTurnError(RuntimeError):
             raise ValueError("conversation failure reason is invalid")
         self.code = code
         self.failure_reason = failure_reason
+        self.learner_persisted = learner_persisted
         super().__init__(message)
 
 
@@ -317,12 +320,17 @@ class ConversationTurnApplication:
             principal_id=self._service_principal_id,
             idempotency_key=presentation_key,
         )
+        learner_persisted = False
         try:
             existing_presentation = self._existing_presentation(
                 context.course_id, session_id, host_turn_id, presentation_key
             )
             existing_learner = self._existing_learner(
                 context.course_id, session_id, learner_context
+            )
+            record_turn_event(
+                "learner.lookup",
+                "hit" if existing_learner is not None else "miss",
             )
             terminal_status = self._terminal_status(
                 context.course_id,
@@ -391,12 +399,33 @@ class ConversationTurnApplication:
             learner = self._turns.record_learner_turn(
                 command.content, learner_context, command.expected_sequence
             )
+            learner_persisted = True
+            record_turn_event(
+                "learner.persist",
+                "committed",
+                details={"idempotent_retry": existing_learner is not None},
+            )
             host_result = await self._runner.run(
                 context.course_id,
                 session_id,
                 host_turn_id,
                 interruption,
                 pending_fingerprint=pending_fingerprint,
+            )
+            record_turn_event(
+                "host.run",
+                "completed"
+                if host_result.status is TutorHostRunStatus.COMPLETED
+                else "terminated"
+                if host_result.status is TutorHostRunStatus.TERMINATED
+                else "failed"
+                if host_result.status in {
+                    TutorHostRunStatus.FAILED,
+                    TutorHostRunStatus.INTERRUPTED,
+                }
+                else "passed",
+                category=host_result.failure_reason,
+                details={"host_status": host_result.status.value},
             )
             if host_result.status is TutorHostRunStatus.COMPLETED:
                 presentation = self._recover_completion_presentation(
@@ -405,6 +434,9 @@ class ConversationTurnApplication:
                     host_result,
                     learner.id,
                 )
+                record_turn_event("response.compose", "completed")
+                if presentation is not None:
+                    record_turn_event("response.persist", "committed")
                 if presentation is None:
                     self._record_terminal_status(
                         context.course_id,
@@ -461,6 +493,8 @@ class ConversationTurnApplication:
                     in_reply_to_interaction_id=learner.id,
                     expected_sequence=receipt.observed_host_context_sequence,
                 )
+                record_turn_event("response.compose", "completed")
+                record_turn_event("response.persist", "committed")
                 if (
                     pending_fingerprint is not None
                     and host_result.status is not TutorHostRunStatus.SUSPENDED
@@ -491,27 +525,32 @@ class ConversationTurnApplication:
                     presentation,
                 )
             raise _host_error(host_result)
-        except ConversationTurnError:
+        except ConversationTurnError as error:
+            error.learner_persisted = error.learner_persisted or learner_persisted
             raise
         except IdempotencyConflictError as error:
             raise ConversationTurnError(
                 ConversationTurnErrorCode.CONFLICT,
                 "conversation request identity conflicts with canonical state",
+                learner_persisted=learner_persisted,
             ) from error
         except RetryableSessionConflictError as error:
             raise ConversationTurnError(
                 ConversationTurnErrorCode.RETRYABLE_CONFLICT,
                 "canonical session state advanced; retry safely",
+                learner_persisted=learner_persisted,
             ) from error
         except SessionCommandError as error:
             raise ConversationTurnError(
                 ConversationTurnErrorCode.CONFLICT,
                 "conversation command cannot be applied to this session",
+                learner_persisted=learner_persisted,
             ) from error
         except (LookupError, OSError, ValueError, RuntimeError) as error:
             raise ConversationTurnError(
                 ConversationTurnErrorCode.INCOMPATIBLE_RUNTIME,
                 "conversation runtime is unavailable",
+                learner_persisted=learner_persisted,
             ) from error
 
     def _terminal_status(

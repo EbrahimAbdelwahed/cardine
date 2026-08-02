@@ -50,6 +50,7 @@ from .runner import (
     TutorHostRunStatus,
     completion_handoff_key,
 )
+from .source_grounding import SourceGroundedTutorDecisionPort
 
 __all__ = [
     "HOST_CONTEXT_SCHEMA_VERSION",
@@ -71,6 +72,7 @@ __all__ = [
     "ScriptedDecision",
     "ScriptedDecisionError",
     "ScriptedTutorDecisionPort",
+    "SourceGroundedTutorDecisionPort",
     "StartCapabilityDecision",
     "StopDecision",
     "TrustedHostFileIngestionCommand",
