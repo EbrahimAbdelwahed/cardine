@@ -1,6 +1,6 @@
 # Task Bead: crs-01 Preserve and prove every Cardine source
 
-Status: Open
+Status: Complete
 Priority: P0
 Type: task
 Depends On: none

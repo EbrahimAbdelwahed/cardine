@@ -1,6 +1,6 @@
 # Task Bead: crs-06 Remove Cardine-specific Harness residues and retain generic shell
 
-Status: Open
+Status: Complete
 Priority: P0
 Type: task
 Depends On: cardine-ui-fix-crs-05-9jk

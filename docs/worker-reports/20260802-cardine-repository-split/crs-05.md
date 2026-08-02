@@ -1,6 +1,6 @@
 # Worker Report: crs-05
 
-Status: remote CI pending
+Status: complete
 Run ID: `20260802-cardine-repository-split`
 Task: `docs/tasks/20260802-cardine-repository-split/crs-05.md`
 Brief: `docs/worker-briefs/20260802-cardine-repository-split/crs-05.md`
@@ -40,8 +40,8 @@ Reported: 2026-08-02 05:25
 ## Open Questions Or Blockers
 
 - Local Docker verification is unavailable because the host has no `docker` executable; remote CI remains the container-independent release gate
-- Push and remote CI are pending
+- Local Docker verification remains unavailable because the host has no `docker` executable; the container-independent release gates and all remote CI jobs passed
 
 ## Follow-up Beads Needed
 
-- None beyond the remaining remote gates
+- None

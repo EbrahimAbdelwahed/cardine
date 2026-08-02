@@ -1,6 +1,6 @@
 # Task Bead: crs-03 Normalize Cardine repository identity and ownership
 
-Status: Open
+Status: Complete
 Priority: P1
 Type: task
 Depends On: cardine-ui-fix-crs-02-u2l

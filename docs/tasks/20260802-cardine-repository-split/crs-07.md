@@ -1,6 +1,6 @@
 # Task Bead: crs-07 Close migration with remote audit, tag, and durable handoff
 
-Status: Open
+Status: Complete
 Priority: P1
 Type: task
 Depends On: cardine-ui-fix-crs-06-nhr
