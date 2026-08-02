@@ -347,7 +347,7 @@ def _parse_origin(value: str) -> tuple[str, str, int] | None:
 def main(argv: list[str] | None = None) -> int:
     """Generate a hash without accepting the password as a shell argument."""
 
-    parser = argparse.ArgumentParser(prog="study-agent-private-password-hash")
+    parser = argparse.ArgumentParser(prog="cardine-private-password-hash")
     parser.add_argument("--confirm", action="store_true", help="request the password twice")
     args = parser.parse_args(argv)
     first = getpass.getpass("Password: ")

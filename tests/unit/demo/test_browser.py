@@ -3,11 +3,13 @@ from __future__ import annotations
 import pytest
 
 from study_agent.demo.browser import (
-    BrowserSurface,
+    MIN_LOCAL_OWNER_PASSWORD_CHARS,
     PREVIEW_RUNTIME_ID,
+    BrowserSurface,
     _require_bind_host,
     create_server,
 )
+from study_agent.demo.product_settings import RuntimeCredentialStore
 from study_agent.domain._validation import JsonObject
 
 
@@ -74,6 +76,47 @@ def test_browser_page_bytes_are_static_and_accessible() -> None:
 def test_browser_surface_exposes_only_versioned_repository_api() -> None:
     surface = BrowserSurface(_RepositoryApplication())
     assert surface.api_post("/api/v1/session/turns", {})["status"] == "committed"
+
+
+def test_loopback_owner_setup_activates_private_settings_without_exposing_a_secret() -> None:
+    credentials = RuntimeCredentialStore(base={})
+    surface = BrowserSurface(_RepositoryApplication(), runtime_credentials=credentials)
+    surface.enable_local_owner_setup("http://127.0.0.1:8765")
+
+    probe = surface.api_get("/api/v1/auth/session")
+    assert probe == {
+        "schema_version": 1,
+        "mode": "setup",
+        "authenticated": False,
+        "setup_required": True,
+    }
+    with pytest.raises(ValueError, match="at least"):
+        surface.configure_local_owner("x" * (MIN_LOCAL_OWNER_PASSWORD_CHARS - 1), client_id="test")
+
+    session = surface.configure_local_owner("correct horse battery staple", client_id="test")
+    assert surface.mode == "private"
+    assert surface.api_get("/api/v1/auth/session", session_token=session.session_token) == {
+        "schema_version": 1,
+        "mode": "private",
+        "authenticated": True,
+        "csrf_token": session.csrf_token,
+    }
+    settings = surface.api_get("/api/v1/settings", session_token=session.session_token)
+    assert settings["model"]["credential_configured"] is False
+    surface.api_post(
+        "/api/v1/settings/model/credential",
+        {"api_key": "test-runtime-key"},
+        session_token=session.session_token,
+        csrf_token=session.csrf_token,
+    )
+    assert credentials.configured is True
+    assert credentials.get("OPENAI_API_KEY") == "test-runtime-key"
+    assert "password" not in repr(surface.private_access).lower()
+
+
+def test_local_owner_setup_is_loopback_only_and_cannot_be_combined_with_private_access() -> None:
+    with pytest.raises(ValueError, match="private production"):
+        create_server("0.0.0.0", 0, ui_application=_RepositoryApplication(), local_owner_setup=True)
 
 
 def test_preview_runtime_marker_is_safe_and_versioned() -> None:

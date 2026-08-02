@@ -1,13 +1,14 @@
-# Contributing
+# Contributing to Cardine
 
-The repository is preparing for public contributions to the provider-neutral
-harness, its reference adapters, tests, and documentation. Product features,
-hosted-platform concerns, and provider-specific study behaviour are outside its
-scope.
+Cardine is a private product repository. Contributions are coordinated with
+the owner; this is not an invitation to public contributions or a promise of
+an open-source Cardine release. Read [`NOTICE.md`](NOTICE.md) before changing
+files that originated in the copied Harness core or third-party assets.
 
-Unless explicitly stated otherwise, contributions intentionally submitted for
-inclusion in this project are licensed under the
-[Apache License 2.0](LICENSE), without additional terms or conditions.
+The copied core remains under the Apache License 2.0 in [`LICENSE`](LICENSE).
+Cardine product work is separately owned and is not licensed for reuse; see
+[`LICENSE-CARDINE.md`](LICENSE-CARDINE.md). Do not assume that a pull request,
+patch, or issue grants a license to private product code.
 
 ## Development setup
 
@@ -24,7 +25,12 @@ Before submitting a change, run:
 .venv/bin/python -m pytest
 .venv/bin/python -m ruff check .
 .venv/bin/python -m mypy
+.venv/bin/python -m build
 ```
+
+Use the Cardine entry points in examples and deployment scripts:
+`cardine`, `cardine-demo`, `cardine-shell`, and `cardine-shell-web`. The
+`study-agent-*` names are retained only as copied-core compatibility aliases.
 
 Keep changes small and preserve these architectural boundaries:
 
@@ -35,7 +41,9 @@ Keep changes small and preserve these architectural boundaries:
 - trusted execution context is separate from model-proposed tool arguments;
 - tests are offline by default and never require credentials.
 
-Add behaviour-focused tests for contract changes. Document durable architectural
-decisions under `docs/decisions/` and update affected specs. Never commit local
-study repositories, source material, exports, credentials, raw provider
-payloads, or raw Flywheel execution artifacts.
+Add behaviour-focused tests for contract changes. Document durable
+architectural decisions under `docs/decisions/` and update affected specs.
+Never commit local study repositories, source material, exports, credentials,
+raw provider payloads, or raw Flywheel execution artifacts. Do not add design
+source outside the custody path documented in
+[`docs/design-source/README.md`](docs/design-source/README.md).

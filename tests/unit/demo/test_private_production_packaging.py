@@ -14,7 +14,7 @@ def test_private_production_image_has_a_non_public_entrypoint() -> None:
     assert "--private" in entrypoint
     assert "--production" in entrypoint
     assert "--public-demo" not in entrypoint
-    assert 'study-agent-private-password-hash = "study_agent.demo.private_access:main"' in project
+    assert 'cardine-private-password-hash = "study_agent.demo.private_access:main"' in project
     for variable in (
         "CARDINE_OWNER_PASSWORD_HASH",
         "CARDINE_PUBLIC_ORIGIN",

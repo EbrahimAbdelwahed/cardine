@@ -1,5 +1,6 @@
 services:
   cardine:
+    image: cardine:production
     build:
       context: .
       dockerfile: Dockerfile.production

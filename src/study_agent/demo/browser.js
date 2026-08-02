@@ -80,6 +80,7 @@
   const MODE_LABELS = Object.freeze({
     local_repository: "repository locale",
     public_demo: "anteprima pubblica",
+    setup: "configurazione locale",
     private: "area privata",
   });
 
@@ -469,7 +470,7 @@
       // namespace. Discover it first so a local browser has no expected 404.
       const health = object(await fetchJson("/health"));
       const healthMode = text(first(health, ["mode", "access_mode"], ""), "");
-      if (healthMode && healthMode !== "private") {
+      if (healthMode && !["private", "setup"].includes(healthMode)) {
         state.authProbeUnavailable = true;
         state.auth = { status: "local", authenticated: false, mode: healthMode, csrfToken: "", account: null };
         setAccountControl();
@@ -512,6 +513,13 @@
     navActive("login");
     setView("login", `<section class="login-surface" aria-labelledby="login-heading"><p class="eyebrow">Cardine · area privata</p><h1 id="login-heading">Accedi a Cardine</h1><p class="section-copy">La tua area privata per lo studio locale. La sessione resta attiva solo su questo dispositivo.</p><form class="login-surface__form" id="login-form" data-auth-login><label for="login-password">Password</label><span class="password-field"><input id="login-password" name="password" type="password" autocomplete="current-password" required><button class="text-button" type="button" data-toggle-secret="login-password" aria-pressed="false">Mostra</button></span><p class="field-error" id="login-error" ${errorMessage ? "" : "hidden"} role="alert"><span class="icon icon--warning-circle" aria-hidden="true"></span><span>${esc(errorMessage)}</span></p><button class="button" type="submit">Accedi</button></form><p class="login-surface__note">La password non viene salvata nel browser.</p></section>`);
     $("#login-password")?.focus({ preventScroll: true });
+  }
+
+  function renderOwnerSetup(errorMessage = "") {
+    state.route = "login";
+    navActive("login");
+    setView("login", `<section class="login-surface" aria-labelledby="setup-heading"><p class="eyebrow">Cardine · configurazione locale</p><h1 id="setup-heading">Proteggi questa preview</h1><p class="section-copy">Scegli una password per aprire l’area privata. La password, il suo verificatore e le chiavi API restano solo nella memoria del servizio e vengono rimossi al riavvio.</p><form class="login-surface__form" id="owner-setup-form" data-auth-setup><label for="setup-password">Password</label><span class="password-field"><input id="setup-password" name="password" type="password" autocomplete="new-password" minlength="12" required><button class="text-button" type="button" data-toggle-secret="setup-password" aria-pressed="false">Mostra</button></span><label for="setup-password-confirm">Conferma password</label><span class="password-field"><input id="setup-password-confirm" name="password_confirm" type="password" autocomplete="new-password" minlength="12" required><button class="text-button" type="button" data-toggle-secret="setup-password-confirm" aria-pressed="false">Mostra</button></span><p class="field-error" id="setup-error" ${errorMessage ? "" : "hidden"} role="alert"><span class="icon icon--warning-circle" aria-hidden="true"></span><span>${esc(errorMessage)}</span></p><button class="button" type="submit">Attiva area privata</button></form><p class="login-surface__note">Usa almeno 12 caratteri. Cardine non salva la password nel browser né nel repository.</p></section>`);
+    $("#setup-password")?.focus({ preventScroll: true });
   }
 
   function renderSettings(payload = {}) {
@@ -714,6 +722,49 @@
         errorNode.textContent = error.status === 401
           ? "Password non corretta. Riprova."
           : error.message;
+      }
+      password.focus({ preventScroll: true });
+    } finally {
+      if (submit) submit.disabled = false;
+    }
+  }
+
+  async function setupOwner(form) {
+    const password = form.elements.namedItem("password");
+    const confirmation = form.elements.namedItem("password_confirm");
+    const errorNode = $("#setup-error", form);
+    const submit = $('button[type="submit"]', form);
+    if (!(password instanceof HTMLInputElement) || !(confirmation instanceof HTMLInputElement)) return;
+    if (!password.value || password.value.length < 12 || password.value !== confirmation.value) {
+      password.setAttribute("aria-invalid", "true");
+      confirmation.setAttribute("aria-invalid", "true");
+      if (errorNode) {
+        errorNode.hidden = false;
+        errorNode.textContent = password.value !== confirmation.value
+          ? "Le password non coincidono."
+          : "Scegli una password di almeno 12 caratteri.";
+      }
+      password.focus({ preventScroll: true });
+      return;
+    }
+    if (submit) submit.disabled = true;
+    try {
+      await fetchJson("/api/v1/auth/setup-owner", {
+        method: "POST",
+        body: JSON.stringify({ password: password.value }),
+      });
+      password.value = "";
+      confirmation.value = "";
+      const auth = await loadAuthSession();
+      if (!auth.authenticated || auth.mode !== "private") throw new Error("L’area privata non è stata attivata.");
+      await loadBootstrap();
+    } catch (error) {
+      password.value = "";
+      confirmation.value = "";
+      password.setAttribute("aria-invalid", "true");
+      if (errorNode) {
+        errorNode.hidden = false;
+        errorNode.textContent = error.message;
       }
       password.focus({ preventScroll: true });
     } finally {
@@ -2210,6 +2261,10 @@
         event.preventDefault();
         login(form);
       }
+      if (form.matches("[data-auth-setup]")) {
+        event.preventDefault();
+        setupOwner(form);
+      }
       if (form.matches("[data-settings-credential]")) {
         event.preventDefault();
         replaceCredential(form);
@@ -2410,6 +2465,10 @@
   bindDynamicControls();
   window.addEventListener("resize", applyRailState);
   loadAuthSession().then((auth) => {
+    if (auth.mode === "setup") {
+      renderOwnerSetup();
+      return;
+    }
     if (auth.mode === "private" && !auth.authenticated) {
       renderLogin();
       return;

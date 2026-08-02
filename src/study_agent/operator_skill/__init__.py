@@ -14,7 +14,7 @@ from study_agent.domain._validation import JsonObject
 
 SKILL_ID = "study-agent-operator"
 SKILL_VERSION = "1.0.0"
-EXTRACTION_COMMAND = "study-agent --json operator skill --output PATH"
+EXTRACTION_COMMAND = "cardine --json operator skill --output PATH"
 
 
 def skill_bytes() -> bytes:

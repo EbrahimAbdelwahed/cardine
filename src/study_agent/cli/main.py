@@ -45,7 +45,7 @@ class _Parser(argparse.ArgumentParser):
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = _Parser(prog="study-agent", description="Local event-sourced study harness")
+    parser = _Parser(prog="cardine", description="Local event-sourced Cardine study repository")
     parser.add_argument("--repository", type=Path, default=Path.cwd(), help="repository root")
     parser.add_argument("--json", action="store_true", help="emit one JSON document")
     configure_parser(parser)

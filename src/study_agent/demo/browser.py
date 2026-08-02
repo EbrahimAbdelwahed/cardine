@@ -19,18 +19,20 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from pathlib import Path
 from socket import socket
-from threading import BoundedSemaphore, Lock
+from threading import BoundedSemaphore, Lock, RLock
 from typing import cast
 from urllib.parse import unquote, urlsplit
 
 from study_agent.domain._validation import JsonObject
 
 from .private_access import (
+    AuthenticatedSession,
     LoginRateLimited,
     PrivateAccessController,
     PrivateAccessError,
+    hash_password,
 )
-from .product_settings import PrivateSettingsApplication
+from .product_settings import PrivateSettingsApplication, RuntimeCredentialStore
 from .ui_application import UiApplicationPort, UiRequestError
 
 DEFAULT_BROWSER_HOST = "127.0.0.1"
@@ -70,12 +72,14 @@ FONT_ASSETS = frozenset(
 )
 API_PREFIX = "/api/v1/"
 DIAGNOSTICS_PATH = "/api/v1/diagnostics"
+LOCAL_OWNER_SETUP_PATH = "/api/v1/auth/setup-owner"
 # Source revisions are intentionally bounded by the UI application at 192 KiB.
 # Leave protocol headroom for the JSON envelope while keeping generic API bodies
 # small enough for the local threaded server.
 MAX_API_BODY_BYTES = 262_144
 MAX_CONCURRENT_REQUESTS = 32
 REQUEST_SOCKET_TIMEOUT_SECONDS = 10.0
+MIN_LOCAL_OWNER_PASSWORD_CHARS = 12
 
 SocketRequest = socket | tuple[bytes, socket]
 
@@ -89,10 +93,14 @@ class BrowserSurface:
         *,
         private_access: PrivateAccessController | None = None,
         settings_application: PrivateSettingsApplication | None = None,
+        runtime_credentials: RuntimeCredentialStore | None = None,
     ) -> None:
         self._ui = ui_application
         self._private_access = private_access
         self._settings = settings_application
+        self._runtime_credentials = runtime_credentials
+        self._local_setup_origin: str | None = None
+        self._access_lock = RLock()
         self._diagnostics: deque[JsonObject] = deque(maxlen=24)
         self._diagnostics_lock = Lock()
 
@@ -104,6 +112,8 @@ class BrowserSurface:
     def mode(self) -> str:
         if self._private_access is not None:
             return "private"
+        if self._local_setup_origin is not None:
+            return "setup"
         return str(getattr(self._ui, "mode", "local_repository"))
 
     @property
@@ -113,6 +123,56 @@ class BrowserSurface:
     @property
     def private_mode(self) -> bool:
         return self._private_access is not None
+
+    @property
+    def setup_required(self) -> bool:
+        return self._private_access is None and self._local_setup_origin is not None
+
+    def enable_local_owner_setup(self, canonical_origin: str) -> None:
+        """Allow one owner to activate a loopback-only private session.
+
+        This deliberately keeps the owner verifier in process memory.  It is
+        intended for an explicit local preview: no password or verifier is
+        written to the repository, logs, browser storage, or environment.
+        """
+
+        with self._access_lock:
+            if self._private_access is not None or self._local_setup_origin is not None:
+                raise ValueError("local owner setup is already configured")
+            # ``create_server`` derives this from its bound loopback socket;
+            # ``configure_local_owner`` passes it to the access controller
+            # before any session or credential store is activated.
+            self._local_setup_origin = canonical_origin
+
+    def configure_local_owner(
+        self, password: str, *, client_id: str
+    ) -> AuthenticatedSession:
+        """Turn an unconfigured loopback preview into an authenticated shell."""
+
+        if not isinstance(password, str) or len(password) < MIN_LOCAL_OWNER_PASSWORD_CHARS:
+            raise UiRequestError(
+                f"choose a password of at least {MIN_LOCAL_OWNER_PASSWORD_CHARS} characters",
+                status_code=400,
+            )
+        with self._access_lock:
+            origin = self._local_setup_origin
+            if origin is None:
+                raise UiRequestError("owner setup is not available", status_code=404)
+            access = PrivateAccessController(
+                hash_password(password), canonical_origin=origin
+            )
+            session = access.login(password, client_id=client_id)
+            self._private_access = access
+            self._settings = PrivateSettingsApplication(
+                self._ui,
+                credentials=(
+                    self._runtime_credentials
+                    if self._runtime_credentials is not None
+                    else RuntimeCredentialStore()
+                ),
+            )
+            self._local_setup_origin = None
+        return session
 
     def diagnostic(self, path: str, status_code: int, category: str) -> None:
         """Retain a small, redacted local preview diagnostic record.
@@ -202,6 +262,13 @@ class BrowserSurface:
             raise UiRequestError("authentication required", status_code=401)
         if path == "/api/v1/auth/session":
             if self._private_access is None:
+                if self.setup_required:
+                    return {
+                        "schema_version": 1,
+                        "mode": "setup",
+                        "authenticated": False,
+                        "setup_required": True,
+                    }
                 raise UiRequestError("route not found", status_code=404)
             session = self._private_access.session(session_token)
             return {
@@ -398,7 +465,12 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
             )
             return
         private_login = self.server.surface.private_mode and path == "/api/v1/auth/login"
-        if not self._origin_matches_request(require_origin=self.server.surface.private_mode):
+        local_owner_setup = (
+            self.server.surface.setup_required and path == LOCAL_OWNER_SETUP_PATH
+        )
+        if not self._origin_matches_request(
+            require_origin=self.server.surface.private_mode or local_owner_setup
+        ):
             self._send_json(HTTPStatus.FORBIDDEN, {"error": "origin is not allowed"})
             return
         content_length = self.headers.get("Content-Length")
@@ -413,7 +485,9 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
             raw = json.loads(self.rfile.read(length))
             if not isinstance(raw, Mapping):
                 raise UiRequestError("command must be an object")
-            if private_login:
+            if local_owner_setup:
+                payload = self._setup_local_owner(cast(Mapping[str, object], raw))
+            elif private_login:
                 payload = self._login(cast(Mapping[str, object], raw))
             else:
                 payload = self.server.surface.api_post(
@@ -501,6 +575,24 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
             "expires_at": int(session.expires_at),
         }
 
+    def _setup_local_owner(self, command: Mapping[str, object]) -> JsonObject:
+        if set(command) != {"password"} or not isinstance(command.get("password"), str):
+            raise UiRequestError("choose an owner password", status_code=400)
+        session = self.server.surface.configure_local_owner(
+            cast(str, command["password"]), client_id=self.client_address[0]
+        )
+        access = self.server.surface.private_access
+        if access is None:  # pragma: no cover - defensive invariant
+            raise UiRequestError("owner setup could not be completed", status_code=500)
+        self._pending_cookie = access.cookie_header(session.session_token)
+        return {
+            "schema_version": 1,
+            "mode": "private",
+            "status": "authenticated",
+            "csrf_token": session.csrf_token,
+            "expires_at": int(session.expires_at),
+        }
+
     def _host_matches_server(self) -> bool:
         """Reject DNS-rebinding Host values for this repository-backed surface."""
         host = self.headers.get("Host")
@@ -562,6 +654,8 @@ def create_server(
     ui_application: UiApplicationPort,
     private_access: PrivateAccessController | None = None,
     settings_application: PrivateSettingsApplication | None = None,
+    local_owner_setup: bool = False,
+    runtime_credentials: RuntimeCredentialStore | None = None,
 ) -> ThreadingHTTPServer:
     """Create one private repository-backed browser server."""
 
@@ -574,16 +668,27 @@ def create_server(
     )
     if settings_application is not None and private_access is None:
         raise ValueError("settings application requires private access")
+    if local_owner_setup and private_access is not None:
+        raise ValueError("local owner setup cannot be combined with private access")
+    if runtime_credentials is not None and not (private_access or local_owner_setup):
+        raise ValueError("runtime credentials require private access or local owner setup")
+    if local_owner_setup and host not in {"127.0.0.1", "localhost"}:
+        raise ValueError("local owner setup requires a loopback bind host")
     if type(port) is not int or not 0 <= port <= 65_535:
         raise ValueError("port must be between 0 and 65535")
-    return _BrowserServer(
+    server = _BrowserServer(
         (host, port),
         BrowserSurface(
             ui_application,
             private_access=private_access,
             settings_application=settings_application,
+            runtime_credentials=runtime_credentials,
         ),
     )
+    if local_owner_setup:
+        bound_host, bound_port = cast(tuple[str, int], server.server_address)
+        server.surface.enable_local_owner_setup(f"http://{bound_host}:{bound_port}")
+    return server
 
 
 def serve(
@@ -593,6 +698,8 @@ def serve(
     ui_application: UiApplicationPort,
     private_access: PrivateAccessController | None = None,
     settings_application: PrivateSettingsApplication | None = None,
+    local_owner_setup: bool = False,
+    runtime_credentials: RuntimeCredentialStore | None = None,
 ) -> None:
     """Serve the browser surface until interrupted."""
 
@@ -602,9 +709,11 @@ def serve(
         ui_application=ui_application,
         private_access=private_access,
         settings_application=settings_application,
+        local_owner_setup=local_owner_setup,
+        runtime_credentials=runtime_credentials,
     )
     bound_host, bound_port = cast(tuple[str, int], server.server_address)
-    print(f"Study Agent product shell: http://{bound_host}:{bound_port}/")
+    print(f"Cardine product shell: http://{bound_host}:{bound_port}/")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -615,7 +724,7 @@ def serve(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="study-agent-shell-web",
+        prog="cardine-shell-web",
         description="Serve Cardine from a canonical local repository.",
     )
     parser.add_argument(
@@ -640,10 +749,19 @@ def main() -> None:
         default=None,
         help="optional initial session identity; must be paired with --course-id",
     )
-    parser.add_argument(
+    access_mode = parser.add_mutually_exclusive_group()
+    access_mode.add_argument(
         "--private",
         action="store_true",
         help="enable single-owner access using CARDINE_OWNER_PASSWORD_HASH",
+    )
+    access_mode.add_argument(
+        "--local-owner-setup",
+        action="store_true",
+        help=(
+            "enable a one-time loopback-only browser setup for the owner password; "
+            "the verifier and runtime credentials are cleared on restart"
+        ),
     )
     parser.add_argument(
         "--production",
@@ -662,9 +780,7 @@ def main() -> None:
         settings_application = None
         environment = None
         credentials = None
-        if args.private:
-            from .product_settings import RuntimeCredentialStore
-
+        if args.private or args.local_owner_setup:
             credentials = RuntimeCredentialStore()
             environment = credentials
         ui_application = RepositoryUiApplication(
@@ -675,7 +791,6 @@ def main() -> None:
         )
         if args.private:
             from .private_access import PrivateAccessController
-            from .product_settings import RuntimeCredentialStore
 
             password_hash = os.environ.get("CARDINE_OWNER_PASSWORD_HASH")
             canonical_origin = os.environ.get("CARDINE_PUBLIC_ORIGIN")
@@ -701,6 +816,8 @@ def main() -> None:
             ui_application=ui_application,
             private_access=private_access,
             settings_application=settings_application,
+            local_owner_setup=args.local_owner_setup,
+            runtime_credentials=credentials,
         )
     except ValueError as error:
         parser.error(str(error))

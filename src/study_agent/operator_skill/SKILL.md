@@ -11,7 +11,7 @@ Procedural v0.1 CLI commands run under the authority of the local user who launc
 
 ## Verify the installed command
 
-Require an installed `study-agent-harness` distribution and verify that `study-agent --help` succeeds. Do not operate from an uninstalled source checkout or reconstruct this skill from repository files.
+Require an installed `cardine` distribution and verify that `cardine --help` succeeds. Do not operate from an uninstalled source checkout or reconstruct this skill from repository files.
 
 ## Discover before acting
 

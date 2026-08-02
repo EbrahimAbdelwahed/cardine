@@ -151,6 +151,6 @@ def test_export_registration_advertises_explicit_v3_without_changing_default() -
         "secret": False,
     }
     assert descriptor["verification"] == (
-        "study-agent --json --repository REPOSITORY export COURSE_ID "
+        "cardine --json --repository REPOSITORY export COURSE_ID "
         "--output PATH --version 3"
     )

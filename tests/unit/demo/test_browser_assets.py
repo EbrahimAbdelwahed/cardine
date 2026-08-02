@@ -113,7 +113,7 @@ def test_public_demo_discovers_mode_before_private_auth_probe() -> None:
     javascript = (DEMO_DIR / "browser.js").read_text(encoding="utf-8")
 
     assert 'fetchJson("/health")' in javascript
-    assert 'healthMode && healthMode !== "private"' in javascript
+    assert '!["private", "setup"].includes(healthMode)' in javascript
     assert 'fetchJson("/api/v1/auth/session")' in javascript
 
 
@@ -134,7 +134,10 @@ def test_private_workspace_and_model_check_surfaces_are_wired() -> None:
         "data-workspace-course",
         "workspace-new-session-course",
         "data-settings-check",
-            "Verifica decisione tutor",
+        "Verifica decisione tutor",
+        "/api/v1/auth/setup-owner",
+        "Attiva area privata",
+        "password_confirm",
     ):
         assert marker in javascript
 

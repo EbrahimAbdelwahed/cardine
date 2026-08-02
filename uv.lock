@@ -552,7 +552,7 @@ wheels = [
 ]
 
 [[package]]
-name = "study-agent-harness"
+name = "cardine"
 version = "0.2.0"
 source = { editable = "." }
 

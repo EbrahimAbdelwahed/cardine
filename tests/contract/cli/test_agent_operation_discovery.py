@@ -152,7 +152,7 @@ def _assert_closed_manifest(manifest: Mapping[str, Any]) -> None:
     assert operator_skill["id"] == "study-agent-operator"
     assert operator_skill["version"] == "1.0.0"
     assert operator_skill["extraction_command"] == (
-        "study-agent --json operator skill --output PATH"
+        "cardine --json operator skill --output PATH"
     )
     assert len(operator_skill["fingerprint"]) == 64
     assert manifest["repository_schema_versions"] == [1]
@@ -247,7 +247,7 @@ def test_each_discovered_command_maps_to_exactly_one_parser_leaf(
     for group, choices in expected_groups.items():
         assert main(("--json", group, "--help")) == 0
         help_text = _success_document(capsys)["data"]["text"]
-        assert f"study-agent {group} [-h] {choices}" in help_text
+        assert f"cardine {group} [-h] {choices}" in help_text
 
 
 @pytest.mark.parametrize(

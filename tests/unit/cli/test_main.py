@@ -12,6 +12,7 @@ from study_agent.sessions import RetryableSessionConflictError
 
 def test_parser_exposes_only_approved_top_level_commands() -> None:
     help_text = build_parser().format_help()
+    assert help_text.startswith("usage: cardine ")
     assert (
         "{init,course,source,ask,session,export,doctor,operator,manifest,describe,tool}"
         in help_text
@@ -31,7 +32,7 @@ def test_json_global_help_is_one_success_document(capsys: object) -> None:
     document = json.loads(captured.out)
     assert document["ok"] is True
     assert document["command"] == "help"
-    assert "Local event-sourced study harness" in document["data"]["text"]
+    assert "Local event-sourced Cardine study repository" in document["data"]["text"]
 
 
 def test_json_subcommand_help_is_one_success_document_with_flag_anywhere(

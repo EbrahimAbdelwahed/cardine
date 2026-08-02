@@ -49,7 +49,7 @@ def test_operator_skill_preserves_authority_and_recovery_boundaries() -> None:
         "append-only event stream is canonical",
         "skills and playbooks",
         "adapters only for technical transport",
-        "installed `study-agent-harness` distribution",
+        "installed `cardine` distribution",
         "--repository .",
         "reject symlinks",
         "--session-id",

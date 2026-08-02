@@ -38,7 +38,7 @@ def _installed_executable() -> str:
     configured = os.environ.get("STUDY_AGENT_BIN")
     executable = configured or shutil.which("study-agent")
     if executable is None:
-        raise RuntimeError("install study-agent-harness and verify study-agent --help first")
+        raise RuntimeError("install Cardine and verify cardine --help first")
     return str(Path(executable).expanduser().absolute())
 
 

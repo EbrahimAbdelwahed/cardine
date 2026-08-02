@@ -16,7 +16,7 @@ if [ ! -d "$repository" ]; then
   exit 64
 fi
 
-exec study-agent-shell-web \
+exec cardine-shell-web \
   --host "$bind_host" \
   --port "$port" \
   --repository "$repository" \

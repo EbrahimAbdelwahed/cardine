@@ -2,7 +2,7 @@
 
 This is the deployment path for the complete Cardine product: repository-backed
 study state, the chat UI, login, settings, and the GPT-5.6 Luna adapter. It is
-not the sanitized `--public-demo` fixture.
+the only supported container topology for the authenticated browser surface.
 
 ## Runtime contract
 
@@ -51,7 +51,7 @@ OPENAI_API_KEY=...
 Generate the owner hash without placing the password in shell history:
 
 ```bash
-uv run study-agent-private-password-hash --confirm
+uv run cardine-private-password-hash --confirm
 ```
 
 The repository volume must be backed up and writable by the container's

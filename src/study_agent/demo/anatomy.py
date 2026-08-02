@@ -1,6 +1,6 @@
 """Installed offline anatomy demo for the bounded adaptive tutor host.
 
-Run with ``study-agent-demo``. The
+Run with ``cardine-demo``. The
 recorded Responses exchange and the scripted adapter both cross the same
 ``TutorHostRunner`` and gateway boundary; no SDK, key, network, or product UI
 is required.
@@ -550,7 +550,7 @@ def _render(result: dict[str, object]) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="study-agent-demo",
+        prog="cardine-demo",
         description="Run the deterministic offline anatomy tutor trace.",
     )
     parser.add_argument(

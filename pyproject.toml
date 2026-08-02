@@ -3,12 +3,13 @@ requires = ["setuptools==82.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "study-agent-harness"
+name = "cardine"
 version = "0.2.0"
-description = "Provider-neutral, event-sourced study-agent harness"
+description = "Private Cardine study application built on a copied, event-sourced runtime core"
 readme = "README.md"
 requires-python = ">=3.12"
-license = "Apache-2.0"
+license = "LicenseRef-Cardine-Private"
+license-files = ["LICENSE", "LICENSE-CARDINE.md", "NOTICE.md"]
 authors = [{ name = "Ebrahim Abdelwahed" }]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -21,12 +22,22 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/EbrahimAbdelwahed/study-agent-harness"
-Documentation = "https://github.com/EbrahimAbdelwahed/study-agent-harness#readme"
-Issues = "https://github.com/EbrahimAbdelwahed/study-agent-harness/issues"
-Source = "https://github.com/EbrahimAbdelwahed/study-agent-harness"
+Homepage = "https://github.com/EbrahimAbdelwahed/cardine"
+Documentation = "https://github.com/EbrahimAbdelwahed/cardine#readme"
+Issues = "https://github.com/EbrahimAbdelwahed/cardine/issues"
+Source = "https://github.com/EbrahimAbdelwahed/cardine"
 
 [project.scripts]
+# Cardine product entry points.  The implementation modules intentionally keep
+# their internal ``study_agent`` namespace and protocol identifiers.
+cardine = "study_agent.cli.main:main"
+cardine-demo = "study_agent.demo.anatomy:main"
+cardine-shell = "study_agent.demo.product_shell:main"
+cardine-shell-web = "study_agent.demo.browser:main"
+cardine-private-password-hash = "study_agent.demo.private_access:main"
+
+# Compatibility entry points for the copied Harness core.  These aliases are
+# not the Cardine product identity, but preserve existing host integrations.
 study-agent = "study_agent.cli.main:main"
 study-agent-demo = "study_agent.demo.anatomy:main"
 study-agent-shell = "study_agent.demo.product_shell:main"

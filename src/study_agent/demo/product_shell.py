@@ -6,7 +6,7 @@ the public gateway port, and accepts host results from an embedding host.  It
 does not select capabilities, append events, read SQLite, or call a model
 provider.
 
-``study-agent-shell`` is a deterministic terminal wrapper around the existing
+``cardine-shell`` is a deterministic terminal wrapper around the existing
 anatomy host trace.  The reusable :class:`ProductShell` class is suitable for a
 terminal, notebook, or a future UI without making any of those surfaces part
 of the harness core.
@@ -400,7 +400,7 @@ def run_offline_shell_demo(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="study-agent-shell",
+        prog="cardine-shell",
         description="Run the deterministic offline conversation-first product shell.",
     )
     parser.add_argument(
