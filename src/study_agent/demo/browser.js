@@ -1464,8 +1464,8 @@
     const thinkingView = thinking.length ? aiThinking({ steps: thinking, summary: "Come ho costruito questa risposta" }) : "";
     const toolsView = tools.length ? aiToolStack({ tools, title: "Attività dichiarata" }) : "";
     const fineTune = showFineTune ? aiFineTune({
-      title: "Continua nel modo che ti serve",
-      detail: "Queste opzioni preparano solo un follow-up locale.",
+      title: "Continua",
+      detail: "Ogni opzione prepara un follow-up nel campo di scrittura, senza inviarlo.",
       styles: [
         { label: "Più breve", prompt: "Rispondi di nuovo in modo più breve e diretto." },
         { label: "Con esempi", prompt: "Rispondi di nuovo usando esempi clinici concreti." },

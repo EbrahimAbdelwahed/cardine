@@ -265,16 +265,22 @@
     return '<figure class="ai-code-block"><figcaption><span><p class="ai-eyebrow">estratto</p><strong>' + escapeText(config.title || config.language || "Fonte") + '</strong></span><button class="ai-button ai-button--quiet" type="button" data-ai-copy="' + escapeAttribute(code) + '">Copia</button></figcaption><pre><code>' + escapeText(code) + "</code></pre>" + (config.caption ? '<small>' + escapeText(config.caption) + "</small>" : "") + "</figure>";
   }
 
+  /* The fine-tune row is chrome, not content: it belongs on one line under an
+     answer, not in a card with an eyebrow, a heading and a sentence explaining
+     what three self-describing buttons do. Nothing is preselected either — the
+     learner has not chosen a style yet, so no chip may look chosen. The copy
+     that used to be printed stays available to a screen reader. */
   function renderFineTune(options) {
     var config = options || {};
     var styles = list(config.styles || ["Più breve", "Più esempi", "Interrogami"]);
-    var controls = styles.map(function (style, index) {
+    var controls = styles.map(function (style) {
       var item = typeof style === "object" && style !== null ? style : { label: style };
       var label = read(item, ["label", "title", "value"], "Stile");
       var prompt = read(item, ["prompt", "followUp", "value"], label);
-      return '<button type="button" class="ai-fine-tune__option' + (index === 0 ? ' is-selected' : '') + '" data-ai-style="' + escapeAttribute(prompt) + '" aria-pressed="' + (index === 0 ? "true" : "false") + '">' + escapeText(label) + "</button>";
+      return '<button type="button" class="ai-fine-tune__option" data-ai-style="' + escapeAttribute(prompt) + '" aria-pressed="false">' + escapeText(label) + "</button>";
     }).join("");
-    return '<section class="ai-fine-tune" data-ai-fine-tune aria-labelledby="ai-fine-tune-title"><div class="ai-fine-tune__copy"><p class="ai-eyebrow">risposta su misura</p><h2 id="ai-fine-tune-title">' + escapeText(config.title || "Come vuoi continuare?") + '</h2><p>' + escapeText(config.detail || "Prepara un follow-up locale senza cambiare le impostazioni del modello.") + '</p></div><div class="ai-fine-tune__options" role="group" aria-label="Stile di risposta">' + (controls || '<span class="ai-empty">Nessuna opzione.</span>') + "</div></section>";
+    var caption = config.title || "Continua";
+    return '<div class="ai-fine-tune" data-ai-fine-tune role="group" aria-label="' + escapeAttribute(caption) + '"><span class="ai-fine-tune__label" aria-hidden="true">' + escapeText(caption) + '</span><span class="ai-visually-hidden">' + escapeText(config.detail || "Prepara un follow-up locale senza cambiare le impostazioni del modello.") + '</span><div class="ai-fine-tune__options">' + (controls || '<span class="ai-empty">Nessuna opzione.</span>') + "</div></div>";
   }
 
   function render(name, options) {
