@@ -22,7 +22,7 @@ from contextlib import contextmanager
 from http.cookiejar import Cookie, CookieJar
 from http.server import ThreadingHTTPServer
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, gettempdir
 from threading import Thread
 from typing import cast
 from urllib.error import HTTPError
@@ -192,7 +192,10 @@ def _serve_private() -> Iterator[str]:
     # The repository target resolver intentionally rejects symlinked ancestor
     # paths. macOS's pytest temp directory is normally under /var -> /private,
     # so use the canonical writable root for this integration fixture.
-    with TemporaryDirectory(prefix="cardine-private-e2e-", dir="/private/tmp") as temporary:
+    temporary_root = Path(gettempdir()).resolve()
+    with TemporaryDirectory(
+        prefix="cardine-private-e2e-", dir=temporary_root
+    ) as temporary:
         repository = Path(temporary) / "repository"
         initialize_local_repository(
             repository,
