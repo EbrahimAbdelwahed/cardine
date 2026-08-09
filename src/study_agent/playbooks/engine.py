@@ -884,20 +884,7 @@ class PlaybookEngine:
             else:
                 value = response.content
             frozen_value = freeze_json(value)
-            try:
-                _validate_schema(step.output_schema.value, frozen_value, "model output", step.id)
-            except PlaybookEngineError as error:
-                if error.failure.code is not EngineErrorCode.SCHEMA_ERROR:
-                    raise
-                # The model completed the transport exchange but violated the
-                # requested structured-output contract.  Keep that fact in
-                # the closed, safe model-failure channel instead of allowing
-                # the capability gateway to collapse it into an opaque 503.
-                self._raise(
-                    EngineErrorCode.MODEL_ERROR,
-                    f"model execution failed: {ModelErrorCode.PROTOCOL_ERROR.value}",
-                    step.id,
-                )
+            _validate_schema(step.output_schema.value, frozen_value, "model output", step.id)
             fallback_receipts: tuple[JsonObject, ...] = ()
             if structured_fallback is not None:
                 fallback_receipts = await self._run_fallback_validators(
