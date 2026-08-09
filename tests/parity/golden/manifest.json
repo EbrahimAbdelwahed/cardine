@@ -5,7 +5,7 @@
       "input": "tests/parity/golden/inputs/replay.json",
       "input_sha256": "87e37cb738883726ae3d735fc7a7f60993ccfe0e84e46760bf4ba77559b6c799",
       "normalized_output": "tests/parity/golden/normalized/replay.json",
-      "normalized_sha256": "3bda60684ade5e1c978522b6ff9a12ad59622514be30a7d06268f707c0c5f179",
+      "normalized_sha256": "38ec33bf59a7afc786feee707bbdf7fca7ab7fb8bd3d2ea6469d7a098349e0de",
       "schema_version": 1
     },
     {
@@ -13,15 +13,15 @@
       "input": "tests/parity/golden/inputs/source_identity.json",
       "input_sha256": "0b18793d7a71268e25fce4398c3f0db42b334fcc0ea9dc5436a4c5f1aba37021",
       "normalized_output": "tests/parity/golden/normalized/source_identity.json",
-      "normalized_sha256": "3c8c4097886fb880e850d4a481b1c6daf99ef4ba172dd2d76ecfa8945d10e779",
+      "normalized_sha256": "4455811e2fc4efb19fb568dec40b997c259c64d2ea07cf27fb9952e6a2ed7188",
       "schema_version": 1
     },
     {
       "case": "substrate_identity_lineage",
       "input": "tests/parity/golden/inputs/substrate_identity_lineage.json",
-      "input_sha256": "cf5ce1fff126a99d9aef1a625ecaaa7951b3c1f8dc33b62034735dd93d814526",
+      "input_sha256": "fb07517fbcd66448809502615829d38a30c50a1954450c3ab7675f00f524243e",
       "normalized_output": "tests/parity/golden/normalized/substrate_identity_lineage.json",
-      "normalized_sha256": "83485a4593d463ae50739b314881876f574054c4c79cec976c3df95a89277cb0",
+      "normalized_sha256": "76a3ade66e57e082370620ea4414d57f3b692918da247a05996c2324e4d68453",
       "schema_version": 1
     },
     {
@@ -29,7 +29,7 @@
       "input": "tests/parity/golden/inputs/citation_resolution.json",
       "input_sha256": "004ce3a520007328e83d5b85778258918649636550e5776af49f992f082833ec",
       "normalized_output": "tests/parity/golden/normalized/citation_resolution.json",
-      "normalized_sha256": "c8fda23325547626fd84160f4a921fcbb50cb6e8b88bb9a4451595dcaef937a5",
+      "normalized_sha256": "baf69f15fd63a62f65d4849858f94aa0c34e4c17892965e2fb485bb63198a141",
       "schema_version": 1
     },
     {
@@ -37,7 +37,7 @@
       "input": "tests/parity/golden/inputs/session_continuation_recovery.json",
       "input_sha256": "9d74a447ea183abeb50f998648226fc47211490f1a77c967aa068a8c4b24e232",
       "normalized_output": "tests/parity/golden/normalized/session_continuation_recovery.json",
-      "normalized_sha256": "b04e89de6fa2aa9877f851868eb62202c70940932012c4a7becca644f09c8c82",
+      "normalized_sha256": "1d979428e79c1532ca892bc2cff52eed58072aca556e66eac44587ed135162f8",
       "schema_version": 1
     },
     {
@@ -45,7 +45,7 @@
       "input": "tests/parity/golden/inputs/artifact_decisions.json",
       "input_sha256": "f6a875e5ea205a0cd27d3cfe4a4117734d675d1ee0de0cb28aaa7bacc577e5d8",
       "normalized_output": "tests/parity/golden/normalized/artifact_decisions.json",
-      "normalized_sha256": "ef928dbcce565c17f826f500b2fa8e29dd748cdd3b609a968cdc1b466f8a1c62",
+      "normalized_sha256": "b029e96bef295bfbf8f89c424a2e6a1c2234520265b1d5feff15b1a721fa7468",
       "schema_version": 1
     },
     {
@@ -53,7 +53,7 @@
       "input": "tests/parity/golden/inputs/assessment_presentation.json",
       "input_sha256": "c7171952a6c1f7bfabd3a0ec612e924d786a10e3dd0d1822e3dc873acf6527ec",
       "normalized_output": "tests/parity/golden/normalized/assessment_presentation.json",
-      "normalized_sha256": "86fb5715dc5a8971615b09c22b43bafbb99951c833866ae77fa9d57c25c57c87",
+      "normalized_sha256": "1a7658ecb8da07c8a21f9d0a3b43a6bd40fe4649030b15358aa0172f24129bab",
       "schema_version": 1
     },
     {
@@ -61,7 +61,7 @@
       "input": "tests/parity/golden/inputs/assessment_attempt.json",
       "input_sha256": "17799d836073fd9f9ece0dd1ac38e9c4845715cec2db35a66c4d8b6296fe7482",
       "normalized_output": "tests/parity/golden/normalized/assessment_attempt.json",
-      "normalized_sha256": "dd6d3fd6572e1162066a2fa0b5aee4c617d1a160f0262be490bc9909ce6b73f4",
+      "normalized_sha256": "6b6e4b4deb987264c45e1d52358bcd23b1dd9b3e3b37a3ba5ac3f3c88c7b2ffa",
       "schema_version": 1
     },
     {
@@ -69,7 +69,7 @@
       "input": "tests/parity/golden/inputs/assessment_grade.json",
       "input_sha256": "6d9e75014a33c093eab14e713ae9e615c2e39b0f924aec3e6aabe62d76bb3e76",
       "normalized_output": "tests/parity/golden/normalized/assessment_grade.json",
-      "normalized_sha256": "54cc89bad0eb76b1b38439db0f9b4dde7bd5e3b834347ad7f0b9a53b11a9645a",
+      "normalized_sha256": "652b9eff7d368d05e43d9b9cdd44b70aa255f064563a2f2d43f05d6b60da4805",
       "schema_version": 1
     },
     {
@@ -77,7 +77,7 @@
       "input": "tests/parity/golden/inputs/assessment_contest.json",
       "input_sha256": "8fab123d917cc0402580d739ad6b7bd03413b7861ea5af99dbde9163e9b907a4",
       "normalized_output": "tests/parity/golden/normalized/assessment_contest.json",
-      "normalized_sha256": "0e7568826cf5da5edfc34a97a910faa927b05a03403edd1951d1ef5e14bc1f24",
+      "normalized_sha256": "34f03173604f4e359d70be3564bb57cbb6d94c7befb2b3d74414144777f7fde5",
       "schema_version": 1
     },
     {
@@ -85,7 +85,7 @@
       "input": "tests/parity/golden/inputs/recall_enrollment.json",
       "input_sha256": "c7171952a6c1f7bfabd3a0ec612e924d786a10e3dd0d1822e3dc873acf6527ec",
       "normalized_output": "tests/parity/golden/normalized/recall_enrollment.json",
-      "normalized_sha256": "2f32b62616f3699660adf5fcc3a1176c198e8a4c6ba4313ed09bd0604fc67732",
+      "normalized_sha256": "9a06a731bdc98c8aa9bf3aa155d9d0cc797fd0c46e1c6acbeeb7560ae10859d1",
       "schema_version": 1
     },
     {
@@ -93,7 +93,7 @@
       "input": "tests/parity/golden/inputs/recall_review.json",
       "input_sha256": "17799d836073fd9f9ece0dd1ac38e9c4845715cec2db35a66c4d8b6296fe7482",
       "normalized_output": "tests/parity/golden/normalized/recall_review.json",
-      "normalized_sha256": "82ea092fb19bb715a54ba011eab320c2022c2fbe23270479d839b8a3c7a5691b",
+      "normalized_sha256": "c2685df310855f707a88b80efb8102ee5920f6ea3cfb2fb84b28d0722b64075f",
       "schema_version": 1
     },
     {
@@ -101,7 +101,7 @@
       "input": "tests/parity/golden/inputs/recall_due.json",
       "input_sha256": "c7171952a6c1f7bfabd3a0ec612e924d786a10e3dd0d1822e3dc873acf6527ec",
       "normalized_output": "tests/parity/golden/normalized/recall_due.json",
-      "normalized_sha256": "4b922ab5165ddc3a41224b0d324acd137d5597ba362b7808ef2fa259fb24e8b7",
+      "normalized_sha256": "3e0a1e4da0a63a2ebee6137b60b6e86cd236be371f6031cd7fa34f3ac5dda7b0",
       "schema_version": 1
     },
     {
@@ -109,7 +109,7 @@
       "input": "tests/parity/golden/inputs/semantic_export.json",
       "input_sha256": "9f59b6bcc96555a59895bcb8da0b822dbc5f683e199a03580db73e1938dff8ee",
       "normalized_output": "tests/parity/golden/normalized/semantic_export.json",
-      "normalized_sha256": "9775272d69c06d6e872f29faa8497183e923508f53717a65f9daf02fead30309",
+      "normalized_sha256": "fbde7972295c0d1f0c1efc1debbcb8a134cec43ee1a90562e0c08afe8083b3ca",
       "schema_version": 1
     },
     {
@@ -117,7 +117,7 @@
       "input": "tests/parity/golden/inputs/failure_invalid.json",
       "input_sha256": "87e37cb738883726ae3d735fc7a7f60993ccfe0e84e46760bf4ba77559b6c799",
       "normalized_output": "tests/parity/golden/normalized/failure_invalid.json",
-      "normalized_sha256": "1eeab9a649ea84217bf68ac2a9b104dde09a2cdaaf7a789ab2599074ccf6c89a",
+      "normalized_sha256": "d7e9cde1c4631c7a6ae5237c21a870e99e4a7215c64a48caf068de1d1f5f2b93",
       "schema_version": 1
     },
     {
@@ -125,7 +125,7 @@
       "input": "tests/parity/golden/inputs/failure_stale.json",
       "input_sha256": "87e37cb738883726ae3d735fc7a7f60993ccfe0e84e46760bf4ba77559b6c799",
       "normalized_output": "tests/parity/golden/normalized/failure_stale.json",
-      "normalized_sha256": "440019072ae9dde52d2a7c246c3dc106dd7018b4003e88dd57f1aa59416a46c7",
+      "normalized_sha256": "4ba57b8e560d4dc3429aed05fb56394382d1f9e6739aba1a5b37056ab141ac01",
       "schema_version": 1
     },
     {
@@ -133,7 +133,7 @@
       "input": "tests/parity/golden/inputs/failure_unauthorized.json",
       "input_sha256": "87e37cb738883726ae3d735fc7a7f60993ccfe0e84e46760bf4ba77559b6c799",
       "normalized_output": "tests/parity/golden/normalized/failure_unauthorized.json",
-      "normalized_sha256": "00ea00bc0d165be7f002885f788854682be9dfd5fbbe788ad0dd19f1db97ec24",
+      "normalized_sha256": "148c6899de6645721261d17a0181dfa147c0f6807047f599950374358852c9f6",
       "schema_version": 1
     },
     {
@@ -141,7 +141,7 @@
       "input": "tests/parity/golden/inputs/failure_not_found.json",
       "input_sha256": "87e37cb738883726ae3d735fc7a7f60993ccfe0e84e46760bf4ba77559b6c799",
       "normalized_output": "tests/parity/golden/normalized/failure_not_found.json",
-      "normalized_sha256": "3d8a9999e139f6323db087792b93a72f5cb56f21c7171a5364b5ba66f83eaadf",
+      "normalized_sha256": "941216a5f204df3e4d3429aabfbf82050e0439ad56f066382f556456984652ad",
       "schema_version": 1
     },
     {
@@ -149,7 +149,7 @@
       "input": "tests/parity/golden/inputs/failure_conflict.json",
       "input_sha256": "87e37cb738883726ae3d735fc7a7f60993ccfe0e84e46760bf4ba77559b6c799",
       "normalized_output": "tests/parity/golden/normalized/failure_conflict.json",
-      "normalized_sha256": "c734b931d48cc72dddc1d3c24b3828ff0d8c9b58bbd29c73258c341f0b619f8b",
+      "normalized_sha256": "19c166488a031026800f724f2fffd47eacfbfaaac7f68b725e359857d914dc4f",
       "schema_version": 1
     }
   ],

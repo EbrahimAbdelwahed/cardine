@@ -341,7 +341,6 @@
       "metadata_member": "cardine-0.2.0.dist-info/METADATA",
       "name": "cardine",
       "regular_packages": [
-        "cardine-0.2.0.dist-info",
         "study_agent"
       ],
       "sha256": "049898bb18a8a13f92d30ef66b6d062f0f7f5a1fdaadfb5ac32457f9c9ce6ba7",
@@ -659,8 +658,7 @@
       "metadata_member": "study_agent_harness-0.2.0.dist-info/METADATA",
       "name": "study-agent-harness",
       "regular_packages": [
-        "study_agent",
-        "study_agent_harness-0.2.0.dist-info"
+        "study_agent"
       ],
       "sha256": "70e4f08e6b89b48ea67e68e5093e6378a94b96b877f402c2e96272991fedc9cb",
       "version": "0.2.0"

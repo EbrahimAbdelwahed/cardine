@@ -74,6 +74,11 @@ def test_normalizer_replaces_only_exact_tmp_pointers() -> None:
 
 def test_sacred_vectors_prove_real_service_event_types() -> None:
     required = {
+        "substrate_identity_lineage": {
+            "source.revision_ingested",
+            "source.substrate_produced",
+        },
+        "citation_resolution": {"source.revision_ingested"},
         "session_continuation_recovery": {
             "session.started",
             "session.interaction_recorded",
@@ -102,3 +107,52 @@ def test_sacred_vectors_prove_real_service_event_types() -> None:
         }
         assert event_types <= actual, (case, event_types - actual)
         assert not any(item.startswith("parity.") for item in actual)
+
+
+def test_source_vectors_preserve_real_lineage_and_citation_resolution() -> None:
+    substrate = run_case("substrate_identity_lineage", load_input("substrate_identity_lineage"))
+    substrate_record = substrate["substrate"]
+    assert isinstance(substrate_record, Mapping)
+    assert substrate_record["status"] == "emitted"
+    assert str(substrate_record["production_id"]).startswith("substrate-production:")
+    assert str(substrate_record["substrate_id"]).startswith("substrate:")
+
+    citation = run_case("citation_resolution", load_input("citation_resolution"))
+    citation_record = citation["citation"]
+    assert isinstance(citation_record, Mapping)
+    assert str(citation_record["locator"]).startswith("Parity notes ·")
+    assert citation_record["quoted_snippet"] == citation_record["text"]
+    assert citation_record["start_offset"] == 0
+    assert citation_record["end_offset"] == len(str(citation_record["text"]))
+
+
+def test_artifact_prefix_uses_canonical_session_turn_identity() -> None:
+    vector = run_case("artifact_decisions", load_input("artifact_decisions"))
+    events = cast(tuple[dict[str, JsonValue], ...], vector["events"])
+    interactions = [
+        event
+        for event in events
+        if event["event_type"] == "session.interaction_recorded"
+    ]
+    assert len(interactions) == 1
+    event = interactions[0]
+    assert str(event["event_id"]).startswith("event-sha256:")
+    payload = cast(Mapping[str, JsonValue], event["payload"])
+    assert str(payload["interaction_id"]).startswith("interaction-sha256:")
+    actor = cast(Mapping[str, JsonValue], event["actor"])
+    assert actor["kind"] == "human"
+
+
+def test_failure_vectors_report_typed_public_failures() -> None:
+    expected = {
+        "failure_invalid": ("TextIngestionError", "invalid_utf8"),
+        "failure_stale": ("RetryableCourseConflictError", "stale"),
+        "failure_unauthorized": ("CourseCommandError", "unauthorized"),
+        "failure_not_found": ("CourseNotFoundError", "not_found"),
+        "failure_conflict": ("CourseConflictError", "conflict"),
+    }
+    for case, (failure_type, error_code) in expected.items():
+        vector = run_case(case, load_input(case))
+        assert vector["status"] == "failed"
+        assert vector["failure_type"] == failure_type
+        assert vector["error_code"] == error_code

@@ -37,18 +37,21 @@ from study_agent.assessments import (
 )
 from study_agent.capabilities import StudyCapabilityGateway, builtin_capability_bindings
 from study_agent.courses import CourseService, ProjectionCourseView, register_course_events
+from study_agent.courses.service import (
+    CourseCommandError,
+    CourseConflictError,
+    RetryableCourseConflictError,
+)
 from study_agent.domain import (
-    Actor,
     ArtifactDecision,
     ArtifactReadDependency,
     AssessmentFormat,
+    Citation,
     CorrelationId,
     CourseId,
     CourseProfile,
-    EventId,
     ExecutionContext,
     InteractionId,
-    InteractionKind,
     PrincipalKind,
     RetrievalForm,
     SessionId,
@@ -59,12 +62,16 @@ from study_agent.domain import (
 from study_agent.domain._validation import JsonObject, JsonValue
 from study_agent.domain.events import DomainEvent
 from study_agent.ingestion import (
+    ConverterReceipt,
+    IngestionErrorCode,
+    SubstrateProductionService,
     TextIngestionError,
     TextIngestionService,
+    TrustedBlobReceipt,
     register_source_revision_events,
 )
 from study_agent.playbooks import PlaybookEngine, RuntimeRegistries
-from study_agent.ports import ModelCapabilities
+from study_agent.ports import CourseNotFoundError, ModelCapabilities
 from study_agent.recall import RecallRating, RecallService, register_recall_events
 from study_agent.recall.contracts import (
     SchedulingRequest,
@@ -74,8 +81,14 @@ from study_agent.recall.contracts import (
 )
 from study_agent.recall.due import DueRecallView
 from study_agent.recall.view import ProjectionRecallView
-from study_agent.sessions import ProjectionSessionView, SessionService, register_session_events
-from study_agent.sessions.events import SESSION_INTERACTION_RECORDED, interaction_recorded_payload
+from study_agent.retrieval.content import CourseSourceContent
+from study_agent.sessions import (
+    ProjectionAssistantTurnView,
+    ProjectionSessionView,
+    SessionService,
+    SessionTurnService,
+    register_session_events,
+)
 from study_agent.skills import ArtifactReference, SemanticVersion
 from study_agent.state import EventRegistry, event_to_bytes
 from study_agent.study_context import register_study_context_events
@@ -298,32 +311,6 @@ def _seed_source(
     return result, commitment
 
 
-def _record_human_interaction(
-    store: CountingEventStore,
-    course_id: CourseId,
-    clock: ScriptedClock,
-) -> InteractionId:
-    interaction_id = InteractionId("interaction:parity-human")
-    session_id = __import__("study_agent.domain", fromlist=["SessionId"]).SessionId(
-        "session-parity"
-    )
-    sequence = len(store.read(course_id))
-    event = DomainEvent(
-        EventId("event:parity-human-interaction"),
-        course_id,
-        sequence + 1,
-        SESSION_INTERACTION_RECORDED,
-        1,
-        Actor(PrincipalKind.HUMAN, "parity-learner"),
-        clock.now(),
-        CorrelationId("correlation:human-interaction"),
-        interaction_recorded_payload(interaction_id, InteractionKind.HUMAN, "reviewed parity item"),
-        session_id,
-    )
-    store.append(course_id, sequence, (event,))
-    return interaction_id
-
-
 def _artifact_revision(
     artifact_service: ArtifactService,
     store: CountingEventStore,
@@ -331,8 +318,8 @@ def _artifact_revision(
     commitment: SourceCommitment,
     *,
     assessment: bool,
+    interaction_id: InteractionId,
 ) -> ArtifactRevisionRecord:
-    interaction_id = InteractionId("interaction:parity-human")
     if assessment:
         content = StudyArtifactEnvelope(
             StudyArtifactKind.ASSESSMENT_ITEM,
@@ -457,6 +444,8 @@ def run_case(case: str, input_data: Mapping[str, JsonValue]) -> JsonObject:
         service = CourseService(store, clock, courses)
         session_view = ProjectionSessionView(sqlite.projection)
         session_service = SessionService(store, clock, session_view, courses)
+        assistant_turn_view = ProjectionAssistantTurnView(sqlite.projection)
+        turn_service = SessionTurnService(store, clock, session_view, assistant_turn_view)
         artifact_view = ProjectionArtifactView(sqlite.projection)
         artifact_service = ArtifactService(
             store,
@@ -480,11 +469,7 @@ def run_case(case: str, input_data: Mapping[str, JsonValue]) -> JsonObject:
         service.create(profile, _context(course_id))
         gateway = _gateway(root, clock)
         output: JsonObject
-        if (
-            case == "source_identity"
-            or case == "substrate_identity_lineage"
-            or case == "citation_resolution"
-        ):
+        if case in {"source_identity", "substrate_identity_lineage", "citation_resolution"}:
             ingestion = TextIngestionService(
                 blobs=blobs, events=store, clock=clock, courses=courses
             )
@@ -497,8 +482,7 @@ def run_case(case: str, input_data: Mapping[str, JsonValue]) -> JsonObject:
                 source_role="primary",
                 context=_context(course_id),
             )
-            output = _base_output(case, root, clock, store, gateway)
-            output["source"] = cast(
+            source_payload = cast(
                 JsonValue,
                 {
                     "source_id": str(result.source.source_id),
@@ -506,8 +490,69 @@ def run_case(case: str, input_data: Mapping[str, JsonValue]) -> JsonObject:
                     "chunks": len(result.chunks),
                 },
             )
+            output = _base_output(case, root, clock, store, gateway)
+            output["source"] = source_payload
+            if case == "substrate_identity_lineage":
+                production_service = SubstrateProductionService(
+                    blobs=blobs, events=store, clock=clock
+                )
+                converter = ConverterReceipt(
+                    content=blobs.get(result.source.normalized_blob),
+                    converter_name="parity-converter",
+                    converter_version="1.0.0",
+                    normalization_version=result.source.normalization_version,
+                    admission_policy_version="parity-admission-v1",
+                    page_map_policy_version="none",
+                    source_id=result.source.source_id,
+                    original_blob=result.source.blob,
+                )
+                production = production_service.produce(
+                    source_id=result.source.source_id,
+                    original_blob=TrustedBlobReceipt(result.source.blob, result.source.source_id),
+                    converter=converter,
+                    context=_context(course_id),
+                    expected_sequence=len(store.read(course_id)),
+                )
+                output = _base_output(case, root, store=store, clock=clock, gateway=gateway)
+                output["source"] = source_payload
+                output["substrate"] = {
+                    "status": production.status.value,
+                    "production_id": str(production.receipt.substrate_production_id),
+                    "substrate_id": str(production.receipt.substrate.substrate_id),
+                    "committed_sequence": production.committed_sequence,
+                    "original_blob": str(production.receipt.original_blob.id),
+                    "converter": production.receipt.converter_name,
+                }
+            elif case == "citation_resolution":
+                chunk = result.chunks[0]
+                normalized_text = blobs.get(result.source.normalized_blob).decode("utf-8")
+                quote_end = min(chunk.end_offset, chunk.start_offset + 24)
+                quote = normalized_text[chunk.start_offset:quote_end]
+                citation = Citation(
+                    result.source.source_id,
+                    result.source.revision_id,
+                    chunk.chunk_id,
+                    chunk.start_offset,
+                    chunk.start_offset + len(quote),
+                    "input-locator",
+                    quote,
+                )
+                resolved = CourseSourceContent(course_id, store, blobs).resolve(citation)
+                output = _base_output(case, root, store=store, clock=clock, gateway=gateway)
+                output["source"] = source_payload
+                output["citation"] = {
+                    "source_id": str(resolved.citation.source_id),
+                    "revision_id": str(resolved.citation.revision_id),
+                    "chunk_id": str(resolved.citation.chunk_id),
+                    "locator": resolved.citation.locator,
+                    "start_offset": resolved.citation.start_offset,
+                    "end_offset": resolved.citation.end_offset,
+                    "quoted_snippet": resolved.citation.quoted_snippet,
+                    "text": resolved.text,
+                }
         elif case in FAILURE_CASES:
-            error_code = case.removeprefix("failure_")
+            error_code: str
+            failure_type: str
             try:
                 if case == "failure_invalid":
                     ingestion = TextIngestionService(
@@ -522,10 +567,13 @@ def run_case(case: str, input_data: Mapping[str, JsonValue]) -> JsonObject:
                         source_role="primary",
                         context=_context(course_id),
                     )
+                    raise AssertionError("failure_invalid unexpectedly succeeded")
                 elif case == "failure_stale":
                     service.create(profile, _context(course_id), expected_sequence=0)
+                    raise AssertionError("failure_stale unexpectedly succeeded")
                 elif case == "failure_unauthorized":
                     service.create(profile, _context(course_id, principal=PrincipalKind.MODEL))
+                    raise AssertionError("failure_unauthorized unexpectedly succeeded")
                 elif case == "failure_not_found":
                     ingestion = TextIngestionService(
                         blobs=blobs, events=store, clock=clock, courses=courses
@@ -544,16 +592,39 @@ def run_case(case: str, input_data: Mapping[str, JsonValue]) -> JsonObject:
                             CorrelationId("correlation:parity"),
                         ),
                     )
+                    raise AssertionError("failure_not_found unexpectedly succeeded")
                 else:
                     service.create(_profile(course_id, "Conflict"), _context(course_id))
-            except Exception as error:
-                # The baseline's public errors intentionally reduce to stable codes.
-                error_code = (
-                    error_code if not isinstance(error, TextIngestionError) else str(error.code)
-                )
+                    raise AssertionError("failure_conflict unexpectedly succeeded")
+            except TextIngestionError as error:
+                if case != "failure_invalid" or error.code is not IngestionErrorCode.INVALID_UTF8:
+                    raise AssertionError(f"unexpected ingestion failure: {error.code}") from error
+                error_code = error.code.value
+                failure_type = type(error).__name__
+            except RetryableCourseConflictError as error:
+                if case != "failure_stale":
+                    raise AssertionError("unexpected retryable course failure") from error
+                error_code = "stale"
+                failure_type = type(error).__name__
+            except CourseConflictError as error:
+                if case != "failure_conflict":
+                    raise AssertionError("unexpected course conflict") from error
+                error_code = "conflict"
+                failure_type = type(error).__name__
+            except CourseCommandError as error:
+                if case != "failure_unauthorized":
+                    raise AssertionError("unexpected course command failure") from error
+                error_code = "unauthorized"
+                failure_type = type(error).__name__
+            except CourseNotFoundError as error:
+                if case != "failure_not_found":
+                    raise AssertionError("unexpected course lookup failure") from error
+                error_code = "not_found"
+                failure_type = type(error).__name__
             output = _base_output(case, root, clock, store, gateway)
             output["status"] = "failed"
             output["error_code"] = error_code
+            output["failure_type"] = failure_type
         elif case == "replay":
             verified = store.verify_projection(course_id)
             rebuilt = store.rebuild_projection(course_id)
@@ -573,11 +644,6 @@ def run_case(case: str, input_data: Mapping[str, JsonValue]) -> JsonObject:
             output = _base_output(case, root, clock, store, gateway)
             session = session_view.get_session(course_id, cast(SessionId, context.session_id))
             output["session"] = {"session_id": str(session.id), "status": session.status.value}
-            output["gateway"] = {
-                "capabilities": tuple(str(item.id) for item in gateway.discover()),
-                "calls": 1,
-            }
-            cast(dict[str, JsonValue], output["effect_counters"])["gateway_calls"] = 1
         elif case in {
             "artifact_decisions",
             *{f"assessment_{name}" for name in ("presentation", "attempt", "grade", "contest")},
@@ -589,10 +655,19 @@ def run_case(case: str, input_data: Mapping[str, JsonValue]) -> JsonObject:
             _, commitment = _seed_source(ingestion, course_id, clock)
             session_context = _session_context(course_id, "session-start")
             session_service.start(session_context)
-            _record_human_interaction(store, course_id, clock)
+            learner_turn = turn_service.record_learner_turn(
+                "reviewed parity item",
+                _session_context(course_id, "learner-turn", PrincipalKind.HUMAN),
+                len(store.read(course_id)),
+            )
             if case == "artifact_decisions":
                 accepted = _artifact_revision(
-                    artifact_service, store, course_id, commitment, assessment=False
+                    artifact_service,
+                    store,
+                    course_id,
+                    commitment,
+                    assessment=False,
+                    interaction_id=learner_turn.id,
                 )
                 output = _base_output(case, root, clock, store, gateway)
                 snapshot = artifact_view.get(course_id)
@@ -602,7 +677,12 @@ def run_case(case: str, input_data: Mapping[str, JsonValue]) -> JsonObject:
                 }
             elif case.startswith("assessment_"):
                 accepted = _artifact_revision(
-                    artifact_service, store, course_id, commitment, assessment=True
+                    artifact_service,
+                    store,
+                    course_id,
+                    commitment,
+                    assessment=True,
+                    interaction_id=learner_turn.id,
                 )
                 assessment_context = _session_context(course_id, "assessment-present")
                 presentation = assessment_service.present_item(
@@ -644,7 +724,12 @@ def run_case(case: str, input_data: Mapping[str, JsonValue]) -> JsonObject:
                 output["assessment"] = output_extra
             else:
                 accepted = _artifact_revision(
-                    artifact_service, store, course_id, commitment, assessment=False
+                    artifact_service,
+                    store,
+                    course_id,
+                    commitment,
+                    assessment=False,
+                    interaction_id=learner_turn.id,
                 )
                 recall_context = _session_context(course_id, "recall-enroll")
                 enrolled = recall_service.enroll(

@@ -36,6 +36,15 @@ def inspect_wheel(path: Path) -> dict[str, object]:
             for name in names
             if not name.endswith("/")
         }
+    package_roots = {
+        root
+        for name in names
+        if "/" in name
+        for root, member in (name.split("/", 1),)
+        if not root.endswith((".dist-info", ".data"))
+        and member
+        and f"{root}/__init__.py" in names
+    }
     return {
         "filename": path.name,
         "name": metadata["Name"],
@@ -48,13 +57,7 @@ def inspect_wheel(path: Path) -> dict[str, object]:
             for line in sections.get("console_scripts", [])
             if "=" in line
         ),
-        "regular_packages": sorted(
-            {
-                name.split("/", 1)[0]
-                for name in names
-                if "/" in name and not name.startswith("dist-info/")
-            }
-        ),
+        "regular_packages": sorted(package_roots),
         "member_sha256": members,
     }
 
