@@ -565,6 +565,9 @@ def run_case(case: str, input_data: Mapping[str, JsonValue]) -> JsonObject:
         elif case == "session_continuation_recovery":
             context = _session_context(course_id, "session-start")
             session_service.start(context)
+            session_service.record_note(
+                _session_context(course_id, "session-note"), "continuation checkpoint"
+            )
             session_service.suspend(_session_context(course_id, "session-suspend"))
             session_service.resume(_session_context(course_id, "session-resume"))
             output = _base_output(case, root, clock, store, gateway)

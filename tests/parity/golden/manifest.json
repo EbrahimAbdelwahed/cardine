@@ -35,9 +35,9 @@
     {
       "case": "session_continuation_recovery",
       "input": "tests/parity/golden/inputs/session_continuation_recovery.json",
-      "input_sha256": "0cb511a81c262737c1407bff19b2448c1a6a6d4c4124c9fbe2f97f61ad1843ee",
+      "input_sha256": "9d74a447ea183abeb50f998648226fc47211490f1a77c967aa068a8c4b24e232",
       "normalized_output": "tests/parity/golden/normalized/session_continuation_recovery.json",
-      "normalized_sha256": "2c2287c29d355c1e5fc356beeb500226fe9edb995b8edfa22a523c10f4d2306c",
+      "normalized_sha256": "b04e89de6fa2aa9877f851868eb62202c70940932012c4a7becca644f09c8c82",
       "schema_version": 1
     },
     {

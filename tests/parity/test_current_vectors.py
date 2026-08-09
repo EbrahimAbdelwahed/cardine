@@ -72,8 +72,17 @@ def test_normalizer_replaces_only_exact_tmp_pointers() -> None:
 
 def test_sacred_vectors_prove_real_service_event_types() -> None:
     required = {
-        "session_continuation_recovery": {"session.started", "session.suspended", "session.resumed"},
-        "artifact_decisions": {"study_artifact.proposal_batch_recorded", "study_artifact.decision_recorded"},
+        "session_continuation_recovery": {
+            "session.started",
+            "session.interaction_recorded",
+            "session.continuation_summary_updated",
+            "session.suspended",
+            "session.resumed",
+        },
+        "artifact_decisions": {
+            "study_artifact.proposal_batch_recorded",
+            "study_artifact.decision_recorded",
+        },
         "assessment_presentation": {"assessment.item_presented"},
         "assessment_attempt": {"assessment.item_presented", "assessment.attempt_recorded"},
         "assessment_grade": {"assessment.grade_recorded"},
