@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from pathlib import Path
@@ -14,8 +15,10 @@ else:
     except ModuleNotFoundError:
         from test_repository_backed_chat import _command, _repository
 
+from study_agent.capabilities import FailedCapabilityOutcome
+from study_agent.cli.repository import LocalRepository
 from study_agent.demo.ui_application import RepositoryUiApplication
-from study_agent.domain import CourseId, SessionId
+from study_agent.domain import CorrelationId, CourseId, ExecutionContext, PrincipalKind, SessionId
 from study_agent.domain._validation import JsonObject
 from study_agent.ports import (
     ModelFinishReason,
@@ -234,3 +237,27 @@ def test_repository_chat_selects_morphology_first_and_persists_profile_receipt(
     assert selection["selector_authority"] == "human"
     assert len(flashcard_requests) == 1
     assert flashcard_requests[0].metadata["prompt_id"] == "morphology_flashcards.v1"
+
+
+def test_malformed_flashcard_inputs_fail_closed_without_unbound_fallback_state(
+    tmp_path: Path,
+) -> None:
+    root, adapters, _model = _repository(tmp_path)
+    with LocalRepository.open(root, model_adapters=adapters) as repository:
+        repository.tutor_conversation(COURSE, session_id=SESSION)
+        composition = repository.flashcard_composition
+        assert composition is not None
+        outcome = asyncio.run(
+            composition.start(
+                cast(JsonObject, {"query": "Crea flashcard"}),
+                ExecutionContext(
+                    PrincipalKind.SERVICE,
+                    "fixture-malformed-input",
+                    COURSE,
+                    CorrelationId("fixture-malformed-input"),
+                    session_id=SESSION,
+                ),
+            )
+        )
+
+    assert isinstance(outcome, FailedCapabilityOutcome)

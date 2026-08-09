@@ -370,6 +370,7 @@ class FlashcardProposalComposition:
         self._artifact_service = artifact_service
 
     async def start(self, inputs: JsonObject, context: ExecutionContext) -> CapabilityOutcome:
+        public: JsonObject = inputs
         try:
             public = _public_inputs(inputs)
             prompt = str(public["query"])
