@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
 
@@ -44,6 +45,7 @@ def test_frozen_outputs_match_real_baseline_driver() -> None:
         expected = freeze_json(_read_json(ROOT / case["normalized_output"]))
         actual = normalize_parity(run_case(case["case"], load_input(case["case"])))
         assert actual == expected, case["case"]
+        assert isinstance(actual, Mapping)
         assert "events" in actual and "effect_counters" in actual
 
 
