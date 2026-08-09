@@ -1,0 +1,20 @@
+{
+  "aggregate_id": "course-parity",
+  "behavior": "artifact_decisions",
+  "case_id": "artifact_decisions",
+  "causation_id": "cause-artifact",
+  "citations": [{"citation_id": "citation-artifact", "source_revision_id": "revision-artifact"}],
+  "correlation_id": "corr-artifact",
+  "decision": "accepted",
+  "error_code": null,
+  "event_id": "evt-artifact",
+  "event_schema_version": 2,
+  "event_type": "artifact.decision_recorded",
+  "occurred_at": "2026-08-09T12:05:00Z",
+  "process_id": 1006,
+  "provenance": {"source_id": "source-artifact", "revision_id": "revision-artifact"},
+  "sequence": 10,
+  "status": "accepted",
+  "temporary_path": "/private/tmp/cardine-parity/artifact",
+  "outcome": {"artifact_id": "artifact-1", "revision_id": "artifact-revision-1", "supersedes": null}
+}

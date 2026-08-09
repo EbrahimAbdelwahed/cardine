@@ -1,0 +1,20 @@
+{
+  "aggregate_id": "course-parity",
+  "behavior": "failure_stale",
+  "case_id": "failure_stale",
+  "causation_id": "cause-stale",
+  "citations": [],
+  "correlation_id": "corr-stale",
+  "decision": "rejected",
+  "error_code": "stale",
+  "event_id": "evt-stale",
+  "event_schema_version": 1,
+  "event_type": "command.rejected",
+  "occurred_at": "2026-08-09T12:15:00Z",
+  "process_id": 1016,
+  "provenance": {"source_id": "source-stale", "revision_id": "revision-stale"},
+  "sequence": 20,
+  "status": "failed",
+  "temporary_path": "/private/tmp/cardine-parity/failure-stale",
+  "outcome": {"safe": true}
+}

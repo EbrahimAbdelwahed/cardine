@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "status": "expected_red",
+  "supported_side_by_side_install": false,
+  "cardine_distribution": {
+    "name": "cardine",
+    "regular_packages": ["study_agent"],
+    "console_entry_points": [
+      "cardine",
+      "cardine-demo",
+      "cardine-private-password-hash",
+      "cardine-shell",
+      "cardine-shell-web",
+      "study-agent",
+      "study-agent-demo",
+      "study-agent-private-password-hash",
+      "study-agent-shell",
+      "study-agent-shell-web"
+    ]
+  },
+  "harness_distribution": {
+    "name": "study-agent-harness",
+    "regular_packages": ["study_agent"],
+    "console_entry_points": [
+      "study-agent",
+      "study-agent-demo",
+      "study-agent-private-password-hash",
+      "study-agent-shell",
+      "study-agent-shell-web"
+    ]
+  },
+  "collisions": {
+    "regular_packages": ["study_agent"],
+    "console_entry_points": [
+      "study-agent",
+      "study-agent-demo",
+      "study-agent-private-password-hash",
+      "study-agent-shell",
+      "study-agent-shell-web"
+    ]
+  },
+  "evidence": "Current Cardine and Harness wheels both claim the regular study_agent package and study-agent* commands; this is an expected red fixture, not a supported install."
+}

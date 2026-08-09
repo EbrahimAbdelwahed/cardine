@@ -1,0 +1,20 @@
+{
+  "aggregate_id": "course-parity",
+  "behavior": "failure_conflict",
+  "case_id": "failure_conflict",
+  "causation_id": "cause-conflict",
+  "citations": [],
+  "correlation_id": "corr-conflict",
+  "decision": "rejected",
+  "error_code": "conflict",
+  "event_id": "evt-conflict",
+  "event_schema_version": 1,
+  "event_type": "command.rejected",
+  "occurred_at": "2026-08-09T12:18:00Z",
+  "process_id": 1019,
+  "provenance": {"source_id": "source-conflict", "revision_id": "revision-conflict"},
+  "sequence": 23,
+  "status": "failed",
+  "temporary_path": "/private/tmp/cardine-parity/failure-conflict",
+  "outcome": {"safe": true}
+}

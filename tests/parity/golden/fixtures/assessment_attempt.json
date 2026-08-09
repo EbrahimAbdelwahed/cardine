@@ -1,0 +1,20 @@
+{
+  "aggregate_id": "assessment-parity",
+  "behavior": "assessment_attempt",
+  "case_id": "assessment_attempt",
+  "causation_id": "cause-assessment-attempt",
+  "citations": [{"citation_id": "citation-assessment", "source_revision_id": "revision-assessment"}],
+  "correlation_id": "corr-assessment",
+  "decision": "submitted",
+  "error_code": null,
+  "event_id": "evt-assessment-attempt",
+  "event_schema_version": 1,
+  "event_type": "assessment.attempt_submitted",
+  "occurred_at": "2026-08-09T12:07:00Z",
+  "process_id": 1008,
+  "provenance": {"source_id": "source-assessment", "revision_id": "revision-assessment"},
+  "sequence": 12,
+  "status": "submitted",
+  "temporary_path": "/private/tmp/cardine-parity/assessment-attempt",
+  "outcome": {"attempt_id": "attempt-1", "response_count": 1, "finalized": true}
+}

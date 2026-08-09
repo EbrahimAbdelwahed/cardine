@@ -1,0 +1,20 @@
+{
+  "aggregate_id": "course-parity",
+  "behavior": "citation_resolution",
+  "case_id": "citation_resolution",
+  "causation_id": "cause-citation",
+  "citations": [{"citation_id": "citation-1", "chunk_id": "chunk-citation", "source_revision_id": "revision-citation", "start_offset": 0, "end_offset": 12}],
+  "correlation_id": "corr-citation",
+  "decision": "resolved",
+  "error_code": null,
+  "event_id": "evt-citation",
+  "event_schema_version": 1,
+  "event_type": "citation.resolved",
+  "occurred_at": "2026-08-09T12:03:00Z",
+  "process_id": 1004,
+  "provenance": {"source_id": "source-citation", "revision_id": "revision-citation"},
+  "sequence": 3,
+  "status": "succeeded",
+  "temporary_path": "/private/tmp/cardine-parity/citation",
+  "outcome": {"quoted_snippet": "mitral valve", "exact": true}
+}

@@ -1,0 +1,20 @@
+{
+  "aggregate_id": "course-parity",
+  "behavior": "source_identity",
+  "case_id": "source_identity",
+  "causation_id": "cause-source",
+  "citations": [{"chunk_id": "chunk-source", "source_revision_id": "revision-source"}],
+  "correlation_id": "corr-source",
+  "decision": "accepted",
+  "error_code": null,
+  "event_id": "evt-source",
+  "event_schema_version": 1,
+  "event_type": "source.revision_ingested",
+  "occurred_at": "2026-08-09T12:01:00Z",
+  "process_id": 1002,
+  "provenance": {"source_id": "source-source", "revision_id": "revision-source", "lineage": ["source-original"]},
+  "sequence": 1,
+  "status": "succeeded",
+  "temporary_path": "/private/tmp/cardine-parity/source",
+  "outcome": {"identity_stable": true, "original_sha256": "a"}
+}

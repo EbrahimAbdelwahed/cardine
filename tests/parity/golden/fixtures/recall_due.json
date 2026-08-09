@@ -1,0 +1,20 @@
+{
+  "aggregate_id": "recall-parity",
+  "behavior": "recall_due",
+  "case_id": "recall_due",
+  "causation_id": "cause-recall-due",
+  "citations": [{"citation_id": "citation-recall", "source_revision_id": "revision-recall"}],
+  "correlation_id": "corr-recall",
+  "decision": "listed",
+  "error_code": null,
+  "event_id": "evt-recall-due",
+  "event_schema_version": 1,
+  "event_type": "recall.due_viewed",
+  "occurred_at": "2026-08-09T12:12:00Z",
+  "process_id": 1013,
+  "provenance": {"source_id": "source-recall", "revision_id": "revision-recall"},
+  "sequence": 17,
+  "status": "due",
+  "temporary_path": "/private/tmp/cardine-parity/recall-due",
+  "outcome": {"due_count": 1, "recall_item_ids": ["recall-item-1"]}
+}

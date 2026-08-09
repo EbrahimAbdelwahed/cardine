@@ -1,0 +1,43 @@
+{
+  "manifest_schema_version": 1,
+  "normalization": {
+    "name": "cardine-parity-normalization",
+    "version": 1,
+    "removed_fields": [
+      "clock_now",
+      "created_at",
+      "current_time",
+      "expires_at",
+      "finished_at",
+      "occurred_at",
+      "pid",
+      "process_id",
+      "started_at",
+      "temp_path",
+      "temporary_path",
+      "tmp_path",
+      "updated_at"
+    ]
+  },
+  "cases": [
+    {"case": "artifact_decisions", "fixture": "tests/parity/golden/fixtures/artifact_decisions.json", "normalized_output": "tests/parity/golden/normalized/artifact_decisions.json", "schema_version": 1, "fixture_sha256": "d97d44a986a88f2def0f36068f167171932258e8ed651c3ca83b0759a38113d3", "normalized_sha256": "b919bff7144778c413c85ad07527f20af4b2b622ffeb6a3828d399e4af4cda16"},
+    {"case": "assessment_attempt", "fixture": "tests/parity/golden/fixtures/assessment_attempt.json", "normalized_output": "tests/parity/golden/normalized/assessment_attempt.json", "schema_version": 1, "fixture_sha256": "d8371e456a403b8290c3880bab0ba43cbb6f2f2e918f3f8748a5d5aeee7cd0aa", "normalized_sha256": "806388e4f06812546ad8a34131600d3f914895ad542453eb8ed22ccea8b3964a"},
+    {"case": "assessment_contest", "fixture": "tests/parity/golden/fixtures/assessment_contest.json", "normalized_output": "tests/parity/golden/normalized/assessment_contest.json", "schema_version": 1, "fixture_sha256": "8b5f684374d2378b4a61904b1aa8bd969aac7f2b237172fc0c7db883bd969a65", "normalized_sha256": "a6b656a173a6c3323b8268223817992cc6be2c3d84fa3cbc198bc34041346a2f"},
+    {"case": "assessment_grade", "fixture": "tests/parity/golden/fixtures/assessment_grade.json", "normalized_output": "tests/parity/golden/normalized/assessment_grade.json", "schema_version": 1, "fixture_sha256": "ce232063985d862d57033a9c4e1ecd5a54ea9b49bdcf1bfc21255db3cb2ac983", "normalized_sha256": "3090b024f344a1a026f581260f548ebbf8d4c8f1dddee5e94b9295ab1b2d4145"},
+    {"case": "assessment_presentation", "fixture": "tests/parity/golden/fixtures/assessment_presentation.json", "normalized_output": "tests/parity/golden/normalized/assessment_presentation.json", "schema_version": 1, "fixture_sha256": "1bbefe8c99cf06aa05bd5bc2dce31b319a0c6e3abd9dbd1b5e79de0a84b4a504", "normalized_sha256": "3fac0bc50e3db1cddd85178acb8afea4be5b9bc39868e5cd111aa0f949ef15bd"},
+    {"case": "citation_resolution", "fixture": "tests/parity/golden/fixtures/citation_resolution.json", "normalized_output": "tests/parity/golden/normalized/citation_resolution.json", "schema_version": 1, "fixture_sha256": "690c70802b100aebbfcdaba3524d66e806e8a35b7855ae2f0591d56c36758532", "normalized_sha256": "f91115dc30e61d186468c8fe5c2524e42332b4f89259416cf162fca4f7853a59"},
+    {"case": "failure_conflict", "fixture": "tests/parity/golden/fixtures/failure_conflict.json", "normalized_output": "tests/parity/golden/normalized/failure_conflict.json", "schema_version": 1, "fixture_sha256": "161f2314f6dd0420733f21ff0c24e3f42bee10de2b0c0f5827deca0284d868b0", "normalized_sha256": "11ecfda80e82399b01e1d8379436bb0fe09ddf171e9fe262f07d5fb003fed03f"},
+    {"case": "failure_invalid", "fixture": "tests/parity/golden/fixtures/failure_invalid.json", "normalized_output": "tests/parity/golden/normalized/failure_invalid.json", "schema_version": 1, "fixture_sha256": "370f7b2e03c67ecc6b53d22945f5b1e755939ab2330886bd45e4277be4b3e439", "normalized_sha256": "8393e88fd2f2833333739bfd43331582be138152595897bb0403c9a51c446b3d"},
+    {"case": "failure_not_found", "fixture": "tests/parity/golden/fixtures/failure_not_found.json", "normalized_output": "tests/parity/golden/normalized/failure_not_found.json", "schema_version": 1, "fixture_sha256": "91897fb888e1950fbccf678bdc1266ca15614c77e8388ab1a2d9b11fffbd901a", "normalized_sha256": "9fa797d10105d770fa3c24ede34ad1b98777eeb2d0d5581c062180ae349db597"},
+    {"case": "failure_stale", "fixture": "tests/parity/golden/fixtures/failure_stale.json", "normalized_output": "tests/parity/golden/normalized/failure_stale.json", "schema_version": 1, "fixture_sha256": "0d2697076ef755fefb0073b931e57e94dc9e945553c8538ddbb6607100674fb1", "normalized_sha256": "33f44fc118c1f25fcf7f163fcbd07bba8db07d2c57987ac2c9480d62af30353a"},
+    {"case": "failure_unauthorized", "fixture": "tests/parity/golden/fixtures/failure_unauthorized.json", "normalized_output": "tests/parity/golden/normalized/failure_unauthorized.json", "schema_version": 1, "fixture_sha256": "e08d894e6b1e7ac5887623ab360230cdc6c00702de7e374b198e8852612269bf", "normalized_sha256": "567bf08e3ebe142f4a3ff78304f4bf3fc462fdfd7814111a71693348b3caa224"},
+    {"case": "recall_due", "fixture": "tests/parity/golden/fixtures/recall_due.json", "normalized_output": "tests/parity/golden/normalized/recall_due.json", "schema_version": 1, "fixture_sha256": "991c7157004f874419cfcc7c1cd801d879445b3e522818658a96c1e9fded41a3", "normalized_sha256": "50260ba570f11b4009df42ea34a86d09211d3d76aa8aaa853debfe279b4956df"},
+    {"case": "recall_enrollment", "fixture": "tests/parity/golden/fixtures/recall_enrollment.json", "normalized_output": "tests/parity/golden/normalized/recall_enrollment.json", "schema_version": 1, "fixture_sha256": "280730dd94af60940f3db3353b19bd825ecc5195e39a4e1362aa28ddca2a61e4", "normalized_sha256": "e75b00284a9c256bf6fa8d4ed326dc9ed438a4f4579297a316a7c450477be147"},
+    {"case": "recall_review", "fixture": "tests/parity/golden/fixtures/recall_review.json", "normalized_output": "tests/parity/golden/normalized/recall_review.json", "schema_version": 1, "fixture_sha256": "fe71fa0ffcd3f6dd97293d15474e0e13635b199f21e6199af005052501f34dff", "normalized_sha256": "ac1fef44ad53cfd33b5c48d0fda3dc52f404e58c57913eca96261c2837fef923"},
+    {"case": "replay", "fixture": "tests/parity/golden/fixtures/replay.json", "normalized_output": "tests/parity/golden/normalized/replay.json", "schema_version": 1, "fixture_sha256": "97bb1aca23c7f5e00d9b6afee1c868acd85521b06995b5ff167b2f397f9a2343", "normalized_sha256": "7c1df554e6342627738d964928984e7c57dee3780fc8f7a6b3ec062996d2419d"},
+    {"case": "semantic_export", "fixture": "tests/parity/golden/fixtures/semantic_export.json", "normalized_output": "tests/parity/golden/normalized/semantic_export.json", "schema_version": 1, "fixture_sha256": "db8fde6325490289f4b5f8184987718e9a2348455e30e7c6a5d1feb1bb487f8f", "normalized_sha256": "88d64e91258bd6709fa15b9ccc9b9c4362013df2e758016218c52efb5f6e241b"},
+    {"case": "session_continuation_recovery", "fixture": "tests/parity/golden/fixtures/session_continuation_recovery.json", "normalized_output": "tests/parity/golden/normalized/session_continuation_recovery.json", "schema_version": 1, "fixture_sha256": "2c7837be072e6e3170a23e37d4d7694f6a4dcb161e7dee966ea928b4b3b23bae", "normalized_sha256": "05b618f30c99f17456b05793e53f94ba800fb20ce7bd64ff5181ff6574d5328a"},
+    {"case": "source_identity", "fixture": "tests/parity/golden/fixtures/source_identity.json", "normalized_output": "tests/parity/golden/normalized/source_identity.json", "schema_version": 1, "fixture_sha256": "c44cc7646e9b44c7877922da2121835996b0ccf1dc050a8cb2dbaba5ce0e934a", "normalized_sha256": "02ec2293a970bee7ee7956e4820be769cb082841c288b62a0963476a3d3f9049"},
+    {"case": "substrate_identity_lineage", "fixture": "tests/parity/golden/fixtures/substrate_identity_lineage.json", "normalized_output": "tests/parity/golden/normalized/substrate_identity_lineage.json", "schema_version": 1, "fixture_sha256": "8b5c54db4964ebbacf04cf038eebe46994c18d07f0e790d3deece1f446cc5878", "normalized_sha256": "4a8bb6c01060ef4497a3581ed6d20ae4a185a60a4a858b111de659a1bb1ca91b"}
+  ]
+}
