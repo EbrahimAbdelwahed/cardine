@@ -105,6 +105,12 @@
     exam_blueprint: "Struttura d’esame",
     study_brief: "Scheda di studio",
   });
+  const TRANSIENT_TUTOR_ERROR_CODES = Object.freeze(new Set([
+    "tutor_rate_limited",
+    "tutor_timeout",
+    "tutor_unavailable",
+    "tutor_model_unavailable",
+  ]));
   const INCOMPLETE_TURN_STATUSES = Object.freeze(new Set([
     "cancelled",
     "failed",
@@ -192,6 +198,10 @@
 
   function statusLabel(status) {
     return STATUS_LABELS[status] || text(status, "stato non dichiarato").replaceAll("_", " ");
+  }
+
+  function isTransientTutorError(error) {
+    return Boolean(error && TRANSIENT_TUTOR_ERROR_CODES.has(text(error.code, "")));
   }
 
   function tone(status) {
@@ -1468,33 +1478,6 @@
     updateContinuation(snapshot);
   }
 
-  /* A terminal host fallback is canonical, but the first response still needs
-     to tell the learner that no tutor answer was completed. Keep the learner
-     turn visible while withholding only the fallback assistant row until an
-     explicit retry (or a later reload) reconciles the full canonical timeline.
-   */
-  function incompleteTurnView(payload) {
-    const source = object(payload);
-    const key = ["snapshot", "session", "view"].find((candidate) => Object.hasOwn(source, candidate));
-    const snapshot = object(key ? source[key] : source);
-    const timelineKey = ["timeline", "turns", "messages", "conversation"].find((candidate) => Array.isArray(snapshot[candidate]));
-    if (!timelineKey) return source;
-    const timeline = array(snapshot[timelineKey]);
-    let lastLearner = -1;
-    timeline.forEach((item, index) => {
-      const role = text(first(object(item), ["role", "speaker", "who"], "")).toLowerCase();
-      if (["learner", "user", "student"].includes(role)) lastLearner = index;
-    });
-    if (lastLearner < 0) return source;
-    const visibleTimeline = timeline.filter((item, index) => {
-      if (index <= lastLearner) return true;
-      const role = text(first(object(item), ["role", "speaker", "who"], "")).toLowerCase();
-      return !["assistant", "tutor"].includes(role);
-    });
-    const nextSnapshot = { ...snapshot, [timelineKey]: visibleTimeline };
-    return key ? { ...source, [key]: nextSnapshot } : nextSnapshot;
-  }
-
   /* One chat shell, one definition. The optimistic turn and the committed
      session render the same markup, so they cannot drift apart or invent a
      subtitle that contradicts the real state. */
@@ -1817,16 +1800,24 @@
     await executeCommand(endpoint, payload, form, continuation ? "sessione" : "sessione");
   }
 
-  async function executeCommand(endpoint, payload, form, refreshRoute) {
+  async function executeCommand(endpoint, payload, form, refreshRoute, requestOverride = null) {
     const commandNavigationVersion = state.navigationVersion;
     const isTutorTurn = endpoint === "/api/v1/session/turns" || endpoint.includes("/session/continuations/");
+    const forcedRequest = text(requestOverride, "");
     const retryingCommand = Boolean(
-      state.lastCommand
+      forcedRequest
+      || state.lastCommand
       && state.lastCommand.endpoint === endpoint
       && JSON.stringify(state.lastCommand.payload) === JSON.stringify(payload)
     );
-    const request = retryingCommand ? state.lastCommand.requestId : requestId();
-    state.lastCommand = { endpoint, payload, requestId: request, refreshRoute };
+    const request = forcedRequest || (retryingCommand ? state.lastCommand.requestId : requestId());
+    const command = Object.freeze({
+      endpoint,
+      payload: Object.freeze({ ...payload }),
+      requestId: request,
+      refreshRoute,
+    });
+    state.lastCommand = command;
     if (isTutorTurn) {
       state.pendingTurn = { requestId: request, content: text(payload.content || payload.response) };
       renderOptimisticTurn(state.pendingTurn.content);
@@ -1842,10 +1833,11 @@
       if (traceId) state.diagnosticTraceId = traceId;
       updateSequence(first(receipt, ["high_water_sequence", "sequence"], state.highWaterSequence));
       const status = text(first(receipt, ["status", "shell_status"], "committed"), "committed");
-      const incompleteTutorTurn = isTutorTurn && INCOMPLETE_TURN_STATUSES.has(status);
+      const terminalTutorTurn = isTutorTurn && INCOMPLETE_TURN_STATUSES.has(status);
       setStatus(status, `Comando ${statusLabel(status)}`);
-      if (!incompleteTutorTurn || retryingCommand) state.lastCommand = null;
-      if (isTutorTurn) state.pendingTurn = null;
+      const commandIsCurrent = state.lastCommand && state.lastCommand.requestId === request;
+      if ((!terminalTutorTurn || retryingCommand) && commandIsCurrent) state.lastCommand = null;
+      if (isTutorTurn && state.pendingTurn?.requestId === request) state.pendingTurn = null;
       if (endpoint === "/api/v1/session/turns" || endpoint.includes("/session/continuations/")) {
         state.continuationDraft = "";
       }
@@ -1856,22 +1848,7 @@
         state.viewData = object(receipt.result);
         renderSessione(state.viewData);
         setStatus("recovered", "Anteprima completata · nessun dato personale salvato");
-      } else if (originIsStillActive && incompleteTutorTurn && !retryingCommand) {
-        state.route = "sessione";
-        state.viewData = incompleteTurnView(receipt.result);
-        renderSessione(state.viewData);
-        const incompleteError = {
-          status: 503,
-          code: "",
-          message: "Il tutor non ha prodotto una risposta verificata.",
-          payload: { traceId },
-        };
-        setStatus("error", "Messaggio salvato, risposta non completata", { alert: false });
-        showCommandError(incompleteError, {
-          title: "Messaggio salvato, risposta non completata",
-          detail: "Il messaggio è nel registro canonico. Puoi riprovare la risposta verificata.",
-        });
-      } else if (originIsStillActive && incompleteTutorTurn && retryingCommand) {
+      } else if (originIsStillActive && terminalTutorTurn) {
         state.route = "sessione";
         state.viewData = object(receipt.result);
         renderSessione(state.viewData);
@@ -1886,8 +1863,9 @@
       const traceId = text(error.payload?.traceId, "");
       if (traceId) state.diagnosticTraceId = traceId;
       if (isTutorTurn) {
-        const failedContent = text(state.pendingTurn?.content);
-        state.pendingTurn = null;
+        const pendingIsCurrent = state.pendingTurn?.requestId === request;
+        const failedContent = pendingIsCurrent ? text(state.pendingTurn.content) : "";
+        if (pendingIsCurrent) state.pendingTurn = null;
         removeOptimisticTurn();
         if (!commandCommitted && failedContent) restoreFailedTurnDraft(failedContent, form);
       }
@@ -2021,13 +1999,25 @@
      refresh that a failure triggers. */
   function showCommandError(error, copy = null) {
     const conflict = error && error.status === 409;
-    const command = state.lastCommand;
+    const retryable = conflict || isTransientTutorError(error);
+    const command = retryable && state.lastCommand
+      ? Object.freeze({
+        ...state.lastCommand,
+        payload: Object.freeze({ ...state.lastCommand.payload }),
+      })
+      : null;
     const actions = command
       ? [{
         label: "Riprova",
         run: () => {
           const traceId = text(error?.payload?.traceId || state.diagnosticTraceId, "");
-          return executeCommand(command.endpoint, command.payload, null, command.refreshRoute);
+          return executeCommand(
+            command.endpoint,
+            command.payload,
+            null,
+            command.refreshRoute,
+            command.requestId,
+          );
         },
       }]
       : [];

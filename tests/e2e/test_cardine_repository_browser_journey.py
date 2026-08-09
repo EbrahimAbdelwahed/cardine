@@ -629,6 +629,81 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
         _assert_no_browser_errors(browser)
 
 
+def test_repository_browser_retry_binds_original_request_across_interleaved_turns(
+    tmp_path: Path,
+) -> None:
+    """A detached retry action retains its original immutable request identity.
+
+    The first two envelopes model transient provider failures from two
+    interleaved submissions.  Clicking the detached retry action from the
+    first submission must resend its original request id, even after the
+    second submission replaced the shell's current command.
+    """
+
+    root, adapters, _model = _repository(tmp_path)
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+
+    with _serve(application=app) as url, _real_browser(url) as browser:
+        browser.wait_for("Boolean(document.querySelector('[data-study-setup]'))")
+        browser.evaluate("document.querySelector('[data-route=\"sessione\"]').click()")
+        browser.wait_for("Boolean(document.querySelector('#session-entry-text:not([disabled])'))")
+        browser.evaluate("document.querySelector('#session-entry-text').focus()")
+        browser.evaluate(
+            "(async()=>{"
+            "const original=window.fetch;"
+            "window.__terminalCanonical=await original('/api/v1/session')"
+            ".then(response=>response.json());"
+            "window.__terminalRequests=[];"
+            "window.fetch=(input,options={})=>{"
+            "if(!String(input).endsWith('/api/v1/session/turns')) return original(input,options);"
+            "const body=JSON.parse(options.body);"
+            "window.__terminalRequests.push(body.request_id);"
+            "if(window.__terminalRequests.length<=2) return Promise.resolve(new Response("
+            "JSON.stringify({code:'tutor_timeout',command_committed:true,request_id:body.request_id,trace_id:'trace-transient'}),"
+            "{status:504,headers:{'Content-Type':'application/json'}}));"
+            "const base=window.__terminalCanonical;"
+            "const terminal={...base,status:'active',shell_status:'ready',"
+            "learner_entry:'first learner',timeline:["
+            "{role:'assistant',content:'Non sono riuscito a completare questa risposta.',"
+            "course_sequence:2}"
+            "]};"
+            "return Promise.resolve(new Response(JSON.stringify({"
+            "schema_version:1,request_id:body.request_id,status:'failed',high_water_sequence:base.high_water_sequence,"
+            "result:terminal"
+            "}),{status:200,headers:{'Content-Type':'application/json'}}));"
+            "};"
+            "})()",
+            await_promise=True,
+        )
+
+        browser.call("Input.insertText", text="first learner")
+        _press(browser, "Enter", 13)
+        browser.wait_for(
+            "window.__terminalRequests.length===1"
+        )
+        browser.wait_for(
+            "Array.from(document.querySelectorAll('#global-alert-actions button'))"
+            ".some(button=>button.textContent==='Riprova')"
+        )
+        browser.evaluate(
+            "window.__firstRetry=document.querySelector("
+            "'#global-alert-actions button:first-child')"
+        )
+        first_request = browser.evaluate("window.__terminalRequests[0]")
+
+        browser.call("Input.insertText", text="second learner")
+        _press(browser, "Enter", 13)
+        browser.wait_for(
+            "window.__terminalRequests.length===2"
+            " && Array.from(document.querySelectorAll('#global-alert-actions button'))"
+            ".some(button=>button.textContent==='Riprova')"
+        )
+
+        browser.evaluate("window.__firstRetry.click()")
+        browser.wait_for("window.__terminalRequests.length===3")
+        assert browser.evaluate("window.__terminalRequests[2]") == first_request
+
+
 def test_repository_browser_source_first_setup_uploads_a_text_source(tmp_path: Path) -> None:
     root, adapters, _model = _repository(tmp_path, with_source=False)
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)

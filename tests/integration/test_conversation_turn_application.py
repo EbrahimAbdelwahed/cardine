@@ -85,6 +85,7 @@ class _Runner:
             "failed",
             "interrupted",
             "budget",
+            "budget_timeout",
             "in_progress",
             *typed_failure_reasons,
         }:
@@ -92,13 +93,18 @@ class _Runner:
                 "failed": TutorHostRunStatus.FAILED,
                 "interrupted": TutorHostRunStatus.INTERRUPTED,
                 "budget": TutorHostRunStatus.BUDGET_EXHAUSTED,
+                "budget_timeout": TutorHostRunStatus.BUDGET_EXHAUSTED,
                 "in_progress": TutorHostRunStatus.IN_PROGRESS,
                 **dict.fromkeys(typed_failure_reasons, TutorHostRunStatus.FAILED),
             }[self.mode]
             return TutorHostRunResult(
                 status,
                 failure_reason=(
-                    self.mode if self.mode in typed_failure_reasons else None
+                    "timeout"
+                    if self.mode == "budget_timeout"
+                    else self.mode
+                    if self.mode in typed_failure_reasons
+                    else None
                 ),
             )
         if self.mode in {"completed", "terminated"}:
@@ -653,6 +659,33 @@ def test_transient_provider_failure_retries_without_fallback_or_duplicate_learne
                 asyncio.run(_conversation(repository).turn(command))
             assert error.value.code is ConversationTurnErrorCode.FAILED
             assert error.value.failure_reason == failure_reason
+            assert error.value.learner_persisted is True
+
+        assert len(runner.calls) == 2
+        assert repository.tutor_presentations.presentations(COURSE, SESSION) == ()
+        learner_rows = tuple(
+            item
+            for item in repository.tutor_snapshots.get(COURSE, SESSION).timeline
+            if item.kind.value == "learner"
+        )
+        assert len(learner_rows) == 1
+    finally:
+        repository.close()
+
+
+def test_budget_exhaustion_preserves_transient_failure_for_exact_retry(
+    tmp_path: Path,
+) -> None:
+    repository, runner, _ = _open(tmp_path, "budget_timeout")
+    try:
+        sequence = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
+        command = _command("request-budget-timeout", sequence, "Retry this tutor turn")
+
+        for _attempt in range(2):
+            with pytest.raises(ConversationTurnError) as error:
+                asyncio.run(_conversation(repository).turn(command))
+            assert error.value.code is ConversationTurnErrorCode.FAILED
+            assert error.value.failure_reason == "timeout"
             assert error.value.learner_persisted is True
 
         assert len(runner.calls) == 2

@@ -101,7 +101,17 @@ class TutorHostRunStatus(StrEnum):
 
 
 class _DecisionBudgetExhausted(RuntimeError):
-    pass
+    """Bounded provider retries ended without a validated decision.
+
+    The retry budget is an operational limit, not a new provider failure
+    category.  Keep the last declared failure reason on the exception so the
+    public runner result can preserve the provider-neutral transient envelope
+    across the budget boundary.
+    """
+
+    def __init__(self, message: str, *, failure_reason: str | None = None) -> None:
+        super().__init__(message)
+        self.failure_reason = failure_reason
 
 
 @dataclass(frozen=True, slots=True)
@@ -936,8 +946,8 @@ class TutorHostRunner:
                     decision = await self._decide(context, interruption)
                 except RetryableTutorDecisionError as error:
                     return _budget(getattr(error, "failure_reason", None))
-                except _DecisionBudgetExhausted:
-                    return _budget()
+                except _DecisionBudgetExhausted as error:
+                    return _budget(error.failure_reason)
                 except Exception as error:
                     return (
                         _interrupted_result(selected, retry_receipt)
@@ -1496,10 +1506,11 @@ class TutorHostRunner:
             attempts += 1
             try:
                 return await self._decision_port.decide(context, interruption)
-            except RetryableTutorDecisionError:
+            except RetryableTutorDecisionError as error:
                 if attempts >= self._limits.max_provider_attempts_per_decision:
                     raise _DecisionBudgetExhausted(
-                        "decision provider retry budget exhausted"
+                        "decision provider retry budget exhausted",
+                        failure_reason=getattr(error, "failure_reason", None),
                     ) from None
                 if _interrupted(interruption):
                     raise ScriptedDecisionError("decision interrupted") from None
