@@ -68,3 +68,26 @@ def test_normalizer_replaces_only_exact_tmp_pointers() -> None:
     normalized = cast(dict[str, object], normalize_parity(vector))
     assert normalized["runtime"] == {"tmp_root": "<TMP_ROOT>", "events_path": "<TMP_ROOT>"}
     assert normalized["event"] == cast(dict[str, object], vector)["event"]
+
+
+def test_sacred_vectors_prove_real_service_event_types() -> None:
+    required = {
+        "session_continuation_recovery": {"session.started", "session.suspended", "session.resumed"},
+        "artifact_decisions": {"study_artifact.proposal_batch_recorded", "study_artifact.decision_recorded"},
+        "assessment_presentation": {"assessment.item_presented"},
+        "assessment_attempt": {"assessment.item_presented", "assessment.attempt_recorded"},
+        "assessment_grade": {"assessment.grade_recorded"},
+        "assessment_contest": {"assessment.grade_contested"},
+        "recall_enrollment": {"recall.schedule_applied"},
+        "recall_review": {"recall.review_recorded", "recall.schedule_applied"},
+        "recall_due": {"recall.schedule_applied"},
+        "semantic_export": {"source.revision_ingested", "session.started"},
+    }
+    for case, event_types in required.items():
+        vector = run_case(case, load_input(case))
+        actual = {
+            str(event["event_type"])
+            for event in cast(tuple[dict[str, JsonValue], ...], vector["events"])
+        }
+        assert event_types <= actual, (case, event_types - actual)
+        assert not any(item.startswith("parity.") for item in actual)
