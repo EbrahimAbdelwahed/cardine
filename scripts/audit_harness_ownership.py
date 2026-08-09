@@ -1,11 +1,10 @@
-"""Mechanically validate the CA-01 one-owner ledger.
+"""Validate the reviewed CA-01 ownership inventory and its CSV projection.
 
-The ledger is evidence for the expansion phase, not a source relocation tool.
-The structural check is self-contained: it derives the clean-tree source
-universe from the checkout, adds the explicitly recorded imported-dirty
-baseline snapshot, and reads package-data/console-script declarations.  It
-does not require the dirty baseline files to be present.  ``--live`` is an
-opt-in drift check for a developer worktree that still has those files.
+``tests/parity/ownership-classification.json`` is the human-reviewed source of
+truth.  The CSV is intentionally only a transport ledger: this checker does
+not infer ownership from directory prefixes or catch-all rules.  A clean
+archive can therefore verify every row, including explicitly declared dirty
+baseline-only paths, without requiring those paths to exist in the archive.
 """
 
 from __future__ import annotations
@@ -21,7 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LEDGER = ROOT / "specs/harness-adoption/assets/ownership-ledger.csv"
-DIRTY_SNAPSHOT = ROOT / "tests/parity/golden/baseline-dirty-snapshot.json"
+CLASSIFICATION = ROOT / "tests/parity/ownership-classification.json"
 SOURCE_ROOT = ROOT / "src"
 DISPOSITIONS = {"HARNESS_IMPORT", "CARDINE_OWNER", "LEGACY_ORACLE_THEN_REMOVE"}
 FIELDS = (
@@ -35,9 +34,36 @@ FIELDS = (
 )
 
 
-def _source_paths() -> set[str]:
-    """Return source/package-data files present in this tree, excluding caches."""
+def _declared_package_data(config: Mapping[str, object]) -> set[str]:
+    tool = config.get("tool")
+    setuptools = tool.get("setuptools") if isinstance(tool, Mapping) else None
+    package_data = setuptools.get("package-data") if isinstance(setuptools, Mapping) else None
+    if not isinstance(package_data, Mapping):
+        return set()
+    paths: set[str] = set()
+    for package, patterns in package_data.items():
+        if not isinstance(package, str) or not isinstance(patterns, list):
+            raise ValueError("package-data declarations must map package names to lists")
+        package_root = SOURCE_ROOT / package.replace(".", "/")
+        for pattern in patterns:
+            if not isinstance(pattern, str) or not pattern.strip():
+                raise ValueError(f"package-data pattern for {package!r} is blank")
+            matches = tuple(path for path in package_root.glob(pattern) if path.is_file())
+            if not matches:
+                raise ValueError(f"package-data pattern has no file: {package}={pattern}")
+            paths.update(path.relative_to(ROOT).as_posix() for path in matches)
+    return paths
 
+
+def _entry_point_targets(config: Mapping[str, object]) -> dict[str, str]:
+    project = config.get("project")
+    scripts = project.get("scripts") if isinstance(project, Mapping) else None
+    if not isinstance(scripts, Mapping) or not scripts:
+        raise ValueError("pyproject is missing [project.scripts]")
+    return {f"entrypoint:{name}": str(target) for name, target in scripts.items()}
+
+
+def _source_paths() -> set[str]:
     return {
         path.relative_to(ROOT).as_posix()
         for path in (ROOT / "src/study_agent").rglob("*")
@@ -45,174 +71,51 @@ def _source_paths() -> set[str]:
     }
 
 
-def _dirty_snapshot() -> dict[str, dict[str, str]]:
-    if not DIRTY_SNAPSHOT.is_file():
-        raise ValueError(f"missing imported-dirty baseline snapshot: {DIRTY_SNAPSHOT}")
-    raw = json.loads(DIRTY_SNAPSHOT.read_text(encoding="utf-8"))
+def _load_classification() -> list[dict[str, str]]:
+    if not CLASSIFICATION.is_file():
+        raise ValueError(f"missing reviewed classification: {CLASSIFICATION}")
+    raw = json.loads(CLASSIFICATION.read_text(encoding="utf-8"))
     if not isinstance(raw, Mapping) or raw.get("schema_version") != 1:
-        raise ValueError("dirty baseline snapshot must declare schema_version 1")
-    paths = raw.get("paths")
-    if not isinstance(paths, list) or not paths:
-        raise ValueError("dirty baseline snapshot must contain paths")
-    snapshot: dict[str, dict[str, str]] = {}
-    for item in paths:
+        raise ValueError("classification must declare schema_version 1")
+    if tuple(raw.get("columns", ())) != FIELDS:
+        raise ValueError(f"classification columns must be exactly {FIELDS}")
+    rows = raw.get("rows")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("classification rows must be a non-empty list")
+    loaded: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for index, item in enumerate(rows, start=1):
         if not isinstance(item, Mapping):
-            raise ValueError("dirty baseline snapshot entries must be objects")
-        path = item.get("path")
-        digest = item.get("sha256")
-        state = item.get("working_tree_state")
-        if (
-            not isinstance(path, str)
-            or not path.startswith("src/study_agent/")
-            or not isinstance(digest, str)
-            or len(digest) != 64
-            or any(char not in "0123456789abcdef" for char in digest)
-            or state not in {"modified", "untracked"}
-        ):
-            raise ValueError(f"invalid dirty baseline snapshot entry: {item!r}")
-        if path in snapshot:
-            raise ValueError(f"duplicate dirty baseline snapshot path: {path}")
-        snapshot[path] = {"sha256": digest, "working_tree_state": str(state)}
-    return snapshot
-
-
-def _declared_package_data(config: Mapping[str, object]) -> set[str]:
-    tool = config.get("tool")
-    if not isinstance(tool, Mapping):
-        return set()
-    setuptools = tool.get("setuptools")
-    if not isinstance(setuptools, Mapping):
-        return set()
-    package_data = setuptools.get("package-data")
-    if not isinstance(package_data, Mapping):
-        return set()
-    paths: set[str] = set()
-    for package, raw_patterns in package_data.items():
-        if not isinstance(package, str) or not isinstance(raw_patterns, list):
-            raise ValueError("package-data declarations must map package names to lists")
-        package_root = SOURCE_ROOT / package.replace(".", "/")
-        for pattern in raw_patterns:
-            if not isinstance(pattern, str) or not pattern.strip():
-                raise ValueError(f"package-data pattern for {package!r} is blank")
-            matches = tuple(path for path in package_root.glob(pattern) if path.is_file())
-            if not matches:
-                raise ValueError(f"package-data pattern has no file: {package}={pattern}")
-            for path in matches:
-                paths.add(path.relative_to(ROOT).as_posix())
-    return paths
-
-
-def _entry_point_paths(config: Mapping[str, object]) -> dict[str, str]:
-    project = config.get("project")
-    if not isinstance(project, Mapping):
-        raise ValueError("pyproject is missing [project]")
-    scripts = project.get("scripts")
-    if not isinstance(scripts, Mapping) or not scripts:
-        raise ValueError("pyproject is missing [project.scripts]")
-    return {f"entrypoint:{name}": str(target) for name, target in scripts.items()}
-
-
-def _expected_rows() -> tuple[dict[str, str], ...]:
-    config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    dirty_snapshot = _dirty_snapshot()
-    paths = _source_paths() | _declared_package_data(config) | set(dirty_snapshot)
-    entry_points = _entry_point_paths(config)
-    expected: list[dict[str, str]] = []
-    for path in sorted(paths):
-        expected.append(_row_for(path, None, dirty_snapshot.get(path)))
-    for path, target in sorted(entry_points.items()):
-        expected.append(_row_for(path, target))
-    return tuple(expected)
-
-
-def _digest(path: str, entry_point_target: str | None) -> str:
-    if entry_point_target is not None:
-        payload = f"{path}\0{entry_point_target}".encode()
-    else:
-        payload = (ROOT / path).read_bytes()
-    return hashlib.sha256(payload).hexdigest()
-
-
-def _is_cardine_owner(path: str) -> bool:
-    if path.startswith("entrypoint:"):
-        return not path.removeprefix("entrypoint:").startswith("study-agent")
-    if path.startswith(
-        ("src/study_agent/demo/", "src/study_agent/diagnostics/", "src/study_agent/hosts/")
-    ):
-        return True
-    if path.startswith(
-        ("src/study_agent/courses/", "src/study_agent/exams/", "src/study_agent/feedback/")
-    ):
-        return True
-    if path.startswith("src/study_agent/adapters/host/"):
-        return True
-    return path in {
-        "src/study_agent/adapters/model/openai_luna.py",
-        "src/study_agent/adapters/model/tutor_decision.py",
-        "src/study_agent/application/conversation_turn.py",
-        "src/study_agent/application/capability_completion.py",
-        "src/study_agent/application/flashcard_profile_selection.py",
-        "src/study_agent/application/flashcard_proposals.py",
-        "src/study_agent/application/grounding_ask.py",
-        "src/study_agent/application/study_readiness.py",
-        "src/study_agent/application/tool_surface.py",
-        "src/study_agent/cli/__init__.py",
-        "src/study_agent/cli/__main__.py",
-        "src/study_agent/cli/commands.py",
-        "src/study_agent/cli/config.py",
-        "src/study_agent/cli/lifecycle.py",
-        "src/study_agent/cli/main.py",
-        "src/study_agent/cli/output.py",
-        "src/study_agent/cli/registry.py",
-        "src/study_agent/cli/repository.py",
-        "src/study_agent/domain/course.py",
-        "src/study_agent/domain/study_context.py",
-    }
-
-
-def _is_legacy_oracle(path: str) -> bool:
-    # Evaluation package markers are baseline-only bookkeeping; they are not
-    # part of the released Harness facade or the Cardine product namespace.
-    return path.startswith("src/study_agent/evals/")
-
-
-def _row_for(
-    path: str,
-    entry_point_target: str | None,
-    dirty_snapshot: Mapping[str, str] | None = None,
-) -> dict[str, str]:
-    if _is_legacy_oracle(path):
-        disposition = "LEGACY_ORACLE_THEN_REMOVE"
-        owner = "legacy-oracle"
-        replacement = f"tests/parity/golden/fixtures/{Path(path).stem}.json"
-        first_slice = "CA-04"
-    elif _is_cardine_owner(path):
-        disposition = "CARDINE_OWNER"
-        owner = "cardine"
-        if path.startswith("entrypoint:"):
-            replacement = path.removeprefix("entrypoint:")
-        else:
-            replacement = path.replace("src/study_agent/", "src/cardine/", 1)
-        first_slice = "CA-02"
-    else:
-        disposition = "HARNESS_IMPORT"
-        owner = "study-agent-harness"
-        replacement = "study_agent.api"
-        first_slice = "CA-04"
-    removal = "CA-02" if path.startswith("entrypoint:study-agent") else "CA-10"
-    return {
-        "path": path,
-        "sha256": (
-            dirty_snapshot["sha256"]
-            if dirty_snapshot is not None
-            else _digest(path, entry_point_target)
-        ),
-        "disposition": disposition,
-        "terminal_owner": owner,
-        "replacement_import_or_path": replacement,
-        "first_consuming_slice": first_slice,
-        "removal_slice": removal,
-    }
+            raise ValueError(f"classification row {index} is not an object")
+        missing = [
+            field
+            for field in FIELDS
+            if not isinstance(item.get(field), str) or not item[field].strip()
+        ]
+        if missing:
+            raise ValueError(f"classification row {index} has blank fields: {', '.join(missing)}")
+        row = {field: str(item[field]) for field in FIELDS}
+        baseline_state = item.get("baseline_state", "clean")
+        if baseline_state not in {"clean", "modified", "untracked"}:
+            raise ValueError(f"classification row {index} has invalid baseline_state")
+        row["baseline_state"] = str(baseline_state)
+        path = row["path"]
+        if path in seen:
+            raise ValueError(f"duplicate classification path: {path}")
+        if not (path.startswith("src/study_agent/") or path.startswith("entrypoint:")):
+            raise ValueError(f"classification path is outside the owned universe: {path}")
+        if row["disposition"] not in DISPOSITIONS:
+            raise ValueError(f"classification row {index} has unknown disposition")
+        digest = row["sha256"]
+        if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
+            raise ValueError(f"classification row {index} has invalid sha256")
+        if row["replacement_import_or_path"] == "study_agent.api":
+            raise ValueError(
+                f"classification row {index} uses the forbidden bare study_agent.api successor"
+            )
+        seen.add(path)
+        loaded.append(row)
+    return loaded
 
 
 def _load_rows() -> list[dict[str, str]]:
@@ -225,67 +128,83 @@ def _load_rows() -> list[dict[str, str]]:
         return [dict(row) for row in reader]
 
 
+def _digest(path: str, targets: Mapping[str, str]) -> str:
+    if path.startswith("entrypoint:"):
+        return hashlib.sha256(f"{path}\0{targets[path]}".encode()).hexdigest()
+    return hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
+
+
 def validate(*, live: bool = False) -> list[str]:
     errors: list[str] = []
     try:
-        dirty_snapshot = _dirty_snapshot()
-        expected = _expected_rows()
-    except (OSError, ValueError) as error:
+        reviewed = _load_classification()
+        config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        targets = _entry_point_targets(config)
+        current_paths = _source_paths() | _declared_package_data(config) | set(targets)
+    except (OSError, ValueError, tomllib.TOMLDecodeError) as error:
         return [f"cannot derive ownership universe: {error}"]
+    reviewed_by_path = {row["path"]: row for row in reviewed}
+    current_clean = {
+        path
+        for path in current_paths
+        if reviewed_by_path.get(path, {}).get("baseline_state", "clean") == "clean"
+    }
+    baseline_only = set(reviewed_by_path) - current_paths
+    for path in sorted(current_paths - set(reviewed_by_path)):
+        errors.append(f"classification is missing current path: {path}")
+    for path in sorted(baseline_only):
+        if reviewed_by_path[path].get("baseline_state", "clean") == "clean":
+            errors.append(f"classification has undeclared baseline-only path: {path}")
+    for path in sorted(current_clean):
+        try:
+            if _digest(path, targets) != reviewed_by_path[path]["sha256"]:
+                errors.append(f"classification sha256 mismatch for committed path: {path}")
+        except OSError as error:
+            errors.append(f"cannot hash classified path {path}: {error}")
     if live:
-        for path, metadata in dirty_snapshot.items():
-            candidate = ROOT / path
-            if not candidate.is_file():
-                errors.append(f"live baseline file is absent: {path}")
-            elif _digest(path, None) != metadata["sha256"]:
-                errors.append(f"live baseline sha256 drift: {path}")
+        for path, row in reviewed_by_path.items():
+            if row.get("baseline_state", "clean") in {"modified", "untracked"}:
+                candidate = ROOT / path
+                if not candidate.is_file():
+                    errors.append(f"live baseline file is absent: {path}")
+                elif _digest(path, targets) != row["sha256"]:
+                    errors.append(f"live baseline sha256 drift: {path}")
     try:
         actual = _load_rows()
     except (OSError, ValueError) as error:
         return [str(error)]
-    seen: set[str] = set()
-    for index, row in enumerate(actual, start=2):
-        missing = [field for field in FIELDS if not row.get(field, "").strip()]
-        if missing:
-            errors.append(f"row {index} has blank fields: {', '.join(missing)}")
-        path = row.get("path", "")
-        if path in seen:
-            errors.append(f"duplicate ledger path: {path}")
-        seen.add(path)
-        if row.get("disposition") not in DISPOSITIONS:
-            errors.append(f"row {index} has unknown disposition: {row.get('disposition')!r}")
+    if len(reviewed) != 322:
+        errors.append(f"classification must contain 322 rows, found {len(reviewed)}")
+    if len(actual) != len(reviewed):
+        errors.append(
+            f"ledger row count {len(actual)} does not match classification {len(reviewed)}"
+        )
+    actual_by_path = {row.get("path", ""): row for row in actual}
+    for path in sorted(set(reviewed_by_path) - set(actual_by_path)):
+        errors.append(f"ledger is missing classified path: {path}")
+    for path in sorted(set(actual_by_path) - set(reviewed_by_path)):
+        errors.append(f"ledger has unreviewed path: {path}")
+    for path in sorted(set(reviewed_by_path) & set(actual_by_path)):
+        expected = reviewed_by_path[path]
+        row = actual_by_path[path]
+        for field in FIELDS:
+            if row.get(field) != expected[field]:
+                errors.append(f"ledger {field} mismatch for {path}")
         if (
             row.get("disposition") == "LEGACY_ORACLE_THEN_REMOVE"
             and row.get("removal_slice") != "CA-10"
         ):
             errors.append(f"legacy row {path} must remove at CA-10")
-        if len(row.get("sha256", "")) != 64:
-            errors.append(f"row {index} has invalid sha256")
-    expected_by_path = {row["path"]: row for row in expected}
-    actual_by_path = {row.get("path", ""): row for row in actual}
-    missing = sorted(set(expected_by_path) - set(actual_by_path))
-    extra = sorted(set(actual_by_path) - set(expected_by_path))
-    if missing:
-        errors.append(f"ledger is missing {len(missing)} paths: {missing[:5]}")
-    if extra:
-        errors.append(f"ledger has {len(extra)} unexpected paths: {extra[:5]}")
-    for path in sorted(set(expected_by_path) & set(actual_by_path)):
-        expected_row = expected_by_path[path]
-        actual_row = actual_by_path[path]
-        if expected_row["sha256"] != actual_row.get("sha256"):
-            errors.append(f"sha256 mismatch for {path}")
-        if expected_row["disposition"] != actual_row.get("disposition"):
-            errors.append(f"disposition mismatch for {path}")
     return errors
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true", help="validate the checked-in ledger")
     parser.add_argument(
-        "--live",
-        action="store_true",
-        help="also compare imported-dirty snapshot hashes with the current worktree",
+        "--check", action="store_true", help="validate the reviewed classification and ledger"
+    )
+    parser.add_argument(
+        "--live", action="store_true", help="also check explicitly recorded dirty baseline hashes"
     )
     args = parser.parse_args()
     errors = validate(live=args.live)
@@ -293,7 +212,7 @@ def main() -> int:
         for error in errors:
             print(f"ownership audit: {error}", file=sys.stderr)
         return 1
-    print(f"ownership audit: OK ({len(_expected_rows())} rows)")
+    print("ownership audit: OK (322 rows)")
     return 0
 
 

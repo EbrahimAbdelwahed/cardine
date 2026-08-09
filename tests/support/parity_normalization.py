@@ -1,75 +1,56 @@
-"""Canonical normalization for the Cardine adoption parity corpus.
+"""Lossless normalization for executable Cardine parity vectors.
 
-Parity vectors compare semantics produced by two runtimes.  The only values
-that are allowed to vary between runs are clock readings, temporary paths, and
-process identifiers.  Keeping the allowlist here (rather than recursively
-scrubbing values by shape) prevents a normalizer from hiding a semantic drift.
+The baseline services are allowed to place their temporary SQLite/blob roots in
+the response.  Those roots are the only nondeterministic values in the corpus;
+all event, identity, timestamp, causation, provenance, citation, decision,
+status, and error fields remain part of the comparison contract.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Final
+from typing import cast
 
-from study_agent.domain._validation import JsonValue
+from study_agent.domain._validation import JsonObject, JsonValue
+from study_agent.state import canonical_json_bytes
 
-# These names are intentionally narrow.  In particular, ``path`` and
-# ``timestamp`` are not treated as wildcards: source paths and event timestamps
-# are semantic unless the producer explicitly labels them as temporary/clock
-# metadata.
-NONDETERMINISTIC_FIELDS: Final[frozenset[str]] = frozenset(
-    {
-        "clock_now",
-        "current_time",
-        "occurred_at",
-        "created_at",
-        "updated_at",
-        "started_at",
-        "finished_at",
-        "expires_at",
-        "temporary_path",
-        "temp_path",
-        "tmp_path",
-        "process_id",
-        "pid",
-    }
-)
+TMP_POINTERS = frozenset({"/runtime/tmp_root", "/runtime/events_path", "/runtime/blob_root"})
+TMP_PLACEHOLDER = "<TMP_ROOT>"
+
+
+def _pointer(path: tuple[str, ...]) -> str:
+    return (
+        ""
+        if not path
+        else "/" + "/".join(item.replace("~", "~0").replace("/", "~1") for item in path)
+    )
 
 
 def normalize_parity(value: JsonValue) -> JsonValue:
-    """Return a canonical semantic vector with only nondeterminism removed.
+    """Replace only the explicitly declared temporary-root JSON pointers."""
 
-    Mapping keys are compared exactly and sequences retain their order.  This
-    is deliberately not a generic redactor: semantic identifiers, event and
-    schema versions, sequence/causation/correlation, provenance, citations,
-    decisions, status, and safe error codes are all ordinary values and remain
-    in the result.
-    """
+    def visit(current: JsonValue, path: tuple[str, ...]) -> JsonValue:
+        if _pointer(path) in TMP_POINTERS:
+            return TMP_PLACEHOLDER
+        if isinstance(current, Mapping):
+            return cast(
+                JsonObject,
+                {str(key): visit(item, (*path, str(key))) for key, item in current.items()},
+            )
+        if isinstance(current, tuple):
+            return tuple(visit(item, (*path, str(index))) for index, item in enumerate(current))
+        if isinstance(current, list):
+            return tuple(visit(item, (*path, str(index))) for index, item in enumerate(current))
+        return current
 
-    if isinstance(value, Mapping):
-        normalized: dict[str, JsonValue] = {}
-        for raw_key, raw_value in value.items():
-            key = str(raw_key)
-            if key in NONDETERMINISTIC_FIELDS:
-                continue
-            normalized[key] = normalize_parity(raw_value)
-        return normalized
-    if isinstance(value, tuple):
-        return tuple(normalize_parity(item) for item in value)
-    if isinstance(value, list):
-        return tuple(normalize_parity(item) for item in value)
-    return value
+    return visit(value, ())
 
 
 def normalized_json_bytes(value: JsonValue) -> bytes:
-    """Encode a normalized value with the repository's canonical JSON codec."""
-
-    from study_agent.state import canonical_json_bytes
-
     normalized = normalize_parity(value)
     if not isinstance(normalized, Mapping):
-        raise TypeError("parity output must be a JSON object")
+        raise TypeError("parity vectors must be JSON objects")
     return canonical_json_bytes(normalized)
 
 
-__all__ = ["NONDETERMINISTIC_FIELDS", "normalize_parity", "normalized_json_bytes"]
+__all__ = ["TMP_PLACEHOLDER", "TMP_POINTERS", "normalize_parity", "normalized_json_bytes"]

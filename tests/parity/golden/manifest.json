@@ -1,43 +1,165 @@
 {
+  "cases": [
+    {
+      "case": "replay",
+      "input": "tests/parity/golden/inputs/replay.json",
+      "input_sha256": "87e37cb738883726ae3d735fc7a7f60993ccfe0e84e46760bf4ba77559b6c799",
+      "normalized_output": "tests/parity/golden/normalized/replay.json",
+      "normalized_sha256": "8823fb1d6e85f94e8759e791291bbfb8fd4daa8253e664dede30ecfebb30b1c5",
+      "schema_version": 1
+    },
+    {
+      "case": "source_identity",
+      "input": "tests/parity/golden/inputs/source_identity.json",
+      "input_sha256": "81a12daadc51f466f7ecb2a2113f5722651138f417cee5fa7250197e5e3b8e07",
+      "normalized_output": "tests/parity/golden/normalized/source_identity.json",
+      "normalized_sha256": "08d12eca9bf368f27cf94db847e6afdabbf4df96bc9a0df0e77b1329bc20550c",
+      "schema_version": 1
+    },
+    {
+      "case": "substrate_identity_lineage",
+      "input": "tests/parity/golden/inputs/substrate_identity_lineage.json",
+      "input_sha256": "e8e0bab2dee021e209f19f8e78a6bb228e1925695986f7ff20940aca7e889a41",
+      "normalized_output": "tests/parity/golden/normalized/substrate_identity_lineage.json",
+      "normalized_sha256": "54c00978af25d79aa35727f4a6b0b6439f612e20c145f32d26ce34395d3d93b0",
+      "schema_version": 1
+    },
+    {
+      "case": "citation_resolution",
+      "input": "tests/parity/golden/inputs/citation_resolution.json",
+      "input_sha256": "8c93e20ac7bea97e499f3569f86a9b004b6066e63d067fa03eee48ba2aecdc34",
+      "normalized_output": "tests/parity/golden/normalized/citation_resolution.json",
+      "normalized_sha256": "5a3eefb28168f3090ee834e53a7e1ea7ded866d97207ed67a621d570e8a2bbac",
+      "schema_version": 1
+    },
+    {
+      "case": "session_continuation_recovery",
+      "input": "tests/parity/golden/inputs/session_continuation_recovery.json",
+      "input_sha256": "2b5be24b299e68fbfbd63604c7ca9e083dc6540d365cea0f37b6c5212b5efed8",
+      "normalized_output": "tests/parity/golden/normalized/session_continuation_recovery.json",
+      "normalized_sha256": "3608286f1258616608ba2bf46a59d99bf886c999947eed4a9ee384b13e27f936",
+      "schema_version": 1
+    },
+    {
+      "case": "artifact_decisions",
+      "input": "tests/parity/golden/inputs/artifact_decisions.json",
+      "input_sha256": "50bd3ba81c7cd5756a0913d3a525bdd2281d2843c351724ef98c2029d7f278fe",
+      "normalized_output": "tests/parity/golden/normalized/artifact_decisions.json",
+      "normalized_sha256": "dfe92959c6a4a1323bffc1f5c4552a2019e7d5a52be2bf4fe36217ee02f60e1c",
+      "schema_version": 1
+    },
+    {
+      "case": "assessment_presentation",
+      "input": "tests/parity/golden/inputs/assessment_presentation.json",
+      "input_sha256": "5d88cd7a299e2343c3b23a8eb55227fc0bb7a5a8d043c04619c4c24611bd8adc",
+      "normalized_output": "tests/parity/golden/normalized/assessment_presentation.json",
+      "normalized_sha256": "f7a73df43f3d27f0b561fe2599a903728a5548e3aa22b13c1f19ecb50d6a50e8",
+      "schema_version": 1
+    },
+    {
+      "case": "assessment_attempt",
+      "input": "tests/parity/golden/inputs/assessment_attempt.json",
+      "input_sha256": "250dad55c7dda5b3495cd10f672f7cf6fa1916779cb071aae7578aabff864627",
+      "normalized_output": "tests/parity/golden/normalized/assessment_attempt.json",
+      "normalized_sha256": "0aeb989144321053a6cb9ace23fdbeafcc82e6c8bdd6acb513f27e6beb31a88a",
+      "schema_version": 1
+    },
+    {
+      "case": "assessment_grade",
+      "input": "tests/parity/golden/inputs/assessment_grade.json",
+      "input_sha256": "04848429b5d6af689ba5350d5f79975b78c8a056a225f77d40339958acf1121b",
+      "normalized_output": "tests/parity/golden/normalized/assessment_grade.json",
+      "normalized_sha256": "75704a094ebfe43a22174e7899a881e4a3a1f59f78d8d45db18f10409ddce8a0",
+      "schema_version": 1
+    },
+    {
+      "case": "assessment_contest",
+      "input": "tests/parity/golden/inputs/assessment_contest.json",
+      "input_sha256": "61876b507f8f5c22d971ddac47e2d6513800fc32a3bbf4c6252b68fcccc4d8ec",
+      "normalized_output": "tests/parity/golden/normalized/assessment_contest.json",
+      "normalized_sha256": "99ab9abe91959320b91f7c7b7924eeb79011fe8c61b2dd71980a22814cfba849",
+      "schema_version": 1
+    },
+    {
+      "case": "recall_enrollment",
+      "input": "tests/parity/golden/inputs/recall_enrollment.json",
+      "input_sha256": "42e9a139ffd07a72669c71a8c567ab4e3d4c09b6739bc0fe75d891c7197f227b",
+      "normalized_output": "tests/parity/golden/normalized/recall_enrollment.json",
+      "normalized_sha256": "0f51adb53ecd441f1e50927aaccbfc648a8bdc405d3836b876c86965992a529d",
+      "schema_version": 1
+    },
+    {
+      "case": "recall_review",
+      "input": "tests/parity/golden/inputs/recall_review.json",
+      "input_sha256": "dfd8c1180af9441c0f276f5d11064aeeddc2cde5a8a2813028ea07da6f6e1082",
+      "normalized_output": "tests/parity/golden/normalized/recall_review.json",
+      "normalized_sha256": "0acf662913ae194f7c6d5239541f5eeb59178340194108933ad479b0544905ca",
+      "schema_version": 1
+    },
+    {
+      "case": "recall_due",
+      "input": "tests/parity/golden/inputs/recall_due.json",
+      "input_sha256": "1b1d652b368d64aa2cd3722821b4438162ddc5e336b51ddeb56df08c43b6749f",
+      "normalized_output": "tests/parity/golden/normalized/recall_due.json",
+      "normalized_sha256": "d1f570a03d9a6b17f769719a56bf35b4893733b8588620ec63601a65dfdf85fa",
+      "schema_version": 1
+    },
+    {
+      "case": "semantic_export",
+      "input": "tests/parity/golden/inputs/semantic_export.json",
+      "input_sha256": "ee7e6b054e400c4d139f46b3504a7786bade79b9a5ddc7616aa2f6aeb26075e4",
+      "normalized_output": "tests/parity/golden/normalized/semantic_export.json",
+      "normalized_sha256": "30183784ef6ca3de9bb125e179a56b207f455b4791474d4011ded77ddbc04da4",
+      "schema_version": 1
+    },
+    {
+      "case": "failure_invalid",
+      "input": "tests/parity/golden/inputs/failure_invalid.json",
+      "input_sha256": "87e37cb738883726ae3d735fc7a7f60993ccfe0e84e46760bf4ba77559b6c799",
+      "normalized_output": "tests/parity/golden/normalized/failure_invalid.json",
+      "normalized_sha256": "7b7014cef3e9b6c21008ba42c7a556799cd6d7c12f5f673458215a8940690eb4",
+      "schema_version": 1
+    },
+    {
+      "case": "failure_stale",
+      "input": "tests/parity/golden/inputs/failure_stale.json",
+      "input_sha256": "87e37cb738883726ae3d735fc7a7f60993ccfe0e84e46760bf4ba77559b6c799",
+      "normalized_output": "tests/parity/golden/normalized/failure_stale.json",
+      "normalized_sha256": "6385d362f15296ca6b3e07692e11827cd4d1cf2a02e5241085faa86a2b1c8b7a",
+      "schema_version": 1
+    },
+    {
+      "case": "failure_unauthorized",
+      "input": "tests/parity/golden/inputs/failure_unauthorized.json",
+      "input_sha256": "87e37cb738883726ae3d735fc7a7f60993ccfe0e84e46760bf4ba77559b6c799",
+      "normalized_output": "tests/parity/golden/normalized/failure_unauthorized.json",
+      "normalized_sha256": "ce3d8449d1a7e968211b0c5565a3d9709757980245e8405d9e8c0113cbf46f0f",
+      "schema_version": 1
+    },
+    {
+      "case": "failure_not_found",
+      "input": "tests/parity/golden/inputs/failure_not_found.json",
+      "input_sha256": "87e37cb738883726ae3d735fc7a7f60993ccfe0e84e46760bf4ba77559b6c799",
+      "normalized_output": "tests/parity/golden/normalized/failure_not_found.json",
+      "normalized_sha256": "bf5fc2333b459a0d4303b568d135282751f68926383af2f6bbfb9f3f2924b823",
+      "schema_version": 1
+    },
+    {
+      "case": "failure_conflict",
+      "input": "tests/parity/golden/inputs/failure_conflict.json",
+      "input_sha256": "87e37cb738883726ae3d735fc7a7f60993ccfe0e84e46760bf4ba77559b6c799",
+      "normalized_output": "tests/parity/golden/normalized/failure_conflict.json",
+      "normalized_sha256": "06cb3d201e47ffa26505d3a7b75514c4b37547d1246296c9501ff3b6c830f522",
+      "schema_version": 1
+    }
+  ],
   "manifest_schema_version": 1,
   "normalization": {
-    "name": "cardine-parity-normalization",
-    "version": 1,
-    "removed_fields": [
-      "clock_now",
-      "created_at",
-      "current_time",
-      "expires_at",
-      "finished_at",
-      "occurred_at",
-      "pid",
-      "process_id",
-      "started_at",
-      "temp_path",
-      "temporary_path",
-      "tmp_path",
-      "updated_at"
-    ]
-  },
-  "cases": [
-    {"case": "artifact_decisions", "fixture": "tests/parity/golden/fixtures/artifact_decisions.json", "normalized_output": "tests/parity/golden/normalized/artifact_decisions.json", "schema_version": 1, "fixture_sha256": "d97d44a986a88f2def0f36068f167171932258e8ed651c3ca83b0759a38113d3", "normalized_sha256": "b919bff7144778c413c85ad07527f20af4b2b622ffeb6a3828d399e4af4cda16"},
-    {"case": "assessment_attempt", "fixture": "tests/parity/golden/fixtures/assessment_attempt.json", "normalized_output": "tests/parity/golden/normalized/assessment_attempt.json", "schema_version": 1, "fixture_sha256": "d8371e456a403b8290c3880bab0ba43cbb6f2f2e918f3f8748a5d5aeee7cd0aa", "normalized_sha256": "806388e4f06812546ad8a34131600d3f914895ad542453eb8ed22ccea8b3964a"},
-    {"case": "assessment_contest", "fixture": "tests/parity/golden/fixtures/assessment_contest.json", "normalized_output": "tests/parity/golden/normalized/assessment_contest.json", "schema_version": 1, "fixture_sha256": "8b5f684374d2378b4a61904b1aa8bd969aac7f2b237172fc0c7db883bd969a65", "normalized_sha256": "a6b656a173a6c3323b8268223817992cc6be2c3d84fa3cbc198bc34041346a2f"},
-    {"case": "assessment_grade", "fixture": "tests/parity/golden/fixtures/assessment_grade.json", "normalized_output": "tests/parity/golden/normalized/assessment_grade.json", "schema_version": 1, "fixture_sha256": "ce232063985d862d57033a9c4e1ecd5a54ea9b49bdcf1bfc21255db3cb2ac983", "normalized_sha256": "3090b024f344a1a026f581260f548ebbf8d4c8f1dddee5e94b9295ab1b2d4145"},
-    {"case": "assessment_presentation", "fixture": "tests/parity/golden/fixtures/assessment_presentation.json", "normalized_output": "tests/parity/golden/normalized/assessment_presentation.json", "schema_version": 1, "fixture_sha256": "1bbefe8c99cf06aa05bd5bc2dce31b319a0c6e3abd9dbd1b5e79de0a84b4a504", "normalized_sha256": "3fac0bc50e3db1cddd85178acb8afea4be5b9bc39868e5cd111aa0f949ef15bd"},
-    {"case": "citation_resolution", "fixture": "tests/parity/golden/fixtures/citation_resolution.json", "normalized_output": "tests/parity/golden/normalized/citation_resolution.json", "schema_version": 1, "fixture_sha256": "690c70802b100aebbfcdaba3524d66e806e8a35b7855ae2f0591d56c36758532", "normalized_sha256": "f91115dc30e61d186468c8fe5c2524e42332b4f89259416cf162fca4f7853a59"},
-    {"case": "failure_conflict", "fixture": "tests/parity/golden/fixtures/failure_conflict.json", "normalized_output": "tests/parity/golden/normalized/failure_conflict.json", "schema_version": 1, "fixture_sha256": "161f2314f6dd0420733f21ff0c24e3f42bee10de2b0c0f5827deca0284d868b0", "normalized_sha256": "11ecfda80e82399b01e1d8379436bb0fe09ddf171e9fe262f07d5fb003fed03f"},
-    {"case": "failure_invalid", "fixture": "tests/parity/golden/fixtures/failure_invalid.json", "normalized_output": "tests/parity/golden/normalized/failure_invalid.json", "schema_version": 1, "fixture_sha256": "370f7b2e03c67ecc6b53d22945f5b1e755939ab2330886bd45e4277be4b3e439", "normalized_sha256": "8393e88fd2f2833333739bfd43331582be138152595897bb0403c9a51c446b3d"},
-    {"case": "failure_not_found", "fixture": "tests/parity/golden/fixtures/failure_not_found.json", "normalized_output": "tests/parity/golden/normalized/failure_not_found.json", "schema_version": 1, "fixture_sha256": "91897fb888e1950fbccf678bdc1266ca15614c77e8388ab1a2d9b11fffbd901a", "normalized_sha256": "9fa797d10105d770fa3c24ede34ad1b98777eeb2d0d5581c062180ae349db597"},
-    {"case": "failure_stale", "fixture": "tests/parity/golden/fixtures/failure_stale.json", "normalized_output": "tests/parity/golden/normalized/failure_stale.json", "schema_version": 1, "fixture_sha256": "0d2697076ef755fefb0073b931e57e94dc9e945553c8538ddbb6607100674fb1", "normalized_sha256": "33f44fc118c1f25fcf7f163fcbd07bba8db07d2c57987ac2c9480d62af30353a"},
-    {"case": "failure_unauthorized", "fixture": "tests/parity/golden/fixtures/failure_unauthorized.json", "normalized_output": "tests/parity/golden/normalized/failure_unauthorized.json", "schema_version": 1, "fixture_sha256": "e08d894e6b1e7ac5887623ab360230cdc6c00702de7e374b198e8852612269bf", "normalized_sha256": "567bf08e3ebe142f4a3ff78304f4bf3fc462fdfd7814111a71693348b3caa224"},
-    {"case": "recall_due", "fixture": "tests/parity/golden/fixtures/recall_due.json", "normalized_output": "tests/parity/golden/normalized/recall_due.json", "schema_version": 1, "fixture_sha256": "991c7157004f874419cfcc7c1cd801d879445b3e522818658a96c1e9fded41a3", "normalized_sha256": "50260ba570f11b4009df42ea34a86d09211d3d76aa8aaa853debfe279b4956df"},
-    {"case": "recall_enrollment", "fixture": "tests/parity/golden/fixtures/recall_enrollment.json", "normalized_output": "tests/parity/golden/normalized/recall_enrollment.json", "schema_version": 1, "fixture_sha256": "280730dd94af60940f3db3353b19bd825ecc5195e39a4e1362aa28ddca2a61e4", "normalized_sha256": "e75b00284a9c256bf6fa8d4ed326dc9ed438a4f4579297a316a7c450477be147"},
-    {"case": "recall_review", "fixture": "tests/parity/golden/fixtures/recall_review.json", "normalized_output": "tests/parity/golden/normalized/recall_review.json", "schema_version": 1, "fixture_sha256": "fe71fa0ffcd3f6dd97293d15474e0e13635b199f21e6199af005052501f34dff", "normalized_sha256": "ac1fef44ad53cfd33b5c48d0fda3dc52f404e58c57913eca96261c2837fef923"},
-    {"case": "replay", "fixture": "tests/parity/golden/fixtures/replay.json", "normalized_output": "tests/parity/golden/normalized/replay.json", "schema_version": 1, "fixture_sha256": "97bb1aca23c7f5e00d9b6afee1c868acd85521b06995b5ff167b2f397f9a2343", "normalized_sha256": "7c1df554e6342627738d964928984e7c57dee3780fc8f7a6b3ec062996d2419d"},
-    {"case": "semantic_export", "fixture": "tests/parity/golden/fixtures/semantic_export.json", "normalized_output": "tests/parity/golden/normalized/semantic_export.json", "schema_version": 1, "fixture_sha256": "db8fde6325490289f4b5f8184987718e9a2348455e30e7c6a5d1feb1bb487f8f", "normalized_sha256": "88d64e91258bd6709fa15b9ccc9b9c4362013df2e758016218c52efb5f6e241b"},
-    {"case": "session_continuation_recovery", "fixture": "tests/parity/golden/fixtures/session_continuation_recovery.json", "normalized_output": "tests/parity/golden/normalized/session_continuation_recovery.json", "schema_version": 1, "fixture_sha256": "2c7837be072e6e3170a23e37d4d7694f6a4dcb161e7dee966ea928b4b3b23bae", "normalized_sha256": "05b618f30c99f17456b05793e53f94ba800fb20ce7bd64ff5181ff6574d5328a"},
-    {"case": "source_identity", "fixture": "tests/parity/golden/fixtures/source_identity.json", "normalized_output": "tests/parity/golden/normalized/source_identity.json", "schema_version": 1, "fixture_sha256": "c44cc7646e9b44c7877922da2121835996b0ccf1dc050a8cb2dbaba5ce0e934a", "normalized_sha256": "02ec2293a970bee7ee7956e4820be769cb082841c288b62a0963476a3d3f9049"},
-    {"case": "substrate_identity_lineage", "fixture": "tests/parity/golden/fixtures/substrate_identity_lineage.json", "normalized_output": "tests/parity/golden/normalized/substrate_identity_lineage.json", "schema_version": 1, "fixture_sha256": "8b5c54db4964ebbacf04cf038eebe46994c18d07f0e790d3deece1f446cc5878", "normalized_sha256": "4a8bb6c01060ef4497a3581ed6d20ae4a185a60a4a858b111de659a1bb1ca91b"}
-  ]
+    "json_pointer_replacements": [
+      "/runtime/blob_root",
+      "/runtime/events_path",
+      "/runtime/tmp_root"
+    ],
+    "name": "cardine-parity-json-pointer"
+  }
 }
