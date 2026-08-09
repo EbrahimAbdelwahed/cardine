@@ -704,6 +704,60 @@ def test_repository_browser_retry_binds_original_request_across_interleaved_turn
         assert browser.evaluate("window.__terminalRequests[2]") == first_request
 
 
+@pytest.mark.parametrize("failure_reason", ("authentication", "protocol_error", None))
+def test_repository_browser_terminal_fallback_gets_new_request_id(
+    tmp_path: Path,
+    failure_reason: str | None,
+) -> None:
+    """A settled HTTP-200 fallback cannot turn a later submission into a retry."""
+
+    root, adapters, _model = _repository(tmp_path)
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+
+    with _serve(application=app) as url, _real_browser(url) as browser:
+        browser.wait_for("Boolean(document.querySelector('[data-study-setup]'))")
+        browser.evaluate("document.querySelector('[data-route=\"sessione\"]').click()")
+        browser.wait_for("Boolean(document.querySelector('#session-entry-text:not([disabled])'))")
+        browser.evaluate("document.querySelector('#session-entry-text').focus()")
+        browser.evaluate(
+            "(async()=>{"
+            "const original=window.fetch;"
+            "window.__terminalCanonical=await original('/api/v1/session')"
+            ".then(response=>response.json());"
+            "window.__terminalRequests=[];"
+            "window.fetch=(input,options={})=>{"
+            "if(!String(input).endsWith('/api/v1/session/turns')) return original(input,options);"
+            "const body=JSON.parse(options.body);"
+            "window.__terminalRequests.push(body.request_id);"
+            "const base=window.__terminalCanonical;"
+            "const terminal={...base,status:'active',shell_status:'ready',"
+            "learner_entry:'same learner',timeline:["
+            "{role:'assistant',content:'Non sono riuscito a completare questa risposta.',"
+            "course_sequence:2}]};"
+            "return Promise.resolve(new Response(JSON.stringify({"
+            "schema_version:1,request_id:body.request_id,status:'failed',"
+            f"failure_reason:{json.dumps(failure_reason)},"
+            "high_water_sequence:base.high_water_sequence,result:terminal"
+            "}),{status:200,headers:{'Content-Type':'application/json'}}));"
+            "};"
+            "})()",
+            await_promise=True,
+        )
+
+        for _attempt in range(2):
+            browser.call("Input.insertText", text="same learner")
+            _press(browser, "Enter", 13)
+            browser.wait_for(f"window.__terminalRequests.length === {_attempt + 1}")
+            browser.wait_for("!document.querySelector('[data-optimistic-turn]')")
+            assert browser.evaluate(
+                "document.querySelectorAll('#global-alert-actions button').length"
+            ) == 0
+
+        assert browser.evaluate("window.__terminalRequests[0]") != browser.evaluate(
+            "window.__terminalRequests[1]"
+        )
+
+
 def test_repository_browser_source_first_setup_uploads_a_text_source(tmp_path: Path) -> None:
     root, adapters, _model = _repository(tmp_path, with_source=False)
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)

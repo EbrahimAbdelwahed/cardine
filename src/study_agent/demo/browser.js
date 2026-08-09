@@ -1836,7 +1836,10 @@
       const terminalTutorTurn = isTutorTurn && INCOMPLETE_TURN_STATUSES.has(status);
       setStatus(status, `Comando ${statusLabel(status)}`);
       const commandIsCurrent = state.lastCommand && state.lastCommand.requestId === request;
-      if ((!terminalTutorTurn || retryingCommand) && commandIsCurrent) state.lastCommand = null;
+      // A successful HTTP response is settled, including the safe fallback
+      // for non-transient tutor failures. Only the catch path can retain a
+      // command for an explicit transient retry action.
+      if (commandIsCurrent) state.lastCommand = null;
       if (isTutorTurn && state.pendingTurn?.requestId === request) state.pendingTurn = null;
       if (endpoint === "/api/v1/session/turns" || endpoint.includes("/session/continuations/")) {
         state.continuationDraft = "";
