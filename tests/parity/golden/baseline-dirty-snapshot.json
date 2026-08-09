@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "baseline": "CA-00C-imported-dirty-tree",
+  "paths": [
+    {
+      "path": "src/study_agent/application/conversation_turn.py",
+      "sha256": "a679f3cb5e8321d9c9444e89bd707a3e6a1139401a55f59a8ae15e0e410b6370",
+      "working_tree_state": "modified"
+    },
+    {
+      "path": "src/study_agent/artifacts/verified_batch.py",
+      "sha256": "d8f5ce075ab4df3917331a2a10a36dd0db50cd11fc0382d999e569da7e56898a",
+      "working_tree_state": "modified"
+    },
+    {
+      "path": "src/study_agent/capabilities/morphology_flashcards.py",
+      "sha256": "1d95c6185fc45045621342384332dada250062e4e2277e7b8a9395c0e3cb324d",
+      "working_tree_state": "modified"
+    },
+    {
+      "path": "src/study_agent/demo/browser.js",
+      "sha256": "db7c2115adc27b1a0cb7937317b901e6f51f8e68a898772b0ae07ead59581815",
+      "working_tree_state": "modified"
+    },
+    {
+      "path": "src/study_agent/flashcards/lesson_worker_service.py",
+      "sha256": "2192bcbeb33a17911490ab2c7d17803039a244141ddb8b43d3f59aece3921053",
+      "working_tree_state": "modified"
+    },
+    {
+      "path": "src/study_agent/hosts/flashcard_routing.py",
+      "sha256": "48a5f5d2bbea11adc2af6e24cf65c8697039eabfc83648f3d3a9c0601fd444b5",
+      "working_tree_state": "untracked"
+    },
+    {
+      "path": "src/study_agent/prompts/morphology_flashcards_v1.py",
+      "sha256": "ba1100015a0e67f14e24b273ed0351f37686d5bcfdb78acd8b8939345990e342",
+      "working_tree_state": "modified"
+    },
+    {
+      "path": "src/study_agent/workers/proof.py",
+      "sha256": "12eab1936fc6572f68db09853663af9855e07104c2816e8520dbf893c3261f86",
+      "working_tree_state": "modified"
+    }
+  ]
+}

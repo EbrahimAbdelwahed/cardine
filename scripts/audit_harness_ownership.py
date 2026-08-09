@@ -1,9 +1,11 @@
 """Mechanically validate the CA-01 one-owner ledger.
 
 The ledger is evidence for the expansion phase, not a source relocation tool.
-This check derives its expected universe from tracked ``src/study_agent``
-files, setuptools package-data declarations, and project console scripts so a
-row cannot be silently omitted or repeated.
+The structural check is self-contained: it derives the clean-tree source
+universe from the checkout, adds the explicitly recorded imported-dirty
+baseline snapshot, and reads package-data/console-script declarations.  It
+does not require the dirty baseline files to be present.  ``--live`` is an
+opt-in drift check for a developer worktree that still has those files.
 """
 
 from __future__ import annotations
@@ -11,6 +13,7 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import json
 import sys
 import tomllib
 from collections.abc import Mapping
@@ -18,6 +21,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LEDGER = ROOT / "specs/harness-adoption/assets/ownership-ledger.csv"
+DIRTY_SNAPSHOT = ROOT / "tests/parity/golden/baseline-dirty-snapshot.json"
 SOURCE_ROOT = ROOT / "src"
 DISPOSITIONS = {"HARNESS_IMPORT", "CARDINE_OWNER", "LEGACY_ORACLE_THEN_REMOVE"}
 FIELDS = (
@@ -32,13 +36,44 @@ FIELDS = (
 
 
 def _source_paths() -> set[str]:
-    """Return every current source/package-data file, excluding interpreter caches."""
+    """Return source/package-data files present in this tree, excluding caches."""
 
     return {
         path.relative_to(ROOT).as_posix()
         for path in (ROOT / "src/study_agent").rglob("*")
         if path.is_file() and "/__pycache__/" not in path.as_posix() and path.suffix != ".pyc"
     }
+
+
+def _dirty_snapshot() -> dict[str, dict[str, str]]:
+    if not DIRTY_SNAPSHOT.is_file():
+        raise ValueError(f"missing imported-dirty baseline snapshot: {DIRTY_SNAPSHOT}")
+    raw = json.loads(DIRTY_SNAPSHOT.read_text(encoding="utf-8"))
+    if not isinstance(raw, Mapping) or raw.get("schema_version") != 1:
+        raise ValueError("dirty baseline snapshot must declare schema_version 1")
+    paths = raw.get("paths")
+    if not isinstance(paths, list) or not paths:
+        raise ValueError("dirty baseline snapshot must contain paths")
+    snapshot: dict[str, dict[str, str]] = {}
+    for item in paths:
+        if not isinstance(item, Mapping):
+            raise ValueError("dirty baseline snapshot entries must be objects")
+        path = item.get("path")
+        digest = item.get("sha256")
+        state = item.get("working_tree_state")
+        if (
+            not isinstance(path, str)
+            or not path.startswith("src/study_agent/")
+            or not isinstance(digest, str)
+            or len(digest) != 64
+            or any(char not in "0123456789abcdef" for char in digest)
+            or state not in {"modified", "untracked"}
+        ):
+            raise ValueError(f"invalid dirty baseline snapshot entry: {item!r}")
+        if path in snapshot:
+            raise ValueError(f"duplicate dirty baseline snapshot path: {path}")
+        snapshot[path] = {"sha256": digest, "working_tree_state": str(state)}
+    return snapshot
 
 
 def _declared_package_data(config: Mapping[str, object]) -> set[str]:
@@ -79,11 +114,12 @@ def _entry_point_paths(config: Mapping[str, object]) -> dict[str, str]:
 
 def _expected_rows() -> tuple[dict[str, str], ...]:
     config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    paths = _source_paths() | _declared_package_data(config)
+    dirty_snapshot = _dirty_snapshot()
+    paths = _source_paths() | _declared_package_data(config) | set(dirty_snapshot)
     entry_points = _entry_point_paths(config)
     expected: list[dict[str, str]] = []
     for path in sorted(paths):
-        expected.append(_row_for(path, None))
+        expected.append(_row_for(path, None, dirty_snapshot.get(path)))
     for path, target in sorted(entry_points.items()):
         expected.append(_row_for(path, target))
     return tuple(expected)
@@ -140,7 +176,11 @@ def _is_legacy_oracle(path: str) -> bool:
     return path.startswith("src/study_agent/evals/")
 
 
-def _row_for(path: str, entry_point_target: str | None) -> dict[str, str]:
+def _row_for(
+    path: str,
+    entry_point_target: str | None,
+    dirty_snapshot: Mapping[str, str] | None = None,
+) -> dict[str, str]:
     if _is_legacy_oracle(path):
         disposition = "LEGACY_ORACLE_THEN_REMOVE"
         owner = "legacy-oracle"
@@ -162,7 +202,11 @@ def _row_for(path: str, entry_point_target: str | None) -> dict[str, str]:
     removal = "CA-02" if path.startswith("entrypoint:study-agent") else "CA-10"
     return {
         "path": path,
-        "sha256": _digest(path, entry_point_target),
+        "sha256": (
+            dirty_snapshot["sha256"]
+            if dirty_snapshot is not None
+            else _digest(path, entry_point_target)
+        ),
         "disposition": disposition,
         "terminal_owner": owner,
         "replacement_import_or_path": replacement,
@@ -181,12 +225,20 @@ def _load_rows() -> list[dict[str, str]]:
         return [dict(row) for row in reader]
 
 
-def validate() -> list[str]:
+def validate(*, live: bool = False) -> list[str]:
     errors: list[str] = []
     try:
+        dirty_snapshot = _dirty_snapshot()
         expected = _expected_rows()
     except (OSError, ValueError) as error:
         return [f"cannot derive ownership universe: {error}"]
+    if live:
+        for path, metadata in dirty_snapshot.items():
+            candidate = ROOT / path
+            if not candidate.is_file():
+                errors.append(f"live baseline file is absent: {path}")
+            elif _digest(path, None) != metadata["sha256"]:
+                errors.append(f"live baseline sha256 drift: {path}")
     try:
         actual = _load_rows()
     except (OSError, ValueError) as error:
@@ -230,8 +282,13 @@ def validate() -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="validate the checked-in ledger")
-    parser.parse_args()
-    errors = validate()
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="also compare imported-dirty snapshot hashes with the current worktree",
+    )
+    args = parser.parse_args()
+    errors = validate(live=args.live)
     if errors:
         for error in errors:
             print(f"ownership audit: {error}", file=sys.stderr)
