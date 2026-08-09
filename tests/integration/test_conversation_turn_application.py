@@ -72,17 +72,34 @@ class _Runner:
                 TutorHostRunStatus.ASSISTANT_MESSAGE,
                 learner_text="uncommitted host text",
             )
-        if self.mode in {"failed", "interrupted", "budget", "in_progress", "timeout"}:
+        typed_failure_reasons = {
+            "authentication",
+            "endpoint_incompatible",
+            "model_unavailable",
+            "protocol_error",
+            "rate_limited",
+            "timeout",
+            "unavailable",
+        }
+        if self.mode in {
+            "failed",
+            "interrupted",
+            "budget",
+            "in_progress",
+            *typed_failure_reasons,
+        }:
             status = {
                 "failed": TutorHostRunStatus.FAILED,
                 "interrupted": TutorHostRunStatus.INTERRUPTED,
                 "budget": TutorHostRunStatus.BUDGET_EXHAUSTED,
                 "in_progress": TutorHostRunStatus.IN_PROGRESS,
-                "timeout": TutorHostRunStatus.FAILED,
+                **dict.fromkeys(typed_failure_reasons, TutorHostRunStatus.FAILED),
             }[self.mode]
             return TutorHostRunResult(
                 status,
-                failure_reason="timeout" if self.mode == "timeout" else None,
+                failure_reason=(
+                    self.mode if self.mode in typed_failure_reasons else None
+                ),
             )
         if self.mode in {"completed", "terminated"}:
             return TutorHostRunResult(
@@ -616,19 +633,26 @@ def test_in_progress_remains_retryable_without_settling_the_turn(tmp_path: Path)
         repository.close()
 
 
-def test_typed_provider_failure_retries_without_fallback_or_duplicate_learner(
+@pytest.mark.parametrize(
+    "failure_reason",
+    ("rate_limited", "timeout", "unavailable", "model_unavailable"),
+)
+def test_transient_provider_failure_retries_without_fallback_or_duplicate_learner(
     tmp_path: Path,
+    failure_reason: str,
 ) -> None:
-    repository, runner, _ = _open(tmp_path, "timeout")
+    repository, runner, _ = _open(tmp_path, failure_reason)
     try:
         sequence = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
-        command = _command("request-timeout", sequence, "Retry this tutor turn")
+        command = _command(
+            f"request-{failure_reason}", sequence, "Retry this tutor turn"
+        )
 
         for _attempt in range(2):
             with pytest.raises(ConversationTurnError) as error:
                 asyncio.run(_conversation(repository).turn(command))
             assert error.value.code is ConversationTurnErrorCode.FAILED
-            assert error.value.failure_reason == "timeout"
+            assert error.value.failure_reason == failure_reason
             assert error.value.learner_persisted is True
 
         assert len(runner.calls) == 2
@@ -639,6 +663,32 @@ def test_typed_provider_failure_retries_without_fallback_or_duplicate_learner(
             if item.kind.value == "learner"
         )
         assert len(learner_rows) == 1
+    finally:
+        repository.close()
+
+
+@pytest.mark.parametrize(
+    "failure_reason",
+    ("authentication", "endpoint_incompatible", "protocol_error", None),
+)
+def test_non_transient_provider_failure_commits_safe_fallback(
+    tmp_path: Path,
+    failure_reason: str | None,
+) -> None:
+    repository, runner, _ = _open(tmp_path, failure_reason or "failed")
+    try:
+        sequence = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
+        command = _command(
+            f"request-{failure_reason or 'reasonless'}", sequence, "Save this turn"
+        )
+        result = asyncio.run(_conversation(repository).turn(command))
+
+        assert result.status is TutorHostRunStatus.FAILED
+        assert "Non sono riuscito" in result.presentation.content
+        assert repository.tutor_presentations.presentations(COURSE, SESSION) == (
+            result.presentation,
+        )
+        assert len(runner.calls) == 1
     finally:
         repository.close()
 
