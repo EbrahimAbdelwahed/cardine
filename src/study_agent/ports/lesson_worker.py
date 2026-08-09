@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from study_agent.domain import ExecutionContext, RunId
 from study_agent.domain._validation import JsonObject
@@ -19,8 +19,12 @@ from study_agent.flashcards.planning import (
     PlannedFlashcardBundle,
     PreparedPlannedFlashcardScope,
 )
+from study_agent.pedagogy import ProfileSelectionReceipt
 from study_agent.workers.contracts import GenerationWorkerReceipt, GenerationWorkerTask
 from study_agent.workers.view import WorkerCompactView
+
+if TYPE_CHECKING:
+    from study_agent.capabilities.worker_adapter import ProfiledWorkerExecutionDescriptor
 
 
 class PlannedBundleEvidenceResolver(Protocol):
@@ -44,6 +48,13 @@ class FlashcardProfileTaskBinding(Protocol):
         prepared_scope: PreparedPlannedFlashcardScope,
         context: ExecutionContext,
     ) -> GenerationWorkerTask: ...
+
+
+class FlashcardProfileExecutionBinding(FlashcardProfileTaskBinding, Protocol):
+    """Profile task binding with the isolated capability execution contract."""
+
+    @property
+    def execution_descriptor(self) -> ProfiledWorkerExecutionDescriptor: ...
 
 
 class PlannedBundleWorker(Protocol):
@@ -93,6 +104,7 @@ class LessonGeneratedBatchOwnerCommitment:
     revision_commitments_fingerprint: str
     associated_overview_bundle_id: str | None
     overview_association_fingerprint: str | None
+    profile_selection_receipt: ProfileSelectionReceipt | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,6 +129,7 @@ class LessonGeneratedBatchOwnerWriter(Protocol):
 
 
 __all__ = [
+    "FlashcardProfileExecutionBinding",
     "FlashcardProfileTaskBinding",
     "HistoricalPlannedBundleWorkerRouter",
     "LessonGeneratedBatchOwnerCommitment",

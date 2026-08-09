@@ -26,6 +26,7 @@ from study_agent.artifacts import (
     ArtifactConflictError,
     ArtifactRevisionRecord,
     ArtifactSnapshot,
+    GeneratedArtifactProvenance,
     ProjectionArtifactView,
     RetryableArtifactConflictError,
 )
@@ -193,6 +194,18 @@ def _source_grounding_status(
     return {"status": "available", "indexed_chunks": len(documents)}
 
 
+def _flashcard_capability_available(
+    repository: LocalRepository, course_id: CourseId, session_id: SessionId
+) -> bool:
+    """Report the capability only after the repository composes its owner."""
+
+    try:
+        repository.tutor_conversation(course_id, session_id=session_id)
+    except (LocalRepositoryError, OSError, RuntimeError, TypeError, ValueError):
+        return False
+    return repository.flashcard_composition is not None
+
+
 class RepositoryUiApplication(UiApplicationPort):
     """Compose one explicit local repository per request.
 
@@ -343,6 +356,9 @@ class RepositoryUiApplication(UiApplicationPort):
                         "presentations": presentations,
                         "source_grounding": _source_grounding_status(
                             repository, self._course_id, snapshot
+                        ),
+                        "flashcards_available": _flashcard_capability_available(
+                            repository, self._course_id, self._session_id
                         ),
                         "continuation": _active_continuation(
                             repository,
@@ -1424,6 +1440,7 @@ class RepositoryUiApplication(UiApplicationPort):
             "features": {
                 "tutor": True,
                 "artifacts": True,
+                "flashcards": bool(metadata.get("flashcards_available", False)),
                 "assessments": True,
                 "evidence": True,
                 "recall": bool(getattr(recall, "available", False)),
@@ -1485,6 +1502,9 @@ class RepositoryUiApplication(UiApplicationPort):
             "high_water_sequence": snapshot.high_water_sequence,
             "timeline": tuple(canonical_timeline),
             "continuation": _continuation_dto(continuation),
+            "capabilities": {
+                "propose_flashcards": bool(metadata.get("flashcards_available", False)),
+            },
             "mode": "local_repository",
             "title": str(metadata["course_title"]),
         }
@@ -1871,6 +1891,42 @@ def _artifact_revision_row(
 ) -> JsonObject:
     provenance = revision.provenance
     commitments = provenance.source_commitments
+    provenance_payload: dict[str, JsonValue] = {
+        "origin": provenance.origin.value,
+        "source_commitments": tuple(
+            {
+                "source_id": str(item.source_id),
+                "revision_id": str(item.revision_id),
+                "chunk_id": str(item.chunk_id),
+                "start_offset": item.start_offset,
+                "end_offset": item.end_offset,
+            }
+            for item in commitments
+        ),
+    }
+    if isinstance(provenance, GeneratedArtifactProvenance) and provenance.profile_selection:
+        selection = provenance.profile_selection
+        provenance_payload["profile_selection"] = {
+            "profile": {
+                "id": selection.profile.id.value,
+                "version": selection.profile.version,
+            },
+            "mode": selection.mode.value,
+            "selector_kind": selection.selector_kind.value,
+            "selector_authority": selection.selector_authority.value,
+            "basis": {
+                "interaction_id": (
+                    None
+                    if selection.basis.interaction_id is None
+                    else str(selection.basis.interaction_id)
+                ),
+                "source_revision_id": (
+                    None
+                    if selection.basis.source_revision_id is None
+                    else str(selection.basis.source_revision_id)
+                ),
+            },
+        }
     row: dict[str, JsonValue] = {
         "revision_id": str(revision.id),
         "artifact_id": str(revision.artifact_id),
@@ -1885,19 +1941,7 @@ def _artifact_revision_row(
         "prior_revision_id": (
             None if revision.prior_revision_id is None else str(revision.prior_revision_id)
         ),
-        "provenance": {
-            "origin": provenance.origin.value,
-            "source_commitments": tuple(
-                {
-                    "source_id": str(item.source_id),
-                    "revision_id": str(item.revision_id),
-                    "chunk_id": str(item.chunk_id),
-                    "start_offset": item.start_offset,
-                    "end_offset": item.end_offset,
-                }
-                for item in commitments
-            ),
-        },
+        "provenance": provenance_payload,
     }
     if enrollment_status is not None:
         row["enrollment_status"] = enrollment_status
@@ -2342,6 +2386,8 @@ def _model_check_message(reason: str) -> str:
 
 
 def _model_check_reason(failure_reason: object) -> str:
+    if not isinstance(failure_reason, str):
+        return "provider_unavailable"
     return {
         ModelErrorCode.AUTHENTICATION.value: "invalid_credential",
         ModelErrorCode.RATE_LIMITED.value: "rate_limited",

@@ -628,10 +628,12 @@ class PlaybookEngine:
                     )
             except PlaybookEngineError as error:
                 cancelled = error.failure.code is EngineErrorCode.CANCELLED
-                trace_details: JsonObject = {"error_code": error.failure.code.value}
+                failure_details: dict[str, JsonValue] = {
+                    "error_code": error.failure.code.value
+                }
                 model_failure_reason = _model_failure_reason_from_failure(error.failure)
                 if model_failure_reason is not None:
-                    trace_details["model_failure_reason"] = model_failure_reason
+                    failure_details["model_failure_reason"] = model_failure_reason
                 mutable_traces.append(
                     self._trace(
                         step,
@@ -640,7 +642,7 @@ class PlaybookEngine:
                             if cancelled
                             else StepTraceStatus.FAILED
                         ),
-                        trace_details,
+                        failure_details,
                     )
                 )
                 failed_checkpoint = self._checkpoint(
@@ -1751,7 +1753,20 @@ def _validate_resume_generation_proof(
 
 
 _SCHEMA_KEYWORDS = frozenset(
-    {"type", "required", "properties", "items", "enum", "additionalProperties"}
+    {
+        "type",
+        "required",
+        "properties",
+        "items",
+        "enum",
+        "additionalProperties",
+        "minimum",
+        "maximum",
+        "minLength",
+        "minItems",
+        "maxItems",
+        "uniqueItems",
+    }
 )
 _SCHEMA_TYPES = frozenset(
     {"object", "array", "string", "number", "integer", "boolean", "null"}
@@ -1805,6 +1820,18 @@ def _validate_schema_definition(schema: JsonObject, path: str = "schema") -> Non
     enum = schema.get("enum")
     if enum is not None and not isinstance(enum, tuple):
         _schema_error(f"enum must be an array at {path}")
+    minimum = _numeric_schema_bound(schema, "minimum", path)
+    maximum = _numeric_schema_bound(schema, "maximum", path)
+    if minimum is not None and maximum is not None and minimum > maximum:
+        _schema_error(f"minimum cannot exceed maximum at {path}")
+    _nonnegative_integer_schema_bound(schema, "minLength", path)
+    min_items = _nonnegative_integer_schema_bound(schema, "minItems", path)
+    max_items = _nonnegative_integer_schema_bound(schema, "maxItems", path)
+    if min_items is not None and max_items is not None and min_items > max_items:
+        _schema_error(f"minItems cannot exceed maxItems at {path}")
+    unique_items = schema.get("uniqueItems")
+    if unique_items is not None and not isinstance(unique_items, bool):
+        _schema_error(f"uniqueItems must be boolean at {path}")
 
 
 def _validate_schema(
@@ -1823,6 +1850,16 @@ def _validate_schema(
     enum = schema.get("enum")
     if isinstance(enum, tuple) and value not in enum:
         _schema_error(f"{label} is not an allowed enum value at {path}", step_id)
+    if isinstance(value, str):
+        minimum = cast(int | None, schema.get("minLength"))
+        if minimum is not None and len(value) < minimum:
+            _schema_error(f"{label} is too short at {path}", step_id)
+    if isinstance(value, tuple):
+        _validate_bounds(value, schema, label, step_id, path, "minItems", "maxItems")
+        if schema.get("uniqueItems") and len(set(map(repr, value))) != len(value):
+            _schema_error(f"{label} contains duplicate items at {path}", step_id)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        _validate_bounds(value, schema, label, step_id, path, "minimum", "maximum")
     if isinstance(value, Mapping):
         required = cast(tuple[JsonValue, ...], schema.get("required", ()))
         for name in required:
@@ -1865,10 +1902,48 @@ def _matches_type(schema_type: str | tuple[str, ...], value: JsonValue) -> bool:
     return value is None
 
 
+def _validate_bounds(
+    value: int | float | tuple[JsonValue, ...],
+    schema: JsonObject,
+    label: str,
+    step_id: str | None,
+    path: str,
+    low: str,
+    high: str,
+) -> None:
+    size_or_value = len(value) if isinstance(value, tuple) else value
+    minimum = cast(int | float | None, schema.get(low))
+    if minimum is not None and size_or_value < minimum:
+        _schema_error(f"{label} is below {low} at {path}", step_id)
+    maximum = cast(int | float | None, schema.get(high))
+    if maximum is not None and size_or_value > maximum:
+        _schema_error(f"{label} is above {high} at {path}", step_id)
+
+
 def _schema_error(message: str, step_id: str | None = None) -> NoReturn:
     raise PlaybookEngineError(
         EngineFailure(EngineErrorCode.SCHEMA_ERROR, message, step_id)
     )
+
+
+def _numeric_schema_bound(schema: JsonObject, keyword: str, path: str) -> int | float | None:
+    value = schema.get(keyword)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        _schema_error(f"{keyword} must be numeric at {path}")
+    return value
+
+
+def _nonnegative_integer_schema_bound(
+    schema: JsonObject, keyword: str, path: str
+) -> int | None:
+    value = schema.get(keyword)
+    if value is None:
+        return None
+    if type(value) is not int or value < 0:
+        _schema_error(f"{keyword} must be a non-negative integer at {path}")
+    return value
 
 
 def _safe_model_failure_reason(error: ModelError) -> str:

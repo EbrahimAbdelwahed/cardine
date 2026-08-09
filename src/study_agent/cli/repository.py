@@ -43,6 +43,7 @@ from study_agent.adapters.sqlite import (
 )
 from study_agent.adapters.system import SystemClock
 from study_agent.application import (
+    CapabilityCompletionHandler,
     CapabilityCompletionHandlerRegistry,
     CapabilityCompletionProductReceipt,
     ConversationTurnApplication,
@@ -53,6 +54,7 @@ from study_agent.application import (
     GroundingEngineFactory,
     StudyReadinessView,
 )
+from study_agent.application.flashcard_proposals import FlashcardProposalComposition
 from study_agent.artifacts import (
     ArtifactService,
     ProjectionArtifactView,
@@ -107,6 +109,7 @@ from study_agent.hosts import (
     TutorHostRunner,
     TutorHostRunStatus,
 )
+from study_agent.hosts.flashcard_routing import FlashcardProfileRoutingTutorDecisionPort
 from study_agent.ingestion import TextIngestionService, register_source_revision_events
 from study_agent.playbooks import (
     PlaybookEngine,
@@ -198,12 +201,14 @@ class _RepositoryTutorGateway:
         session_id: SessionId,
         model: ModelPort,
         model_adapter: ArtifactReference,
+        flashcards: FlashcardProposalComposition | None = None,
     ) -> None:
         self._repository = repository
         self._course_id = course_id
         self._session_id = session_id
         self._model = model
         self._model_adapter = model_adapter
+        self._flashcards = flashcards
 
     def recover(
         self,
@@ -212,13 +217,17 @@ class _RepositoryTutorGateway:
     ) -> CapabilityCompletionProductReceipt | None:
         """Recover one verified explain output without invoking the provider."""
 
+        if context is None:
+            return None
+        if self._flashcards is not None:
+            recovered = self._flashcards.recover(reference, context)
+            if recovered is not None:
+                return recovered
         if (
             reference.capability_identity
             != (f"{EXPLAIN_CONCEPT_MANIFEST.id.value}@{EXPLAIN_CONCEPT_MANIFEST.version.major}")
             or reference.manifest_fingerprint != EXPLAIN_CONCEPT_MANIFEST.fingerprint
         ):
-            return None
-        if context is None:
             return None
         try:
             gateway = self._gateway({"query": "completion recovery"}, context)
@@ -237,7 +246,10 @@ class _RepositoryTutorGateway:
             return None
 
     def discover(self) -> tuple[CapabilityManifest, ...]:
-        return (EXPLAIN_CONCEPT_MANIFEST,)
+        manifests = [EXPLAIN_CONCEPT_MANIFEST]
+        if self._flashcards is not None:
+            manifests.append(self._flashcards.manifest)
+        return tuple(manifests)
 
     async def start(
         self,
@@ -245,6 +257,10 @@ class _RepositoryTutorGateway:
         inputs: JsonObject,
         context: ExecutionContext,
     ) -> CapabilityOutcome:
+        if capability_id is TutorCapabilityId.PROPOSE_FLASHCARDS:
+            if self._flashcards is None:
+                raise ValueError("flashcard capability is not executable")
+            return await self._flashcards.start(inputs, context)
         outcome = await self._gateway(inputs, context).start(capability_id, inputs, context)
         return outcome
 
@@ -254,6 +270,8 @@ class _RepositoryTutorGateway:
         response: JsonValue,
         context: ExecutionContext,
     ) -> CapabilityOutcome:
+        if continuation.capability_id is TutorCapabilityId.PROPOSE_FLASHCARDS:
+            raise ValueError("flashcard lesson workers do not expose dialogue continuation")
         inputs = getattr(continuation, "inputs", None)
         if not isinstance(inputs, Mapping):
             raise TypeError("continuation inputs are invalid")
@@ -335,7 +353,8 @@ class _RepositoryTutorGateway:
 
 def _completion_output_fingerprint(value: Mapping[str, object]) -> str:
     return sha256(
-        b"study-agent-capability-output-v1\0" + canonical_json_bytes(value)  # type: ignore[arg-type]
+        b"study-agent-capability-output-v1\0"
+        + canonical_json_bytes(cast(JsonObject, value))
     ).hexdigest()
 
 
@@ -861,6 +880,7 @@ class LocalRepository:
             self._source_catalog,
             _UnconfiguredArtifactDecisionPolicy(),
         )
+        self.flashcard_composition: FlashcardProposalComposition | None = None
         self.assistant_turns = ProjectionAssistantTurnView(self.events.projection)
         self.tutor_presentations = ProjectionTutorPresentationView(self.events.projection)
         self.tutor_snapshots = TutorSnapshotReader(self.events, registry)
@@ -978,15 +998,51 @@ class LocalRepository:
         if self.config.model is None:
             raise ModelAdapterConfigurationError("no model adapter is configured")
         model = self._model_adapters.create(self.config.model, self._environment)
+        selected_session_id = (
+            session_id if session_id is not None else self.sessions.list_sessions(course_id)[0].id
+        )
+        flashcards: FlashcardProposalComposition | None = None
+        try:
+            flashcards = FlashcardProposalComposition(
+                course_id=course_id,
+                session_id=selected_session_id,
+                content=self.for_course(course_id).content,
+                course_profile=course_profile_manifest(self.courses.get(course_id)),
+                model=model,
+                model_adapter=self._model_adapters.artifact(self.config.model.adapter_id),
+                runs=self.runs,
+                clock=self.clock,
+                artifact_service=self.artifact_service,
+                source_commitments=self._source_catalog,
+                sessions=self.sessions,
+            )
+            self.artifact_service = ArtifactService(
+                self.events,
+                self.clock,
+                self.artifacts,
+                self.sessions,
+                flashcards.runtime.batches,
+                self._source_catalog,
+                _UnconfiguredArtifactDecisionPolicy(),
+            )
+            flashcards.attach_artifact_service(self.artifact_service)
+            self.flashcard_composition = flashcards
+        except Exception:
+            # Capability discovery is fail-closed.  Explain remains available
+            # when this optional lesson composition cannot be assembled.
+            flashcards = None
         gateway = _RepositoryTutorGateway(
             self,
             course_id,
-            session_id if session_id is not None else self.sessions.list_sessions(course_id)[0].id,
+            selected_session_id,
             model,
             self._model_adapters.artifact(self.config.model.adapter_id),
+            flashcards,
         )
         runner = TutorHostRunner(
-            SourceGroundedTutorDecisionPort(ModelTutorDecisionPort(model)),
+            FlashcardProfileRoutingTutorDecisionPort(
+                SourceGroundedTutorDecisionPort(ModelTutorDecisionPort(model))
+            ),
             self.tutor_snapshots,
             self.learner_evidence,
             gateway,
@@ -1009,15 +1065,18 @@ class LocalRepository:
             completion_handoff_store=self.tutor_completion_handoffs,
             tool_gateway=_RepositoryTutorToolGateway(self),
         )
-        handlers = CapabilityCompletionHandlerRegistry(
+        completion_entries: list[tuple[str, str, CapabilityCompletionHandler]] = [
             (
-                (
-                    f"{EXPLAIN_CONCEPT_MANIFEST.id.value}@{EXPLAIN_CONCEPT_MANIFEST.version.major}",
-                    EXPLAIN_CONCEPT_MANIFEST.fingerprint,
-                    gateway,
-                ),
+                f"{EXPLAIN_CONCEPT_MANIFEST.id.value}@{EXPLAIN_CONCEPT_MANIFEST.version.major}",
+                EXPLAIN_CONCEPT_MANIFEST.fingerprint,
+                gateway,
             )
-        )
+        ]
+        if flashcards is not None:
+            completion_entries.append(
+                (flashcards.manifest.identity, flashcards.manifest.fingerprint, flashcards)
+            )
+        handlers = CapabilityCompletionHandlerRegistry(tuple(completion_entries))
         return self.conversation_application(
             runner,
             continuation_store=self.tutor_continuations,

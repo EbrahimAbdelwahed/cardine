@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass
 from hashlib import sha256
+from typing import cast
 
 from study_agent.artifacts.candidates import (
     FlashcardCandidate,
@@ -560,7 +560,7 @@ def _content_payload(candidate: FlashcardCandidate) -> str:
     payload = dict(candidate.to_json())
     payload.pop("candidate_key")
     payload.pop("parent_candidate_key")
-    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return canonical_json_bytes(cast(JsonObject, payload)).decode("utf-8")
 
 
 def _normalize(value: str) -> str:

@@ -45,6 +45,9 @@ def _plain_json(value: JsonValue) -> object:
 class CanonicalPromptComposer:
     """Compose portable prompt layers without inspecting any model or provider."""
 
+    def __init__(self, *, allow_profile_layers: bool = False) -> None:
+        self._allow_profile_layers = allow_profile_layers
+
     def compose(
         self,
         *,
@@ -54,7 +57,9 @@ class CanonicalPromptComposer:
         output_schema: JsonSchema,
     ) -> ComposedPrompt:
         kinds = tuple(layer.kind for layer in layers)
-        if kinds != _EXPECTED_ORDER:
+        if self._allow_profile_layers:
+            _validate_profile_layer_order(kinds)
+        elif kinds != _EXPECTED_ORDER:
             raise PromptCompositionError(
                 "prompt layers must contain the six canonical kinds exactly once and in order"
             )
@@ -101,7 +106,16 @@ class CanonicalPromptComposer:
                     layer.id,
                     str(layer.version),
                     layer.kind.value,
-                    sha256(rendered_data.encode()).hexdigest(),
+                    sha256(
+                        canonical_json(
+                            {
+                                "id": layer.id,
+                                "version": str(layer.version),
+                                "kind": layer.kind.value,
+                                "data": rendered_data,
+                            }
+                        ).encode()
+                    ).hexdigest(),
                 )
             )
 
@@ -129,3 +143,23 @@ class CanonicalPromptComposer:
             tuple(records),
             sha256(fingerprint_payload.encode()).hexdigest(),
         )
+
+
+def _validate_profile_layer_order(kinds: tuple[PromptLayerKind, ...]) -> None:
+    """Accept registered profile variants while keeping their canonical order."""
+
+    if not kinds or kinds[0] is not PromptLayerKind.STUDY_SECURITY_POLICY:
+        raise PromptCompositionError("profile prompt layers must start with security policy")
+    if kinds[-1] is not PromptLayerKind.OUTPUT_SCHEMA:
+        raise PromptCompositionError("profile prompt layers must end with output schema")
+    ranks = {kind: index for index, kind in enumerate(_EXPECTED_ORDER)}
+    non_task = tuple(kind for kind in kinds if kind is not PromptLayerKind.TASK_INSTRUCTION)
+    ordered = tuple(ranks[kind] for kind in non_task)
+    if ordered != tuple(sorted(ordered)):
+        raise PromptCompositionError("profile prompt layers must remain in canonical order")
+    if any(
+        kinds.count(kind) > 1
+        for kind in _EXPECTED_ORDER
+        if kind is not PromptLayerKind.TASK_INSTRUCTION
+    ):
+        raise PromptCompositionError("profile prompt layers may repeat only task instructions")
