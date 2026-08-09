@@ -72,14 +72,18 @@ class _Runner:
                 TutorHostRunStatus.ASSISTANT_MESSAGE,
                 learner_text="uncommitted host text",
             )
-        if self.mode in {"failed", "interrupted", "budget", "in_progress"}:
+        if self.mode in {"failed", "interrupted", "budget", "in_progress", "timeout"}:
             status = {
                 "failed": TutorHostRunStatus.FAILED,
                 "interrupted": TutorHostRunStatus.INTERRUPTED,
                 "budget": TutorHostRunStatus.BUDGET_EXHAUSTED,
                 "in_progress": TutorHostRunStatus.IN_PROGRESS,
+                "timeout": TutorHostRunStatus.FAILED,
             }[self.mode]
-            return TutorHostRunResult(status)
+            return TutorHostRunResult(
+                status,
+                failure_reason="timeout" if self.mode == "timeout" else None,
+            )
         if self.mode in {"completed", "terminated"}:
             return TutorHostRunResult(
                 TutorHostRunStatus.COMPLETED
@@ -608,6 +612,33 @@ def test_in_progress_remains_retryable_without_settling_the_turn(tmp_path: Path)
 
         assert len(runner.calls) == 2
         assert repository.tutor_presentations.presentations(COURSE, SESSION) == ()
+    finally:
+        repository.close()
+
+
+def test_typed_provider_failure_retries_without_fallback_or_duplicate_learner(
+    tmp_path: Path,
+) -> None:
+    repository, runner, _ = _open(tmp_path, "timeout")
+    try:
+        sequence = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
+        command = _command("request-timeout", sequence, "Retry this tutor turn")
+
+        for _attempt in range(2):
+            with pytest.raises(ConversationTurnError) as error:
+                asyncio.run(_conversation(repository).turn(command))
+            assert error.value.code is ConversationTurnErrorCode.FAILED
+            assert error.value.failure_reason == "timeout"
+            assert error.value.learner_persisted is True
+
+        assert len(runner.calls) == 2
+        assert repository.tutor_presentations.presentations(COURSE, SESSION) == ()
+        learner_rows = tuple(
+            item
+            for item in repository.tutor_snapshots.get(COURSE, SESSION).timeline
+            if item.kind.value == "learner"
+        )
+        assert len(learner_rows) == 1
     finally:
         repository.close()
 

@@ -451,6 +451,11 @@ class ConversationTurnApplication:
                 # represented by a safe canonical chat outcome.  Provider and
                 # runtime details remain outside learner-visible state.
                 host_result = TutorHostRunResult(TutorHostRunStatus.FAILED)
+            if host_result.failure_reason is not None:
+                # Typed provider failures are retryable. Keep the learner fact
+                # committed, but do not settle a terminal fallback: an exact
+                # retry reuses this learner turn and may run the host again.
+                raise _host_error(host_result)
             if host_result.status is TutorHostRunStatus.COMPLETED:
                 presentation = self._recover_completion_presentation(
                     context.course_id,

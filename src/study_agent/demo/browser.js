@@ -105,6 +105,14 @@
     exam_blueprint: "Struttura d’esame",
     study_brief: "Scheda di studio",
   });
+  const INCOMPLETE_TURN_STATUSES = Object.freeze(new Set([
+    "cancelled",
+    "failed",
+    "interrupted",
+    "budget_exhausted",
+    "stopped",
+    "terminated",
+  ]));
 
   const state = {
     bootstrap: null,
@@ -1460,6 +1468,33 @@
     updateContinuation(snapshot);
   }
 
+  /* A terminal host fallback is canonical, but the first response still needs
+     to tell the learner that no tutor answer was completed. Keep the learner
+     turn visible while withholding only the fallback assistant row until an
+     explicit retry (or a later reload) reconciles the full canonical timeline.
+   */
+  function incompleteTurnView(payload) {
+    const source = object(payload);
+    const key = ["snapshot", "session", "view"].find((candidate) => Object.hasOwn(source, candidate));
+    const snapshot = object(key ? source[key] : source);
+    const timelineKey = ["timeline", "turns", "messages", "conversation"].find((candidate) => Array.isArray(snapshot[candidate]));
+    if (!timelineKey) return source;
+    const timeline = array(snapshot[timelineKey]);
+    let lastLearner = -1;
+    timeline.forEach((item, index) => {
+      const role = text(first(object(item), ["role", "speaker", "who"], "")).toLowerCase();
+      if (["learner", "user", "student"].includes(role)) lastLearner = index;
+    });
+    if (lastLearner < 0) return source;
+    const visibleTimeline = timeline.filter((item, index) => {
+      if (index <= lastLearner) return true;
+      const role = text(first(object(item), ["role", "speaker", "who"], "")).toLowerCase();
+      return !["assistant", "tutor"].includes(role);
+    });
+    const nextSnapshot = { ...snapshot, [timelineKey]: visibleTimeline };
+    return key ? { ...source, [key]: nextSnapshot } : nextSnapshot;
+  }
+
   /* One chat shell, one definition. The optimistic turn and the committed
      session render the same markup, so they cannot drift apart or invent a
      subtitle that contradicts the real state. */
@@ -1785,7 +1820,12 @@
   async function executeCommand(endpoint, payload, form, refreshRoute) {
     const commandNavigationVersion = state.navigationVersion;
     const isTutorTurn = endpoint === "/api/v1/session/turns" || endpoint.includes("/session/continuations/");
-    const request = state.lastCommand && state.lastCommand.endpoint === endpoint && JSON.stringify(state.lastCommand.payload) === JSON.stringify(payload) ? state.lastCommand.requestId : requestId();
+    const retryingCommand = Boolean(
+      state.lastCommand
+      && state.lastCommand.endpoint === endpoint
+      && JSON.stringify(state.lastCommand.payload) === JSON.stringify(payload)
+    );
+    const request = retryingCommand ? state.lastCommand.requestId : requestId();
     state.lastCommand = { endpoint, payload, requestId: request, refreshRoute };
     if (isTutorTurn) {
       state.pendingTurn = { requestId: request, content: text(payload.content || payload.response) };
@@ -1802,8 +1842,9 @@
       if (traceId) state.diagnosticTraceId = traceId;
       updateSequence(first(receipt, ["high_water_sequence", "sequence"], state.highWaterSequence));
       const status = text(first(receipt, ["status", "shell_status"], "committed"), "committed");
+      const incompleteTutorTurn = isTutorTurn && INCOMPLETE_TURN_STATUSES.has(status);
       setStatus(status, `Comando ${statusLabel(status)}`);
-      state.lastCommand = null;
+      if (!incompleteTutorTurn || retryingCommand) state.lastCommand = null;
       if (isTutorTurn) state.pendingTurn = null;
       if (endpoint === "/api/v1/session/turns" || endpoint.includes("/session/continuations/")) {
         state.continuationDraft = "";
@@ -1815,6 +1856,26 @@
         state.viewData = object(receipt.result);
         renderSessione(state.viewData);
         setStatus("recovered", "Anteprima completata · nessun dato personale salvato");
+      } else if (originIsStillActive && incompleteTutorTurn && !retryingCommand) {
+        state.route = "sessione";
+        state.viewData = incompleteTurnView(receipt.result);
+        renderSessione(state.viewData);
+        const incompleteError = {
+          status: 503,
+          code: "",
+          message: "Il tutor non ha prodotto una risposta verificata.",
+          payload: { traceId },
+        };
+        setStatus("error", "Messaggio salvato, risposta non completata", { alert: false });
+        showCommandError(incompleteError, {
+          title: "Messaggio salvato, risposta non completata",
+          detail: "Il messaggio è nel registro canonico. Puoi riprovare la risposta verificata.",
+        });
+      } else if (originIsStillActive && incompleteTutorTurn && retryingCommand) {
+        state.route = "sessione";
+        state.viewData = object(receipt.result);
+        renderSessione(state.viewData);
+        dismissAlert();
       } else if (originIsStillActive) {
         await loadRoute(refreshRoute);
       }
