@@ -21,6 +21,7 @@ from .contracts import (
 
 _EXPECTED_ORDER = tuple(PromptLayerKind)
 _INTERNAL_FIELDS = frozenset({"output_schema"})
+_PROFILE_LAYER_INPUT_FINGERPRINT_VERSION = "profile-layer-input@1"
 
 
 def canonical_json(value: JsonValue) -> str:
@@ -106,16 +107,11 @@ class CanonicalPromptComposer:
                     layer.id,
                     str(layer.version),
                     layer.kind.value,
-                    sha256(
-                        canonical_json(
-                            {
-                                "id": layer.id,
-                                "version": str(layer.version),
-                                "kind": layer.kind.value,
-                                "data": rendered_data,
-                            }
-                        ).encode()
-                    ).hexdigest(),
+                    _layer_input_fingerprint(
+                        layer,
+                        rendered_data,
+                        include_identity=self._allow_profile_layers,
+                    ),
                 )
             )
 
@@ -143,6 +139,25 @@ class CanonicalPromptComposer:
             tuple(records),
             sha256(fingerprint_payload.encode()).hexdigest(),
         )
+
+
+def _layer_input_fingerprint(
+    layer: PromptLayer, rendered_data: str, *, include_identity: bool
+) -> str:
+    if not include_identity:
+        # Preserve the original canonical prompt contract byte-for-byte.
+        return sha256(rendered_data.encode()).hexdigest()
+    return sha256(
+        canonical_json(
+            {
+                "fingerprint_version": _PROFILE_LAYER_INPUT_FINGERPRINT_VERSION,
+                "id": layer.id,
+                "version": str(layer.version),
+                "kind": layer.kind.value,
+                "data": rendered_data,
+            }
+        ).encode()
+    ).hexdigest()
 
 
 def _validate_profile_layer_order(kinds: tuple[PromptLayerKind, ...]) -> None:
