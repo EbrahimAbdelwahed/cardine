@@ -16,7 +16,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.__init__",
+      "replacement_import_or_path": "study_agent",
       "sha256": "aa0fcea3fe17b863221f16bf2db5fadc8f410c74f28e958598da9a1fba346142",
       "terminal_owner": "study-agent-harness"
     },
@@ -26,7 +26,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters",
+      "replacement_import_or_path": "study_agent.adapters",
       "sha256": "d27c02f6f2c574563f190d88464a5f33322f2f45596fbf4bbef6c7048afd02c4",
       "terminal_owner": "study-agent-harness"
     },
@@ -36,7 +36,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/filesystem/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.filesystem",
+      "replacement_import_or_path": "study_agent.adapters.filesystem",
       "sha256": "40d6c44b9d498645ff15ee32197c1a3dfc75a9b5a677be46d9daa7e2bad8b7b7",
       "terminal_owner": "study-agent-harness"
     },
@@ -46,7 +46,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/filesystem/blob_store.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.filesystem.blob_store",
+      "replacement_import_or_path": "study_agent.adapters.filesystem.blob_store",
       "sha256": "df6b29d5e0c46b7e42046b9620438de8a6729f8f7ec516ca6d191ac4bd0fa221",
       "terminal_owner": "study-agent-harness"
     },
@@ -56,7 +56,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/filesystem/export.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.filesystem.export",
+      "replacement_import_or_path": "study_agent.adapters.filesystem.export",
       "sha256": "6e7ff297616490b3d1f9b7e539cee35a287d82331a7bc27045f68807bfc414cb",
       "terminal_owner": "study-agent-harness"
     },
@@ -66,7 +66,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/filesystem/lifecycle.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.filesystem.lifecycle",
+      "replacement_import_or_path": "study_agent.adapters.filesystem.lifecycle",
       "sha256": "b4c1b82493261d40213848445b49e17d7960fa18caed3f7990e48e4e3aa8a925",
       "terminal_owner": "study-agent-harness"
     },
@@ -76,7 +76,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/filesystem/repository_target.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.filesystem.repository_target",
+      "replacement_import_or_path": "study_agent.adapters.filesystem.repository_target",
       "sha256": "d412cbdfc3e7b1dcd5e735bff752ea8bae7d4ecb9acb329fde3716e7c66ee8e2",
       "terminal_owner": "study-agent-harness"
     },
@@ -86,7 +86,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/filesystem/source_input.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.filesystem.source_input",
+      "replacement_import_or_path": "study_agent.adapters.filesystem.source_input",
       "sha256": "13045ffc26f93532baca7fdd7a5446d17fbd5289c4dae885ed8f4b3abf6113ca",
       "terminal_owner": "study-agent-harness"
     },
@@ -116,7 +116,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/memory/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.memory",
+      "replacement_import_or_path": "study_agent.adapters.memory",
       "sha256": "ed199cae47d5d79d13fd4b732cfec265de4f154da5cf2a939e9c6c082151adbd",
       "terminal_owner": "study-agent-harness"
     },
@@ -126,7 +126,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/memory/host_file.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.memory.host_file",
+      "replacement_import_or_path": "study_agent.adapters.memory.host_file",
       "sha256": "6416fda1d728f5e83b0594314fde9b1424bf25091c4d8f65b6f115f41d59198e",
       "terminal_owner": "study-agent-harness"
     },
@@ -136,7 +136,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/model/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.model",
+      "replacement_import_or_path": "study_agent.adapters.model",
       "sha256": "6f248b53226f54cfb61e7c486155c6886a66dd895033a3372879a6a7f8b2d6f3",
       "terminal_owner": "study-agent-harness"
     },
@@ -146,7 +146,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/model/openai_compatible.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.model.openai_compatible",
+      "replacement_import_or_path": "study_agent.adapters.model.openai_compatible",
       "sha256": "3b200180e9f34fc9e4cb1312800f158b05ac698e6c548d056e73fbdf974dbdcc",
       "terminal_owner": "study-agent-harness"
     },
@@ -166,7 +166,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/model/scripted.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.model.scripted",
+      "replacement_import_or_path": "study_agent.adapters.model.scripted",
       "sha256": "b6ad962aa6b2a1df865ac4fd26409039875bd8a37d6fa20cfa387218d28b2fff",
       "terminal_owner": "study-agent-harness"
     },
@@ -186,7 +186,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/scheduling/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.scheduling",
+      "replacement_import_or_path": "study_agent.adapters.scheduling",
       "sha256": "30be3dec4bb1af51f4cc688e3c22c5386d55889ca53ccdcc01ac667c07f5486a",
       "terminal_owner": "study-agent-harness"
     },
@@ -196,7 +196,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/scheduling/py_fsrs.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.scheduling.py_fsrs",
+      "replacement_import_or_path": "study_agent.adapters.scheduling.py_fsrs",
       "sha256": "370a5691923f6e12971312ab762d69d94262db5c226cd3f4b69892b3de850e95",
       "terminal_owner": "study-agent-harness"
     },
@@ -206,7 +206,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/sqlite/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.sqlite",
+      "replacement_import_or_path": "study_agent.adapters.sqlite",
       "sha256": "c8df5cd2ad2946bbb5b36a4e572a2fead4b01a731d655dba43bc55d55885cae1",
       "terminal_owner": "study-agent-harness"
     },
@@ -216,7 +216,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/sqlite/capability_gap_store.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.sqlite.capability_gap_store",
+      "replacement_import_or_path": "study_agent.adapters.sqlite.capability_gap_store",
       "sha256": "f2fe5118232c1379a52226cd6d384978f4ea64da154a086dce26371228fcf89f",
       "terminal_owner": "study-agent-harness"
     },
@@ -226,7 +226,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/sqlite/event_store.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.sqlite.event_store",
+      "replacement_import_or_path": "study_agent.adapters.sqlite.event_store",
       "sha256": "d0c64ba9b4673dbede7373297c6f268fb6786cc597f0eef07aba019c3334d396",
       "terminal_owner": "study-agent-harness"
     },
@@ -236,7 +236,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/sqlite/fts_retrieval.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.sqlite.fts_retrieval",
+      "replacement_import_or_path": "study_agent.adapters.sqlite.fts_retrieval",
       "sha256": "cf7ee5447066b862cc15df359a76da1b4e7953427decc113d50d53e7e6cb3aa2",
       "terminal_owner": "study-agent-harness"
     },
@@ -246,7 +246,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/sqlite/lifecycle_observer.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.sqlite.lifecycle_observer",
+      "replacement_import_or_path": "study_agent.adapters.sqlite.lifecycle_observer",
       "sha256": "13c4b813020a9a6b642401d4b2e553132bf7356b6f5db6b19cddf2e2f5667d3c",
       "terminal_owner": "study-agent-harness"
     },
@@ -256,7 +256,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/sqlite/namespaced_run_store.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.sqlite.namespaced_run_store",
+      "replacement_import_or_path": "study_agent.adapters.sqlite.namespaced_run_store",
       "sha256": "25cded769c9dbc7d418a03d6f03a5e9343192bc64565d503da1d96d7516b3448",
       "terminal_owner": "study-agent-harness"
     },
@@ -266,7 +266,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/sqlite/run_store.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.sqlite.run_store",
+      "replacement_import_or_path": "study_agent.adapters.sqlite.run_store",
       "sha256": "8d4f0cae398d4109057dcfb8f3d73a0080eaf86b14755497316f997f89321b9e",
       "terminal_owner": "study-agent-harness"
     },
@@ -276,7 +276,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/sqlite/tutor_continuations.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.sqlite.tutor_continuations",
+      "replacement_import_or_path": "study_agent.adapters.sqlite.tutor_continuations",
       "sha256": "1383e2f0365d01a87a18d1761268ca93254a727773b2f60866c1437dc3706a49",
       "terminal_owner": "study-agent-harness"
     },
@@ -286,7 +286,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/system/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.system",
+      "replacement_import_or_path": "study_agent.adapters.system",
       "sha256": "95622202b63dbcde8ea258a37f61dcc3aa6501476a331cd65f83d7d58f06a280",
       "terminal_owner": "study-agent-harness"
     },
@@ -296,7 +296,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/system/clock.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.system.clock",
+      "replacement_import_or_path": "study_agent.adapters.system.clock",
       "sha256": "1416a62b18f028501592706610ab47f08d686abe3e290ae70f8b45a0bc77481f",
       "terminal_owner": "study-agent-harness"
     },
@@ -306,7 +306,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/workarounds/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.workarounds",
+      "replacement_import_or_path": "study_agent.adapters.workarounds",
       "sha256": "49a6b26d057df8c8289672fd17502f78dd14f205674103dfdb811fe1d9dfc552",
       "terminal_owner": "study-agent-harness"
     },
@@ -316,7 +316,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/workarounds/filesystem.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.workarounds.filesystem",
+      "replacement_import_or_path": "study_agent.adapters.workarounds.filesystem",
       "sha256": "fa7bc0749a45201abf07b27bc45435f11cde7baa128a8c9ead5663cafcb4539f",
       "terminal_owner": "study-agent-harness"
     },
@@ -326,7 +326,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/workarounds/manifest.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.workarounds.manifest",
+      "replacement_import_or_path": "study_agent.adapters.workarounds.manifest",
       "sha256": "440ec9be733c3321c81a66860c628561889f529fc450f46339ff253059666ebf",
       "terminal_owner": "study-agent-harness"
     },
@@ -336,7 +336,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/workarounds/pdf_markdown.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.workarounds.pdf_markdown",
+      "replacement_import_or_path": "study_agent.adapters.workarounds.pdf_markdown",
       "sha256": "a87a0f513eab80a90db025f899040624dbee523211b10805341a65ce44e64511",
       "terminal_owner": "study-agent-harness"
     },
@@ -346,7 +346,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/workarounds/renderer.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.workarounds.renderer",
+      "replacement_import_or_path": "study_agent.adapters.workarounds.renderer",
       "sha256": "133c9f61a07606e31124a772c123ee1f6ebf49b94c1d81aa5ec801364f7b0e76",
       "terminal_owner": "study-agent-harness"
     },
@@ -356,7 +356,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/adapters/workarounds/worker.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.adapters.workarounds.worker",
+      "replacement_import_or_path": "study_agent.adapters.workarounds.worker",
       "sha256": "84e713040613d913e838a4df2a1be4a31d53b202612207fc4bab25d75aff1d1d",
       "terminal_owner": "study-agent-harness"
     },
@@ -366,7 +366,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/application/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.application",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "cc54ccbe25e25ee971413c879d4b3029cf3d87be468c10bf005ef5fa1647147c",
       "terminal_owner": "study-agent-harness"
     },
@@ -376,7 +376,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/application/artifact_export.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.application.artifact_export",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "2aded545a21587f3cc9ee5bc1af06835b92b854624bc5dc2c3397c4bbb39c734",
       "terminal_owner": "study-agent-harness"
     },
@@ -406,7 +406,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/application/export.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.application.export",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "b065d6530ff6ab23866a5210fb21e023cc2e9c701aa5c126314ebc10160c3bca",
       "terminal_owner": "study-agent-harness"
     },
@@ -446,7 +446,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/application/harness.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.application.harness",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "eba7a7f955c95111808f55b73972511ef455f9ddf47e04eb6728c682659d828d",
       "terminal_owner": "study-agent-harness"
     },
@@ -476,7 +476,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/artifacts/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.artifacts",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "0bfab738970dbe15b36b891bba8fea1d64e5dbc6a2631433c335ad4df22ac4ae",
       "terminal_owner": "study-agent-harness"
     },
@@ -486,7 +486,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/artifacts/candidates.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.artifacts.candidates",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "7a456eb734c4aa55f3b8ee49767335b61dca214d5b8f0578173cabc4afc2330b",
       "terminal_owner": "study-agent-harness"
     },
@@ -496,7 +496,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/artifacts/content.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.artifacts.content",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "933f38de75055645906319c8d1c745614dec81ec0c04d49601d07e8d3b5a6160",
       "terminal_owner": "study-agent-harness"
     },
@@ -506,7 +506,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/artifacts/contracts.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.artifacts.contracts",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "ce326cb5c59a26cceffc88574ab44d546d26fa935e05a296695712ffcac193ab",
       "terminal_owner": "study-agent-harness"
     },
@@ -516,7 +516,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/artifacts/events.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.artifacts.events",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "1589f374ebe130785267194e88fe48f171f0e82e6266467e732644212a9f42cb",
       "terminal_owner": "study-agent-harness"
     },
@@ -526,7 +526,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/artifacts/generated_owner.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.artifacts.generated_owner",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "9d094d5fa0a3a81626513285e4246aa02dfa194b153a057aeff49a4b5be280eb",
       "terminal_owner": "study-agent-harness"
     },
@@ -536,7 +536,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/artifacts/identity.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.artifacts.identity",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "df95aafdb3ceacb2b7e825e19665f5b23e7049facf200dd38678c166ba70cccd",
       "terminal_owner": "study-agent-harness"
     },
@@ -546,7 +546,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/artifacts/projection.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.artifacts.projection",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "3d41f993e178e9bfc158f66dde00c5806313739c6bf7889f7ddcde17b3b8e5e1",
       "terminal_owner": "study-agent-harness"
     },
@@ -556,7 +556,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/artifacts/runtime.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.artifacts.runtime",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "39273a617f252ac2841459e94a630157d37a7ed99a4f36fde56524cd47c39a0d",
       "terminal_owner": "study-agent-harness"
     },
@@ -566,7 +566,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/artifacts/service.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.artifacts.service",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "c9e19780ce4162d88991eb4bd09a22ab6107e97f7c3fa0e8abda4a1bc69ea0f7",
       "terminal_owner": "study-agent-harness"
     },
@@ -576,7 +576,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/artifacts/verified_batch.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.artifacts.verified_batch",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "d8f5ce075ab4df3917331a2a10a36dd0db50cd11fc0382d999e569da7e56898a",
       "terminal_owner": "study-agent-harness"
     },
@@ -586,7 +586,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/artifacts/view.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.artifacts.view",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "71b775d9ef0670eb75a339316d7c317dfe1b631804c3e1d61368525f752b3f2a",
       "terminal_owner": "study-agent-harness"
     },
@@ -596,7 +596,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/assessments/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.assessments",
+      "replacement_import_or_path": "study_agent.api.assessments",
       "sha256": "14c5a173394af6caf2c94229a829bfe5bb0606c0932555752ffa8cb3bd5e1787",
       "terminal_owner": "study-agent-harness"
     },
@@ -606,7 +606,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/assessments/capability.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.assessments.capability",
+      "replacement_import_or_path": "study_agent.api.assessments",
       "sha256": "41d7c754f4b9e05423d196c6be720f63055d007dbca7f20092b215b1d8b882d7",
       "terminal_owner": "study-agent-harness"
     },
@@ -616,7 +616,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/assessments/contracts.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.assessments.contracts",
+      "replacement_import_or_path": "study_agent.api.assessments",
       "sha256": "8026e2d3af0272fae5652795778fc5a954bf5ae6120f308512a78a308920c019",
       "terminal_owner": "study-agent-harness"
     },
@@ -626,7 +626,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/assessments/events.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.assessments.events",
+      "replacement_import_or_path": "study_agent.api.assessments",
       "sha256": "99450f20250f63313cf3eedbe8d02c353615d4818279d83f164a39fb48f02c67",
       "terminal_owner": "study-agent-harness"
     },
@@ -636,7 +636,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/assessments/evidence.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.assessments.evidence",
+      "replacement_import_or_path": "study_agent.api.assessments",
       "sha256": "da76ea3663c09010243b63903c73a8a350b76a32e71b4e8fa2c4a245676a5aa1",
       "terminal_owner": "study-agent-harness"
     },
@@ -646,7 +646,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/assessments/grade_scope.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.assessments.grade_scope",
+      "replacement_import_or_path": "study_agent.api.assessments",
       "sha256": "95fdc76422cf4edd62274ca5b90d25891b87a6a4af3cc8a7704715c1d4e5701e",
       "terminal_owner": "study-agent-harness"
     },
@@ -656,7 +656,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/assessments/grading.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.assessments.grading",
+      "replacement_import_or_path": "study_agent.api.assessments",
       "sha256": "eb05622e410c0f649df376239cd514ed300ad4b8123acc8356072f36947e8bd2",
       "terminal_owner": "study-agent-harness"
     },
@@ -666,7 +666,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/assessments/projection.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.assessments.projection",
+      "replacement_import_or_path": "study_agent.api.assessments",
       "sha256": "b658efaa6ea417b6ac11304f9174c89ab2ac588b8f67979c2889eb47c77442ff",
       "terminal_owner": "study-agent-harness"
     },
@@ -676,7 +676,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/assessments/service.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.assessments.service",
+      "replacement_import_or_path": "src/cardine/assessments/policy.py;study_agent.api.assessments",
       "sha256": "bbd217332f388f19f07ca2374a1f19d3fa1593476bee1bd0101b781cc5729a00",
       "terminal_owner": "legacy-oracle"
     },
@@ -686,7 +686,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/assessments/verified_grading.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.assessments.verified_grading",
+      "replacement_import_or_path": "study_agent.api.assessments",
       "sha256": "b006d15f3f74f8d1a17397a0b49cad10896b9d820640b8baa551fd3cc8827b88",
       "terminal_owner": "study-agent-harness"
     },
@@ -696,7 +696,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/assessments/view.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.assessments.view",
+      "replacement_import_or_path": "study_agent.api.assessments",
       "sha256": "06c4aea3cf95c164a5d47be6e8defa7e126e9d48303a7b803ae807aecc8efe9c",
       "terminal_owner": "study-agent-harness"
     },
@@ -706,7 +706,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/capabilities/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.capabilities",
+      "replacement_import_or_path": "study_agent.api.capabilities",
       "sha256": "27d6e58ef0865ceca1f6c6de479a6c257a2ccbe1a8c04a97d60ca019b86e9e69",
       "terminal_owner": "study-agent-harness"
     },
@@ -716,7 +716,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/capabilities/bindings.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.capabilities.bindings",
+      "replacement_import_or_path": "study_agent.api.capabilities",
       "sha256": "085e42c54d6dc9278f5475b9859307a95d6c7b20679b5f285ae221fb99ffba37",
       "terminal_owner": "study-agent-harness"
     },
@@ -726,7 +726,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/capabilities/builtin.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.capabilities.builtin",
+      "replacement_import_or_path": "study_agent.api.capabilities",
       "sha256": "56ba09255d2220721470ba156d4a82618770d48293c084540ab58b18a82a1ac6",
       "terminal_owner": "study-agent-harness"
     },
@@ -736,7 +736,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/capabilities/builtin_validators.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.capabilities.builtin_validators",
+      "replacement_import_or_path": "study_agent.api.capabilities",
       "sha256": "221dd30f2d8cca67bf72bcc40765bea14090d6916f82d3bcd44679d8e95d7de3",
       "terminal_owner": "study-agent-harness"
     },
@@ -746,7 +746,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/capabilities/contracts.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.capabilities.contracts",
+      "replacement_import_or_path": "study_agent.api.capabilities",
       "sha256": "853d27c60f665ad390c84d6701e6d87fbcb94a11c048ee4d27e29ae00d3dc30e",
       "terminal_owner": "study-agent-harness"
     },
@@ -756,7 +756,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/capabilities/dispatch.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.capabilities.dispatch",
+      "replacement_import_or_path": "study_agent.api.capabilities",
       "sha256": "fc2c88907ad4c72032dcbf7a77bd0606500899d3fb083147266dab35a37f3f28",
       "terminal_owner": "study-agent-harness"
     },
@@ -766,7 +766,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/capabilities/fingerprints.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.capabilities.fingerprints",
+      "replacement_import_or_path": "study_agent.api.capabilities",
       "sha256": "1e727d068a73bb672ea861c1b52eef4a7bd9265a65b0e81d06026b7ed448ab0c",
       "terminal_owner": "study-agent-harness"
     },
@@ -776,7 +776,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/capabilities/gateway.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.capabilities.gateway",
+      "replacement_import_or_path": "study_agent.api.capabilities",
       "sha256": "a32c658e4f04d5032d9524ed53fb23ea43ed02dbf668d490ec96982f2fef5644",
       "terminal_owner": "study-agent-harness"
     },
@@ -786,7 +786,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/capabilities/hybrid_flashcards.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.capabilities.hybrid_flashcards",
+      "replacement_import_or_path": "study_agent.api.capabilities",
       "sha256": "6fde23245ddb4508e816a6f4e1a5ce5c9d5933d36418646e9b44e623c42ee7ce",
       "terminal_owner": "study-agent-harness"
     },
@@ -796,7 +796,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/capabilities/morphology_flashcards.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.capabilities.morphology_flashcards",
+      "replacement_import_or_path": "study_agent.api.capabilities",
       "sha256": "1d95c6185fc45045621342384332dada250062e4e2277e7b8a9395c0e3cb324d",
       "terminal_owner": "study-agent-harness"
     },
@@ -806,7 +806,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/capabilities/registry.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.capabilities.registry",
+      "replacement_import_or_path": "study_agent.api.capabilities",
       "sha256": "c232c01141523e2595045bb74a0ba4b24f38a21336b34cce9677a6f269386e02",
       "terminal_owner": "study-agent-harness"
     },
@@ -816,7 +816,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/capabilities/worker_adapter.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.capabilities.worker_adapter",
+      "replacement_import_or_path": "study_agent.api.capabilities",
       "sha256": "d337fc1560038969a0cbdb317cbd062b0967978379c14ffe1c90f1cd5e7e74bf",
       "terminal_owner": "study-agent-harness"
     },
@@ -1346,7 +1346,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/domain/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.domain",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "94e26471a8ec71dd303ff2cce14b20e48cd0ab81e2181d9fb9c60598c5f82ee6",
       "terminal_owner": "study-agent-harness"
     },
@@ -1356,7 +1356,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/domain/_validation.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.domain._validation",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "57d0f8af739aa2c4dfd27f4c2a7caa0de28377ae569a1e607a020f9bab1a0cb8",
       "terminal_owner": "study-agent-harness"
     },
@@ -1366,7 +1366,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/domain/artifact.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.domain.artifact",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "46a39583d3210eda5a25c0dab0de87ef0bcc70b2878068c60c1eccb6a364ef0d",
       "terminal_owner": "study-agent-harness"
     },
@@ -1376,7 +1376,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/domain/assessment.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.domain.assessment",
+      "replacement_import_or_path": "study_agent.api.assessments",
       "sha256": "67b2be24ff23f054225defdaa3f7aa6ae796d2797662909ffaa0beb9943b21bf",
       "terminal_owner": "study-agent-harness"
     },
@@ -1386,7 +1386,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/domain/context.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.domain.context",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "9a05e525ed039aba8bdc1e6894a9fcc970e554739bda86e0a31d5acc0b009b87",
       "terminal_owner": "study-agent-harness"
     },
@@ -1406,7 +1406,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/domain/errors.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.domain.errors",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "7fda45f51dfaf05f05303e06c52cef9adb1fe8e2e5f2f8c5d53e1016ad031d69",
       "terminal_owner": "study-agent-harness"
     },
@@ -1416,7 +1416,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/domain/events.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.domain.events",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "56e59ff54cb9d203c4e781a4c1b68588cc89d1caf042742da90d94f04e39a393",
       "terminal_owner": "study-agent-harness"
     },
@@ -1426,7 +1426,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/domain/grounding.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.domain.grounding",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "15dfdace8fd9c6ea59d5b97fe4cdb855524d43893929bfb3202fa9f0885a3c40",
       "terminal_owner": "study-agent-harness"
     },
@@ -1436,7 +1436,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/domain/identifiers.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.domain.identifiers",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "6e5477983dd45ec23833559b0ca0ea2d43964594307ff33e117eaface4ef9e8d",
       "terminal_owner": "study-agent-harness"
     },
@@ -1446,7 +1446,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/domain/provenance.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.domain.provenance",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "a1d558cb3a87d93f826b7c5cf7a6dbbd84c5cb14d29b89054e431322f2c56f89",
       "terminal_owner": "study-agent-harness"
     },
@@ -1456,7 +1456,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/domain/session.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.domain.session",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "f1e8c51bf722e38914d4fb3ac2c12bfcfaf2d34424be87a66c3596409acf5002",
       "terminal_owner": "study-agent-harness"
     },
@@ -1466,7 +1466,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/domain/source.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.domain.source",
+      "replacement_import_or_path": "study_agent.api.sources",
       "sha256": "5c1a0b6d0a396bab23619a0eb47e594590fbd2e2362bb6e22fdcb0c8a8754615",
       "terminal_owner": "study-agent-harness"
     },
@@ -1486,7 +1486,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/domain/substrate.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.domain.substrate",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "71a7833da419d13c4914223daa30feb4cc724d6fef480365a64fd94c6e4cea7d",
       "terminal_owner": "study-agent-harness"
     },
@@ -1496,7 +1496,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/domain/tutor_snapshot.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.domain.tutor_snapshot",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "8b00da53219e6127acdefbb32fde9c362e69a17c390dea6bd03208b24318c006",
       "terminal_owner": "study-agent-harness"
     },
@@ -1506,7 +1506,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/evals/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.evals",
+      "replacement_import_or_path": "tests/parity/golden",
       "sha256": "b8261cf9600347ecaa6102c2348d57dc26a2d07f2d1e36f297a43e04da975524",
       "terminal_owner": "legacy-oracle"
     },
@@ -1646,7 +1646,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/flashcards/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.flashcards",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "b14a0ef792d477d8eabb529d69a296212b771dfcc4f3c53ac80c9d2407ce00cd",
       "terminal_owner": "study-agent-harness"
     },
@@ -1656,7 +1656,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/flashcards/lesson_worker_contracts.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.flashcards.lesson_worker_contracts",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "80f576ec2162ed328c5d01b59294325c489bd3a3510c0a00170aa93573486397",
       "terminal_owner": "study-agent-harness"
     },
@@ -1666,7 +1666,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/flashcards/lesson_worker_service.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.flashcards.lesson_worker_service",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "2192bcbeb33a17911490ab2c7d17803039a244141ddb8b43d3f59aece3921053",
       "terminal_owner": "study-agent-harness"
     },
@@ -1676,7 +1676,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/flashcards/lesson_worker_view.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.flashcards.lesson_worker_view",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "98449ad89dafe4ae0d5587d80607c1d3af2b137738555c65ac5db871de73bf66",
       "terminal_owner": "study-agent-harness"
     },
@@ -1686,7 +1686,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/flashcards/planning.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.flashcards.planning",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "e5d46f68d06ff7389784a071edc1becb9d891837b05aba3135ae679f9dc27f7e",
       "terminal_owner": "study-agent-harness"
     },
@@ -1696,7 +1696,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/flashcards/scope.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.flashcards.scope",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "078bc2b11e2fbd6a0a27bc2580b7a1da85a5b11e061f741c5654500d75f1d17a",
       "terminal_owner": "study-agent-harness"
     },
@@ -1706,7 +1706,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/flashcards/worker_router.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.flashcards.worker_router",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "fef0146efd4572a56e234cc2c04529004a16f499d1338d04f67933d032dd7552",
       "terminal_owner": "study-agent-harness"
     },
@@ -1716,7 +1716,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/grounding/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.grounding",
+      "replacement_import_or_path": "study_agent.api.sources",
       "sha256": "95b328c658103930649ffda5407ebae8464c64601909f4904b5ff7315196a425",
       "terminal_owner": "study-agent-harness"
     },
@@ -1726,7 +1726,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/grounding/draft.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.grounding.draft",
+      "replacement_import_or_path": "study_agent.api.sources",
       "sha256": "7ba7b5ad8daf018980b1038caa732c0262a9af10f77a4ab28190d543ebd56a0c",
       "terminal_owner": "study-agent-harness"
     },
@@ -1736,7 +1736,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/grounding/evidence.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.grounding.evidence",
+      "replacement_import_or_path": "study_agent.api.sources",
       "sha256": "062412e60d446dbdfc6bb8e1badc31ab8b890618dcbaac7fb303f589667547c2",
       "terminal_owner": "study-agent-harness"
     },
@@ -1746,7 +1746,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/grounding/validators.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.grounding.validators",
+      "replacement_import_or_path": "study_agent.api.sources",
       "sha256": "4a492381662ba5a57e4c8de9e924546e950db50e4efa2d30f16a5c650e8d06cc",
       "terminal_owner": "study-agent-harness"
     },
@@ -1836,7 +1836,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ingestion/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ingestion",
+      "replacement_import_or_path": "study_agent.api.sources",
       "sha256": "e00c353502f6c7f0c3b87f014953069d69d5ded2e81b5d279e43dee1b472b4cc",
       "terminal_owner": "study-agent-harness"
     },
@@ -1846,7 +1846,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ingestion/chunking.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ingestion.chunking",
+      "replacement_import_or_path": "study_agent.api.sources",
       "sha256": "d62a00446c1e2f72f2fb7c4acd584aed252242959fd6633adb80e6853d64397b",
       "terminal_owner": "study-agent-harness"
     },
@@ -1856,7 +1856,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ingestion/events.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ingestion.events",
+      "replacement_import_or_path": "study_agent.api.sources",
       "sha256": "8ffb22814b17b89942271d0d2e5c1e338f47da154106c7cf1b3b5ab7f34e28bf",
       "terminal_owner": "study-agent-harness"
     },
@@ -1866,7 +1866,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ingestion/identity.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ingestion.identity",
+      "replacement_import_or_path": "study_agent.api.sources",
       "sha256": "d2d9a8bab0a7a7754688d2e437a883908364547b526911c8a10b275f9ca84fae",
       "terminal_owner": "study-agent-harness"
     },
@@ -1876,7 +1876,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ingestion/normalization.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ingestion.normalization",
+      "replacement_import_or_path": "study_agent.api.sources",
       "sha256": "0c36de57a5e8d3e2559080fdd2f43073a5cbb06008311e9e169c415674faca72",
       "terminal_owner": "study-agent-harness"
     },
@@ -1886,7 +1886,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ingestion/projection.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ingestion.projection",
+      "replacement_import_or_path": "study_agent.api.sources",
       "sha256": "3bb9eee96c788862635bd0ac1e3f4c2134ac336a0513b11fdc532a01c9c09e46",
       "terminal_owner": "study-agent-harness"
     },
@@ -1896,7 +1896,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ingestion/service.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ingestion.service",
+      "replacement_import_or_path": "study_agent.api.sources",
       "sha256": "d74d401e4e500a4bdf1ee33d6e9d0af8b3a1c8ed0181ca38d4f9fd0f6ce391fc",
       "terminal_owner": "study-agent-harness"
     },
@@ -1906,7 +1906,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ingestion/substrate.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ingestion.substrate",
+      "replacement_import_or_path": "study_agent.api.sources",
       "sha256": "0e40cc2059a80ff9d05b5127fc0ae497d0597646f25dd66ea0b51154226aea5a",
       "terminal_owner": "study-agent-harness"
     },
@@ -1916,7 +1916,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ingestion/substrate_events.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ingestion.substrate_events",
+      "replacement_import_or_path": "study_agent.api.sources",
       "sha256": "1c02d9d7a7f53506245032faaff9a8f2b0bf7df4cd259257fdbaeeaf0d347dea",
       "terminal_owner": "study-agent-harness"
     },
@@ -1926,7 +1926,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ingestion/substrate_projection.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ingestion.substrate_projection",
+      "replacement_import_or_path": "study_agent.api.sources",
       "sha256": "12947456fe8d9acfa8eee5bd9ad01a2b57f438420ec6cec074f6de39e2a43a6f",
       "terminal_owner": "study-agent-harness"
     },
@@ -1936,7 +1936,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/lifecycle/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.lifecycle",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "12cd029bfa456ab1c777f5c808b0e59534296109542f2bd27a927c742f0da6fc",
       "terminal_owner": "study-agent-harness"
     },
@@ -1946,7 +1946,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/lifecycle/contracts.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.lifecycle.contracts",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "e5f350de35c2722d1ea463185f5378b9a34828fa41c4bd75d553b5194b4e1100",
       "terminal_owner": "study-agent-harness"
     },
@@ -1956,7 +1956,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/lifecycle/planner.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.lifecycle.planner",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "6dc04fa0e5b7b30187d289292bd69dd18ae04c503e5307d91b9405c68b1d7f24",
       "terminal_owner": "study-agent-harness"
     },
@@ -1966,7 +1966,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/lifecycle/service.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.lifecycle.service",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "4b49f5c09d044e55c8974e9115ad9967d2437e0ab056612f48020824c31f8916",
       "terminal_owner": "study-agent-harness"
     },
@@ -1976,7 +1976,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/operator_skill/SKILL.md",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.operator_skill.SKILL",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "6ddc7a4623da96e77c0f413f3af966f53b0bf50977f7b6f0ef2f7f83f9aeb101",
       "terminal_owner": "study-agent-harness"
     },
@@ -1986,7 +1986,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/operator_skill/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.operator_skill",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "c7e45d28fd95cbd75cbecce332f8e08f43cd14378d239906773e1e3e22a57644",
       "terminal_owner": "study-agent-harness"
     },
@@ -1996,7 +1996,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/pedagogy/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.pedagogy",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "a54e1f7f6276103eee2f6732026e1da2f5472f11ea38644bca65e89da2726f00",
       "terminal_owner": "study-agent-harness"
     },
@@ -2006,7 +2006,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/pedagogy/profiles.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.pedagogy.profiles",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "2fcb3232e1989ff7bdecfea357a3583ed2a3865c0e16054c39d10d903dbabfc9",
       "terminal_owner": "study-agent-harness"
     },
@@ -2016,7 +2016,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/playbooks/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.playbooks",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "38ca6ac10908db5b6ca5d2cbe0f17aacf5616ba244e7fd5f94e964c0f8ed37a1",
       "terminal_owner": "study-agent-harness"
     },
@@ -2026,7 +2026,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/playbooks/builtin/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.playbooks.builtin",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "55a893bd75677a43c9731f3341989ccc15b90d2302850bbce1dc032a057c6560",
       "terminal_owner": "study-agent-harness"
     },
@@ -2036,7 +2036,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/playbooks/builtin/analyze_exam_sample_flow.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.playbooks.builtin.analyze_exam_sample_flow",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "ddb5f85e954c610263a7474f261c453c0279bc68969174fb4c28ff89e99a864e",
       "terminal_owner": "study-agent-harness"
     },
@@ -2046,7 +2046,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/playbooks/builtin/assess_understanding_flow.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.playbooks.builtin.assess_understanding_flow",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "2bf881cb1baa6fdb3ff529bbb1022d84be1e943305ede763b0a5296b6b8f5d90",
       "terminal_owner": "study-agent-harness"
     },
@@ -2056,7 +2056,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/playbooks/builtin/explain_concept_flow.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.playbooks.builtin.explain_concept_flow",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "c1040bf399836f5f8d5f577de058bd98223719eb63757675269b25968ca7a6b6",
       "terminal_owner": "study-agent-harness"
     },
@@ -2066,7 +2066,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/playbooks/builtin/grade_response_flow.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.playbooks.builtin.grade_response_flow",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "10fddeeec1f7561697aa9070461d9a273a9ab54eba4604d0a2d73ec9edfa1db1",
       "terminal_owner": "study-agent-harness"
     },
@@ -2076,7 +2076,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/playbooks/builtin/grounded_answer_flow.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.playbooks.builtin.grounded_answer_flow",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "afb2cda363543cffc86a742f6ac60f0dd816779456322e6d208ba7d5d9ec2fff",
       "terminal_owner": "study-agent-harness"
     },
@@ -2086,7 +2086,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/playbooks/builtin/hybrid_flashcards_flow.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.playbooks.builtin.hybrid_flashcards_flow",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "16cbedbf39a7b40f175aca20833784e68d00949de28c26d0b041331755d49806",
       "terminal_owner": "study-agent-harness"
     },
@@ -2096,7 +2096,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/playbooks/builtin/morphology_flashcards_flow.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.playbooks.builtin.morphology_flashcards_flow",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "6f9ad308b5e0b3233e9e112a3f402525006e1f830eb7169b998bf3aed94e390c",
       "terminal_owner": "study-agent-harness"
     },
@@ -2106,7 +2106,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/playbooks/contracts.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.playbooks.contracts",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "fb8355e8e2f15f7bea0f0dda9c191a3bea80bb2d14c1d0c67fa1af7b4ac02ccd",
       "terminal_owner": "study-agent-harness"
     },
@@ -2116,7 +2116,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/playbooks/engine.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.playbooks.engine",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "5a907426a51189ef6d0f418c060cf2761055a7829b6fbc0381215f2981ee9673",
       "terminal_owner": "study-agent-harness"
     },
@@ -2126,7 +2126,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/playbooks/runtime.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.playbooks.runtime",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "ed8942163d67d7774a3d45299aae88da2df765a5553c50f3ef08480f513506e0",
       "terminal_owner": "study-agent-harness"
     },
@@ -2136,7 +2136,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/portability.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.portability",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "59c8f3c81c7c0909d0cb4c9100a581ccf92976be9a4e261fdd28b8d9ab013b04",
       "terminal_owner": "study-agent-harness"
     },
@@ -2146,7 +2146,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "be35808fbcdc65e360b3c404a116d3d7fe9baea0a2e90dd4d69785499d9cf747",
       "terminal_owner": "study-agent-harness"
     },
@@ -2156,7 +2156,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/artifact.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.artifact",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "4ef6e8ad24282ca9a8e374384864e270c2cf38eb52a502a1db4c999bdfa399f2",
       "terminal_owner": "study-agent-harness"
     },
@@ -2166,7 +2166,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/assessment.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.assessment",
+      "replacement_import_or_path": "study_agent.api.assessments",
       "sha256": "daf70945e5df201d7047a16cd573efa22f23943cf658866828475e30d7b28816",
       "terminal_owner": "study-agent-harness"
     },
@@ -2176,7 +2176,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/capability_gap.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.capability_gap",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "7c49628e24dc9b0b95c981ebac8a35aff8ba8d8b8fc3e9f51c7c92c0e182f028",
       "terminal_owner": "study-agent-harness"
     },
@@ -2186,7 +2186,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/clock.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.clock",
+      "replacement_import_or_path": "study_agent.api.storage",
       "sha256": "58a0e74d2bdfa3b730ce59982e2433f4afc91aae3f42358b77a17198b6cf4565",
       "terminal_owner": "study-agent-harness"
     },
@@ -2196,7 +2196,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/course.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.course",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "72b41f029fe1d6ee017d5429661b0f73d7f7109e101010721faa62a95f6ad8b3",
       "terminal_owner": "study-agent-harness"
     },
@@ -2206,7 +2206,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/exam.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.exam",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "9f0db3fd7be22c818629f5d137e4f3538f515ac96657db2131717838a735585a",
       "terminal_owner": "study-agent-harness"
     },
@@ -2216,7 +2216,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/flashcard.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.flashcard",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "91234109dcd11272545b3aea4d01c613e5a694effed1b2b5ac8deed637453fdb",
       "terminal_owner": "study-agent-harness"
     },
@@ -2226,7 +2226,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/flashcard_planning.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.flashcard_planning",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "5c24be4bc4b1ef1993aa4824cd960f028efea2a1c63933ed7bbfb32c71547395",
       "terminal_owner": "study-agent-harness"
     },
@@ -2236,7 +2236,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/generated_owner.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.generated_owner",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "bcce81497c39a961acefcd2ff31de90240a9d28569150565036d6f8fa1297db2",
       "terminal_owner": "study-agent-harness"
     },
@@ -2246,7 +2246,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/host_file.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.host_file",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "dfee3b99d710e52b12331056177910a496fe4f1ac00a9ff78c1bf03a7617c287",
       "terminal_owner": "study-agent-harness"
     },
@@ -2256,7 +2256,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/lesson_worker.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.lesson_worker",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "745069af9147611a0547bac48fe51122376c3e0b5407d6bf3b4b30a03d214a43",
       "terminal_owner": "study-agent-harness"
     },
@@ -2266,7 +2266,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/model.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.model",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "64dccf96ddee9cb0ffe474c841e98e72255b2d214d1952ed242c621facb423da",
       "terminal_owner": "study-agent-harness"
     },
@@ -2276,7 +2276,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/recall.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.recall",
+      "replacement_import_or_path": "study_agent.api.recall",
       "sha256": "a203f1950daaa024844c7f4adf1f7bb878a2abf9d5711430e128e0315e7defa7",
       "terminal_owner": "study-agent-harness"
     },
@@ -2286,7 +2286,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/retrieval.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.retrieval",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "305193516dfd6a10c571ddece58f2e4c0a5f954cf658c7ee88f618b4720c309f",
       "terminal_owner": "study-agent-harness"
     },
@@ -2296,7 +2296,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/scheduling.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.scheduling",
+      "replacement_import_or_path": "study_agent.api.recall",
       "sha256": "10df73fd958397f2d37b6668ed33c5941b9711ff17f45ca7949d1146d9c54b24",
       "terminal_owner": "study-agent-harness"
     },
@@ -2306,7 +2306,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/session.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.session",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "405b7818dfbfac0336f41968e71cd720643ee228b93a4fbdf9233b5628c26c81",
       "terminal_owner": "study-agent-harness"
     },
@@ -2316,7 +2316,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/source_input.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.source_input",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "b4a13ec3b50406d5872b6dbd860503d2a25a8c12bb99b3f0f0d0b38b9d91844a",
       "terminal_owner": "study-agent-harness"
     },
@@ -2326,7 +2326,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/storage.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.storage",
+      "replacement_import_or_path": "study_agent.api.storage",
       "sha256": "f5c13f884d73cdd298a9149c5dacd7509c9566e7a001c68abda8f31949460837",
       "terminal_owner": "study-agent-harness"
     },
@@ -2336,7 +2336,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/study_context.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.study_context",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "c0e1f294a1bf345bed3dfb1ef54ae7810dc4113306134aa1bceefac300fd4dd0",
       "terminal_owner": "study-agent-harness"
     },
@@ -2346,7 +2346,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/tools.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.tools",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "85b86e5435b8a37d4dfdb769443227f3cbde5ef3a1332f969e8e98d2d4a9f58b",
       "terminal_owner": "study-agent-harness"
     },
@@ -2356,7 +2356,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/tutor_host.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.tutor_host",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "1ec250ad84a17f261a2b5b9966c898698cef3b5f2b14d929b28bf1a8d74084b1",
       "terminal_owner": "study-agent-harness"
     },
@@ -2366,7 +2366,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/tutor_runner.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.tutor_runner",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "e9d3375913bb48014d339d5fd86321c3c03063333ded5ebd2c15496d464440de",
       "terminal_owner": "study-agent-harness"
     },
@@ -2376,7 +2376,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/tutor_snapshot.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.tutor_snapshot",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "15bbb2ef5307518709179d8488c6ec564480a48c53b1d00d77328810cd1c4723",
       "terminal_owner": "study-agent-harness"
     },
@@ -2386,7 +2386,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/verified_batch.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.verified_batch",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "c5b880c1f54860eab9242f08d466971b7dce7f130222ba59492f98f917fa21f8",
       "terminal_owner": "study-agent-harness"
     },
@@ -2396,7 +2396,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/workaround.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.workaround",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "f4a351c165ffc40415e36f32081658b3d1629f2068e76e61b1c2fce67bcd910a",
       "terminal_owner": "study-agent-harness"
     },
@@ -2406,7 +2406,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/ports/worker.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.ports.worker",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "1943d7ad4b44e7f19ec64e66db695d316ca45927c8815ca78329b3cec7ddd2c2",
       "terminal_owner": "study-agent-harness"
     },
@@ -2416,7 +2416,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/prompts/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.prompts",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "64b98b66b346df97c2dfe39347cb38b80caabd278ca47bdbe18250e3e2f93478",
       "terminal_owner": "study-agent-harness"
     },
@@ -2426,7 +2426,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/prompts/assess_understanding_v1.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.prompts.assess_understanding_v1",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "70149d1e2169f4ffdde25a5ebc1e2c9601ecd9993685372a04a205427a0d409e",
       "terminal_owner": "study-agent-harness"
     },
@@ -2436,7 +2436,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/prompts/composer.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.prompts.composer",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "7ec624b78a803215e6c58a718365148e7034d12a239e59a151ca14687edd3900",
       "terminal_owner": "study-agent-harness"
     },
@@ -2446,7 +2446,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/prompts/contracts.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.prompts.contracts",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "4b9cc50dfb9ddad8bdd1c838f5dbb0976cbc4705e52069514dd58296345218c6",
       "terminal_owner": "study-agent-harness"
     },
@@ -2456,7 +2456,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/prompts/exam_sample_analysis_v1.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.prompts.exam_sample_analysis_v1",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "ec06ae90d1d3dfc815c0ad136aa1d86050423c127ad4bee48b98e29e99a143cf",
       "terminal_owner": "study-agent-harness"
     },
@@ -2466,7 +2466,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/prompts/explain_concept_v1.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.prompts.explain_concept_v1",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "eb72fc7370277c4df4c128a9a969c41214fde0a6749e76e1cc7977da1bb66c57",
       "terminal_owner": "study-agent-harness"
     },
@@ -2476,7 +2476,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/prompts/grade_response_v1.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.prompts.grade_response_v1",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "8b2d99a2c2e01c08ac509c8949c1def4ecf6d4220dfd236d4673ef0dd908cb18",
       "terminal_owner": "study-agent-harness"
     },
@@ -2486,7 +2486,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/prompts/grounded_answer_v1.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.prompts.grounded_answer_v1",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "cba15fe135c8041ba55ba2c2ffaec7c740829c09544b07b5974bd816c00111b3",
       "terminal_owner": "study-agent-harness"
     },
@@ -2496,7 +2496,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/prompts/hybrid_flashcards_v1.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.prompts.hybrid_flashcards_v1",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "0e19786cbb2194c4fef3b1f048fc35d4bc4b679d1e0f6a5b814e1186e3cc72c6",
       "terminal_owner": "study-agent-harness"
     },
@@ -2506,7 +2506,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/prompts/morphology_flashcards_v1.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.prompts.morphology_flashcards_v1",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "ba1100015a0e67f14e24b273ed0351f37686d5bcfdb78acd8b8939345990e342",
       "terminal_owner": "study-agent-harness"
     },
@@ -2516,7 +2516,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/prompts/tutor_decision_v1.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.prompts.tutor_decision_v1",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "54a67b33d0b4e6b378b9dcdc36e8a1a1960ec1c924a119e99af9a8add3ccdb13",
       "terminal_owner": "study-agent-harness"
     },
@@ -2526,7 +2526,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/py.typed",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.py",
+      "replacement_import_or_path": "study_agent/py.typed",
       "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
       "terminal_owner": "study-agent-harness"
     },
@@ -2536,7 +2536,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/recall/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.recall",
+      "replacement_import_or_path": "study_agent.api.recall",
       "sha256": "d73028ef89123cd73d76c332e7192020fb380bac70b057d2350267f05c36ff71",
       "terminal_owner": "study-agent-harness"
     },
@@ -2546,7 +2546,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/recall/composition.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.recall.composition",
+      "replacement_import_or_path": "study_agent.api.recall",
       "sha256": "e9089c159341a50aef1ac9d52cd4d2fbc3ce4ff5e76163e36a86ddaed43ccb6e",
       "terminal_owner": "study-agent-harness"
     },
@@ -2556,7 +2556,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/recall/contracts.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.recall.contracts",
+      "replacement_import_or_path": "study_agent.api.recall",
       "sha256": "f8e7c0764b2c8b17ccb9453d03c3dcb163fd12f665e40c64ac71c394a0c6dba0",
       "terminal_owner": "study-agent-harness"
     },
@@ -2566,7 +2566,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/recall/due.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.recall.due",
+      "replacement_import_or_path": "src/cardine/recall/policy.py;study_agent.api.recall",
       "sha256": "795254db1f4e02425f33e2e23f0756786d68df987cd49a838696c291048e1d90",
       "terminal_owner": "legacy-oracle"
     },
@@ -2576,7 +2576,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/recall/events.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.recall.events",
+      "replacement_import_or_path": "study_agent.api.recall",
       "sha256": "304541223fac4908f8c10860bd55f6ad09818c4e4acaa46707ad289bf372f196",
       "terminal_owner": "study-agent-harness"
     },
@@ -2586,7 +2586,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/recall/projection.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.recall.projection",
+      "replacement_import_or_path": "study_agent.api.recall",
       "sha256": "21f24b4068a1f79d473275609cd1fecf4e852b91939d3bb90c82b245195f234b",
       "terminal_owner": "study-agent-harness"
     },
@@ -2596,7 +2596,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/recall/service.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.recall.service",
+      "replacement_import_or_path": "src/cardine/recall/policy.py;src/cardine/recall/rating.py;study_agent.api.recall",
       "sha256": "f1d6aaa3f1dd89ebc270bdf64ee82628a8210bc18d066f8db0add00d1a3a956a",
       "terminal_owner": "legacy-oracle"
     },
@@ -2606,7 +2606,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/recall/view.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.recall.view",
+      "replacement_import_or_path": "study_agent.api.recall",
       "sha256": "030c78b1b7e384b027f463f6553bc00605efddb91729a66c7df5e0f3ae1040d3",
       "terminal_owner": "study-agent-harness"
     },
@@ -2616,7 +2616,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/repository_config.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.repository_config",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "32b29cac72fcba700e5151f95d1ca3af8edb6664e553d707a069a25deecfa219",
       "terminal_owner": "study-agent-harness"
     },
@@ -2626,7 +2626,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/retrieval/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.retrieval",
+      "replacement_import_or_path": "study_agent.api.sources",
       "sha256": "39f731c6251cb6407a9a507cf0c724300e614206512138f5d475e2e3ea886b10",
       "terminal_owner": "study-agent-harness"
     },
@@ -2636,7 +2636,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/retrieval/content.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.retrieval.content",
+      "replacement_import_or_path": "study_agent.api.sources",
       "sha256": "7115abea0c524e407daa9f8eeec11a587324e4bbe262b412e36bd2632348bf31",
       "terminal_owner": "study-agent-harness"
     },
@@ -2646,7 +2646,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/retrieval/errors.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.retrieval.errors",
+      "replacement_import_or_path": "study_agent.api.sources",
       "sha256": "711b1650ce4656478b4c80404df5edfdaf6c23784da8c3b7c31e721975857657",
       "terminal_owner": "study-agent-harness"
     },
@@ -2656,7 +2656,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/sessions/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.sessions",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "96dfe2742b555be7c967afbfed0a03703800eb4af9e29481bfd728a7555819d9",
       "terminal_owner": "study-agent-harness"
     },
@@ -2666,7 +2666,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/sessions/events.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.sessions.events",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "5d2a5f4b8b0d4cb58f1cf570156f6b24e72f8dd959d617fdc1d5ab2e8a873e16",
       "terminal_owner": "study-agent-harness"
     },
@@ -2676,7 +2676,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/sessions/presentation_view.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.sessions.presentation_view",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "98f1363a454e8d162bed96847e323acb22417cc52c2a20506f47e297d2552ee4",
       "terminal_owner": "study-agent-harness"
     },
@@ -2686,7 +2686,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/sessions/projection.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.sessions.projection",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "7146a264c70945e3f866597c8d32c6041ae8a83dee63928b8b1e01e0f3f44860",
       "terminal_owner": "study-agent-harness"
     },
@@ -2696,7 +2696,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/sessions/provenance.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.sessions.provenance",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "0e014d1ec256487415dcf33d26ed0b2518df834fbb83457642a2f4318a332e4a",
       "terminal_owner": "study-agent-harness"
     },
@@ -2706,7 +2706,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/sessions/service.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.sessions.service",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "1b37a4fd23e40a8accc44e6bc947beeac18f8090443adbe132b2a20443c5fd4b",
       "terminal_owner": "study-agent-harness"
     },
@@ -2716,7 +2716,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/sessions/summary.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.sessions.summary",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "7a33d745f595c98df55cd6a87af7a8562920849f8001bc9cf9c4d15def97a088",
       "terminal_owner": "study-agent-harness"
     },
@@ -2726,7 +2726,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/sessions/turn_service.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.sessions.turn_service",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "5a88c3f05e9983299c305f014a869cd6f15e2257d2b3f0ea04f4032d5f1e3c0f",
       "terminal_owner": "study-agent-harness"
     },
@@ -2736,7 +2736,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/sessions/turn_view.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.sessions.turn_view",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "141ec8e58ab7cc2bef18b96699c4f32d965cceb0def0e44b74ae9470ceaba682",
       "terminal_owner": "study-agent-harness"
     },
@@ -2746,7 +2746,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/sessions/turns.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.sessions.turns",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "da8b9987c7d603f129fde740b82218fd889dbf67d2d3bd7856e7718ff08542f7",
       "terminal_owner": "study-agent-harness"
     },
@@ -2756,7 +2756,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/sessions/view.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.sessions.view",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "52af9da2f73da0fee27ec9c6930e0d5445e1f4c2f8f7d96bff19fbeedd8613ec",
       "terminal_owner": "study-agent-harness"
     },
@@ -2766,7 +2766,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/skills/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.skills",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "5e8bd1f399762d0262719229ce0555d687e4a2dc781f40a1d2702d7de81717c4",
       "terminal_owner": "study-agent-harness"
     },
@@ -2776,7 +2776,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/skills/builtin/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.skills.builtin",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "b3e7f59fa31bcc66e24202769c19d367264ad50d08accaa9b0b8fe63463e2074",
       "terminal_owner": "study-agent-harness"
     },
@@ -2786,7 +2786,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/skills/builtin/analyze_exam_sample.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.skills.builtin.analyze_exam_sample",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "fae40a10d3528db9b9c84924aef028f238a465c5ab7ec109e342ff4d32d65dc3",
       "terminal_owner": "study-agent-harness"
     },
@@ -2796,7 +2796,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/skills/builtin/assess_understanding.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.skills.builtin.assess_understanding",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "81fe4cc8909cd1438078d119a79749c5a6206d55e27668e004caee68e09f5093",
       "terminal_owner": "study-agent-harness"
     },
@@ -2806,7 +2806,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/skills/builtin/explain_concept.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.skills.builtin.explain_concept",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "3cfe51a94adb9dfed1aa789e1675cbbf6a8afebe3bb9ab373cde264643c6425c",
       "terminal_owner": "study-agent-harness"
     },
@@ -2816,7 +2816,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/skills/builtin/grade_response.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.skills.builtin.grade_response",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "c61dd0320cc0dbbfeb086edef47d24e4790d94bcfe59a0d1591dbdf7facead55",
       "terminal_owner": "study-agent-harness"
     },
@@ -2826,7 +2826,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/skills/builtin/grounded_answer.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.skills.builtin.grounded_answer",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "2b0326e1684e66627b11c33ef3934e740a9a4d114e847e8af524110057180fd9",
       "terminal_owner": "study-agent-harness"
     },
@@ -2836,7 +2836,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/skills/builtin/hybrid_flashcards.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.skills.builtin.hybrid_flashcards",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "7fe76face7209a0ceb75c49bbe42eaf18c3580c246d8626c12c502318779eef9",
       "terminal_owner": "study-agent-harness"
     },
@@ -2846,7 +2846,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/skills/builtin/morphology_flashcards.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.skills.builtin.morphology_flashcards",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "70e9a80516bc962f5b9a1aec7895d189e00f05b22248c2eb218e9bb47bfbe30f",
       "terminal_owner": "study-agent-harness"
     },
@@ -2856,7 +2856,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/skills/builtin/propose_flashcards.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.skills.builtin.propose_flashcards",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "172bb257edbf05870bd07a7a289c75bc772b319a1b694db77ca8c9e06611fd43",
       "terminal_owner": "study-agent-harness"
     },
@@ -2866,7 +2866,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/skills/contracts.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.skills.contracts",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "f8a7dec4f5c0a5fe89337d1ee893c80a7099279a755a6e1b0d2480bee6d0aea6",
       "terminal_owner": "study-agent-harness"
     },
@@ -2876,7 +2876,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/state/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.state",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "b27ba06fb51991bbe798e552319130c9884b0a9943be09d191d04c808f73e577",
       "terminal_owner": "study-agent-harness"
     },
@@ -2886,7 +2886,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/state/projection.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.state.projection",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "22a00ba67a9b53fdbcf45a2d90e77d8605e3c390145848b4b5b4d1f393198665",
       "terminal_owner": "study-agent-harness"
     },
@@ -2896,7 +2896,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/state/registry.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.state.registry",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "97969d0c5f2e13b085586d348764808bfed9f81418df652f79e82da6bcfa1ba7",
       "terminal_owner": "study-agent-harness"
     },
@@ -2906,7 +2906,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/state/serialization.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.state.serialization",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "f5a9863045adaed57dc5a03054b511089437d67ed26cb7e62b1676e233e1e0c5",
       "terminal_owner": "study-agent-harness"
     },
@@ -2916,7 +2916,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/study_context/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.study_context",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "e3e2e074bcf8df52db750560507294395c463f2dcecbae2e9d8ce4cafa2f7bd4",
       "terminal_owner": "study-agent-harness"
     },
@@ -2926,7 +2926,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/study_context/events.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.study_context.events",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "574d04f6b22bb263c73924641905fb4e4503a875f14043668c21e5699c07915f",
       "terminal_owner": "study-agent-harness"
     },
@@ -2936,7 +2936,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/study_context/projection.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.study_context.projection",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "a02fd617ce53bde1f6e739ac1517a2143aa2c0b8547e3ecbb08568016c665e32",
       "terminal_owner": "study-agent-harness"
     },
@@ -2946,7 +2946,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/study_context/service.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.study_context.service",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "8f4ff381ea895d0fac328381c5d03502e789f3935375f2ccc5224ec262f97a41",
       "terminal_owner": "study-agent-harness"
     },
@@ -2956,7 +2956,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/study_context/view.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.study_context.view",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "a0d7f9de10758a22de03fc3433b18ff08c43655a4c8d843256506ab8281a0342",
       "terminal_owner": "study-agent-harness"
     },
@@ -2966,7 +2966,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/tools/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.tools",
+      "replacement_import_or_path": "study_agent.api.capabilities",
       "sha256": "59b7ebfc9bf3bc876ba2999ea978d9c51c69f132d7795d1017ab91da27197bf5",
       "terminal_owner": "study-agent-harness"
     },
@@ -2976,7 +2976,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/tools/builtin.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.tools.builtin",
+      "replacement_import_or_path": "study_agent.api.capabilities",
       "sha256": "5a088510cabf91826fbb3cdd709c46c1b12ba7561530db0169c0f91780b38e7e",
       "terminal_owner": "study-agent-harness"
     },
@@ -2986,7 +2986,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/tools/contracts.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.tools.contracts",
+      "replacement_import_or_path": "study_agent.api.capabilities",
       "sha256": "18eb2560841e03871226845223269f6af8756debedfa44a54f844128c64f3d2b",
       "terminal_owner": "study-agent-harness"
     },
@@ -2996,7 +2996,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/tools/exam_scope_bridge.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.tools.exam_scope_bridge",
+      "replacement_import_or_path": "study_agent.api.capabilities",
       "sha256": "79ebce04e632ac9d01a7f4f44d232821108b195ff311d3392bd24e2b74a06088",
       "terminal_owner": "study-agent-harness"
     },
@@ -3006,7 +3006,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/tools/flashcard_scope_bridge.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.tools.flashcard_scope_bridge",
+      "replacement_import_or_path": "study_agent.api.capabilities",
       "sha256": "d33871fcce50c4496a16a4e4ab5505b71063f67b88b594893cd89331f26b5c4a",
       "terminal_owner": "study-agent-harness"
     },
@@ -3016,7 +3016,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/tools/grade_scope_bridge.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.tools.grade_scope_bridge",
+      "replacement_import_or_path": "study_agent.api.capabilities",
       "sha256": "af4d1fb3e3f889231f6a0ea21c7d8380495973be8c212c458af8e9e5d4f430bd",
       "terminal_owner": "study-agent-harness"
     },
@@ -3026,7 +3026,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/tools/planned_flashcard_scope_bridge.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.tools.planned_flashcard_scope_bridge",
+      "replacement_import_or_path": "study_agent.api.capabilities",
       "sha256": "734da21a00a0596d4985e63fc7ece3e99d954d0e24ab7d81f5c25a61aa5a8f98",
       "terminal_owner": "study-agent-harness"
     },
@@ -3036,7 +3036,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/tools/playbook_bridge.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.tools.playbook_bridge",
+      "replacement_import_or_path": "study_agent.api.capabilities",
       "sha256": "8b8f5ee569738b888d26d5edb8d30e26161c8646f1667e3806e03fd5aaca8855",
       "terminal_owner": "study-agent-harness"
     },
@@ -3046,7 +3046,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/tools/registry.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.tools.registry",
+      "replacement_import_or_path": "study_agent.api.capabilities",
       "sha256": "d57686cdcd8a9309a91eac59876bb174a6d1763df0a8f8db055850304ee6446c",
       "terminal_owner": "study-agent-harness"
     },
@@ -3056,7 +3056,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/tools/schema.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.tools.schema",
+      "replacement_import_or_path": "study_agent.api.capabilities",
       "sha256": "3cf0d61f9bc074b5ec33fa0d6971f019823b4460c8d9521947b7cbd8c3c82f8a",
       "terminal_owner": "study-agent-harness"
     },
@@ -3066,7 +3066,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/tutor_snapshot/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.tutor_snapshot",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "a05f0ded5e912054b4615f29d7a311a240a03030838e95167b4e2bf484f9bf6a",
       "terminal_owner": "study-agent-harness"
     },
@@ -3076,7 +3076,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/tutor_snapshot/reader.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.tutor_snapshot.reader",
+      "replacement_import_or_path": "study_agent.api.runtime",
       "sha256": "2ae2f2715a22173f72a761d2ce67bd02835d6df1ff9e5955801fa3d1d137d9cb",
       "terminal_owner": "study-agent-harness"
     },
@@ -3086,7 +3086,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/workers/__init__.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.workers",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "71e0461c4d86bee72aa6f34239e1cb18f765ff27d722e02cd52da5a57bcd8c85",
       "terminal_owner": "study-agent-harness"
     },
@@ -3096,7 +3096,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/workers/contracts.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.workers.contracts",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "c50cc7f0439def399d7cc123967c5680f866681cd0a67dd48a6569e1ca8e316e",
       "terminal_owner": "study-agent-harness"
     },
@@ -3106,7 +3106,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/workers/proof.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.workers.proof",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "12eab1936fc6572f68db09853663af9855e07104c2816e8520dbf893c3261f86",
       "terminal_owner": "study-agent-harness"
     },
@@ -3116,7 +3116,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/workers/service.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.workers.service",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "d5c302e09ae33f2c745b0f3228737f0b16a29744417f50852dc58be10825484e",
       "terminal_owner": "study-agent-harness"
     },
@@ -3126,7 +3126,7 @@
       "first_consuming_slice": "CA-04",
       "path": "src/study_agent/workers/view.py",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent_harness.workers.view",
+      "replacement_import_or_path": "study_agent.api.artifacts",
       "sha256": "37a81258d4616232318382b72b618fa2cb02e37985dd5ae22dc03bdb166871c7",
       "terminal_owner": "study-agent-harness"
     },
@@ -3186,7 +3186,7 @@
       "first_consuming_slice": "CA-04",
       "path": "entrypoint:study-agent",
       "removal_slice": "CA-02",
-      "replacement_import_or_path": "study_agent.cli.main:main",
+      "replacement_import_or_path": "study-agent",
       "sha256": "b939323d72a4b3de5c6814d9e6a553ecfb3ce2341a20fb78d206d5ac53d098bb",
       "terminal_owner": "study-agent-harness"
     },
@@ -3196,7 +3196,7 @@
       "first_consuming_slice": "CA-04",
       "path": "entrypoint:study-agent-demo",
       "removal_slice": "CA-02",
-      "replacement_import_or_path": "study_agent.demo.anatomy:main",
+      "replacement_import_or_path": "study-agent-demo",
       "sha256": "67ab340983ce3104cd8f76dad2525a115e46921b466dff6e9fc112feca0ccfcf",
       "terminal_owner": "study-agent-harness"
     },
@@ -3206,7 +3206,7 @@
       "first_consuming_slice": "CA-04",
       "path": "entrypoint:study-agent-private-password-hash",
       "removal_slice": "CA-02",
-      "replacement_import_or_path": "study_agent.demo.private_access:main",
+      "replacement_import_or_path": "study-agent-private-password-hash",
       "sha256": "e101f62054902cdf3224b995b74a30479b63b76e3ba07a3905f8291a380ca50e",
       "terminal_owner": "study-agent-harness"
     },
@@ -3216,7 +3216,7 @@
       "first_consuming_slice": "CA-04",
       "path": "entrypoint:study-agent-shell",
       "removal_slice": "CA-02",
-      "replacement_import_or_path": "study_agent.demo.product_shell:main",
+      "replacement_import_or_path": "study-agent-shell",
       "sha256": "bba6a759716e798f6bb38839aad672e96fdca4d53ebc8964f8128b8913769f52",
       "terminal_owner": "study-agent-harness"
     },
@@ -3226,7 +3226,7 @@
       "first_consuming_slice": "CA-04",
       "path": "entrypoint:study-agent-shell-web",
       "removal_slice": "CA-02",
-      "replacement_import_or_path": "study_agent.demo.browser:main",
+      "replacement_import_or_path": "study-agent-shell-web",
       "sha256": "45ccd442af7679931f3458fc7e9fded584188d669380ded396849c49a6cb20d0",
       "terminal_owner": "study-agent-harness"
     }
