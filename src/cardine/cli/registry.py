@@ -291,6 +291,113 @@ def command_registrations() -> tuple[CommandRegistration, ...]:
             commands.handle_source_list,
         ),
         _registration(
+            "consent.status",
+            "Read provider consent for a course.",
+            OperationEffect.READ_ONLY,
+            RepositoryRequirement.REQUIRED,
+            NetworkRequirement.NEVER,
+            "not applicable",
+            "safe to retry",
+            (_argument("course_id", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),),
+            "cardine --json --repository REPOSITORY consent status COURSE_ID",
+            _add_consent_status,
+            commands.handle_consent_status,
+        ),
+        _registration(
+            "consent.grant",
+            "Grant provider consent for a course.",
+            OperationEffect.CANONICAL_WRITE,
+            RepositoryRequirement.REQUIRED,
+            NetworkRequirement.NEVER,
+            "stable request identity",
+            "retry with the same request id",
+            (
+                _argument("course_id", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
+                _argument("request_id", ArgumentKind.OPTION, ArgumentValueType.STRING, True),
+                _argument(
+                    "expected_sequence", ArgumentKind.OPTION, ArgumentValueType.INTEGER, False
+                ),
+            ),
+            "cardine --json --repository REPOSITORY consent grant COURSE_ID --request-id ID",
+            _add_consent_mutation,
+            commands.handle_consent_grant,
+        ),
+        _registration(
+            "consent.revoke",
+            "Revoke provider consent for a course.",
+            OperationEffect.CANONICAL_WRITE,
+            RepositoryRequirement.REQUIRED,
+            NetworkRequirement.NEVER,
+            "stable request identity",
+            "retry with the same request id",
+            (
+                _argument("course_id", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
+                _argument("request_id", ArgumentKind.OPTION, ArgumentValueType.STRING, True),
+                _argument(
+                    "expected_sequence", ArgumentKind.OPTION, ArgumentValueType.INTEGER, False
+                ),
+            ),
+            "cardine --json --repository REPOSITORY consent revoke COURSE_ID --request-id ID",
+            _add_consent_mutation,
+            commands.handle_consent_revoke,
+        ),
+        _registration(
+            "source.status",
+            "Read source retirement status.",
+            OperationEffect.READ_ONLY,
+            RepositoryRequirement.REQUIRED,
+            NetworkRequirement.NEVER,
+            "not applicable",
+            "safe to retry",
+            (
+                _argument("course_id", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
+                _argument("source_id", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
+            ),
+            "cardine --json --repository REPOSITORY source status COURSE_ID SOURCE_ID",
+            _add_source_status,
+            commands.handle_source_status,
+        ),
+        _registration(
+            "source.retire",
+            "Retire a source from default study surfaces.",
+            OperationEffect.CANONICAL_WRITE,
+            RepositoryRequirement.REQUIRED,
+            NetworkRequirement.NEVER,
+            "stable request identity",
+            "retry with the same request id",
+            (
+                _argument("course_id", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
+                _argument("source_id", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
+                _argument("request_id", ArgumentKind.OPTION, ArgumentValueType.STRING, True),
+                _argument(
+                    "expected_sequence", ArgumentKind.OPTION, ArgumentValueType.INTEGER, False
+                ),
+            ),
+            "cardine source retire COURSE_ID SOURCE_ID --request-id ID",
+            _add_source_mutation,
+            commands.handle_source_retire,
+        ),
+        _registration(
+            "source.restore",
+            "Restore a retired source to default study surfaces.",
+            OperationEffect.CANONICAL_WRITE,
+            RepositoryRequirement.REQUIRED,
+            NetworkRequirement.NEVER,
+            "stable request identity",
+            "retry with the same request id",
+            (
+                _argument("course_id", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
+                _argument("source_id", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
+                _argument("request_id", ArgumentKind.OPTION, ArgumentValueType.STRING, True),
+                _argument(
+                    "expected_sequence", ArgumentKind.OPTION, ArgumentValueType.INTEGER, False
+                ),
+            ),
+            "cardine source restore COURSE_ID SOURCE_ID --request-id ID",
+            _add_source_mutation,
+            commands.handle_source_restore,
+        ),
+        _registration(
             "ask",
             "Ask a grounded question; automatic identities are convenience-only.",
             OperationEffect.EXTERNAL_MODEL,
@@ -722,6 +829,45 @@ def _add_source_list(topology: _ParserTopology) -> None:
         "source.list",
     )
     parser.add_argument("course_id")
+
+
+def _add_consent_status(topology: _ParserTopology) -> None:
+    parser = _leaf(
+        topology.group("consent", "provider consent commands").add_parser("status"),
+        "consent.status",
+    )
+    parser.add_argument("course_id")
+
+
+def _add_consent_mutation(topology: _ParserTopology) -> None:
+    actions = topology.group("consent", "provider consent commands")
+    for action in ("grant", "revoke"):
+        if action in actions.choices:
+            continue
+        parser = _leaf(actions.add_parser(action), f"consent.{action}")
+        parser.add_argument("course_id")
+        parser.add_argument("--request-id", required=True)
+        parser.add_argument("--expected-sequence", type=int)
+
+
+def _add_source_status(topology: _ParserTopology) -> None:
+    parser = _leaf(
+        topology.group("source", "source commands").add_parser("status"), "source.status"
+    )
+    parser.add_argument("course_id")
+    parser.add_argument("source_id")
+
+
+def _add_source_mutation(topology: _ParserTopology) -> None:
+    actions = topology.group("source", "source commands")
+    for action in ("retire", "restore"):
+        if action in actions.choices:
+            continue
+        parser = _leaf(actions.add_parser(action), f"source.{action}")
+        parser.add_argument("course_id")
+        parser.add_argument("source_id")
+        parser.add_argument("--request-id", required=True)
+        parser.add_argument("--expected-sequence", type=int)
 
 
 def _add_ask(topology: _ParserTopology) -> None:

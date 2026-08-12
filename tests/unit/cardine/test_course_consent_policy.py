@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 
@@ -10,12 +11,14 @@ from cardine.integrations.study_agent.course_policy import (
     ConsentModelPort,
     CourseConsentService,
     ProjectionConsentView,
+    ProjectionSourceLifetimeView,
     ProviderConsentRequiredError,
+    SourceLifetimeService,
     register_course_policy_events,
 )
 from study_agent.domain.context import ExecutionContext
 from study_agent.domain.events import DomainEvent, PrincipalKind
-from study_agent.domain.identifiers import CorrelationId, CourseId
+from study_agent.domain.identifiers import CorrelationId, CourseId, SourceId
 from study_agent.ports.course import CourseNotFoundError
 from study_agent.ports.model import (
     CancellationToken,
@@ -114,15 +117,15 @@ def _context(kind: PrincipalKind = PrincipalKind.HUMAN) -> ExecutionContext:
     return ExecutionContext(kind, "person-1", COURSE, CorrelationId("correlation-1"))
 
 
-def _composition(
-    *, events_type: type[_Events] = _Events, course_present: bool = True
-):  # type: ignore[no-untyped-def]
+def _composition(*, events_type: type[_Events] = _Events, course_present: bool = True):  # type: ignore[no-untyped-def]
     registry = EventRegistry()
     register_course_policy_events(registry)
     events = events_type(registry)
     view = ProjectionConsentView(lambda _: events.projection)
-    return events, view, CourseConsentService(
-        events, _Clock(), view, _Courses(present=course_present)
+    return (
+        events,
+        view,
+        CourseConsentService(events, _Clock(), view, _Courses(present=course_present)),
     )
 
 
@@ -181,8 +184,31 @@ def test_consent_requires_course_and_concurrent_identical_request_converges() ->
     with pytest.raises(CourseNotFoundError):
         missing_service.grant(_context(), "missing-course")
     assert events.records == []
-
     racing, _, service = _composition(events_type=_RacingEvents)
     receipt = service.grant(_context(), "same-request")
     assert receipt.request_id == "same-request"
     assert len(racing.records) == 1
+
+
+def test_source_lifetime_is_human_only_idempotent_and_excluded_from_default_projection() -> None:
+    registry = EventRegistry()
+    register_course_policy_events(registry)
+    events = _Events(registry)
+    view = ProjectionSourceLifetimeView(lambda _: events.projection)
+    source_id = SourceId("source-1")
+
+    def content(_: CourseId) -> SimpleNamespace:
+        return SimpleNamespace(
+            catalog=lambda: (SimpleNamespace(source=SimpleNamespace(source_id=source_id)),)
+        )
+
+    service = SourceLifetimeService(events, _Clock(), view, _Courses(), content)
+    context = _context()
+    retired = service.retire(context, source_id, "retire-1")
+    assert retired.retired is True
+    assert view.retired_source_ids(COURSE) == frozenset({source_id})
+    assert service.retire(context, source_id, "retire-1") == retired
+    restored = service.restore(context, source_id, "restore-1", expected_sequence=1)
+    assert restored.retired is False
+    with pytest.raises(ValueError, match="HUMAN"):
+        service.retire(_context(PrincipalKind.MODEL), source_id, "model-retire")

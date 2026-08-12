@@ -882,8 +882,9 @@ def _is_private_endpoint(path: str) -> bool:
     return (
         path.startswith("/api/v1/auth/")
         or path.startswith("/api/v1/settings")
+        or path.startswith("/api/v1/consent/")
         or path == "/api/v1/chat/course-creation"
-        or path == "/api/v1/sources/upload"
+        or path.startswith("/api/v1/sources/")
     )
 
 

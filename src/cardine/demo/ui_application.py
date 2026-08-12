@@ -28,6 +28,13 @@ from cardine.integrations.study_agent import (
     StudyRuntimeAdapter,
     compose_study_runtime,
 )
+from cardine.integrations.study_agent.course_policy import (
+    ConsentCommandError,
+    ConsentConflictError,
+    RetryableConsentConflictError,
+    RetryableSourceLifetimeConflictError,
+    SourceLifetimeCommandError,
+)
 from study_agent.application import (
     ConversationTurnCommand,
     ConversationTurnError,
@@ -75,6 +82,7 @@ from study_agent.domain import (
     PresentationId,
     PrincipalKind,
     SessionId,
+    SourceId,
     StatementId,
     StudyArtifactKind,
     StudyContextSnapshot,
@@ -239,6 +247,7 @@ class RepositoryUiApplication(UiApplicationPort):
         self._repository = Path(repository)
         self._course_id = _identifier(course_id, CourseId, "course_id")
         self._session_id = _identifier(session_id, SessionId, "session_id")
+
         def open_repository() -> AbstractContextManager[LocalRepository]:
             kwargs: dict[str, object] = {
                 "model_adapters": model_adapters,
@@ -316,6 +325,7 @@ class RepositoryUiApplication(UiApplicationPort):
             "/api/v1/recall/due": self._recall,
             "/api/v1/context/conflicts": self._conflicts,
             "/api/v1/plan": self._plan,
+            "/api/v1/consent": self._consent,
         }
         route = routes.get(path)
         if route is None:
@@ -371,6 +381,10 @@ class RepositoryUiApplication(UiApplicationPort):
                         "source_grounding": _source_grounding_status(
                             repository, self._course_id, snapshot
                         ),
+                        "provider_consent": repository.provider_consent.get(self._course_id),
+                        "retired_source_ids": repository.source_lifetime.retired_source_ids(
+                            self._course_id
+                        ),
                         "flashcards_available": _flashcard_capability_available(
                             repository, self._course_id, self._session_id
                         ),
@@ -419,6 +433,10 @@ class RepositoryUiApplication(UiApplicationPort):
             return self._create_chat_course(command)
         if path == "/api/v1/sources/upload":
             return self._upload_source(command)
+        if path in {"/api/v1/consent/grant", "/api/v1/consent/revoke"}:
+            return self._consent_mutation(path.rsplit("/", 1)[-1], command)
+        if path in {"/api/v1/sources/retire", "/api/v1/sources/restore"}:
+            return self._source_lifetime_mutation(path.rsplit("/", 1)[-1], command)
         if path == "/api/v1/settings/model/check":
             return self._check_model(command)
         continuation_fingerprint = _continuation_fingerprint(path)
@@ -791,6 +809,7 @@ class RepositoryUiApplication(UiApplicationPort):
                 application = repository.tutor_conversation(
                     self._course_id, session_id=self._session_id
                 )
+
                 asyncio.run(application.verify_model_readiness(self._course_id, self._session_id))
                 return {
                     "schema_version": 1,
@@ -909,6 +928,91 @@ class RepositoryUiApplication(UiApplicationPort):
                 raise UiRequestError(
                     "repository runtime is unavailable", status_code=503
                 ) from error
+
+    def _consent(self, snapshot: TutorSnapshotV1, metadata: Mapping[str, object]) -> JsonObject:
+        receipt = metadata.get("provider_consent")
+        return {
+            "schema_version": 1,
+            "course_id": str(snapshot.course_id),
+            "granted": bool(getattr(receipt, "granted", False)),
+            "receipt": None
+            if receipt is None
+            else {
+                "status": receipt.status,
+                "request_id": receipt.request_id,
+                "sequence": receipt.sequence,
+            },
+        }
+
+    def _consent_mutation(self, action: str, command: Mapping[str, object]) -> JsonObject:
+        request_id, expected, payload = _workspace_command(command, required_keys=set())
+        if set(payload) - {"request_id"}:
+            raise UiRequestError("consent payload contains unknown fields")
+        request_value = _workspace_text(payload.get("request_id", request_id), "request_id", 160)
+        try:
+            with self._lock, self._open() as repository:
+                method = (
+                    repository.provider_consent_service.grant
+                    if action == "grant"
+                    else repository.provider_consent_service.revoke
+                )
+                receipt = method(
+                    self._course_policy_context(request_id),
+                    request_value,
+                    expected_sequence=expected,
+                )
+                return {
+                    "schema_version": 1,
+                    "request_id": request_id,
+                    "status": receipt.status,
+                    "high_water_sequence": receipt.sequence,
+                }
+        except RetryableConsentConflictError as error:
+            raise UiRequestError("expected sequence is stale", status_code=409) from error
+        except (ConsentCommandError, ConsentConflictError) as error:
+            raise UiRequestError(
+                "consent command conflicts with policy", status_code=409
+            ) from error
+
+    def _source_lifetime_mutation(self, action: str, command: Mapping[str, object]) -> JsonObject:
+        request_id, expected, payload = _workspace_command(command, required_keys={"source_id"})
+        source_id = _workspace_identifier(payload.get("source_id"), SourceId, "source_id")
+        committed = False
+        try:
+            with self._lock, self._open() as repository:
+                method = (
+                    repository.source_lifetime_service.retire
+                    if action == "retire"
+                    else repository.source_lifetime_service.restore
+                )
+                receipt = method(
+                    self._course_policy_context(request_id),
+                    source_id,
+                    request_id,
+                    expected_sequence=expected,
+                )
+                committed = True
+                repository.rebuild_retrieval()
+                return {
+                    "schema_version": 1,
+                    "request_id": request_id,
+                    "source_id": str(source_id),
+                    "status": receipt.status,
+                    "high_water_sequence": receipt.sequence,
+                }
+        except RetryableSourceLifetimeConflictError as error:
+            raise UiRequestError("expected sequence is stale", status_code=409) from error
+        except SourceLifetimeCommandError as error:
+            raise UiRequestError("source lifetime command is invalid", status_code=409) from error
+        except (LocalRepositoryError, OSError, RuntimeError) as error:
+            if committed:
+                raise UiRequestError(
+                    "source state committed but retrieval rebuild failed",
+                    status_code=503,
+                    command_committed=True,
+                    request_id=request_id,
+                ) from error
+            raise
 
     def _post_recall_enrollment(
         self, revision_id: str, command: Mapping[str, object]
@@ -1378,6 +1482,15 @@ class RepositoryUiApplication(UiApplicationPort):
             idempotency_key=idempotency_key,
         )
 
+    def _course_policy_context(self, request_id: str) -> ExecutionContext:
+        return ExecutionContext(
+            PrincipalKind.HUMAN,
+            "study-agent-shell-web",
+            self._course_id,
+            CorrelationId(f"cardine-browser-policy-{request_id}"),
+            idempotency_key=request_id,
+        )
+
     def _recall_context(
         self,
         request_id: str,
@@ -1433,6 +1546,11 @@ class RepositoryUiApplication(UiApplicationPort):
             for item in artifact_counts
             if getattr(item, "kind", "") == StudyArtifactKind.ASSESSMENT_ITEM.value
         )
+        consent = metadata.get("provider_consent")
+        retired = {str(item) for item in metadata.get("retired_source_ids", ())}
+        active_materials = tuple(
+            item for item in snapshot.materials if str(item.source_id) not in retired
+        )
         return {
             "schema_version": 1,
             "mode": "local_repository",
@@ -1443,6 +1561,10 @@ class RepositoryUiApplication(UiApplicationPort):
             },
             "high_water_sequence": readiness.sequence,
             "shell_status": shell_status,
+            "provider_consent": {
+                "granted": bool(getattr(consent, "granted", False)),
+                "status": getattr(consent, "status", "absent"),
+            },
             "features": {
                 "tutor": True,
                 "artifacts": True,
@@ -1460,7 +1582,7 @@ class RepositoryUiApplication(UiApplicationPort):
                 "context_conflicts": len(conflicted_kinds),
             },
             "materials": {
-                "count": len(snapshot.materials),
+                "count": len(active_materials),
                 "grounding_status": grounding_status,
                 "items": tuple(
                     {
@@ -1468,11 +1590,11 @@ class RepositoryUiApplication(UiApplicationPort):
                         "kind": item.kind.value,
                         "chunk_count": item.chunk_count,
                     }
-                    for item in snapshot.materials
+                    for item in active_materials
                 ),
             },
             "onboarding": {
-                "needs_study_intent": bool(snapshot.materials)
+                "needs_study_intent": bool(active_materials)
                 and grounding_status == "available"
                 and not any(
                     getattr(getattr(item, "kind", None), "value", None) == "learner"
@@ -1519,25 +1641,27 @@ class RepositoryUiApplication(UiApplicationPort):
     def _materials(snapshot: TutorSnapshotV1, metadata: Mapping[str, object]) -> JsonObject:
         grounding = cast(Mapping[str, object], metadata["source_grounding"])
         groundable = grounding["status"] == "available"
+        retired = {str(item) for item in metadata.get("retired_source_ids", ())}
         items = cast(
             tuple[JsonObject, ...],
             tuple(
-            {
-                "source_id": str(item.source_id),
-                "revision_id": str(item.current_revision_id),
-                "title": item.title,
-                "kind": item.kind.value,
-                "checksum_sha256": item.checksum_sha256,
-                "source_role": item.source_role,
-                "trust_level": item.trust_level,
-                "chunk_count": item.chunk_count,
-                "groundable": groundable,
-                "provenance": {
+                {
+                    "source_id": str(item.source_id),
+                    "revision_id": str(item.current_revision_id),
+                    "title": item.title,
+                    "kind": item.kind.value,
+                    "checksum_sha256": item.checksum_sha256,
                     "source_role": item.source_role,
                     "trust_level": item.trust_level,
-                },
-            }
-            for item in snapshot.materials
+                    "chunk_count": item.chunk_count,
+                    "groundable": groundable,
+                    "provenance": {
+                        "source_role": item.source_role,
+                        "trust_level": item.trust_level,
+                    },
+                }
+                for item in snapshot.materials
+                if str(item.source_id) not in retired
             ),
         )
         return {
@@ -2319,9 +2443,7 @@ def _source_upload_content(value: object) -> str:
     return value
 
 
-def _workspace_identifier[T: Identifier](
-    value: object, identifier_type: type[T], name: str
-) -> T:
+def _workspace_identifier[T: Identifier](value: object, identifier_type: type[T], name: str) -> T:
     normalized = _workspace_text(value, name, MAX_WORKSPACE_ID_CHARS)
     try:
         return identifier_type(normalized)
@@ -2572,7 +2694,8 @@ def _conversation_ui_error(
         else "request conflicts with canonical session state"
         if status == 409
         else "tutor execution did not produce a validated response"
-        if error.code in {
+        if error.code
+        in {
             ConversationTurnErrorCode.FAILED,
             ConversationTurnErrorCode.INTERRUPTED,
         }
@@ -2584,7 +2707,8 @@ def _conversation_ui_error(
     )
     diagnostic_code = (
         "tutor_execution_failed"
-        if error.code in {
+        if error.code
+        in {
             ConversationTurnErrorCode.FAILED,
             ConversationTurnErrorCode.INTERRUPTED,
         }

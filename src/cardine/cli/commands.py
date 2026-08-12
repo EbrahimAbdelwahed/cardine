@@ -102,9 +102,7 @@ def execute_without_repository(request: CommandRequest) -> CommandOutcome:
     return result
 
 
-def handle_init(
-    request: CommandRequest, repository: LocalRepository | None
-) -> CommandOutcome:
+def handle_init(request: CommandRequest, repository: LocalRepository | None) -> CommandOutcome:
     if repository is not None:
         raise RuntimeError("init cannot execute through an open repository")
     runtime: StudyRuntimeAdapter[CommandOutcome, object] = compose_study_runtime(
@@ -137,9 +135,43 @@ async def handle_source_list(
     return await _source_list(_required_repository(repository), request.values)
 
 
-async def handle_ask(
+async def handle_consent_status(
     request: CommandRequest, repository: LocalRepository | None
 ) -> CommandOutcome:
+    return await _consent_status(_required_repository(repository), request.values)
+
+
+async def handle_consent_grant(
+    request: CommandRequest, repository: LocalRepository | None
+) -> CommandOutcome:
+    return await _consent_grant(_required_repository(repository), request.values)
+
+
+async def handle_consent_revoke(
+    request: CommandRequest, repository: LocalRepository | None
+) -> CommandOutcome:
+    return await _consent_revoke(_required_repository(repository), request.values)
+
+
+async def handle_source_retire(
+    request: CommandRequest, repository: LocalRepository | None
+) -> CommandOutcome:
+    return await _source_lifetime(_required_repository(repository), request.values, "retire")
+
+
+async def handle_source_restore(
+    request: CommandRequest, repository: LocalRepository | None
+) -> CommandOutcome:
+    return await _source_lifetime(_required_repository(repository), request.values, "restore")
+
+
+async def handle_source_status(
+    request: CommandRequest, repository: LocalRepository | None
+) -> CommandOutcome:
+    return await _source_status(_required_repository(repository), request.values)
+
+
+async def handle_ask(request: CommandRequest, repository: LocalRepository | None) -> CommandOutcome:
     return await _ask(_required_repository(repository), request.values)
 
 
@@ -184,9 +216,7 @@ def handle_operator_skill(
 ) -> CommandOutcome:
     if repository is not None:
         raise RuntimeError("operator skill extraction cannot use a repository")
-    return CommandOutcome(
-        "operator.skill", extract_skill(Path(_text(request.values, "output")))
-    )
+    return CommandOutcome("operator.skill", extract_skill(Path(_text(request.values, "output"))))
 
 
 def handle_manifest_schema(
@@ -271,18 +301,14 @@ def _lifecycle_inputs(request: CommandRequest) -> LocalLifecycleInputs:
     return LocalLifecycleInputs.load(raw_path)
 
 
-def handle_describe(
-    request: CommandRequest, repository: LocalRepository | None
-) -> CommandOutcome:
+def handle_describe(request: CommandRequest, repository: LocalRepository | None) -> CommandOutcome:
     del request
     if repository is not None:
         raise RuntimeError("describe cannot execute through an open repository")
     return CommandOutcome("describe", agent_operations_manifest())
 
 
-def handle_tool_list(
-    request: CommandRequest, repository: LocalRepository | None
-) -> CommandOutcome:
+def handle_tool_list(request: CommandRequest, repository: LocalRepository | None) -> CommandOutcome:
     del request
     if repository is not None:
         raise RuntimeError("tool discovery cannot execute through an open repository")
@@ -296,11 +322,7 @@ def handle_tool_describe(
         raise RuntimeError("tool discovery cannot execute through an open repository")
     name = _text(request.values, "name")
     try:
-        entry = next(
-            item
-            for item in public_study_tool_entries()
-            if _tool_entry_name(item) == name
-        )
+        entry = next(item for item in public_study_tool_entries() if _tool_entry_name(item) == name)
     except StopIteration as error:
         raise FileNotFoundError(name) from error
     return CommandOutcome("tool.describe", {"tool": entry})
@@ -352,17 +374,14 @@ async def _course_create(repository: LocalRepository, values: dict[str, object])
 async def _course_list(repository: LocalRepository, values: dict[str, object]) -> CommandOutcome:
     del values
     courses = tuple(
-        course_profile_manifest(profile)
-        for profile in repository.course_catalog.list_courses()
+        course_profile_manifest(profile) for profile in repository.course_catalog.list_courses()
     )
     return CommandOutcome("course.list", {"courses": courses})
 
 
 async def _source_add(repository: LocalRepository, values: dict[str, object]) -> CommandOutcome:
     course_id = CourseId(_text(values, "course_id"))
-    snapshot = FilesystemSourceInput(repository.paths.root).snapshot_explicit(
-        _text(values, "path")
-    )
+    snapshot = FilesystemSourceInput(repository.paths.root).snapshot_explicit(_text(values, "path"))
     source_id = SourceId(
         str(values.get("source_id") or _derived_id("source", snapshot.relative_path))
     )
@@ -403,7 +422,12 @@ async def _source_add(repository: LocalRepository, values: dict[str, object]) ->
 async def _source_list(repository: LocalRepository, values: dict[str, object]) -> CommandOutcome:
     course_id = CourseId(_text(values, "course_id"))
     repository.courses.get(course_id)
-    records = repository.for_course(course_id).content.catalog()
+    retired = repository.source_lifetime.retired_source_ids(course_id)
+    records = tuple(
+        item
+        for item in repository.for_course(course_id).content.catalog()
+        if item.source.source_id not in retired
+    )
     sources = tuple(
         {
             "source_id": str(item.source.source_id),
@@ -418,6 +442,101 @@ async def _source_list(repository: LocalRepository, values: dict[str, object]) -
         for item in records
     )
     return CommandOutcome("source.list", {"course_id": str(course_id), "sources": sources})
+
+
+def _receipt_json(receipt: object) -> JsonObject:
+    result: JsonObject = {}
+    for name in (
+        "course_id",
+        "source_id",
+        "principal_id",
+        "request_id",
+        "occurred_at",
+        "status",
+        "sequence",
+    ):
+        if hasattr(receipt, name):
+            value = getattr(receipt, name)
+            result[name] = (
+                str(value) if name in {"course_id", "source_id", "occurred_at"} else value
+            )
+    return result
+
+
+async def _consent_status(repository: LocalRepository, values: dict[str, object]) -> CommandOutcome:
+    course_id = CourseId(_text(values, "course_id"))
+    repository.courses.get(course_id)
+    receipt = repository.provider_consent.get(course_id)
+    return CommandOutcome(
+        "consent.status",
+        {
+            "course_id": str(course_id),
+            "granted": bool(receipt and receipt.granted),
+            "receipt": None if receipt is None else _receipt_json(receipt),
+        },
+    )
+
+
+async def _consent_grant(repository: LocalRepository, values: dict[str, object]) -> CommandOutcome:
+    course_id = CourseId(_text(values, "course_id"))
+    receipt = repository.provider_consent_service.grant(
+        _context(course_id),
+        _text(values, "request_id"),
+        expected_sequence=_optional_int(values, "expected_sequence"),
+    )
+    return CommandOutcome("consent.grant", _receipt_json(receipt))
+
+
+async def _consent_revoke(repository: LocalRepository, values: dict[str, object]) -> CommandOutcome:
+    course_id = CourseId(_text(values, "course_id"))
+    receipt = repository.provider_consent_service.revoke(
+        _context(course_id),
+        _text(values, "request_id"),
+        expected_sequence=_optional_int(values, "expected_sequence"),
+    )
+    return CommandOutcome("consent.revoke", _receipt_json(receipt))
+
+
+async def _source_lifetime(
+    repository: LocalRepository, values: dict[str, object], action: str
+) -> CommandOutcome:
+    course_id = CourseId(_text(values, "course_id"))
+    source_id = SourceId(_text(values, "source_id"))
+    context = _context(course_id)
+    method = (
+        repository.source_lifetime_service.retire
+        if action == "retire"
+        else repository.source_lifetime_service.restore
+    )
+    receipt = method(
+        context,
+        source_id,
+        _text(values, "request_id"),
+        expected_sequence=_optional_int(values, "expected_sequence"),
+    )
+    try:
+        repository.rebuild_retrieval()
+    except Exception as error:
+        raise SourceIndexError(
+            {"source_id": str(source_id), "status": action + "d", "committed": True}
+        ) from error
+    return CommandOutcome(f"source.{action}", _receipt_json(receipt))
+
+
+async def _source_status(repository: LocalRepository, values: dict[str, object]) -> CommandOutcome:
+    course_id = CourseId(_text(values, "course_id"))
+    source_id = SourceId(_text(values, "source_id"))
+    repository.courses.get(course_id)
+    receipt = repository.source_lifetime.get(course_id, source_id)
+    return CommandOutcome(
+        "source.status",
+        {
+            "course_id": str(course_id),
+            "source_id": str(source_id),
+            "retired": bool(receipt and receipt.retired),
+            "receipt": None if receipt is None else _receipt_json(receipt),
+        },
+    )
 
 
 async def _ask(repository: LocalRepository, values: dict[str, object]) -> CommandOutcome:
@@ -517,6 +636,15 @@ def _session_receipt(session: StudySessionRecord) -> JsonObject:
     }
 
 
+def _optional_int(values: dict[str, object], name: str) -> int | None:
+    value = values.get(name)
+    if value is None:
+        return None
+    if type(value) is not int:
+        raise ValueError(f"{name} must be an integer")
+    return value
+
+
 async def _export(repository: LocalRepository, values: dict[str, object]) -> CommandOutcome:
     course_id = CourseId(_text(values, "course_id"))
     output = Path(_text(values, "output"))
@@ -526,6 +654,8 @@ async def _export(repository: LocalRepository, values: dict[str, object]) -> Com
     if not isinstance(version_value, str):
         raise TypeError("version must be text")
     version = ExportVersion(version_value)
+    if any(event.event_type.startswith("cardine.") for event in repository.events.read(course_id)):
+        raise ValueError("export does not support Cardine policy events")
     bundle = ExportService(repository.events).assemble(course_id, version=version)
     receipt = FilesystemExportWriter().write(bundle, output)
     return CommandOutcome(

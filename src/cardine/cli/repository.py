@@ -32,6 +32,8 @@ from cardine.integrations.study_agent.course_policy import (
     ConsentModelPort,
     CourseConsentService,
     ProjectionConsentView,
+    ProjectionSourceLifetimeView,
+    SourceLifetimeService,
     register_course_policy_events,
 )
 from study_agent.adapters.filesystem import (
@@ -186,9 +188,7 @@ _GENERIC_TUTOR_FAILURE_MESSAGE = (
 )
 
 
-def _cardine_fallback_message(
-    status: TutorHostRunStatus, failure_reason: str | None
-) -> str:
+def _cardine_fallback_message(status: TutorHostRunStatus, failure_reason: str | None) -> str:
     """Return localized learner-safe copy without exposing operational details."""
 
     del failure_reason
@@ -359,8 +359,7 @@ class _RepositoryTutorGateway:
 
 def _completion_output_fingerprint(value: Mapping[str, object]) -> str:
     return sha256(
-        b"study-agent-capability-output-v1\0"
-        + canonical_json_bytes(cast(JsonObject, value))
+        b"study-agent-capability-output-v1\0" + canonical_json_bytes(cast(JsonObject, value))
     ).hexdigest()
 
 
@@ -717,10 +716,12 @@ class _RepositorySourceCatalog:
         course_ids: Callable[[], tuple[CourseId, ...]],
         events: SQLiteEventStore,
         blobs: FilesystemBlobStore,
+        source_lifetime: ProjectionSourceLifetimeView,
     ) -> None:
         self._course_ids = course_ids
         self._events = events
         self._blobs = blobs
+        self._source_lifetime = source_lifetime
 
     def _contents(self) -> tuple[CourseSourceContent, ...]:
         return tuple(
@@ -733,12 +734,21 @@ class _RepositorySourceCatalog:
             document
             for content in self._contents()
             for document in content.documents(include_superseded=include_superseded)
+            if document.source_id
+            not in self._source_lifetime.retired_source_ids(document.course_id)
+        )
+
+    def all_documents(self, *, include_superseded: bool = False) -> tuple[RetrievalDocument, ...]:
+        return tuple(
+            document
+            for content in self._contents()
+            for document in content.documents(include_superseded=include_superseded)
         )
 
     def canonical_document(self, chunk_id: ChunkId) -> RetrievalDocument:
         matches = tuple(
             document
-            for document in self.documents(include_superseded=True)
+            for document in self.all_documents(include_superseded=True)
             if document.chunk.chunk_id == chunk_id
         )
         if len(matches) != 1:
@@ -869,16 +879,24 @@ class LocalRepository:
             events_database, registry, connection_identity_guard=events_guard
         )
         self.runs = SQLiteRunStore(runs_database, connection_identity_guard=runs_guard)
+        self.provider_consent = ProjectionConsentView(self.events.projection)
+        self.source_lifetime = ProjectionSourceLifetimeView(self.events.projection)
         self._source_catalog = _RepositorySourceCatalog(
-            self.events.list_course_ids, self.events, self.blobs
+            self.events.list_course_ids, self.events, self.blobs, self.source_lifetime
         )
         self.artifacts = ProjectionArtifactView(self.events.projection)
         self.courses = ProjectionCourseView(self.events.projection)
         self.course_catalog = ProjectionCourseCatalog(self.events.list_course_ids, self.courses)
         self.course_service = CourseService(self.events, self.clock, self.courses)
-        self.provider_consent = ProjectionConsentView(self.events.projection)
         self.provider_consent_service = CourseConsentService(
             self.events, self.clock, self.provider_consent, self.courses
+        )
+        self.source_lifetime_service = SourceLifetimeService(
+            self.events,
+            self.clock,
+            self.source_lifetime,
+            self.courses,
+            lambda course_id: CourseSourceContent(course_id, self.events, self.blobs),
         )
         self.sessions = ProjectionSessionView(self.events.projection)
         self.session_service = SessionService(self.events, self.clock, self.sessions, self.courses)
@@ -1192,8 +1210,11 @@ class LocalRepository:
             or type(repository_receipt.catalog_fingerprint) is not str
         ):
             raise LocalRepositoryError("repository retrieval receipt is incompatible")
-        content = CourseSourceContent(course_id, self.events, self.blobs)
-        documents = tuple(content.documents(include_superseded=True))
+        documents = tuple(
+            document
+            for document in self._source_catalog.documents(include_superseded=True)
+            if document.course_id == course_id
+        )
         retrieval = SQLiteFtsRetrieval(
             self._retrieval_database,
             self._source_catalog,

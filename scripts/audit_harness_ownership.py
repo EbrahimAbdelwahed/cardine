@@ -124,7 +124,7 @@ def _entry_point_targets(config: Mapping[str, object]) -> dict[str, str]:
     return {f"entrypoint:{name}": str(target) for name, target in scripts.items()}
 
 
-def _source_paths() -> set[str]:
+def _source_paths(reviewed_current_paths: set[str]) -> set[str]:
     paths: set[str] = set()
     for package_root in (ROOT / "src/study_agent", ROOT / "src/cardine"):
         paths.update(
@@ -137,6 +137,13 @@ def _source_paths() -> set[str]:
             # CA-02 freezes namespace ownership. Later Cardine integration
             # modules have their own slice boundary and are not CA-01 rows.
             and not path.is_relative_to(ROOT / "src/cardine/integrations")
+            # New post-CA-02 Cardine product modules are governed by their own
+            # slice contracts.  This audit continues to bind only the exact
+            # reviewed CA-01/CA-02 ownership universe.
+            and (
+                package_root == ROOT / "src/study_agent"
+                or path.relative_to(ROOT).as_posix() in reviewed_current_paths
+            )
         )
     return paths
 
@@ -483,9 +490,14 @@ def validate(*, live: bool = False) -> list[str]:
     errors: list[str] = []
     try:
         reviewed = _load_classification()
+        reviewed_current_paths = {_current_path(row) for row in reviewed}
         config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
         targets = _entry_point_targets(config)
-        current_paths = _source_paths() | _declared_package_data(config) | set(targets)
+        current_paths = (
+            _source_paths(reviewed_current_paths)
+            | _declared_package_data(config)
+            | set(targets)
+        )
         transition_rows, transition_entrypoints = _load_transition_overlay()
     except (OSError, ValueError, tomllib.TOMLDecodeError, json.JSONDecodeError) as error:
         return [f"cannot derive ownership universe: {error}"]

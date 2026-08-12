@@ -943,9 +943,31 @@
     document.title = `${text(course.title, "Cardine")} · Cardine`;
     const trustSessionId = sessionId || "sessione non selezionata";
     const mode = MODE_LABELS[text(first(bootstrap, ["mode"], "local_repository"))] || "repository locale";
-    patch($("#trust-copy"), `<p>Corso <strong>${esc(text(course.title, "non dichiarato"))}</strong>, sessione <code>${esc(trustSessionId)}</code>. Modalità: <strong>${esc(mode)}</strong>. Il browser riceve dal servizio locale solo i dati consentiti e non apre SQLite, file di corso, runtime del provider o credenziali.</p><ul><li>Le mutazioni usano un identificativo di richiesta e la sequenza osservata (attuale: ${esc(state.highWaterSequence || "—")}).</li><li>Il Piano mostra solo fatti attribuiti e non calcola un punteggio.</li><li>Un conflitto di fonte non viene trasformato in conflitto di contesto.</li></ul>`);
+    const consent = object(bootstrap.provider_consent);
+    const granted = consent.granted === true;
+    patch($("#trust-copy"), `<p>Corso <strong>${esc(text(course.title, "non dichiarato"))}</strong>, sessione <code>${esc(trustSessionId)}</code>. Modalità: <strong>${esc(mode)}</strong>. Il browser riceve dal servizio locale solo i dati consentiti e non apre SQLite, file di corso, runtime del provider o credenziali.</p><section aria-labelledby="provider-consent-heading"><h3 id="provider-consent-heading">Uso di GPT-5.6 Luna</h3><p>Consenso: <strong>${granted ? "concesso" : "non concesso"}</strong>. Nessuna richiesta al provider parte senza consenso.</p><button class="button button--quiet" type="button" data-provider-consent="${granted ? "revoke" : "grant"}">${granted ? "Revoca consenso" : "Concedi consenso"}</button><span class="settings-card__status" data-provider-consent-status role="status"></span></section><ul><li>Le mutazioni usano un identificativo di richiesta e la sequenza osservata (attuale: ${esc(state.highWaterSequence || "—")}).</li><li>Il Piano mostra solo fatti attribuiti e non calcola un punteggio.</li><li>Un conflitto di fonte non viene trasformato in conflitto di contesto.</li></ul>`);
     const runtime = $("#runtime-label");
     if (runtime) runtime.textContent = `ambiente locale · ${mode}`;
+  }
+
+  async function changeProviderConsent(control) {
+    const action = control.dataset.providerConsent;
+    if (!['grant', 'revoke'].includes(action)) return;
+    const status = $("[data-provider-consent-status]");
+    control.disabled = true;
+    if (status) status.textContent = action === "grant" ? "Concessione…" : "Revoca…";
+    try {
+      const receipt = await fetchJson(`/api/v1/consent/${action}`, {
+        method: "POST",
+        body: JSON.stringify(commandPayload({})),
+      });
+      updateSequence(first(receipt, ["high_water_sequence"], state.highWaterSequence));
+      await refreshBootstrapCounts();
+      renderCourse(state.bootstrap);
+    } catch (error) {
+      if (status) status.textContent = error.message;
+      control.disabled = false;
+    }
   }
 
   /* Counts are a signal, not decoration: a zero is silence, not a badge. */
@@ -2449,6 +2471,11 @@
       }
       if (event.target.closest("#trust-mini")) $("#trust-drawer").showModal();
       if (event.target.closest("[data-open-tutor-info]")) $("#trust-drawer").showModal();
+      const consentControl = event.target.closest("[data-provider-consent]");
+      if (consentControl) {
+        event.preventDefault();
+        changeProviderConsent(consentControl);
+      }
       if (event.target.closest("[data-account-control]")) openAccountMenu();
       if (event.target.closest("[data-auth-logout]")) {
         event.preventDefault();

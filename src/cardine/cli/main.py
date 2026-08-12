@@ -14,6 +14,10 @@ from pathlib import Path
 from typing import Never, cast
 
 from cardine.integrations.study_agent import CardineError
+from cardine.integrations.study_agent.course_policy import (
+    RetryableConsentConflictError,
+    RetryableSourceLifetimeConflictError,
+)
 from study_agent.application import GroundingAskError
 from study_agent.domain._validation import JsonObject
 from study_agent.lifecycle import RetryableLifecycleConflictError, StaleLifecyclePlanError
@@ -144,6 +148,13 @@ def main(
         emit_error(
             "retryable_conflict",
             "session state changed concurrently; retry with the same host-supplied identity",
+            json_mode=json_mode,
+        )
+        return 4
+    except (RetryableConsentConflictError, RetryableSourceLifetimeConflictError):
+        emit_error(
+            "retryable_conflict",
+            "canonical state changed concurrently; retry with the same request identity",
             json_mode=json_mode,
         )
         return 4

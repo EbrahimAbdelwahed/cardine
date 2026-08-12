@@ -72,9 +72,7 @@ class _LunaWireTransport:
         schema_name = request["response_format"]["json_schema"]["name"]
         content: JsonObject
         if schema_name == "explain_concept_draft":
-            rendered = "\n".join(
-                str(message["content"]) for message in request["messages"]
-            )
+            rendered = "\n".join(str(message["content"]) for message in request["messages"])
             evidence_id = _EVIDENCE_ID.search(rendered)
             assert evidence_id is not None
             content = {
@@ -102,9 +100,7 @@ class _LunaWireTransport:
                     "id": "luna-e2e-decision",
                     "choices": [
                         {
-                            "message": {
-                                "content": json.dumps(content)
-                            },
+                            "message": {"content": json.dumps(content)},
                             "finish_reason": "stop",
                         }
                     ],
@@ -163,7 +159,8 @@ class _FixtureModel:
                 None,
                 ModelFinishReason.STOP,
                 ModelInvocation("fixture", "1.0.0", "fixture", "fixture-explain"),
-                structured_output=explain_output or {
+                structured_output=explain_output
+                or {
                     "status": "answered",
                     "segments": (
                         {
@@ -200,9 +197,7 @@ class _FixtureModel:
             None,
             ModelFinishReason.STOP,
             ModelInvocation("fixture", "1.0.0", "fixture", "fixture-response"),
-            structured_output={
-                "decision": decision
-            },
+            structured_output={"decision": decision},
         )
 
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
@@ -272,6 +267,15 @@ def _repository(
                 CorrelationId("fixture-session-start"),
                 session_id=SESSION,
             )
+        )
+        repository.provider_consent_service.grant(
+            ExecutionContext(
+                PrincipalKind.HUMAN,
+                "fixture-consent",
+                COURSE,
+                CorrelationId("fixture-provider-consent"),
+            ),
+            "fixture-provider-consent",
         )
     return root, adapters, model
 
@@ -725,9 +729,7 @@ def test_unrenderable_grounded_completion_still_returns_a_visible_chat_message(
 
     assert receipt["status"] == "completed"
     assert receipt["presentation_id"] is not None
-    timeline = cast(
-        tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"]
-    )
+    timeline = cast(tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"])
     assert timeline[-1]["role"] == "assistant"
     assert "Non sono riuscito" in str(timeline[-1]["content"])
     assert len(model.requests) == 2
@@ -864,9 +866,7 @@ def test_luna_wire_response_completes_a_repository_backed_chat_turn(
         ),
     )
     transport = _LunaWireTransport()
-    model = OpenAIGpt56LunaModel(
-        OpenAIGpt56LunaConfig("fixture-openai-key"), transport=transport
-    )
+    model = OpenAIGpt56LunaModel(OpenAIGpt56LunaConfig("fixture-openai-key"), transport=transport)
     adapters = ModelAdapterRegistry(
         {GPT_5_6_LUNA_ADAPTER_ID: lambda _config, _credential: model},
         versions={GPT_5_6_LUNA_ADAPTER_ID: GPT_5_6_LUNA_ADAPTER_VERSION},
@@ -903,6 +903,15 @@ def test_luna_wire_response_completes_a_repository_backed_chat_turn(
                 CorrelationId("luna-session-start"),
                 session_id=SESSION,
             )
+        )
+        repository.provider_consent_service.grant(
+            ExecutionContext(
+                PrincipalKind.HUMAN,
+                "luna-consent",
+                COURSE,
+                CorrelationId("luna-provider-consent"),
+            ),
+            "luna-provider-consent",
         )
     app = RepositoryUiApplication(
         root,
@@ -1008,9 +1017,7 @@ def test_source_grounding_provider_rejection_returns_a_visible_safe_fallback(
 
     assert rejected["status"] == "failed"
     assert rejected["presentation_id"] is not None
-    first_timeline = cast(
-        tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"]
-    )
+    first_timeline = cast(tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"])
     assert first_timeline[-1]["role"] == "assistant"
     assert "Non sono riuscito" in str(first_timeline[-1]["content"])
     assert "fixture-secret" not in str(rejected)
@@ -1148,9 +1155,7 @@ def test_second_tutor_decision_receives_redacted_canonical_presentation_history(
             "kind": "assistant_message",
             "content": "Quale aspetto della valvola aortica vuoi studiare?",
             "course_sequence": cast(int, first["high_water_sequence"]),
-            "in_reply_to_interaction_id": presentations[0][
-                "in_reply_to_interaction_id"
-            ],
+            "in_reply_to_interaction_id": presentations[0]["in_reply_to_interaction_id"],
         }
     ]
     assert presentations[0]["in_reply_to_interaction_id"]
@@ -1198,9 +1203,7 @@ def test_repository_continuation_is_restored_resolved_and_exactly_retryable(
     assert isinstance(response_schema["required"], list)
     assert isinstance(response_schema["properties"], dict)
 
-    restarted = RepositoryUiApplication(
-        root, COURSE, SESSION, model_adapters=adapters
-    )
+    restarted = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
     restored = restarted.get("/api/v1/session")
     assert cast(dict[str, object], restored["continuation"])["fingerprint"] == fingerprint
 
@@ -1303,8 +1306,7 @@ def test_source_change_invalidates_suspended_capability_dependencies(
     assert cast(dict[str, object], result["result"])["continuation"] is None
     assert len(model.requests) == 3
     assert not any(
-        request.metadata.get("prompt_id") == "explain_concept.v1"
-        for request in model.requests
+        request.metadata.get("prompt_id") == "explain_concept.v1" for request in model.requests
     )
 
 
