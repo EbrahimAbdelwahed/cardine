@@ -125,7 +125,7 @@
       "path": "src/study_agent/cli/repository.py",
       "source_path": "src/cardine/cli/repository.py",
       "disposition": "CARDINE_OWNER",
-      "transition_sha256": "ee51f7b984871722a0d80e37c72a0a595eb53016a86fb51c5cb89a7936f37b1f"
+      "transition_sha256": "6b91c5458fb7eb624185807bf60aad0a555b522c9625b9698baea07190f229c4"
     },
     {
       "path": "src/study_agent/courses/__init__.py",
