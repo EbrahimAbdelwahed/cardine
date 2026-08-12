@@ -878,7 +878,7 @@ class LocalRepository:
         self.course_service = CourseService(self.events, self.clock, self.courses)
         self.provider_consent = ProjectionConsentView(self.events.projection)
         self.provider_consent_service = CourseConsentService(
-            self.events, self.clock, self.provider_consent
+            self.events, self.clock, self.provider_consent, self.courses
         )
         self.sessions = ProjectionSessionView(self.events.projection)
         self.session_service = SessionService(self.events, self.clock, self.sessions, self.courses)

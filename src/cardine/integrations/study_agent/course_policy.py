@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha256
@@ -13,12 +13,14 @@ from study_agent.domain.context import ExecutionContext
 from study_agent.domain.events import Actor, DomainEvent, PrincipalKind
 from study_agent.domain.identifiers import CourseId, EventId
 from study_agent.ports.clock import ClockPort
+from study_agent.ports.course import CourseViewPort
 from study_agent.ports.model import (
     CancellationToken,
     ModelCapabilities,
     ModelPort,
     ModelRequest,
     ModelResponse,
+    ModelStreamEvent,
 )
 from study_agent.ports.storage import EventSequenceConflictError, EventStore
 from study_agent.state import EventRegistry, Projection
@@ -216,10 +218,12 @@ class CourseConsentService:
         events: EventStore,
         clock: ClockPort,
         view: ProjectionConsentView,
+        courses: CourseViewPort,
     ) -> None:
         self._events = events
         self._clock = clock
         self._view = view
+        self._courses = courses
 
     def grant(
         self,
@@ -250,13 +254,10 @@ class CourseConsentService:
             raise ConsentCommandError("provider consent requires HUMAN authority")
         if context.session_id is not None or context.model_run_id is not None:
             raise ConsentCommandError("provider consent must be course-scoped")
+        self._courses.get(context.course_id)
         request_id = _text(request_id, "request_id")
         stream = tuple(self._events.read(context.course_id))
         sequence = stream[-1].course_sequence if stream else 0
-        if expected_sequence is not None and sequence != expected_sequence:
-            raise RetryableConsentConflictError(
-                f"expected course sequence {expected_sequence}; observed {sequence}"
-            )
         event_id = consent_event_id(
             context.course_id, context.principal_id, request_id, status
         )
@@ -269,6 +270,15 @@ class CourseConsentService:
                     raise ConsentConflictError(
                         "consent request id was previously used with different intent"
                     )
+        if expected_sequence is not None and sequence != expected_sequence:
+            raise RetryableConsentConflictError(
+                f"expected course sequence {expected_sequence}; observed {sequence}"
+            )
+        current = self._view.get(context.course_id)
+        if status == _GRANTED and current is not None and current.granted:
+            raise ConsentCommandError("provider consent is already granted")
+        if status == _REVOKED and (current is None or not current.granted):
+            raise ConsentCommandError("provider consent is not currently granted")
         occurred_at = self._clock.now()
         event_type = (
             PROVIDER_CONSENT_GRANTED if status == _GRANTED else PROVIDER_CONSENT_REVOKED
@@ -293,6 +303,9 @@ class CourseConsentService:
         try:
             self._events.append(context.course_id, sequence, (event,))
         except EventSequenceConflictError as error:
+            for prior in self._events.read(context.course_id):
+                if prior.event_id == event_id:
+                    return _receipt_from_event(prior)
             raise RetryableConsentConflictError(
                 "course stream advanced before consent committed"
             ) from error
@@ -335,11 +348,18 @@ class ConsentModelPort:
         self._require_granted()
         return await self._model.generate(request)
 
-    def stream(self, request: ModelRequest):  # type: ignore[no-untyped-def]
+    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
         self._require_granted()
-        return self._model.stream(request)
+        iterator = self._model.stream(request)
+        while True:
+            self._require_granted()
+            try:
+                yield await iterator.__anext__()
+            except StopAsyncIteration:
+                return
 
     async def cancel(self, token: CancellationToken) -> None:
+        self._require_granted()
         await self._model.cancel(token)
 
 

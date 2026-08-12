@@ -24,4 +24,5 @@ Added HUMAN-owned provider consent and revocation to the canonical per-course ev
 
 - No Harness source, public API, event schema, or storage implementation changed.
 - Consent state retains request intent history so an old exact retry remains stable after later policy events.
+- Terra review findings were resolved: absent courses cannot be poisoned, identical concurrent commands converge, and generate/stream/cancel all enforce current consent before provider delegation.
 - CLI/browser controls and source retirement are intentionally deferred to the next A2 pass.
