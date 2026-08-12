@@ -8,6 +8,7 @@ from datetime import datetime
 import pytest
 
 from study_agent.artifacts.contracts import (
+    ArtifactDecisionRequest,
     ArtifactProposal,
     ArtifactRevisionRecord,
     ArtifactSnapshot,
@@ -90,20 +91,24 @@ class MemoryEvents:
             )
         ]
         self.race_mode: str | None = None
+        self.append_calls = 0
 
     def append(
         self, course_id: CourseId, expected_sequence: int, events: Sequence[DomainEvent]
     ) -> int:
         assert course_id == COURSE
-        event = events[0]
+        self.append_calls += 1
+        batch = tuple(events)
         if self.race_mode == "fail":
             raise EventSequenceConflictError(course_id, expected_sequence, expected_sequence + 1)
         if self.race_mode == "commit_then_fail":
+            for event in batch:
+                self.projection = apply_event(self.projection, event, self.registry)
+                self.values.append(event)
+            raise EventSequenceConflictError(course_id, expected_sequence, expected_sequence + 1)
+        for event in batch:
             self.projection = apply_event(self.projection, event, self.registry)
             self.values.append(event)
-            raise EventSequenceConflictError(course_id, expected_sequence, expected_sequence + 1)
-        self.projection = apply_event(self.projection, event, self.registry)
-        self.values.append(event)
         return len(self.values)
 
     def read(
@@ -448,6 +453,124 @@ def test_human_and_service_decision_authority_terminal_state_and_policy_binding(
                 2,
             )
         assert len(events.values) == 2
+
+
+def _bulk_generated_batch(run_id: RunId) -> VerifiedGeneratedArtifactBatch:
+    first = content(text="First bulk card")
+    second = content(text="Second bulk card")
+    return VerifiedGeneratedArtifactBatch(
+        run_id,
+        COURSE,
+        SESSION,
+        (
+            ArtifactProposal(0, first, generated_provenance(first, run_id=run_id)),
+            ArtifactProposal(1, second, generated_provenance(second, run_id=run_id)),
+        ),
+        PROOF,
+    )
+
+
+def test_human_decision_batch_appends_mixed_outcomes_once_and_retries_from_events() -> None:
+    run_id = RunId("bulk-run")
+    service, events, _, _, _ = harness(batch=_bulk_generated_batch(run_id))
+    proposed = service.record_generated(
+        run_id, context(PrincipalKind.SERVICE, "bulk-proposal"), 1
+    ).revisions
+    decisions = (
+        ArtifactDecisionRequest(proposed[0].id, ArtifactDecision.ACCEPT, None),
+        ArtifactDecisionRequest(proposed[1].id, ArtifactDecision.REJECT, None),
+    )
+    human = context(PrincipalKind.HUMAN, "bulk-approval")
+    receipt = service.record_human_decision_batch(decisions, human, 2)
+    assert receipt.start_sequence == 3 and receipt.end_sequence == 4
+    assert tuple(item.decision for item in receipt.results) == (
+        ArtifactDecision.ACCEPT,
+        ArtifactDecision.REJECT,
+    )
+    assert len(events.values) == 4
+    assert events.append_calls == 2
+
+    retry = service.record_human_decisions(decisions, human, 2)
+    assert retry == receipt
+    assert len(events.values) == 4
+    assert events.append_calls == 2
+    restarted = ArtifactService(
+        events,
+        Clock(),
+        ProjectionArtifactView(lambda course_id: events.projection),
+        Sessions((InteractionRecord(INTERACTION, InteractionKind.HUMAN, NOW, "Authored card"),)),
+        Generated(_bulk_generated_batch(run_id)),
+        Sources(),
+        Policy(),
+    )
+    assert restarted.record_human_decision_batch(decisions, human, 2) == receipt
+    assert events.append_calls == 2
+    changed_manifest = (
+        decisions[0],
+        ArtifactDecisionRequest(proposed[1].id, ArtifactDecision.ACCEPT, None),
+    )
+    with pytest.raises(ArtifactConflictError, match="another manifest"):
+        service.record_human_decision_batch(changed_manifest, human, 2)
+    assert len(events.values) == 4
+    assert events.append_calls == 2
+
+
+def test_human_decision_batch_prevalidates_last_item_and_appends_zero_events() -> None:
+    run_id = RunId("bulk-invalid")
+    service, events, _, _, _ = harness(batch=_bulk_generated_batch(run_id))
+    proposed = service.record_generated(
+        run_id, context(PrincipalKind.SERVICE, "bulk-invalid-proposal"), 1
+    ).revisions
+    decisions = (
+        ArtifactDecisionRequest(proposed[0].id, ArtifactDecision.ACCEPT, None),
+        ArtifactDecisionRequest(
+            proposed[1].id, ArtifactDecision.ACCEPT, ArtifactRevisionId("wrong-predecessor")
+        ),
+    )
+    with pytest.raises(ArtifactConflictError, match="exact current accepted predecessor"):
+        service.record_human_decision_batch(
+            decisions, context(PrincipalKind.HUMAN, "bulk-invalid"), 2
+        )
+    assert len(events.values) == 2
+    assert events.append_calls == 1
+
+
+def test_human_decision_batch_rejects_two_proposed_revisions_of_one_artifact() -> None:
+    first_run = RunId("bulk-duplicate-first")
+    service, events, generated, _, _ = harness(batch=generated_batch(first_run))
+    first = service.record_generated(
+        first_run, context(PrincipalKind.SERVICE, "bulk-duplicate-first"), 1
+    ).revisions[0]
+    second_run = RunId("bulk-duplicate-second")
+    revised = content(text="Revised duplicate target")
+    generated.batch = VerifiedGeneratedArtifactBatch(
+        second_run,
+        COURSE,
+        SESSION,
+        (
+            ArtifactProposal(
+                0,
+                revised,
+                generated_provenance(revised, run_id=second_run, prior=first.id),
+                first.artifact_id,
+            ),
+        ),
+        PROOF,
+    )
+    second_snapshot = service.record_generated(
+        second_run, context(PrincipalKind.SERVICE, "bulk-duplicate-second"), 2
+    )
+    second = next(item for item in second_snapshot.revisions if item.id != first.id)
+    decisions = (
+        ArtifactDecisionRequest(first.id, ArtifactDecision.ACCEPT, None),
+        ArtifactDecisionRequest(second.id, ArtifactDecision.ACCEPT, None),
+    )
+    with pytest.raises(ArtifactCommandError, match="one artifact twice"):
+        service.record_human_decision_batch(
+            decisions, context(PrincipalKind.HUMAN, "bulk-duplicate"), 3
+        )
+    assert len(events.values) == 3
+    assert events.append_calls == 2
 
 
 def test_committed_retry_and_stale_sequence_do_not_run_service_policy() -> None:

@@ -17,6 +17,7 @@ from study_agent.domain import (
     ArtifactRevisionId,
     ArtifactRevisionStatus,
     CourseId,
+    EventId,
     RunId,
     SessionId,
     StudyArtifactKind,
@@ -252,6 +253,92 @@ class ArtifactDecisionRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class ArtifactDecisionRequest:
+    """One ordered HUMAN decision in an atomic bulk request."""
+
+    revision_id: ArtifactRevisionId
+    decision: ArtifactDecision
+    supersedes_revision_id: ArtifactRevisionId | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.revision_id, ArtifactRevisionId):
+            raise TypeError("artifact decision revision_id is invalid")
+        if not isinstance(self.decision, ArtifactDecision):
+            raise TypeError("artifact decision decision is invalid")
+        if self.supersedes_revision_id is not None and not isinstance(
+            self.supersedes_revision_id, ArtifactRevisionId
+        ):
+            raise TypeError("artifact decision predecessor is invalid")
+        if self.decision is ArtifactDecision.REJECT and self.supersedes_revision_id is not None:
+            raise ValueError("reject never supersedes")
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactDecisionResult:
+    """The durable result for one item in an atomic decision receipt."""
+
+    ordinal: int
+    revision_id: ArtifactRevisionId
+    decision: ArtifactDecision
+    supersedes_revision_id: ArtifactRevisionId | None
+    event_id: EventId
+    sequence: int
+
+    def __post_init__(self) -> None:
+        if type(self.ordinal) is not int or self.ordinal < 0:
+            raise ValueError("artifact decision result ordinal must be non-negative")
+        if not isinstance(self.revision_id, ArtifactRevisionId):
+            raise TypeError("artifact decision result revision_id is invalid")
+        if not isinstance(self.decision, ArtifactDecision):
+            raise TypeError("artifact decision result decision is invalid")
+        if self.supersedes_revision_id is not None and not isinstance(
+            self.supersedes_revision_id, ArtifactRevisionId
+        ):
+            raise TypeError("artifact decision result predecessor is invalid")
+        if not isinstance(self.event_id, EventId):
+            raise TypeError("artifact decision result event_id is invalid")
+        if type(self.sequence) is not int or self.sequence < 1:
+            raise ValueError("artifact decision result sequence must be positive")
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactBulkDecisionReceipt:
+    """Restart-stable receipt for one atomically appended HUMAN batch."""
+
+    bulk_key: str
+    course_id: CourseId
+    session_id: SessionId
+    request_fingerprint: str
+    manifest_fingerprint: str
+    start_sequence: int
+    end_sequence: int
+    results: tuple[ArtifactDecisionResult, ...]
+
+    def __post_init__(self) -> None:
+        require_text(self.bulk_key, "artifact bulk key")
+        if not isinstance(self.course_id, CourseId) or not isinstance(self.session_id, SessionId):
+            raise TypeError("artifact bulk receipt requires typed course/session")
+        _fingerprint(self.request_fingerprint, "artifact bulk request_fingerprint")
+        _fingerprint(self.manifest_fingerprint, "artifact bulk manifest_fingerprint")
+        if type(self.start_sequence) is not int or type(self.end_sequence) is not int:
+            raise TypeError("artifact bulk receipt sequences must be integers")
+        if self.start_sequence < 1 or self.end_sequence < self.start_sequence:
+            raise ValueError("artifact bulk receipt sequence range is invalid")
+        results = tuple(self.results)
+        if not 1 <= len(results) <= 24:
+            raise ValueError("artifact bulk receipt requires 1..24 results")
+        if tuple(item.ordinal for item in results) != tuple(range(len(results))):
+            raise ValueError("artifact bulk receipt ordinals must be contiguous")
+        if tuple(item.sequence for item in results) != tuple(
+            range(self.start_sequence, self.end_sequence + 1)
+        ):
+            raise ValueError("artifact bulk receipt sequences are not contiguous")
+        if self.end_sequence - self.start_sequence + 1 != len(results):
+            raise ValueError("artifact bulk receipt range does not match results")
+        object.__setattr__(self, "results", results)
+
+
+@dataclass(frozen=True, slots=True)
 class ArtifactSnapshot:
     course_id: CourseId
     sequence: int
@@ -320,7 +407,10 @@ def _fingerprint(value: str, name: str) -> None:
 
 __all__ = [
     "ArtifactBatchRecord",
+    "ArtifactBulkDecisionReceipt",
     "ArtifactDecisionRecord",
+    "ArtifactDecisionRequest",
+    "ArtifactDecisionResult",
     "ArtifactProposal",
     "ArtifactProposalOrigin",
     "ArtifactRevisionRecord",
