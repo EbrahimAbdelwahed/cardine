@@ -20,6 +20,7 @@ _ERRORS = {
     "ResourceLimitError": "pdf_resource_limit",
     "UnsupportedError": "pdf_unsupported",
 }
+_MAX_TEMPORARY_FILE_BYTES = 384 * 1024 * 1024
 
 
 def _emit(payload: dict[str, object]) -> None:
@@ -36,7 +37,10 @@ def _apply_limits(output_bytes: int, timeout_seconds: int) -> None:
     for name, target in (
         ("RLIMIT_CORE", 0),
         ("RLIMIT_CPU", timeout_seconds),
-        ("RLIMIT_FSIZE", output_bytes),
+        # CoreGraphics materializes one temporary single-page PDF before AnyDoc
+        # emits Markdown.  It needs its own fixed ceiling: the canonical Markdown
+        # remains independently bounded by ``output_bytes`` below.
+        ("RLIMIT_FSIZE", _MAX_TEMPORARY_FILE_BYTES),
         ("RLIMIT_NOFILE", 32),
     ):
         constant = getattr(resource, name)

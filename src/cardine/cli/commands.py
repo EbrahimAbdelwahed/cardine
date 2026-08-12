@@ -947,8 +947,6 @@ async def _export(repository: LocalRepository, values: dict[str, object]) -> Com
     if not isinstance(version_value, str):
         raise TypeError("version must be text")
     version = ExportVersion(version_value)
-    if any(event.event_type.startswith("cardine.") for event in repository.events.read(course_id)):
-        raise ValueError("export does not support Cardine policy events")
     bundle = ExportService(repository.events).assemble(course_id, version=version)
     receipt = FilesystemExportWriter().write(bundle, output)
     return CommandOutcome(

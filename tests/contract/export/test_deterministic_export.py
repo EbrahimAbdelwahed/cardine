@@ -13,6 +13,14 @@ from cardine.courses import (
     ProjectionCourseView,
     register_course_events,
 )
+from cardine.integrations.study_agent.course_policy import (
+    PROVIDER_CONSENT_GRANTED,
+    PROVIDER_CONSENT_REVOKED,
+    SOURCE_RESTORED,
+    SOURCE_RETIRED,
+    consent_event_id,
+    source_lifetime_event_id,
+)
 from study_agent.adapters.filesystem import (
     ExportDestinationExistsError,
     FilesystemBlobStore,
@@ -20,7 +28,7 @@ from study_agent.adapters.filesystem import (
 )
 from study_agent.adapters.filesystem import export as export_adapter
 from study_agent.adapters.sqlite import SQLiteEventStore
-from study_agent.application import ExportService, ExportStateError
+from study_agent.application import ExportService, ExportStateError, ExportVersion
 from study_agent.domain import (
     Actor,
     AnswerId,
@@ -114,6 +122,48 @@ def _stack(tmp_path: Path):  # type: ignore[no-untyped-def]
 
 def _files(root: Path) -> dict[str, bytes]:
     return {path.name: path.read_bytes() for path in sorted(root.iterdir())}
+
+
+def _policy_event(
+    event_type: str,
+    sequence: int,
+    request_id: str,
+    *,
+    source_id: SourceId | None = None,
+    correlation_id: str = "policy-correlation",
+) -> DomainEvent:
+    status = {
+        PROVIDER_CONSENT_GRANTED: "granted",
+        PROVIDER_CONSENT_REVOKED: "revoked",
+        SOURCE_RETIRED: "retired",
+        SOURCE_RESTORED: "restored",
+    }[event_type]
+    principal_id = "policy-human"
+    payload = {
+        "course_id": str(COURSE),
+        "principal_id": principal_id,
+        "request_id": request_id,
+        "occurred_at": NOW.isoformat(),
+        "status": status,
+    }
+    if source_id is None:
+        event_id = consent_event_id(COURSE, principal_id, request_id, status)
+    else:
+        payload["source_id"] = str(source_id)
+        event_id = source_lifetime_event_id(
+            COURSE, source_id, principal_id, request_id, status
+        )
+    return DomainEvent(
+        event_id,
+        COURSE,
+        sequence,
+        event_type,
+        1,
+        Actor(PrincipalKind.HUMAN, principal_id),
+        NOW,
+        CorrelationId(correlation_id),
+        payload,
+    )
 
 
 def test_unchanged_state_is_byte_identical_checksummed_and_redacted(tmp_path: Path) -> None:
@@ -348,7 +398,7 @@ def test_malformed_session_event_order_fails_replay(tmp_path: Path) -> None:
 
 
 def test_unknown_or_corrupt_event_fails_closed(tmp_path: Path) -> None:
-    blobs, events, _, _ = _stack(tmp_path)
+    _blobs, events, _, _ = _stack(tmp_path)
     stream = tuple(events.read(COURSE))
 
     class CorruptEvents:
@@ -389,6 +439,123 @@ def test_unknown_or_corrupt_event_fails_closed(tmp_path: Path) -> None:
 
     with pytest.raises(ExportStateError, match="not allowlisted"):
         ExportService(UnknownEvents()).assemble(COURSE)
+    _blobs.close()
+
+
+def test_corrupt_cardine_policy_event_fails_as_closed_export_error(tmp_path: Path) -> None:
+    blobs, events, _, _ = _stack(tmp_path)
+    stream = tuple(events.read(COURSE))
+
+    class CorruptPolicyEvents:
+        def append(self, course_id, expected_sequence, values):  # type: ignore[no-untyped-def]
+            raise AssertionError("export must be read-only")
+
+        def read(self, course_id: CourseId, after_sequence: int = 0):  # type: ignore[no-untyped-def]
+            corrupt = DomainEvent(
+                EventId("event-corrupt-policy"),
+                COURSE,
+                4,
+                PROVIDER_CONSENT_GRANTED,
+                1,
+                Actor(PrincipalKind.HUMAN, "principal"),
+                NOW,
+                CorrelationId("corrupt-policy"),
+                {"unexpected": "secret-must-not-escape"},
+            )
+            return (*stream, corrupt)
+
+    with pytest.raises(
+        ExportStateError,
+        match=r"^invalid canonical event: cardine\.provider_consent_granted@1$",
+    ):
+        ExportService(CorruptPolicyEvents()).assemble(COURSE)
+
+    blobs.close()
+
+
+@pytest.mark.parametrize("version", tuple(ExportVersion))
+@pytest.mark.parametrize(
+    "policy_events",
+    (
+        (_policy_event(PROVIDER_CONSENT_REVOKED, 4, "revoke-without-grant"),),
+        (
+            _policy_event(PROVIDER_CONSENT_GRANTED, 4, "reused-request"),
+            _policy_event(PROVIDER_CONSENT_REVOKED, 5, "reused-request"),
+        ),
+        (
+            _policy_event(
+                SOURCE_RETIRED,
+                4,
+                "retire-foreign-source",
+                source_id=SourceId("source-from-another-course"),
+            ),
+        ),
+        (
+            _policy_event(
+                SOURCE_RESTORED,
+                4,
+                "restore-without-retire",
+                source_id=SourceId("source-aortic"),
+            ),
+        ),
+        (
+            _policy_event(PROVIDER_CONSENT_GRANTED, 4, "cross-family-request"),
+            _policy_event(
+                SOURCE_RETIRED,
+                5,
+                "cross-family-request",
+                source_id=SourceId("source-aortic"),
+            ),
+        ),
+    ),
+)
+def test_export_rejects_forged_policy_histories_in_every_version(
+    tmp_path: Path,
+    version: ExportVersion,
+    policy_events: tuple[DomainEvent, ...],
+) -> None:
+    blobs, events, _, _ = _stack(tmp_path)
+    stream = tuple(events.read(COURSE))
+
+    class ForgedPolicyEvents:
+        def append(self, course_id, expected_sequence, values):  # type: ignore[no-untyped-def]
+            raise AssertionError("export must be read-only")
+
+        def read(self, course_id: CourseId, after_sequence: int = 0):  # type: ignore[no-untyped-def]
+            return (*stream, *policy_events)
+
+    with pytest.raises(ExportStateError):
+        ExportService(ForgedPolicyEvents()).assemble(COURSE, version=version)
+
+    blobs.close()
+
+
+def test_policy_export_redacts_historical_request_derived_correlation(tmp_path: Path) -> None:
+    blobs, events, _, _ = _stack(tmp_path)
+    stream = tuple(events.read(COURSE))
+    secret = "SECRET-IDEMPOTENCY-TOKEN"
+    granted = _policy_event(
+        PROVIDER_CONSENT_GRANTED,
+        4,
+        "grant-policy",
+        correlation_id=f"cardine-browser-policy-{secret}",
+    )
+
+    class HistoricalPolicyEvents:
+        def append(self, course_id, expected_sequence, values):  # type: ignore[no-untyped-def]
+            raise AssertionError("export must be read-only")
+
+        def read(self, course_id: CourseId, after_sequence: int = 0):  # type: ignore[no-untyped-def]
+            return (*stream, granted)
+
+    bundle = ExportService(HistoricalPolicyEvents()).assemble(COURSE)
+    destination = tmp_path / "policy-export"
+    FilesystemExportWriter().write(bundle, destination)
+
+    assert bundle.events[-1]["correlation_id"] == "redacted-cardine-policy"
+    assert secret not in repr(bundle)
+    assert secret.encode() not in b"".join(_files(destination).values())
+    blobs.close()
     blobs.close()
 
 

@@ -37,6 +37,7 @@ from cardine.documents import (
 from cardine.hosts import PendingContinuationDescriptor, TutorContinuationRecord
 from cardine.integrations.study_agent import (
     CardineRuntimeConfig,
+    CardineSourceContentUnavailableError,
     StudyRuntimeAdapter,
     compose_study_runtime,
 )
@@ -437,7 +438,11 @@ class RepositoryUiApplication(UiApplicationPort):
                 )
         except UiRequestError:
             raise
-        except (PayloadValidationError, SourceContentError):
+        except (
+            CardineSourceContentUnavailableError,
+            PayloadValidationError,
+            SourceContentError,
+        ):
             if path == "/api/v1/materials":
                 return {
                     "schema_version": 1,
@@ -1821,7 +1826,7 @@ class RepositoryUiApplication(UiApplicationPort):
             PrincipalKind.HUMAN,
             "study-agent-shell-web",
             self._course_id,
-            CorrelationId(f"cardine-browser-policy-{request_id}"),
+            CorrelationId("cardine-browser-policy"),
             idempotency_key=request_id,
         )
 

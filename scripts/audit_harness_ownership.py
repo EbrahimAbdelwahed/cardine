@@ -52,6 +52,9 @@ TRANSITION_EXPORTS = {
     "require_text",
 }
 REVIEWED_NON_IMPORT_AST_VARIANCE = {
+    # Wave A teaches canonical export replay about Cardine-owned policy events
+    # so it preserves their audit rows instead of dropping or rejecting them.
+    "src/study_agent/application/export.py",
     "src/study_agent/artifacts/verified_batch.py",
     "src/study_agent/capabilities/morphology_flashcards.py",
     "src/study_agent/flashcards/lesson_worker_service.py",

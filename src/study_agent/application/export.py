@@ -9,6 +9,13 @@ from enum import StrEnum
 from cardine.courses import register_course_events
 from cardine.courses.events import COURSE_CREATED, decode_course_created
 from cardine.domain.course import CourseProfile
+from cardine.integrations.study_agent.course_policy import (
+    PROVIDER_CONSENT_GRANTED,
+    PROVIDER_CONSENT_REVOKED,
+    SOURCE_RESTORED,
+    SOURCE_RETIRED,
+    register_course_policy_events,
+)
 from study_agent.artifacts import (
     ARTIFACT_EVENT_TYPES,
     ProjectionArtifactView,
@@ -85,6 +92,14 @@ from study_agent.study_context import (
 EXPORT_SCHEMA_VERSION = 1
 EXPORT_V2_SCHEMA_VERSION = 2
 EXPORT_V3_SCHEMA_VERSION = 3
+_CARDINE_POLICY_EVENT_TYPES = frozenset(
+    {
+        PROVIDER_CONSENT_GRANTED,
+        PROVIDER_CONSENT_REVOKED,
+        SOURCE_RETIRED,
+        SOURCE_RESTORED,
+    }
+)
 
 
 class ExportVersion(StrEnum):
@@ -208,6 +223,7 @@ class ExportService:
             return self._assemble_v3(course_id, stream)
         _reject_v1_artifact_stream(stream)
         _validate_stream(course_id, stream)
+        _validate_policy_history(stream)
 
         created = decode_course_created(stream[0])
 
@@ -265,6 +281,7 @@ class ExportService:
 
     def _assemble_v2(self, course_id: CourseId, stream: tuple[DomainEvent, ...]) -> ExportBundleV2:
         _reject_recall_stream(stream)
+        _validate_policy_history(stream)
         projection = _replay_v2(course_id, stream)
         created = decode_course_created(stream[0])
         revisions = tuple(
@@ -328,6 +345,7 @@ class ExportService:
         )
 
     def _assemble_v3(self, course_id: CourseId, stream: tuple[DomainEvent, ...]) -> ExportBundleV3:
+        _validate_policy_history(stream)
         projection = _replay_v3(course_id, stream)
         created = decode_course_created(stream[0])
         revisions = tuple(
@@ -424,8 +442,12 @@ def _decode_allowlisted_event(event: DomainEvent) -> object:
         STATEMENT_RETRACTED: decode_statement_retracted,
         CONFLICT_RESOLVED: decode_conflict_resolved,
     }
+    decoder: _EventDecoder
     try:
-        decoder = decoders[event.event_type]
+        if event.event_type in _CARDINE_POLICY_EVENT_TYPES:
+            decoder = _decode_cardine_policy_event
+        else:
+            decoder = decoders[event.event_type]
     except KeyError as error:
         raise ExportStateError(
             f"event schema is not allowlisted for export: {event.event_type}@{event.schema_version}"
@@ -460,6 +482,63 @@ def _decode_source_event(event: DomainEvent) -> SourceRevisionIngested:
     if event.event_id != source_event_id_for(event.course_id, decoded.source.revision_id):
         raise ValueError("source event id does not match its canonical revision")
     return decoded
+
+
+def _decode_cardine_policy_event(event: DomainEvent) -> DomainEvent:
+    registry = EventRegistry()
+    register_course_policy_events(registry)
+    registry.decode(event)
+    return event
+
+
+def _validate_policy_history(stream: Sequence[DomainEvent]) -> None:
+    """Validate policy events as one ordered history, never as isolated envelopes."""
+
+    registry = EventRegistry()
+    register_course_policy_events(registry)
+    known_sources: set[str] = set()
+    retired_sources: set[str] = set()
+    request_intents: dict[str, tuple[str, str, str | None]] = {}
+    consent_granted = False
+    try:
+        for event in stream:
+            if event.event_type == SOURCE_REVISION_INGESTED:
+                known_sources.add(str(_decode_source_event(event).source.source_id))
+                continue
+            if event.event_type not in _CARDINE_POLICY_EVENT_TYPES:
+                continue
+            registry.decode(event)
+            request_id = event.payload.get("request_id")
+            source_value = event.payload.get("source_id")
+            if not isinstance(request_id, str):
+                raise ValueError("policy request id is invalid")
+            source_id = source_value if isinstance(source_value, str) else None
+            intent = (event.event_type, event.actor.principal_id, source_id)
+            prior_intent = request_intents.get(request_id)
+            if prior_intent is not None and prior_intent != intent:
+                raise ValueError("policy request id was reused with different intent")
+            request_intents[request_id] = intent
+            if event.event_type == PROVIDER_CONSENT_GRANTED:
+                if consent_granted:
+                    raise ValueError("provider consent is already granted")
+                consent_granted = True
+            elif event.event_type == PROVIDER_CONSENT_REVOKED:
+                if not consent_granted:
+                    raise ValueError("provider consent is not currently granted")
+                consent_granted = False
+            else:
+                if not isinstance(source_id, str) or source_id not in known_sources:
+                    raise ValueError("source lifetime event references an absent source")
+                if event.event_type == SOURCE_RETIRED:
+                    if source_id in retired_sources:
+                        raise ValueError("source is already retired")
+                    retired_sources.add(source_id)
+                else:
+                    if source_id not in retired_sources:
+                        raise ValueError("source is not currently retired")
+                    retired_sources.remove(source_id)
+    except (TypeError, ValueError, LookupError) as error:
+        raise ExportStateError("policy history cannot be exported canonically") from error
 
 
 def _validate_stream(course_id: CourseId, stream: Sequence[DomainEvent]) -> None:
@@ -522,7 +601,8 @@ def _replay_v2(course_id: CourseId, stream: Sequence[DomainEvent]) -> Projection
                 raise ExportStateError("event stream contains another course")
             if event.course_sequence != expected_sequence:
                 raise ExportStateError("event stream sequence is not contiguous")
-            state = registry.reduce(state, event)
+            if event.event_type not in _CARDINE_POLICY_EVENT_TYPES:
+                state = registry.reduce(state, event)
     except ExportStateError:
         raise
     except (TypeError, ValueError, LookupError) as error:
@@ -561,7 +641,8 @@ def _replay_v3(course_id: CourseId, stream: Sequence[DomainEvent]) -> Projection
                 raise ExportStateError("event stream contains another course")
             if event.course_sequence != expected_sequence:
                 raise ExportStateError("event stream sequence is not contiguous")
-            state = registry.reduce(state, event)
+            if event.event_type not in _CARDINE_POLICY_EVENT_TYPES:
+                state = registry.reduce(state, event)
     except ExportStateError:
         raise
     except (TypeError, ValueError, LookupError) as error:
@@ -969,7 +1050,11 @@ def _event_record(event: DomainEvent) -> JsonObject:
         "event_type": event.event_type,
         "schema_version": event.schema_version,
         "actor_kind": event.actor.kind.value,
-        "correlation_id": str(event.correlation_id),
+        "correlation_id": (
+            "redacted-cardine-policy"
+            if event.event_type in _CARDINE_POLICY_EVENT_TYPES
+            else str(event.correlation_id)
+        ),
         "session_id": str(event.session_id) if event.session_id is not None else None,
         "causation_id": str(event.causation_id) if event.causation_id is not None else None,
     }

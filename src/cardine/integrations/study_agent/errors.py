@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from study_agent.retrieval import SourceContentError, SourceContentErrorCode
+
 
 class CardineError(RuntimeError):
     """Base class for failures visible across the lifecycle seam."""
@@ -24,11 +26,19 @@ class CardineInternalError(CardineError):
     _default_message = "cardine runtime failed internally"
 
 
+class CardineSourceContentUnavailableError(CardineError):
+    _default_message = "canonical source content is unavailable"
+
+
 def translate_exception(error: Exception) -> CardineError:
     """Translate a foreign lifecycle failure without exposing its details."""
 
     if isinstance(error, CardineError):
         return error
+    if isinstance(error, SourceContentError):
+        if error.code is SourceContentErrorCode.NOT_FOUND:
+            return CardineSourceContentUnavailableError()
+        return CardineInternalError()
     if isinstance(error, (OSError, TimeoutError, ConnectionError)):
         return CardineUnavailableError()
     return CardineInternalError()
@@ -38,6 +48,7 @@ __all__ = [
     "CardineConfigError",
     "CardineError",
     "CardineInternalError",
+    "CardineSourceContentUnavailableError",
     "CardineUnavailableError",
     "translate_exception",
 ]

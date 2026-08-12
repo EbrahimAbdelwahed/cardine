@@ -6,6 +6,7 @@ from .errors import (
     CardineConfigError,
     CardineError,
     CardineInternalError,
+    CardineSourceContentUnavailableError,
     CardineUnavailableError,
 )
 
@@ -14,6 +15,7 @@ __all__ = [
     "CardineError",
     "CardineInternalError",
     "CardineRuntimeConfig",
+    "CardineSourceContentUnavailableError",
     "CardineUnavailableError",
     "StudyRuntimeAdapter",
     "compose_study_runtime",

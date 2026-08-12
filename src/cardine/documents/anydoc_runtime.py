@@ -362,18 +362,18 @@ def _convert_pdf_in_worker(
             monitor.join(timeout=1)
         if memory_exceeded:
             raise AnyDocWorkerError(AnyDocErrorCode.RESOURCE_LIMIT)
-        if stderr or len(stderr) > 256:
-            raise AnyDocWorkerError(AnyDocErrorCode.WORKER_PROTOCOL)
         response = _parse_response(stdout)
         if response.get("v") != 1 or type(response.get("ok")) is not bool:
             raise AnyDocWorkerError(AnyDocErrorCode.WORKER_PROTOCOL)
         if response["ok"] is False:
-            if set(response) != {"v", "ok", "code"} or response.get("code") not in {
-                item.value for item in AnyDocErrorCode
-            }:
+            if (
+                len(stderr) > 256
+                or set(response) != {"v", "ok", "code"}
+                or response.get("code") not in {item.value for item in AnyDocErrorCode}
+            ):
                 raise AnyDocWorkerError(AnyDocErrorCode.WORKER_PROTOCOL)
             raise AnyDocWorkerError(str(response["code"]))
-        if process.returncode != 0 or set(response) != {
+        if stderr or process.returncode != 0 or set(response) != {
             "v",
             "ok",
             "pages",

@@ -10,10 +10,12 @@ from cardine.integrations.study_agent import (
     CardineConfigError,
     CardineInternalError,
     CardineRuntimeConfig,
+    CardineSourceContentUnavailableError,
     CardineUnavailableError,
     StudyRuntimeAdapter,
     compose_study_runtime,
 )
+from study_agent.retrieval import SourceContentError, SourceContentErrorCode
 
 
 def test_runtime_requires_explicit_lifecycle_dependency() -> None:
@@ -69,6 +71,39 @@ def test_foreign_failure_is_redacted_but_process_control_is_preserved() -> None:
     )
     with pytest.raises(KeyboardInterrupt):
         interrupting.initialize_repository()
+
+
+def test_source_content_failure_keeps_one_closed_product_classification() -> None:
+    def fail() -> str:
+        raise SourceContentError(
+            SourceContentErrorCode.NOT_FOUND, "secret blob path"
+        )
+
+    runtime: StudyRuntimeAdapter[str, object] = compose_study_runtime(
+        CardineRuntimeConfig(initializer=fail)
+    )
+    with pytest.raises(CardineSourceContentUnavailableError) as caught:
+        runtime.initialize_repository()
+    assert "blob" not in str(caught.value).casefold()
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+
+
+def test_source_integrity_failure_is_not_mislabeled_as_missing_content() -> None:
+    def fail() -> str:
+        raise SourceContentError(
+            SourceContentErrorCode.INTEGRITY_ERROR, "secret corrupt blob path"
+        )
+
+    runtime: StudyRuntimeAdapter[str, object] = compose_study_runtime(
+        CardineRuntimeConfig(initializer=fail)
+    )
+    with pytest.raises(CardineInternalError) as caught:
+        runtime.initialize_repository()
+    assert "secret" not in str(caught.value)
+    assert "missing" not in str(caught.value).casefold()
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
 
 
 class _FailingLease(AbstractContextManager[object]):

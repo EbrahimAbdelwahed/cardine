@@ -4,7 +4,9 @@ from pathlib import Path
 
 import pytest
 
+import cardine.documents.anydoc_runtime as anydoc_runtime
 from cardine.documents import AnyDocErrorCode, AnyDocWorkerError, convert_pdf_in_worker
+from cardine.documents.config import DocumentImportPolicy
 
 
 def _text_pdf(*page_texts: str) -> bytes:
@@ -106,3 +108,113 @@ def test_missing_input_is_a_closed_worker_failure(tmp_path: Path) -> None:
 
     assert captured.value.code == AnyDocErrorCode.WORKER_UNAVAILABLE.value
     assert tuple(tmp_path.iterdir()) == ()
+
+
+def test_malformed_and_scanned_pdfs_fail_without_derived_output(tmp_path: Path) -> None:
+    malformed = tmp_path / "malformed.pdf"
+    malformed.write_bytes(b"%PDF-1.4\nnot a document")
+    with pytest.raises(AnyDocWorkerError) as malformed_error:
+        convert_pdf_in_worker(malformed)
+    assert malformed_error.value.code == AnyDocErrorCode.MALFORMED.value
+
+    scanned = tmp_path / "scanned.pdf"
+    scanned.write_bytes(_text_pdf(""))
+    with pytest.raises(AnyDocWorkerError) as scanned_error:
+        convert_pdf_in_worker(scanned)
+    assert scanned_error.value.code == AnyDocErrorCode.UNSUPPORTED.value
+    assert set(tmp_path.iterdir()) == {malformed, scanned}
+
+
+def test_input_page_and_output_limits_fail_closed(tmp_path: Path) -> None:
+    source = tmp_path / "bounded.pdf"
+    source.write_bytes(_text_pdf("First page", "Second page"))
+
+    policies = (
+        (
+            DocumentImportPolicy(max_document_bytes=len(source.read_bytes()) - 1),
+            AnyDocErrorCode.RESOURCE_LIMIT,
+        ),
+        (DocumentImportPolicy(max_pages=1), AnyDocErrorCode.RESOURCE_LIMIT),
+        (DocumentImportPolicy(max_output_bytes=4), AnyDocErrorCode.OUTPUT_LIMIT),
+    )
+    for policy, expected in policies:
+        with pytest.raises(AnyDocWorkerError) as captured:
+            convert_pdf_in_worker(source, policy=policy)
+        assert captured.value.code == expected.value
+    assert tuple(tmp_path.iterdir()) == (source,)
+
+
+def _install_fake_anydoc(destination: Path, source: str) -> None:
+    package = destination / "anydoc"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text(source, encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("module_source", "expected"),
+    (
+        (
+            """class EncryptedError(Exception): pass
+def format_from_bytes(data): return 'pdf'
+def to_markdown_bytes(data, kind): raise EncryptedError()
+""",
+            AnyDocErrorCode.ENCRYPTED,
+        ),
+        (
+            """def format_from_bytes(data): return 'pdf'
+def to_markdown_bytes(data, kind):
+    import socket
+    socket.socket()
+    return 'network unexpectedly available'
+""",
+            AnyDocErrorCode.WORKER_PROTOCOL,
+        ),
+    ),
+)
+def test_worker_maps_encryption_and_denies_network(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    module_source: str,
+    expected: AnyDocErrorCode,
+) -> None:
+    source = tmp_path / "lesson.pdf"
+    source.write_bytes(_minimal_text_pdf())
+    monkeypatch.setattr(anydoc_runtime, "_verified_wheel", lambda: b"fixture")
+    monkeypatch.setattr(
+        anydoc_runtime,
+        "_extract_verified_wheel",
+        lambda _wheel, destination: _install_fake_anydoc(destination, module_source),
+    )
+
+    with pytest.raises(AnyDocWorkerError) as captured:
+        convert_pdf_in_worker(source)
+
+    assert captured.value.code == expected.value
+    assert tuple(tmp_path.iterdir()) == (source,)
+
+
+def test_timed_out_worker_is_terminated_and_leaves_no_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "lesson.pdf"
+    source.write_bytes(_minimal_text_pdf())
+    monkeypatch.setattr(anydoc_runtime, "_verified_wheel", lambda: b"fixture")
+    monkeypatch.setattr(
+        anydoc_runtime,
+        "_extract_verified_wheel",
+        lambda _wheel, destination: _install_fake_anydoc(
+            destination,
+            """import time
+def format_from_bytes(data): return 'pdf'
+def to_markdown_bytes(data, kind):
+    time.sleep(10)
+    return 'late output'
+""",
+        ),
+    )
+
+    with pytest.raises(AnyDocWorkerError) as captured:
+        convert_pdf_in_worker(source, policy=DocumentImportPolicy(timeout_seconds=1))
+
+    assert captured.value.code == AnyDocErrorCode.WORKER_TIMEOUT.value
+    assert tuple(tmp_path.iterdir()) == (source,)

@@ -51,9 +51,12 @@ from cardine.knowledge import (
     SourcePin,
 )
 from study_agent.adapters.filesystem import (
+    BlobIntegrityError,
+    BlobNotFoundError,
     FilesystemBlobStore,
     LocalRepositoryError,
     LocalRepositoryPaths,
+    UnsafeBlobPathError,
     initialize_local_repository,
     validate_local_repository_layout,
 )
@@ -176,7 +179,11 @@ from study_agent.recall.composition import (
     compose_recall,
 )
 from study_agent.repository_config import LocalRepositoryConfig, ModelAdapterConfig
-from study_agent.retrieval import CourseSourceContent
+from study_agent.retrieval import (
+    CourseSourceContent,
+    SourceContentError,
+    SourceContentErrorCode,
+)
 from study_agent.sessions import (
     GroundedSessionFinalizer,
     ProjectionAssistantTurnView,
@@ -1342,9 +1349,15 @@ class LocalRepository:
                 try:
                     reference = BlobRef(BlobId(blob_id), checksum, byte_length)
                     content = self.blobs.get(reference).decode("utf-8", errors="strict")
-                except (LookupError, OSError, UnicodeError, ValueError) as error:
-                    raise LocalRepositoryError(
-                        "source projection content is unavailable"
+                except BlobNotFoundError as error:
+                    raise SourceContentError(
+                        SourceContentErrorCode.NOT_FOUND,
+                        "source projection content is unavailable",
+                    ) from error
+                except (BlobIntegrityError, UnsafeBlobPathError, UnicodeError, ValueError) as error:
+                    raise SourceContentError(
+                        SourceContentErrorCode.INTEGRITY_ERROR,
+                        "source projection content failed integrity validation",
                     ) from error
                 digest = sha256(content.encode("utf-8")).hexdigest()
                 revisions.append(

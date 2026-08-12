@@ -189,6 +189,16 @@ def test_offline_release_journey_survives_restart_and_is_deterministic(
             "course-anatomy",
             source,
         )[0] == 0
+    assert _run(
+        capsys,
+        registry,
+        *base,
+        "consent",
+        "grant",
+        "course-anatomy",
+        "--request-id",
+        "release-provider-consent",
+    )[0] == 0
     ask = (
         *base,
         "ask",
@@ -350,7 +360,9 @@ def test_offline_release_journey_survives_restart_and_is_deterministic(
         for destination in destinations
     )
     assert snapshots[0] == snapshots[1]
-    assert b"test-fixture" not in b"".join(snapshots[0].values())
+    exported = b"".join(snapshots[0].values())
+    assert b"test-fixture" not in exported
+    assert b"cardine.provider_consent_granted" in exported
 
     code, doctor = _run(capsys, registry, *base, "doctor")
     assert code == 0
