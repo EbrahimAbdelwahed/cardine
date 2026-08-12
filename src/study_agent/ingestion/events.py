@@ -14,6 +14,7 @@ from study_agent.domain.identifiers import BlobId, ChunkId, RevisionId, SourceId
 from study_agent.domain.provenance import (
     ContentOrigin,
     DocumentConversionProvenance,
+    DocumentPageSpan,
     StructureOrigin,
 )
 from study_agent.domain.source import BlobRef, SourceChunk, SourceDocument, SourceKind
@@ -68,9 +69,11 @@ _CONVERSION_KEYS = frozenset(
         "limitations",
         "assets_omitted",
         "page_count",
+        "page_spans",
         "schema_version",
     }
 )
+_LEGACY_CONVERSION_KEYS = _CONVERSION_KEYS - {"page_spans"}
 _CHUNK_KEYS = frozenset(
     {
         "chunk_id",
@@ -211,13 +214,35 @@ def _timestamp(value: JsonValue | None) -> datetime:
 
 
 def _conversion(value: JsonValue | None) -> DocumentConversionProvenance:
-    payload = _object(value, "source.conversion_provenance", _CONVERSION_KEYS)
+    if not isinstance(value, Mapping) or frozenset(value) not in {
+        _CONVERSION_KEYS,
+        _LEGACY_CONVERSION_KEYS,
+    }:
+        raise ValueError("source.conversion_provenance fields mismatch")
+    payload = value
     limitations = payload.get("limitations")
     if not isinstance(limitations, tuple) or any(not isinstance(item, str) for item in limitations):
         raise ValueError("conversion limitations must be an array of strings")
     page_count = payload.get("page_count")
     if page_count is not None and type(page_count) is not int:
         raise ValueError("conversion page_count must be an integer or null")
+    raw_spans = payload.get("page_spans", ())
+    if not isinstance(raw_spans, tuple):
+        raise ValueError("conversion page_spans must be an array")
+    spans: list[DocumentPageSpan] = []
+    for index, value in enumerate(raw_spans):
+        span = _object(
+            value,
+            f"conversion.page_spans[{index}]",
+            frozenset({"page", "start_offset", "end_offset"}),
+        )
+        spans.append(
+            DocumentPageSpan(
+                page=_integer(span.get("page"), "page"),
+                start_offset=_integer(span.get("start_offset"), "start_offset"),
+                end_offset=_integer(span.get("end_offset"), "end_offset"),
+            )
+        )
     return DocumentConversionProvenance(
         pdf_sha256=_text(payload.get("pdf_sha256"), "conversion.pdf_sha256"),
         markdown_sha256=_text(payload.get("markdown_sha256"), "conversion.markdown_sha256"),
@@ -230,6 +255,7 @@ def _conversion(value: JsonValue | None) -> DocumentConversionProvenance:
         limitations=cast(tuple[str, ...], limitations),
         assets_omitted=payload.get("assets_omitted") is True,
         page_count=page_count,
+        page_spans=tuple(spans),
         schema_version=_integer(payload.get("schema_version"), "conversion.schema_version"),
     )
 

@@ -9,9 +9,15 @@ from datetime import date
 from hashlib import sha256
 from pathlib import Path
 from types import FrameType
+from typing import cast
 from uuid import uuid4
 
 from cardine.courses import course_profile_manifest
+from cardine.documents import (
+    PdfAdmissionError,
+    admit_pdf,
+    document_import_policy,
+)
 from cardine.domain.course import CourseProfile, SourcePolicy, TerminologyPolicy
 from cardine.integrations.study_agent import (
     CardineRuntimeConfig,
@@ -381,26 +387,55 @@ async def _course_list(repository: LocalRepository, values: dict[str, object]) -
 
 async def _source_add(repository: LocalRepository, values: dict[str, object]) -> CommandOutcome:
     course_id = CourseId(_text(values, "course_id"))
-    snapshot = FilesystemSourceInput(repository.paths.root).snapshot_explicit(_text(values, "path"))
-    source_id = SourceId(
-        str(values.get("source_id") or _derived_id("source", snapshot.relative_path))
-    )
-    course = repository.for_course(course_id)
-    result = course.ingestion.ingest(
-        filename=snapshot.filename,
-        content=snapshot.content,
-        source_id=source_id,
-        title=str(values.get("title") or Path(snapshot.filename).stem),
-        trust_level=_integer(values, "trust_level"),
-        source_role=_text(values, "source_role"),
-        context=_context(course_id),
-    )
+    declared_path = _text(values, "path")
+    if declared_path.casefold().endswith(".pdf"):
+        path = Path(declared_path)
+        if not path.is_absolute():
+            path = repository.paths.root / path
+        try:
+            byte_size = path.stat(follow_symlinks=False).st_size
+            admission = admit_pdf(
+                input_path=path,
+                expected_sha256=None,
+                byte_size=byte_size,
+                filename=path.name,
+                source_id=(
+                    SourceId(str(values["source_id"])) if values.get("source_id") else None
+                ),
+                title=str(values.get("title") or path.stem),
+                trust_level=_integer(values, "trust_level"),
+                source_role=_text(values, "source_role"),
+                context=_context(course_id),
+                ingestion=repository.for_course(course_id).ingestion,
+                policy=document_import_policy(),
+            )
+        except PdfAdmissionError as error:
+            raise ValueError(str(error)) from None
+        result = admission.result
+        snapshot_filename = path.name
+    else:
+        snapshot = FilesystemSourceInput(repository.paths.root).snapshot_explicit(declared_path)
+        source_id = SourceId(
+            str(values.get("source_id") or _derived_id("source", snapshot.relative_path))
+        )
+        course = repository.for_course(course_id)
+        result = course.ingestion.ingest(
+            filename=snapshot.filename,
+            content=snapshot.content,
+            source_id=source_id,
+            title=str(values.get("title") or Path(snapshot.filename).stem),
+            trust_level=_integer(values, "trust_level"),
+            source_role=_text(values, "source_role"),
+            context=_context(course_id),
+        )
+        snapshot_filename = snapshot.filename
     canonical: JsonObject = {
         "status": result.status.value,
         "committed": True,
         "committed_sequence": result.committed_sequence,
         "source": source_manifest(result.source),
         "chunk_count": len(result.chunks),
+        "input_kind": "pdf" if snapshot_filename.casefold().endswith(".pdf") else "text",
     }
     try:
         receipt = repository.rebuild_retrieval()
@@ -445,7 +480,7 @@ async def _source_list(repository: LocalRepository, values: dict[str, object]) -
 
 
 def _receipt_json(receipt: object) -> JsonObject:
-    result: JsonObject = {}
+    result: dict[str, object] = {}
     for name in (
         "course_id",
         "source_id",
@@ -460,7 +495,7 @@ def _receipt_json(receipt: object) -> JsonObject:
             result[name] = (
                 str(value) if name in {"course_id", "source_id", "occurred_at"} else value
             )
-    return result
+    return cast(JsonObject, result)
 
 
 async def _consent_status(repository: LocalRepository, values: dict[str, object]) -> CommandOutcome:

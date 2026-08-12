@@ -34,9 +34,9 @@ Recover the reviewed text/Markdown study vertical after A2: derived PageIndex na
    the derived Markdown and immutable substrate/conversion receipt only after a
    successful conversion; reject scanned, encrypted, malformed, oversized, or
    timed-out inputs without a canonical event.
-9. Treat document-wide PDF import as an early playable checkpoint, not Wave A
-   closure: deterministic Markdown-offset-to-page mapping and CLI parity remain
-   required before the final installed journey can claim page-aware PDF citations.
+9. Complete PDF parity by binding deterministic Markdown offsets to each source
+   page and routing browser and CLI through the same canonical admission owner.
+   This is implemented; OCR and non-qualified platforms remain fail-closed.
 
 ## Risks
 

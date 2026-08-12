@@ -27,6 +27,7 @@ from study_agent.adapters.model import (
     OpenAIGpt56LunaModel,
 )
 from study_agent.domain import (
+    Citation,
     CorrelationId,
     CourseId,
     CourseProfile,
@@ -592,6 +593,23 @@ def test_repository_pdf_import_is_canonical_and_restart_safe(tmp_path: Path) -> 
         assert source.source.content_origin.value == "extracted"
         assert source.source.conversion_provenance is not None
         assert source.source.conversion_provenance.pdf_sha256 == sha256(pdf).hexdigest()
+        assert tuple(
+            (span.page, span.start_offset, span.end_offset)
+            for span in source.source.conversion_provenance.page_spans
+        ) == ((1, 0, len(source.text)),)
+        chunk = source.chunks[0]
+        resolved = repository.for_course(COURSE).content.resolve(
+            Citation(
+                source_id,
+                source.source.revision_id,
+                chunk.chunk_id,
+                chunk.start_offset,
+                chunk.end_offset,
+                "client locator ignored",
+                source.text[chunk.start_offset : chunk.end_offset],
+            )
+        )
+        assert "page 1" in resolved.citation.locator
         assert repository.blobs.get(source.source.blob) == pdf
 
 

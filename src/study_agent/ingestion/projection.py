@@ -57,6 +57,14 @@ def _conversion(provenance: DocumentConversionProvenance) -> JsonObject:
         "limitations": provenance.limitations,
         "assets_omitted": provenance.assets_omitted,
         "page_count": provenance.page_count,
+        "page_spans": tuple(
+            {
+                "page": span.page,
+                "start_offset": span.start_offset,
+                "end_offset": span.end_offset,
+            }
+            for span in provenance.page_spans
+        ),
         "schema_version": provenance.schema_version,
     }
 

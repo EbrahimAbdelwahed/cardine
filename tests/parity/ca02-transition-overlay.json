@@ -89,7 +89,7 @@
       "path": "src/study_agent/cli/commands.py",
       "source_path": "src/cardine/cli/commands.py",
       "disposition": "CARDINE_OWNER",
-      "transition_sha256": "7664aae996aef52792a37769d4cecd09f7988e3f10db14eaa055a26cf8ebf41d"
+      "transition_sha256": "57ece8ab50e3b126952b1fcbb52a89cc2054832a580ee291ddda26e6c99a2ee7"
     },
     {
       "path": "src/study_agent/cli/config.py",
@@ -119,7 +119,7 @@
       "path": "src/study_agent/cli/registry.py",
       "source_path": "src/cardine/cli/registry.py",
       "disposition": "CARDINE_OWNER",
-      "transition_sha256": "9082dce1c1b331271adf72084467f991c798d0bd6da41ad74738bf472e0a6eb0"
+      "transition_sha256": "88696903f160c8fd52737f90dff3ae0150666c8bf6f1a87837d095a874da0488"
     },
     {
       "path": "src/study_agent/cli/repository.py",
@@ -371,7 +371,7 @@
       "path": "src/study_agent/demo/ui_application.py",
       "source_path": "src/cardine/demo/ui_application.py",
       "disposition": "CARDINE_OWNER",
-      "transition_sha256": "e3e3068c9d6ca0aede1e4f87fd72c97cc139525e46d8a6f7a4d02da397652340"
+      "transition_sha256": "bb7c6a9d33d92617417dfe7fd87bb0dfcdd2a7a2df2f07a48c503e93ae101db0"
     },
     {
       "path": "src/study_agent/diagnostics/__init__.py",

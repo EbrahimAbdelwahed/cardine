@@ -189,6 +189,16 @@ def test_offline_release_journey_survives_restart_and_is_deterministic(
             "course-anatomy",
             source,
         )[0] == 0
+    assert _run(
+        capsys,
+        registry,
+        *base,
+        "consent",
+        "grant",
+        "course-anatomy",
+        "--request-id",
+        "consent-release-1",
+    )[0] == 0
 
     ask = (
         *base,
@@ -237,6 +247,7 @@ def test_offline_release_journey_survives_restart_and_is_deterministic(
     first = _run_in_fresh_process(counter, *ask)
     assert first["data"]["answer"]["status"] == "answered"
     assert counter.read_text(encoding="utf-8") == "1"
+
 
     retried = _run_in_fresh_process(counter, *ask)
     assert retried == first
@@ -355,6 +366,49 @@ def test_offline_release_journey_survives_restart_and_is_deterministic(
     code, doctor = _run(capsys, registry, *base, "doctor")
     assert code == 0
     assert doctor["data"]["status"] == "ok"
+
+
+def test_cli_admits_pdf_through_the_same_canonical_source_ledger(
+    tmp_path: Path, capsys: Any
+) -> None:
+    from tests.integration.adapters.workarounds.test_pdf_markdown_real import (
+        _minimal_text_pdf,
+    )
+
+    root = tmp_path / "study"
+    registry = _registry([])
+    assert _run(capsys, registry, "init", str(root))[0] == 0
+    base = ("--repository", str(root))
+    assert _run(
+        capsys,
+        registry,
+        *base,
+        "course",
+        "create",
+        "--course-id",
+        "course-pdf",
+        "--title",
+        "PDF course",
+        "--learning-goal",
+        "Study the imported lesson",
+    )[0] == 0
+    pdf = root / "lesson.pdf"
+    pdf.write_bytes(_minimal_text_pdf())
+
+    code, receipt = _run(
+        capsys,
+        registry,
+        *base,
+        "source",
+        "add",
+        "course-pdf",
+        "lesson.pdf",
+    )
+
+    assert code == 0
+    assert receipt["data"]["input_kind"] == "pdf"
+    assert receipt["data"]["source"]["content_origin"] == "extracted"
+    assert receipt["data"]["source"]["conversion_provenance"]["page_count"] == 1
 
 
 def test_fixture_adapter_is_not_an_implicit_cli_fallback(tmp_path: Path, capsys: Any) -> None:

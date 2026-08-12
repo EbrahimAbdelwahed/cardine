@@ -9,8 +9,10 @@ Added a bounded PDF admission path for Cardine using the explicitly approved
 AnyDoc 0.1.7 macOS arm64 artifact. The browser streams the PDF to a private
 temporary file, an isolated worker converts it to normalized Markdown, and the
 canonical source ledger stores both the immutable original PDF and the derived
-Markdown with a replayable conversion receipt. Text and Markdown admission are
-unchanged.
+Markdown with a replayable conversion receipt. Each source page is converted
+independently and bound to exact character offsets in the combined canonical
+Markdown, so resolved citations report their source PDF page. The browser and
+CLI share the same admission owner. Text and Markdown admission are unchanged.
 
 The converter fails closed outside native macOS arm64 on CPython 3.12/3.13. It
 verifies the vendored wheel and every archive member before native import, runs
@@ -22,6 +24,8 @@ OCR is not implemented.
 ## Files Changed
 
 - `src/cardine/documents/`: verified AnyDoc artifact, resource policy, isolated parent/child runtime.
+- `src/cardine/documents/admission.py`: shared browser/CLI PDF admission owner.
+- `src/cardine/cli/`: `.pdf` support through the existing `source add` command.
 - `src/cardine/demo/browser.py` and `browser.js`: bounded binary PDF transport and visible PDF upload flow.
 - `src/cardine/demo/ui_application.py`: canonical PDF admission and conversion receipt.
 - `src/study_agent/domain/` and `src/study_agent/ingestion/`: immutable original/derived provenance persisted in the existing source revision event.
@@ -43,4 +47,5 @@ OCR is not implemented.
 
 - The RSS watchdog is enforceable kill containment, not a strict kernel memory quota; macOS can overshoot between samples.
 - The current verified artifact supports macOS arm64 only. Other platforms fail closed.
-- Deterministic per-page citation mapping and OCR remain outside this checkpoint; the canonical receipt records structural page count and the limitations explicitly.
+- Deterministic per-page citation mapping and CLI parity were completed in the
+  follow-up pass. OCR remains deliberately unsupported.

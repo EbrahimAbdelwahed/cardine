@@ -247,7 +247,7 @@ def command_registrations() -> tuple[CommandRegistration, ...]:
         ),
         _registration(
             "source.add",
-            "Ingest a text or Markdown source.",
+            "Ingest a text, Markdown, or text-bearing PDF source.",
             OperationEffect.CANONICAL_WRITE,
             RepositoryRequirement.REQUIRED,
             NetworkRequirement.NEVER,
@@ -809,7 +809,7 @@ def _add_course_list(topology: _ParserTopology) -> None:
 def _add_source_add(topology: _ParserTopology) -> None:
     parser = _leaf(
         topology.group("source", "source commands").add_parser(
-            "add", help="ingest a text or Markdown source"
+            "add", help="ingest a text, Markdown, or text-bearing PDF source"
         ),
         "source.add",
     )

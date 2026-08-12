@@ -72,6 +72,11 @@ class SourceDocument:
         if self.content_origin is ContentOrigin.EXTRACTED:
             if self.conversion_provenance is None:
                 raise ValueError("extracted content requires conversion provenance")
+            if self.conversion_provenance.page_spans and (
+                self.conversion_provenance.page_spans[-1].end_offset
+                > self.normalized_character_length
+            ):
+                raise ValueError("conversion page span exceeds normalized content")
         elif self.conversion_provenance is not None:
             raise ValueError("conversion provenance requires extracted content")
 

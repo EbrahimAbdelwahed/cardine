@@ -142,9 +142,9 @@ src/study_agent/domain/errors.py,7fda45f51dfaf05f05303e06c52cef9adb1fe8e2e5f2f8c
 src/study_agent/domain/events.py,56e59ff54cb9d203c4e781a4c1b68588cc89d1caf042742da90d94f04e39a393,HARNESS_IMPORT,study-agent-harness,study_agent.api.runtime,CA-04,CA-10
 src/study_agent/domain/grounding.py,15dfdace8fd9c6ea59d5b97fe4cdb855524d43893929bfb3202fa9f0885a3c40,HARNESS_IMPORT,study-agent-harness,study_agent.api.runtime,CA-04,CA-10
 src/study_agent/domain/identifiers.py,6e5477983dd45ec23833559b0ca0ea2d43964594307ff33e117eaface4ef9e8d,HARNESS_IMPORT,study-agent-harness,study_agent.api.runtime,CA-04,CA-10
-src/study_agent/domain/provenance.py,30f6f734eef50229197140c2ea248de8059f7ed857d8c3804aee15d8cd27cd58,HARNESS_IMPORT,study-agent-harness,study_agent.api.runtime,CA-04,CA-10
+src/study_agent/domain/provenance.py,eb1d00106c1754a813a6262b2dfbeb4afb0a40f49483ed390788f4b11876e79f,HARNESS_IMPORT,study-agent-harness,study_agent.api.runtime,CA-04,CA-10
 src/study_agent/domain/session.py,f1e8c51bf722e38914d4fb3ac2c12bfcfaf2d34424be87a66c3596409acf5002,HARNESS_IMPORT,study-agent-harness,study_agent.api.runtime,CA-04,CA-10
-src/study_agent/domain/source.py,090107e572e17ff96d7612630433b3fcdeb4a7ab71655599c975308d1177a746,HARNESS_IMPORT,study-agent-harness,study_agent.api.sources,CA-04,CA-10
+src/study_agent/domain/source.py,d3f275aa51e1943494a7a174f1c4393cb10c600e4b6bd794a5009a9605f3dedd,HARNESS_IMPORT,study-agent-harness,study_agent.api.sources,CA-04,CA-10
 src/study_agent/domain/study_context.py,d0782d498e20953a2b8dfacf8dfacf98f1aa8d01c6fad9af4a4a959f882a05e1,CARDINE_OWNER,cardine,src/cardine/domain/study_context.py,CA-02,CA-10
 src/study_agent/domain/substrate.py,71a7833da419d13c4914223daa30feb4cc724d6fef480365a64fd94c6e4cea7d,HARNESS_IMPORT,study-agent-harness,study_agent.api.runtime,CA-04,CA-10
 src/study_agent/domain/tutor_snapshot.py,8b00da53219e6127acdefbb32fde9c362e69a17c390dea6bd03208b24318c006,HARNESS_IMPORT,study-agent-harness,study_agent.api.runtime,CA-04,CA-10
@@ -183,10 +183,10 @@ src/study_agent/hosts/scripted.py,820127f286f4252246a94d557571e26ca14d16452dca39
 src/study_agent/hosts/source_grounding.py,c286dfe8b41a2a45c0d44c7b5f07232fefa756d3ced8117626af26c0c6ec0fd3,CARDINE_OWNER,cardine,src/cardine/hosts/source_grounding.py,CA-02,CA-10
 src/study_agent/ingestion/__init__.py,e00c353502f6c7f0c3b87f014953069d69d5ded2e81b5d279e43dee1b472b4cc,HARNESS_IMPORT,study-agent-harness,study_agent.api.sources,CA-04,CA-10
 src/study_agent/ingestion/chunking.py,d62a00446c1e2f72f2fb7c4acd584aed252242959fd6633adb80e6853d64397b,HARNESS_IMPORT,study-agent-harness,study_agent.api.sources,CA-04,CA-10
-src/study_agent/ingestion/events.py,61e25f8b0a1aaf6c2fb2faf5d2a90f815cba67933cf7de2c9d549fc460dfd4c3,HARNESS_IMPORT,study-agent-harness,study_agent.api.sources,CA-04,CA-10
+src/study_agent/ingestion/events.py,c09ed098bde2412d2d84b66507e12f5a6d217de0ac49a245dc7d7d0342a29e0a,HARNESS_IMPORT,study-agent-harness,study_agent.api.sources,CA-04,CA-10
 src/study_agent/ingestion/identity.py,d2d9a8bab0a7a7754688d2e437a883908364547b526911c8a10b275f9ca84fae,HARNESS_IMPORT,study-agent-harness,study_agent.api.sources,CA-04,CA-10
 src/study_agent/ingestion/normalization.py,0c36de57a5e8d3e2559080fdd2f43073a5cbb06008311e9e169c415674faca72,HARNESS_IMPORT,study-agent-harness,study_agent.api.sources,CA-04,CA-10
-src/study_agent/ingestion/projection.py,fcaab9b1d19215bb375b46725af1677d358c4ce5684c5ffa5f6c43332c89579e,HARNESS_IMPORT,study-agent-harness,study_agent.api.sources,CA-04,CA-10
+src/study_agent/ingestion/projection.py,ce7a932c15fa60fc1eb11dc046653823222e753d18af65cc5a8fce8ea612dcca,HARNESS_IMPORT,study-agent-harness,study_agent.api.sources,CA-04,CA-10
 src/study_agent/ingestion/service.py,fc5e08c2bb414bd3c333f560db00f7d5ba6079a9461dc51f8f9ac53a3d1793ef,HARNESS_IMPORT,study-agent-harness,study_agent.api.sources,CA-04,CA-10
 src/study_agent/ingestion/substrate.py,0e40cc2059a80ff9d05b5127fc0ae497d0597646f25dd66ea0b51154226aea5a,HARNESS_IMPORT,study-agent-harness,study_agent.api.sources,CA-04,CA-10
 src/study_agent/ingestion/substrate_events.py,1c02d9d7a7f53506245032faaff9a8f2b0bf7df4cd259257fdbaeeaf0d347dea,HARNESS_IMPORT,study-agent-harness,study_agent.api.sources,CA-04,CA-10
@@ -261,7 +261,7 @@ src/study_agent/recall/service.py,f1d6aaa3f1dd89ebc270bdf64ee82628a8210bc18d066f
 src/study_agent/recall/view.py,030c78b1b7e384b027f463f6553bc00605efddb91729a66c7df5e0f3ae1040d3,HARNESS_IMPORT,study-agent-harness,study_agent.api.recall,CA-04,CA-10
 src/study_agent/repository_config.py,32b29cac72fcba700e5151f95d1ca3af8edb6664e553d707a069a25deecfa219,HARNESS_IMPORT,study-agent-harness,study_agent.api.runtime,CA-04,CA-10
 src/study_agent/retrieval/__init__.py,39f731c6251cb6407a9a507cf0c724300e614206512138f5d475e2e3ea886b10,HARNESS_IMPORT,study-agent-harness,study_agent.api.sources,CA-04,CA-10
-src/study_agent/retrieval/content.py,7115abea0c524e407daa9f8eeec11a587324e4bbe262b412e36bd2632348bf31,HARNESS_IMPORT,study-agent-harness,study_agent.api.sources,CA-04,CA-10
+src/study_agent/retrieval/content.py,5c600118cc00ec48393703e127b1ea2df8def2b7fe083afb297ae60b5b70e414,HARNESS_IMPORT,study-agent-harness,study_agent.api.sources,CA-04,CA-10
 src/study_agent/retrieval/errors.py,711b1650ce4656478b4c80404df5edfdaf6c23784da8c3b7c31e721975857657,HARNESS_IMPORT,study-agent-harness,study_agent.api.sources,CA-04,CA-10
 src/study_agent/sessions/__init__.py,96dfe2742b555be7c967afbfed0a03703800eb4af9e29481bfd728a7555819d9,HARNESS_IMPORT,study-agent-harness,study_agent.api.runtime,CA-04,CA-10
 src/study_agent/sessions/events.py,5d2a5f4b8b0d4cb58f1cf570156f6b24e72f8dd959d617fdc1d5ab2e8a873e16,HARNESS_IMPORT,study-agent-harness,study_agent.api.runtime,CA-04,CA-10

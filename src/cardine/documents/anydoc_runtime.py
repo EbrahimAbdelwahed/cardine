@@ -91,11 +91,27 @@ class AnyDocWorkerError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
+class PageSpan:
+    page: int
+    start_offset: int
+    end_offset: int
+
+    def __post_init__(self) -> None:
+        if type(self.page) is not int or self.page < 1:
+            raise ValueError("page must be positive")
+        if type(self.start_offset) is not int or type(self.end_offset) is not int:
+            raise ValueError("page offsets must be integers")
+        if self.start_offset < 0 or self.end_offset <= self.start_offset:
+            raise ValueError("page offsets must describe a non-empty span")
+
+
+@dataclass(frozen=True, slots=True)
 class AnyDocConversion:
     markdown: bytes
     pdf_sha256: str
     markdown_sha256: str
     page_count: int
+    page_spans: tuple[PageSpan, ...]
     manifest_fingerprint: str = ANYDOC_MANIFEST_FINGERPRINT
     anydoc_version: str = ANYDOC_VERSION
     limitations: tuple[str, ...] = ANYDOC_LIMITATIONS
@@ -279,7 +295,12 @@ def _convert_pdf_in_worker(
     with TemporaryDirectory(prefix="cardine-anydoc-") as temp_name:
         private = Path(temp_name).resolve()
         os.chmod(private, 0o700)
-        vendor, copied, output = private / "vendor", private / "input.pdf", private / "output.md"
+        vendor, copied, output, page_map_output = (
+            private / "vendor",
+            private / "input.pdf",
+            private / "output.md",
+            private / "page-map.json",
+        )
         child_copy = private / "worker.py"
         vendor.mkdir(mode=0o700)
         _extract_verified_wheel(wheel, vendor)
@@ -305,6 +326,7 @@ def _convert_pdf_in_worker(
             str(vendor),
             str(copied),
             str(output),
+            str(page_map_output),
             str(effective.max_output_bytes),
             str(effective.max_pages),
             str(int(effective.timeout_seconds)),
@@ -355,6 +377,8 @@ def _convert_pdf_in_worker(
             "v",
             "ok",
             "pages",
+            "page_map_bytes",
+            "page_map_sha256",
             "markdown_bytes",
             "markdown_sha256",
         }:
@@ -367,6 +391,59 @@ def _convert_pdf_in_worker(
         finally:
             os.close(descriptor)
         digest = _digest_bytes(markdown)
+        page_map_descriptor = os.open(
+            page_map_output, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC
+        )
+        try:
+            page_map_bytes = os.read(page_map_descriptor, effective.max_pages * 128 + 1)
+        finally:
+            os.close(page_map_descriptor)
+        if (
+            response["page_map_bytes"] != len(page_map_bytes)
+            or response["page_map_sha256"] != _digest_bytes(page_map_bytes)
+        ):
+            raise AnyDocWorkerError(AnyDocErrorCode.WORKER_PROTOCOL)
+        def _pairs(values: list[tuple[str, object]]) -> dict[str, object]:
+            result: dict[str, object] = {}
+            for key, value in values:
+                if key in result:
+                    raise ValueError("duplicate page-map key")
+                result[key] = value
+            return result
+
+        try:
+            raw_spans = json.loads(
+                page_map_bytes,
+                object_pairs_hook=_pairs,
+                parse_constant=lambda _: (_ for _ in ()).throw(ValueError("constant")),
+            )
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+            raise AnyDocWorkerError(AnyDocErrorCode.WORKER_PROTOCOL) from None
+        if not isinstance(raw_spans, list) or len(raw_spans) != response["pages"]:
+            raise AnyDocWorkerError(AnyDocErrorCode.WORKER_PROTOCOL)
+        try:
+            page_spans = tuple(
+                PageSpan(
+                    page=raw["page"],
+                    start_offset=raw["start_offset"],
+                    end_offset=raw["end_offset"],
+                )
+                for raw in raw_spans
+                if type(raw) is dict
+                and set(raw) == {"page", "start_offset", "end_offset"}
+            )
+        except (KeyError, TypeError, ValueError):
+            raise AnyDocWorkerError(AnyDocErrorCode.WORKER_PROTOCOL) from None
+        markdown_text = markdown.decode("utf-8")
+        if len(page_spans) != response["pages"] or tuple(
+            (item.page, item.start_offset, item.end_offset) for item in page_spans
+        ) != tuple(
+            (index, item.start_offset, item.end_offset)
+            for index, item in enumerate(page_spans, 1)
+        ):
+            raise AnyDocWorkerError(AnyDocErrorCode.WORKER_PROTOCOL)
+        if any(item.end_offset > len(markdown_text) for item in page_spans):
+            raise AnyDocWorkerError(AnyDocErrorCode.WORKER_PROTOCOL)
         if (
             type(response["pages"]) is not int
             or not 1 <= response["pages"] <= effective.max_pages
@@ -374,7 +451,7 @@ def _convert_pdf_in_worker(
             or response["markdown_sha256"] != digest
         ):
             raise AnyDocWorkerError(AnyDocErrorCode.WORKER_PROTOCOL)
-        return AnyDocConversion(markdown, pdf_sha256, digest, response["pages"])
+        return AnyDocConversion(markdown, pdf_sha256, digest, response["pages"], page_spans)
 
 
 def convert_pdf_in_worker(
@@ -399,5 +476,6 @@ __all__ = [
     "AnyDocConversion",
     "AnyDocErrorCode",
     "AnyDocWorkerError",
+    "PageSpan",
     "convert_pdf_in_worker",
 ]

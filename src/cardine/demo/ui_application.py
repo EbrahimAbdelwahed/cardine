@@ -7,8 +7,6 @@ owned by the canonical repository services or by their shared harness surface.
 from __future__ import annotations
 
 import asyncio
-import os
-import stat
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from hashlib import sha256
@@ -28,7 +26,8 @@ from cardine.documents import (
     AnyDocErrorCode,
     AnyDocWorkerError,
     DocumentImportPolicy,
-    convert_pdf_in_worker,
+    PdfAdmissionError,
+    admit_pdf,
     document_import_policy,
 )
 from cardine.hosts import PendingContinuationDescriptor, TutorContinuationRecord
@@ -104,7 +103,6 @@ from study_agent.domain import (
 )
 from study_agent.domain._validation import JsonObject, JsonValue
 from study_agent.domain.identifiers import Identifier
-from study_agent.domain.provenance import ContentOrigin, DocumentConversionProvenance
 from study_agent.ingestion import TextIngestionError
 from study_agent.ports import (
     CourseNotFoundError,
@@ -200,27 +198,6 @@ class UiRequestError(ValueError):
         self.command_committed = command_committed
         self.request_id = request_id
         self.trace_id = trace_id
-
-
-def _read_verified_pdf(path: Path, *, byte_size: int, digest: str) -> bytes:
-    """Read the private upload without following links and rebind its identity."""
-
-    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
-    content = bytearray()
-    try:
-        opened = os.fstat(descriptor)
-        if not stat.S_ISREG(opened.st_mode) or opened.st_size != byte_size:
-            raise UiRequestError("uploaded PDF changed during conversion", status_code=409)
-        while block := os.read(descriptor, 1024 * 1024):
-            content.extend(block)
-            if len(content) > byte_size:
-                raise UiRequestError("uploaded PDF changed during conversion", status_code=409)
-    finally:
-        os.close(descriptor)
-    value = bytes(content)
-    if len(value) != byte_size or sha256(value).hexdigest() != digest:
-        raise UiRequestError("uploaded PDF changed during conversion", status_code=409)
-    return value
 
 
 def _source_grounding_status(
@@ -865,52 +842,19 @@ class RepositoryUiApplication(UiApplicationPort):
             or not 0 < byte_size <= self._document_policy.max_document_bytes
         ):
             raise UiRequestError("PDF size is invalid", status_code=413)
-        try:
-            conversion = convert_pdf_in_worker(input_path, policy=self._document_policy)
-        except AnyDocWorkerError as error:
-            status = {
-                AnyDocErrorCode.UNSUPPORTED.value: 415,
-                AnyDocErrorCode.RESOURCE_LIMIT.value: 413,
-                AnyDocErrorCode.OUTPUT_LIMIT.value: 413,
-                AnyDocErrorCode.WORKER_TIMEOUT.value: 504,
-                AnyDocErrorCode.WORKER_UNAVAILABLE.value: 503,
-            }.get(error.code, 422)
-            raise UiRequestError(
-                "PDF conversion failed safely; no source was admitted",
-                status_code=status,
-                diagnostic_code=error.code,
-            ) from None
-        if conversion.pdf_sha256 != pdf_sha256:
-            raise UiRequestError("uploaded PDF changed during conversion", status_code=409)
-        original = _read_verified_pdf(
-            input_path,
-            byte_size=byte_size,
-            digest=conversion.pdf_sha256,
-        )
-        provenance = DocumentConversionProvenance(
-            pdf_sha256=conversion.pdf_sha256,
-            markdown_sha256=conversion.markdown_sha256,
-            adapter_identity="pdf-to-markdown-anydoc@1",
-            adapter_version=conversion.anydoc_version,
-            manifest_fingerprint=conversion.manifest_fingerprint,
-            normalizer_policy="gfm-normalizer@1",
-            limitations=conversion.limitations,
-            page_count=conversion.page_count,
-        )
         source_id = SourceId("source-pdf-sha256:" + pdf_sha256)
         with self._lock:
             try:
                 with self._open() as repository:
-                    result = repository.for_course(self._course_id).ingestion.ingest(
-                        filename=(filename[:-4] or "document") + ".md",
-                        content=conversion.markdown,
-                        original_content=original,
+                    admission = admit_pdf(
+                        input_path=input_path,
+                        expected_sha256=pdf_sha256,
+                        byte_size=byte_size,
+                        filename=filename,
                         source_id=source_id,
                         title=title,
                         trust_level=80,
                         source_role="learner_uploaded",
-                        content_origin=ContentOrigin.EXTRACTED,
-                        conversion_provenance=provenance,
                         context=ExecutionContext(
                             PrincipalKind.HUMAN,
                             "cardine-pdf-upload",
@@ -920,8 +864,12 @@ class RepositoryUiApplication(UiApplicationPort):
                             self._session_id,
                             idempotency_key=request_id,
                         ),
+                        ingestion=repository.for_course(self._course_id).ingestion,
+                        policy=self._document_policy,
                     )
                     repository.rebuild_retrieval()
+                    result = admission.result
+                    conversion = admission.conversion
                     return {
                         "schema_version": 1,
                         "request_id": request_id,
@@ -938,11 +886,27 @@ class RepositoryUiApplication(UiApplicationPort):
                             "adapter": "pdf-to-markdown-anydoc@1",
                             "version": conversion.anydoc_version,
                             "page_count": conversion.page_count,
+                            "page_map_fingerprint": admission.provenance.fingerprint,
                             "pdf_sha256": conversion.pdf_sha256,
                             "markdown_sha256": conversion.markdown_sha256,
                             "limitations": conversion.limitations,
                         },
                     }
+            except AnyDocWorkerError as error:
+                status = {
+                    AnyDocErrorCode.UNSUPPORTED.value: 415,
+                    AnyDocErrorCode.RESOURCE_LIMIT.value: 413,
+                    AnyDocErrorCode.OUTPUT_LIMIT.value: 413,
+                    AnyDocErrorCode.WORKER_TIMEOUT.value: 504,
+                    AnyDocErrorCode.WORKER_UNAVAILABLE.value: 503,
+                }.get(error.code, 422)
+                raise UiRequestError(
+                    "PDF conversion failed safely; no source was admitted",
+                    status_code=status,
+                    diagnostic_code=error.code,
+                ) from None
+            except PdfAdmissionError as error:
+                raise UiRequestError(str(error), status_code=409) from None
             except TextIngestionError as error:
                 raise UiRequestError(
                     "converted PDF could not be admitted canonically",

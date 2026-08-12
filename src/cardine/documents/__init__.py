@@ -1,5 +1,6 @@
 """Bounded document conversion owned by the Cardine admission boundary."""
 
+from .admission import PdfAdmissionError, PdfAdmissionReceipt, admit_pdf
 from .anydoc_runtime import (
     ANYDOC_LIMITATIONS,
     ANYDOC_MANIFEST_FINGERPRINT,
@@ -7,6 +8,7 @@ from .anydoc_runtime import (
     AnyDocConversion,
     AnyDocErrorCode,
     AnyDocWorkerError,
+    PageSpan,
     convert_pdf_in_worker,
 )
 from .config import DocumentImportPolicy, document_import_policy
@@ -19,6 +21,10 @@ __all__ = [
     "AnyDocErrorCode",
     "AnyDocWorkerError",
     "DocumentImportPolicy",
+    "PageSpan",
+    "PdfAdmissionError",
+    "PdfAdmissionReceipt",
+    "admit_pdf",
     "convert_pdf_in_worker",
     "document_import_policy",
 ]
