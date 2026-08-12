@@ -11,8 +11,15 @@ from .lesson_selection import (
     SearchDisposition,
     SourcePin,
 )
+from .pageindex_projection import (
+    CanonicalSpanCandidate,
+    PageIndexProjection,
+    PageIndexStatus,
+    map_structural_tree,
+)
 
 __all__ = (
+    "CanonicalSpanCandidate",
     "LessonCandidate",
     "LessonChunk",
     "LessonEvidencePort",
@@ -20,6 +27,9 @@ __all__ = (
     "LessonSelectionError",
     "LessonSelectionService",
     "LessonSource",
+    "PageIndexProjection",
+    "PageIndexStatus",
     "SearchDisposition",
     "SourcePin",
+    "map_structural_tree",
 )

@@ -115,9 +115,11 @@ def _declared_package_data(config: Mapping[str, object]) -> set[str]:
             paths.update(
                 path.relative_to(ROOT).as_posix()
                 for path in matches
-                # Third-party binary artifacts have their own exact supply-chain
-                # verifier and are not CA-01/CA-02 namespace ownership rows.
+                # Qualified third-party artifacts have their own exact
+                # supply-chain verifier and are not CA-01/CA-02 namespace rows.
                 if not path.is_relative_to(ROOT / "src/cardine/documents/_vendor")
+                and path
+                != ROOT / "src/cardine/adapters/pageindex/page_index_md.py.data"
             )
     return paths
 

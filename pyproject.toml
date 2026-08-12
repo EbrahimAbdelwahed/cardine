@@ -53,6 +53,7 @@ where = ["src"]
 study_agent = ["py.typed"]
 "cardine.demo" = ["fixtures/*.md", "browser.html", "browser.css", "browser.js", "ai-primitives.css", "ai-primitives.js", "icons/*.svg", "icons/*.txt", "fonts/*.woff2", "fonts/*.txt"]
 "cardine.documents" = ["_vendor/*.whl"]
+"cardine.adapters.pageindex" = ["*.data"]
 "study_agent.operator_skill" = ["SKILL.md"]
 
 [tool.pytest.ini_options]
