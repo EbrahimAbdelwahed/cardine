@@ -19,6 +19,7 @@ if TYPE_CHECKING:
         GeneratedBatchOwnerReceipt,
         LessonGeneratedBatchOwnerReceipt,
     )
+    from study_agent.domain._validation import JsonObject
     from study_agent.flashcards.lesson_worker_contracts import LessonWorkerCheckpoint
     from study_agent.flashcards.planning import PreparedPlannedFlashcardScope
     from study_agent.workers import (
@@ -76,6 +77,7 @@ class VerifiedChildProofReader(Protocol):
         run_id: RunId,
         receipt: GenerationWorkerReceipt,
         context: ExecutionContext,
+        execution_inputs: JsonObject | None = None,
     ) -> VerifiedChildExecutionProofView: ...
 
 

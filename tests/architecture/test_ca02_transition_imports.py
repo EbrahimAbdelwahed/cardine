@@ -117,7 +117,7 @@ def test_ca02_audit_excludes_only_cardine_integration_modules(
     harness.write_text("value = 1\n", encoding="utf-8")
     monkeypatch.setattr(audit, "ROOT", root)
 
-    paths = audit._source_paths()
+    paths = audit._source_paths(set())
 
     assert "src/cardine/integrations/approved.py" not in paths
     assert "src/study_agent/integrations/unreviewed.py" in paths

@@ -41,7 +41,7 @@
       "path": "src/study_agent/application/conversation_turn.py",
       "source_path": "src/cardine/application/conversation_turn.py",
       "disposition": "CARDINE_OWNER",
-      "transition_sha256": "e6c4f9fdff11b5f11bdff260096bd903a6d912e3e96c38e920345478af3c8937"
+      "transition_sha256": "9f46e94b42f669b63e10dd1effa611accc9761e3606aa1db9bb116e81cd1b7ab"
     },
     {
       "path": "src/study_agent/application/flashcard_profile_selection.py",
@@ -53,7 +53,7 @@
       "path": "src/study_agent/application/flashcard_proposals.py",
       "source_path": "src/cardine/application/flashcard_proposals.py",
       "disposition": "CARDINE_OWNER",
-      "transition_sha256": "13bd4ed51f9886b6233eb13e0abccd41da4f614296c5e9edd505af87cb2b4912"
+      "transition_sha256": "66b38c557bcf49bb3dc5589a03d8573d2115f579e030189fd58df064bb66eedb"
     },
     {
       "path": "src/study_agent/application/grounding_ask.py",
@@ -89,7 +89,7 @@
       "path": "src/study_agent/cli/commands.py",
       "source_path": "src/cardine/cli/commands.py",
       "disposition": "CARDINE_OWNER",
-      "transition_sha256": "bb9c35d001e4ff903ccafdcf50000423e9ebf73d0222ea7b4dd5cceccb5e5d89"
+      "transition_sha256": "6d166f9559452d21c2493f8813987f45c4de5464f11e300ac2a0b1954c8df9af"
     },
     {
       "path": "src/study_agent/cli/config.py",
@@ -119,13 +119,13 @@
       "path": "src/study_agent/cli/registry.py",
       "source_path": "src/cardine/cli/registry.py",
       "disposition": "CARDINE_OWNER",
-      "transition_sha256": "d2c09e4811de54fd82bd4351de7a7a1a647124977a36137193444fb35e6cbe0e"
+      "transition_sha256": "2a8ed57cef4084ccd0c4d210318ad3a79c1008c8b4ec7053732ac8fa0ed8da6b"
     },
     {
       "path": "src/study_agent/cli/repository.py",
       "source_path": "src/cardine/cli/repository.py",
       "disposition": "CARDINE_OWNER",
-      "transition_sha256": "7d61b20b50c6e05ad07d9ccc5ef3bde64c3a318bded77a40bf06cad5e147eee2"
+      "transition_sha256": "1d448b41b9eba4ec63fe5ab9b714b2a9f6d45d00cd6f70a566cd59b91bb96784"
     },
     {
       "path": "src/study_agent/courses/__init__.py",
@@ -197,7 +197,7 @@
       "path": "src/study_agent/demo/browser.js",
       "source_path": "src/cardine/demo/browser.js",
       "disposition": "CARDINE_OWNER",
-      "transition_sha256": "fa0f0233a1ba199bbfaa10425329391a1cd5e119009b34ce8f594164f8e63d5e"
+      "transition_sha256": "d72beff63359073036d4162ec907f2e296c51aa80000dbbc0dfbc8614403f3a5"
     },
     {
       "path": "src/study_agent/demo/browser.py",
@@ -371,7 +371,7 @@
       "path": "src/study_agent/demo/ui_application.py",
       "source_path": "src/cardine/demo/ui_application.py",
       "disposition": "CARDINE_OWNER",
-      "transition_sha256": "2372e411d80460c0adcae191d4f69073519847bbb936fbd3a3e521e641e5c2f2"
+      "transition_sha256": "ded611b87100ed592ea6c7d3295846b6f37bbc593748195592e75ce62aacdcd3"
     },
     {
       "path": "src/study_agent/diagnostics/__init__.py",
@@ -581,13 +581,13 @@
       "path": "src/study_agent/artifacts/verified_batch.py",
       "source_path": "src/study_agent/artifacts/verified_batch.py",
       "disposition": "HARNESS_IMPORT",
-      "transition_sha256": "af9bc627f2c85275644c3cffbc7f85ace100b36a05c8c7f454db64c231fa1fd3"
+      "transition_sha256": "42d63a676ac0c8542ae8ad21bf912f3e26ad517a94eab3882a5b330ffb5ca19a"
     },
     {
       "path": "src/study_agent/capabilities/morphology_flashcards.py",
       "source_path": "src/study_agent/capabilities/morphology_flashcards.py",
       "disposition": "HARNESS_IMPORT",
-      "transition_sha256": "377f4f78ad86c0aad27070ac667f79b4fffe8b85e24a86c7b76ca8b1093e3fd5"
+      "transition_sha256": "045fa6cf233f2e871982bd9f0afb0c7089f58b89fc6df4c6469daf935066afa0"
     },
     {
       "path": "src/study_agent/domain/__init__.py",
@@ -605,7 +605,7 @@
       "path": "src/study_agent/flashcards/lesson_worker_service.py",
       "source_path": "src/study_agent/flashcards/lesson_worker_service.py",
       "disposition": "HARNESS_IMPORT",
-      "transition_sha256": "a8556391c292dfa7f96bd139458bc77795bbc220deba238902eb3e2336213fdc"
+      "transition_sha256": "2192bcbeb33a17911490ab2c7d17803039a244141ddb8b43d3f59aece3921053"
     },
     {
       "path": "src/study_agent/lifecycle/contracts.py",
@@ -653,7 +653,7 @@
       "path": "src/study_agent/ports/verified_batch.py",
       "source_path": "src/study_agent/ports/verified_batch.py",
       "disposition": "HARNESS_IMPORT",
-      "transition_sha256": "a232495f3d98d917645f20c98a8921303e676875c029f81d1c1a558cd0966e57"
+      "transition_sha256": "22cd837a304d0c5cdc1118bbe2c8487ad2308747289f6dd8a5b1745ed28996a6"
     },
     {
       "path": "src/study_agent/ports/workaround.py",
@@ -665,7 +665,7 @@
       "path": "src/study_agent/prompts/morphology_flashcards_v1.py",
       "source_path": "src/study_agent/prompts/morphology_flashcards_v1.py",
       "disposition": "HARNESS_IMPORT",
-      "transition_sha256": "9f2f13814b6906a8bb187e660b36956a941355b452325d3d91e9c71e89f5e111"
+      "transition_sha256": "00be875b999946c656a7e13c9eb1326e87e931b3100c1b99bfdd89930c322756"
     },
     {
       "path": "src/study_agent/sessions/events.py",

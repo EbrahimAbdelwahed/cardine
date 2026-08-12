@@ -13,6 +13,10 @@ from types import FrameType
 from typing import cast
 from uuid import uuid4
 
+from cardine.application.artifact_decisions import (
+    artifact_bulk_receipt_payload,
+    decide_artifacts,
+)
 from cardine.courses import course_profile_manifest
 from cardine.documents import (
     PdfAdmissionError,
@@ -204,6 +208,18 @@ async def handle_lesson_select(
     request: CommandRequest, repository: LocalRepository | None
 ) -> CommandOutcome:
     return await _lesson_select(_required_repository(repository), request.values)
+
+
+async def handle_lesson_flashcards(
+    request: CommandRequest, repository: LocalRepository | None
+) -> CommandOutcome:
+    return await _lesson_flashcards(_required_repository(repository), request.values)
+
+
+async def handle_artifact_decisions(
+    request: CommandRequest, repository: LocalRepository | None
+) -> CommandOutcome:
+    return await _artifact_decisions(_required_repository(repository), request.values)
 
 
 async def handle_ask(request: CommandRequest, repository: LocalRepository | None) -> CommandOutcome:
@@ -703,6 +719,73 @@ async def _lesson_select(repository: LocalRepository, values: dict[str, object])
     )
 
 
+async def _lesson_flashcards(
+    repository: LocalRepository, values: dict[str, object]
+) -> CommandOutcome:
+    course_id = CourseId(_text(values, "course_id"))
+    repository.courses.get(course_id)
+    pin = _lesson_pin(values.get("lesson_pin"))
+    if pin is None:
+        raise ValueError("lesson flashcards require a complete lesson pin")
+    session_id = SessionId(_text(values, "session_id"))
+    request_id = _text(values, "request_id")
+    context = _context(
+        course_id,
+        session_id=session_id,
+        idempotency_key=request_id,
+        capabilities=frozenset({"study:ask"}),
+    )
+    receipt = await repository.propose_flashcards_for_pin(
+        course_id,
+        session_id,
+        pin,
+        _text(values, "query"),
+        context,
+    )
+    return CommandOutcome(
+        "lesson.flashcards",
+        {
+            "course_id": str(course_id),
+            "session_id": str(session_id),
+            "status": "completed",
+            "run_id": str(receipt.run_id),
+            "message": receipt.content,
+            "canonical_ids": receipt.canonical_ids,
+        },
+    )
+
+
+async def _artifact_decisions(
+    repository: LocalRepository, values: dict[str, object]
+) -> CommandOutcome:
+    course_id = CourseId(_text(values, "course_id"))
+    repository.courses.get(course_id)
+    session_id = SessionId(_text(values, "session_id"))
+    request_id = _text(values, "request_id")
+    expected_sequence = values.get("expected_sequence")
+    if type(expected_sequence) is not int or expected_sequence < 0:
+        raise ValueError("expected_sequence is invalid")
+    raw = values.get("decisions")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError as error:
+            raise ValueError("decisions must be valid JSON") from error
+    receipt = decide_artifacts(
+        repository.artifact_service,
+        raw,
+        _context(course_id, session_id=session_id, idempotency_key=request_id),
+        expected_sequence,
+    )
+    return CommandOutcome(
+        "artifact.decisions",
+        {
+            "status": "committed",
+            "course_id": str(course_id),
+            "session_id": str(session_id),
+            **artifact_bulk_receipt_payload(receipt),
+        },
+    )
 async def _ask(repository: LocalRepository, values: dict[str, object]) -> CommandOutcome:
     course_id = CourseId(_text(values, "course_id"))
     repository.courses.get(course_id)

@@ -51,11 +51,15 @@ TRANSITION_EXPORTS = {
     "require_aware",
     "require_text",
 }
-PREEXISTING_AST_VARIANCE = {
+REVIEWED_NON_IMPORT_AST_VARIANCE = {
     "src/study_agent/artifacts/verified_batch.py",
     "src/study_agent/capabilities/morphology_flashcards.py",
     "src/study_agent/flashcards/lesson_worker_service.py",
     "src/study_agent/prompts/morphology_flashcards_v1.py",
+    # Wave A extends the verified proof-reader port with an optional exact
+    # execution-input commitment.  This is a reviewed protocol correction,
+    # not a namespace-transition import rewrite.
+    "src/study_agent/ports/verified_batch.py",
     "src/study_agent/workers/proof.py",
 }
 COPIED_IMPORT_PATHS = {
@@ -458,7 +462,7 @@ def _validate_cardine_transition(
                 ast.parse(current_source, filename=source_path)
                 if (
                     row["disposition"] == "HARNESS_IMPORT"
-                    and source_path not in PREEXISTING_AST_VARIANCE
+                    and source_path not in REVIEWED_NON_IMPORT_AST_VARIANCE
                 ):
                     baseline_source = _baseline_source(source_path)
                     if _normalized_ast(current_source, source_path) != _normalized_ast(

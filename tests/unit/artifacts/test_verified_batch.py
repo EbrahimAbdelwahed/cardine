@@ -36,6 +36,7 @@ from study_agent.artifacts.verified_batch import (
     VerifiedLessonOwnerWriterAdapter,
     exam_owner_coordinator_fingerprint,
 )
+from study_agent.capabilities.bindings import profiled_execution_inputs
 from study_agent.domain import (
     CorrelationId,
     CourseId,
@@ -451,6 +452,7 @@ class _Proofs:
     def __init__(self, proof: VerifiedChildExecutionProof) -> None:
         self.proof = proof
         self.contexts: list[ExecutionContext] = []
+        self.inputs: list[JsonObject | None] = []
 
     def load(
         self,
@@ -458,8 +460,10 @@ class _Proofs:
         run_id: RunId,
         receipt: GenerationWorkerReceipt,
         context: ExecutionContext,
+        execution_inputs: JsonObject | None = None,
     ) -> VerifiedChildExecutionProof:
         self.contexts.append(context)
+        self.inputs.append(execution_inputs)
         return self.proof
 
 
@@ -495,11 +499,17 @@ def test_lesson_proof_converts_candidates_parents_and_nullable_model_receipt() -
     assert provenance.model is not None
     assert provenance.model.response_id is None
     assert proofs.contexts == [generation_worker_child_context(material.task, context)]
+    assert proofs.inputs == [
+        profiled_execution_inputs(
+            material.task.capability_inputs(),
+            material.checkpoint.request.profile_expectation.profile_selection_receipt,
+        )
+    ]
 
 
 def test_exam_proof_converts_observations_to_one_blueprint() -> None:
     owner, material, proof, context = _exam_fixture()
-    adapter, _ = _adapter(owner, material, proof)
+    adapter, proofs = _adapter(owner, material, proof)
 
     batch = adapter.recover(owner.child_run_id, context)
 
@@ -511,6 +521,7 @@ def test_exam_proof_converts_observations_to_one_blueprint() -> None:
     provenance = batch.proposals[0].provenance
     assert isinstance(provenance, GeneratedArtifactProvenance)
     assert provenance.profile_selection is None
+    assert proofs.inputs == [material.task.capability_inputs()]
 
 
 def test_adapter_rejects_owner_proof_tamper_and_media_without_receipt() -> None:
@@ -582,6 +593,7 @@ def test_lesson_writer_loads_exact_child_context_and_publishes_once() -> None:
         owner.revision_commitments_fingerprint,
         owner.associated_overview_bundle_id,
         owner.overview_association_fingerprint,
+        material.checkpoint.request.profile_expectation.profile_selection_receipt,
     )
 
     first = writer.create(commitment, material.task, material.receipt, context)
@@ -592,6 +604,16 @@ def test_lesson_writer_loads_exact_child_context_and_publishes_once() -> None:
     assert proofs.contexts == [
         generation_worker_child_context(material.task, context),
         generation_worker_child_context(material.task, context),
+    ]
+    assert proofs.inputs == [
+        profiled_execution_inputs(
+            material.task.capability_inputs(),
+            material.checkpoint.request.profile_expectation.profile_selection_receipt,
+        ),
+        profiled_execution_inputs(
+            material.task.capability_inputs(),
+            material.checkpoint.request.profile_expectation.profile_selection_receipt,
+        ),
     ]
 
 

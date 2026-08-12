@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from dataclasses import replace
 from pathlib import Path
 from types import MethodType
 from typing import TYPE_CHECKING, Protocol, cast
@@ -50,28 +51,31 @@ def _flashcard_draft(request: ModelRequest) -> JsonObject:
             tuple[dict[str, object], ...] | list[dict[str, object]],
             prepared_inner["index"],
         )
-        evidence_handles = cast(tuple[str, ...] | list[str], index[0]["evidence_handles"])
-        topic_key = active_topics[0]
-        evidence_id = evidence_handles[0]
+        topic_keys = tuple(str(item) for item in active_topics)
+        evidence_ids = tuple(
+            str(cast(tuple[object, ...] | list[object], item["evidence_handles"])[0])
+            for item in index
+        )
         return cast(JsonObject, {
-            "topic_plan": (
+            "topic_plan": tuple(
                 {
-                    "topic_key": topic_key,
+                    "topic_key": key,
                     "disposition": "generate",
-                    "candidate_keys": ("candidate-1",),
+                    "candidate_keys": (f"candidate-{position + 1}",),
                     "omission_reason": None,
-                },
+                }
+                for position, key in enumerate(topic_keys)
             ),
-            "candidates": (
+            "candidates": tuple(
                 {
-                    "candidate_key": "candidate-1",
+                    "candidate_key": f"candidate-{position + 1}",
                     "parent_candidate_key": None,
                     "retrieval_form": "direct_recall",
-                    "prompt": "Quante cuspidi ha la valvola aortica?",
+                    "prompt": f"Quante cuspidi ha la valvola aortica? (topic {position + 1})",
                     "answer_blocks": (
                         {
                             "label": "Risposta",
-                            "text": "Tre cuspidi.",
+                            "text": f"Tre cuspidi nel topic {position + 1}.",
                             "key_points": (),
                         },
                     ),
@@ -79,9 +83,10 @@ def _flashcard_draft(request: ModelRequest) -> JsonObject:
                     "morphology_family": None,
                     "cognitive_function": None,
                     "rationale": "La fonte dichiara il numero di cuspidi.",
-                    "evidence_ids": (evidence_id,),
+                    "evidence_ids": (evidence_ids[position],),
                     "media_evidence_ids": (),
-                },
+                }
+                for position in range(len(topic_keys))
             ),
             "omissions": (),
             "detail_bases": (),
@@ -209,6 +214,58 @@ def test_repository_chat_publishes_verified_pending_flashcard_proposal(tmp_path:
     )
     assert len(flashcard_requests) == 1
     assert flashcard_requests[-1].metadata["prompt_id"] == "hybrid_flashcards.v1"
+
+
+def test_direct_selected_lesson_flashcards_create_human_interaction_before_generation(
+    tmp_path: Path,
+) -> None:
+    root, adapters, model = _repository(
+        tmp_path,
+        source_content=b"# Lezione 1\nLa valvola aortica ha tre cuspidi.\n# Lezione 2\nAltro.",
+    )
+    flashcard_requests = _install_hybrid_flashcard_model(model)
+    with LocalRepository.open(root, model_adapters=adapters) as repository:
+        result = repository.search_lessons(COURSE, "Lezione 1")
+        pin = repository.select_lesson(COURSE, "Lezione 1", result.candidates[0].candidate_id)
+        source_record = repository.validate_lesson_pin(pin)
+        assert source_record.chunks, (pin, source_record)
+        context = ExecutionContext(
+            PrincipalKind.HUMAN,
+            "direct-selected-lesson",
+            COURSE,
+            CorrelationId("direct-selected-lesson"),
+            session_id=SESSION,
+            idempotency_key="direct-selected-lesson",
+        )
+        receipt = asyncio.run(
+            repository.propose_flashcards_for_pin(
+                COURSE, SESSION, pin, "Crea flashcard da queste fonti", context
+            )
+        )
+        assert receipt.run_id
+        human = tuple(
+            item
+            for item in repository.sessions.interactions(COURSE, SESSION)
+            if item.kind.value == "human" and item.content == "Crea flashcard da queste fonti"
+        )
+        assert len(human) == 1
+        assert len(flashcard_requests) == 1
+        repository.session_turn_service.record_learner_turn(
+            "Una domanda intermedia",
+            replace(
+                context,
+                correlation_id=CorrelationId("interleaved-human-turn"),
+                idempotency_key="interleaved-human-turn",
+            ),
+            repository.events.projection(COURSE).sequence,
+        )
+        retried = asyncio.run(
+            repository.propose_flashcards_for_pin(
+                COURSE, SESSION, pin, "Crea flashcard da queste fonti", context
+            )
+        )
+        assert retried == receipt
+        assert len(flashcard_requests) == 1
 
 
 def test_repository_chat_selects_morphology_first_and_persists_profile_receipt(

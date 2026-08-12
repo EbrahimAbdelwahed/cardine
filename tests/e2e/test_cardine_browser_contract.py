@@ -291,6 +291,24 @@ def test_chat_home_and_session_markers_preserve_learner_tutor_boundary() -> None
     assert 'role === "system" ? "sistema" : "tutor"' in javascript
 
 
+def test_selected_lesson_flashcards_and_bulk_decisions_are_reachable() -> None:
+    javascript = (DEMO_DIR / "browser.js").read_text(encoding="utf-8")
+
+    for marker in (
+        "data-lesson-flashcards",
+        "Crea flashcard dalla lezione selezionata",
+        "data-artifact-bulk",
+        "data-bulk-revision",
+        "submitArtifactBulk",
+        "un'unica operazione atomica",
+        "/api/v1/lessons/flashcards",
+        "/api/v1/artifacts/decisions",
+    ):
+        assert marker in javascript
+    assert "$$('[data-bulk-revision]:checked', root)" in javascript
+    assert "$$('[data-bulk-decision]', root)" in javascript
+
+
 def test_unavailable_routes_are_honest_and_isolated(browser_url: str) -> None:
     for endpoint in (ROUTES["proposte"], ROUTES["verifiche"], ROUTES["ripasso"], ROUTES["piano"]):
         status, payload, _ = _get(browser_url, endpoint)

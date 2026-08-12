@@ -111,10 +111,15 @@ from study_agent.capabilities import (
     CapabilityContinuation,
     CapabilityManifest,
     CapabilityOutcome,
+    CompletedCapabilityOutcome,
     StudyCapabilityGateway,
     TutorCapabilityId,
     builtin_tutor_validators,
     explain_concept_binding,
+)
+from study_agent.capabilities.fingerprints import (
+    capability_output_fingerprint,
+    capability_retry_fingerprint,
 )
 from study_agent.domain import (
     BlobId,
@@ -128,6 +133,7 @@ from study_agent.domain import (
     ResolvedCitation,
     RevisionId,
     SessionId,
+    SessionStatus,
     SourceCommitment,
     SourceId,
 )
@@ -1702,6 +1708,94 @@ class LocalRepository:
             ),
             events=self.events,
         )
+
+    async def propose_flashcards_for_pin(
+        self,
+        course_id: CourseId,
+        session_id: SessionId,
+        pin: SourcePin,
+        query: str,
+        context: ExecutionContext,
+    ) -> CapabilityCompletionProductReceipt:
+        """Generate and settle one lesson-scoped flashcard proposal batch.
+
+        Pin validation and consent happen before composing the provider model.
+        The capability itself remains the existing profile-dispatched
+        Harness capability; only its Cardine-owned source view is narrowed.
+        """
+
+        if not isinstance(pin, SourcePin) or pin.course_id != str(course_id):
+            raise ValueError("lesson pin belongs to another course")
+        if context.course_id != course_id or context.session_id != session_id:
+            raise ValueError("flashcard request context is outside the selected course")
+        session = self.sessions.get_session(course_id, session_id)
+        if session.status is not SessionStatus.ACTIVE:
+            raise ValueError("flashcard generation requires an active session")
+        source = self.validate_lesson_pin(pin)
+        if not any(
+            chunk.start_offset >= pin.start_offset and chunk.end_offset <= pin.end_offset
+            for chunk in source.chunks
+        ):
+            raise ValueError("lesson pin contains no complete canonical chunk")
+        if not isinstance(query, str) or not query.strip() or len(query) > 4_000:
+            raise ValueError("flashcard query is invalid")
+        request_id = context.idempotency_key
+        if request_id is None:
+            raise ValueError("flashcard request requires an idempotency key")
+        consent = self.provider_consent.get(course_id)
+        if consent is None or not consent.granted:
+            raise ProviderConsentRequiredError("provider consent is required")
+        context = replace(
+            context,
+            requested_capabilities=context.requested_capabilities
+            | frozenset({"course:read", "study:ask"}),
+        )
+        sequence = self.events.projection(course_id).sequence
+        learner = self.session_turn_service.record_learner_turn(
+            query.strip(), context, sequence
+        )
+        service_context = replace(
+            context,
+            principal_kind=PrincipalKind.SERVICE,
+            principal_id="cardine-selected-lesson-flashcards",
+        )
+        self.tutor_conversation(course_id, session_id=session_id)
+        composition = self.flashcard_composition
+        if composition is None:
+            raise ValueError("flashcard capability is not executable")
+        inputs: JsonObject = {
+            "query": query.strip(),
+            "scope": pin.section_title,
+            "language": "it",
+            "candidate_ceiling": 24,
+            "continuation_summary_json": None,
+        }
+        scoped = composition.for_pin(pin, learner.id)
+        scoped.attach_artifact_service(
+            ArtifactService(
+                self.events,
+                self.clock,
+                self.artifacts,
+                self.sessions,
+                scoped.runtime.batches,
+                self._source_catalog,
+                self.artifact_service._decision_policy,
+            )
+        )
+        outcome = await scoped.start(inputs, service_context)
+        if not isinstance(outcome, CompletedCapabilityOutcome):
+            raise RuntimeError("flashcard generation did not complete with verified output")
+        reference = TutorCapabilityCompletionReference(
+            scoped.manifest.identity,
+            scoped.manifest.fingerprint,
+            outcome.run.run_id,
+            capability_output_fingerprint(outcome.output),
+            capability_retry_fingerprint(request_id),
+        )
+        receipt = scoped.recover(reference, service_context)
+        if receipt is None:
+            raise RuntimeError("verified flashcard proposal could not be settled")
+        return receipt
 
     def study_tools(self, course_id: CourseId) -> StudyToolRegistry:
         """Compose the exact public tool registry from this repository's services."""

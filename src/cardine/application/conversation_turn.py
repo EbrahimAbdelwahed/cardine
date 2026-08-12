@@ -834,6 +834,14 @@ class ConversationTurnApplication:
             return None
         if product is None:
             return None
+        # Completion handlers may canonically settle durable products (for
+        # example generated artifact proposals) after the host observed its
+        # input sequence. Preserve the verified handoff binding above, then
+        # append the presentation at the freshly observed shared-stream high
+        # water rather than racing the product events it just created.
+        settlement_sequence = self._snapshots.get(
+            course_id, session_id
+        ).high_water_sequence
         context = ExecutionContext(
             PrincipalKind.SERVICE,
             self._service_principal_id,
@@ -851,7 +859,7 @@ class ConversationTurnApplication:
             host_turn_id=retry.host_turn_id,
             kind=TutorPresentationKind.ASSISTANT_MESSAGE,
             content=product.content,
-            observed_host_context_sequence=observed_sequence,
+            observed_host_context_sequence=settlement_sequence,
             host_context_fingerprint=(
                 retry.context_fingerprint
                 if handoff is None

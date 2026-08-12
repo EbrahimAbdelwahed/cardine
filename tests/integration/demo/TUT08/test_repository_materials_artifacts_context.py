@@ -173,6 +173,10 @@ def test_repository_c2_materials_and_artifact_retry_are_bounded_and_session_scop
     assert "content" not in row
     assert "answer" not in row
     assert "raw_output" not in row
+    review = cast(dict[str, object], row["review"])
+    assert review["status"] == "ready"
+    assert review["prompt"] == "How many cusps does the aortic valve have?"
+    assert "rationale" not in review
 
     sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
     command = {
@@ -192,6 +196,7 @@ def test_repository_c2_materials_and_artifact_retry_are_bounded_and_session_scop
     restarted = RepositoryUiApplication(root, COURSE, SESSION)
     reloaded_rows = cast(tuple[dict[str, object], ...], restarted.get("/api/v1/artifacts")["items"])
     assert reloaded_rows[0]["status"] == "accepted"
+    assert cast(dict[str, object], reloaded_rows[0]["review"])["status"] == "ready"
 
     stale = {
         **command,
@@ -374,3 +379,40 @@ def test_provider_consent_and_source_retirement_survive_restart_without_deleting
     )
     assert restored["status"] == "restored"
     assert len(cast(tuple[object, ...], restarted.get("/api/v1/materials")["items"])) == 1
+
+
+def test_ui_bulk_human_decisions_append_once_and_retry_by_request_identity(
+    tmp_path: Path,
+) -> None:
+    root, revision_id = _repository(tmp_path / "repository")
+    app = RepositoryUiApplication(root, COURSE, SESSION)
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+    command = {
+        "schema_version": 1,
+        "request_id": "c2-bulk-decisions",
+        "expected_sequence": sequence,
+        "payload": {
+            "decisions": (
+                {"revision_id": str(revision_id), "decision": "accepted"},
+            )
+        },
+    }
+    committed = app.post("/api/v1/artifacts/decisions", command)
+    assert committed["status"] == "committed"
+    receipt = cast(dict[str, object], committed["receipt"])
+    assert receipt["start_sequence"] == receipt["end_sequence"]
+    retry = app.post("/api/v1/artifacts/decisions", command)
+    assert retry == committed
+
+    conflict = {
+        **command,
+        "request_id": "c2-bulk-conflict",
+        "payload": {
+            "decisions": (
+                {"revision_id": str(revision_id), "decision": "rejected"},
+            )
+        },
+    }
+    with pytest.raises(UiRequestError) as error:
+        app.post("/api/v1/artifacts/decisions", conflict)
+    assert error.value.status_code == 409

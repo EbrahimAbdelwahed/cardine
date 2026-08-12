@@ -408,8 +408,10 @@ class _ScriptedProofReader:
         self.proofs = proofs
         self.calls: list[RunId] = []
 
-    def load(self, task, run_id, receipt, context):  # type: ignore[no-untyped-def]
-        del task, receipt, context
+    def load(  # type: ignore[no-untyped-def]
+        self, task, run_id, receipt, context, execution_inputs=None
+    ):
+        del task, receipt, context, execution_inputs
         self.calls.append(run_id)
         return self.proofs[run_id]
 
@@ -419,8 +421,10 @@ class _ExamProofReader:
         self.scope = scope
         self.output = output
 
-    def load(self, task, run_id, receipt, context):  # type: ignore[no-untyped-def]
-        del context
+    def load(  # type: ignore[no-untyped-def]
+        self, task, run_id, receipt, context, execution_inputs=None
+    ):
+        del context, execution_inputs
         validations = tuple(
             ObservedValidationReceipt(
                 item.step_id,
@@ -523,10 +527,12 @@ class _ProofReaderRouter:
         self.lesson = lesson
         self.exam = exam
 
-    def load(self, task, run_id, receipt, context):  # type: ignore[no-untyped-def]
+    def load(  # type: ignore[no-untyped-def]
+        self, task, run_id, receipt, context, execution_inputs=None
+    ):
         if task.task_kind is GenerationWorkerTaskKind.EXAM_ANALYSIS:
-            return self.exam.load(task, run_id, receipt, context)
-        return self.lesson.load(task, run_id, receipt, context)
+            return self.exam.load(task, run_id, receipt, context, execution_inputs)
+        return self.lesson.load(task, run_id, receipt, context, execution_inputs)
 
 
 class _SourceCommitments:

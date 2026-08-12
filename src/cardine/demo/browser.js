@@ -1325,7 +1325,7 @@
     const answer = lesson.answer && typeof lesson.answer === "object"
       ? `<article class="lesson-answer" aria-live="polite"><p class="section-kicker">risposta ancorata alla lezione</p><pre>${esc(JSON.stringify(lesson.answer, null, 2))}</pre></article>`
       : "";
-    return `<section class="lesson-study" aria-labelledby="lesson-study-heading"><p class="section-kicker">selezione esplicita · grounding</p><h2 id="lesson-study-heading">Cerca una lezione</h2><p class="field-note">La domanda usa solo il pin selezionato e fallisce se la fonte è cambiata.</p><form data-lesson-search novalidate><label for="lesson-query">Titolo o argomento</label><input id="lesson-query" name="query" value="${esc(text(lesson.query))}" required maxlength="512" placeholder="es. Lezione 1"><button class="button" type="submit">Cerca</button></form>${rows}${pin ? `<form data-lesson-ask novalidate><label for="lesson-question">Domanda sulla lezione selezionata</label><textarea id="lesson-question" name="question" required maxlength="4000" placeholder="Cosa spiega questa lezione?"></textarea><button class="button" type="submit">Chiedi sulla lezione selezionata</button></form>` : ""}${answer}</section>`;
+    return `<section class="lesson-study" aria-labelledby="lesson-study-heading"><p class="section-kicker">selezione esplicita · grounding</p><h2 id="lesson-study-heading">Cerca una lezione</h2><p class="field-note">La domanda e le flashcard usano solo il pin selezionato e falliscono se la fonte è cambiata.</p><form data-lesson-search novalidate><label for="lesson-query">Titolo o argomento</label><input id="lesson-query" name="query" value="${esc(text(lesson.query))}" required maxlength="512" placeholder="es. Lezione 1"><button class="button" type="submit">Cerca</button></form>${rows}${pin ? `<form data-lesson-ask novalidate><label for="lesson-question">Domanda sulla lezione selezionata</label><textarea id="lesson-question" name="question" required maxlength="4000" placeholder="Cosa spiega questa lezione?"></textarea><button class="button" type="submit">Chiedi sulla lezione selezionata</button></form><form data-lesson-flashcards novalidate><label for="lesson-flashcards-query">Richiesta flashcard</label><input id="lesson-flashcards-query" name="query" required maxlength="4000" value="Crea flashcard dalla lezione selezionata"><button class="button button--quiet" type="submit">Crea flashcard dalla lezione selezionata</button></form>` : ""}${answer}</section>`;
   }
 
   /* A three-step setup shows where you are and lets you go back. The frame
@@ -1612,6 +1612,11 @@
   function renderProposte(payload) {
     const proposals = array(payload);
     const rows = proposals.length ? proposals.map(renderProposal).join("") : emptyState("Nessuna proposta da decidere", "Le proposte generate non vengono considerate accettate finché non esiste una decisione esplicita.");
+    const bulkCount = proposals.filter((item) => {
+      const proposal = object(item);
+      return (text(first(proposal, ["status", "state"], "pending"), "pending") === "pending" || text(first(proposal, ["status", "state"], "pending"), "pending") === "proposed") && proposal.reviewable === true;
+    }).length;
+    const bulkView = bulkCount ? `<form data-artifact-bulk novalidate><p class="field-note">Seleziona una o più flashcard e assegna a ciascuna una decisione. L'invio è un'unica operazione atomica.</p><button class="button button--quiet" type="submit">Applica decisioni selezionate (<span data-bulk-count>${bulkCount}</span> disponibili)</button></form>` : "";
     const diffRows = proposals.slice(0, 12).map((item) => {
       const proposal = object(item);
       const status = text(first(proposal, ["status", "state"], "pending"), "pending");
@@ -1622,7 +1627,7 @@
     const approvalView = aiApproval({ title: "Decidi con calma", detail: "La decisione canonica resta nei pulsanti della singola proposta; questo follow-up serve solo a chiedere chiarimenti.", choices: [{ label: "Spiegami cosa cambia", action: "spiega proposta", prompt: "Spiegami cosa cambia nella proposta corrente" }] });
     const pendingCount = proposals.filter((item) => ["pending", "proposed"].includes(text(first(object(item), ["status", "state"], "pending")))).length;
     const recommendationView = pendingCount ? aiRecommendation({ title: "Rivedi una proposta", detail: `${pendingCount} proposte attendono una decisione esplicita.`, prompt: "Aiutami a rivedere una proposta", actionLabel: "Chiedimi un riepilogo" }) : "";
-    setView("proposte", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="proposal-heading"><p class="section-kicker">proposte · decisione tua</p><h1 class="section-title" id="proposal-heading">Proposte</h1><p class="section-copy">Generato non significa approvato. Ogni decisione è legata a revisione, sequenza e request ID.</p><div class="card-list">${rows}</div><div class="ai-proposals-diff">${diffView}</div>${approvalView}${recommendationView}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">regola di stato</p><h2 class="side-card__title">Nessun “accetta tutto”</h2><p class="side-card__copy">Le decisioni restano individuali per mantenere provenance e idempotenza verificabili.</p></div></aside></section>`);
+    setView("proposte", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="proposal-heading"><p class="section-kicker">proposte · decisione tua</p><h1 class="section-title" id="proposal-heading">Proposte</h1><p class="section-copy">Generato non significa approvato. Ogni decisione è legata a revisione, sequenza e request ID.</p>${bulkView}<div class="card-list">${rows}</div><div class="ai-proposals-diff">${diffView}</div>${approvalView}${recommendationView}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">regola di stato</p><h2 class="side-card__title">Decisioni esplicite</h2><p class="side-card__copy">Puoi decidere singolarmente oppure inviare una selezione in un'unica operazione atomica.</p></div></aside></section>`);
   }
 
   function renderProposal(item) {
@@ -1633,17 +1638,25 @@
     const provenance = object(first(proposal, ["provenance"], {}));
     const commitments = array(first(provenance, ["source_commitments"], []));
     const pending = status === "proposed" || status === "pending";
+    const review = object(first(proposal, ["review"], {}));
+    const reviewable = text(review.status, "unavailable") === "ready" && proposal.kind === "flashcard";
+    const reviewContent = reviewable
+      ? `<div class="flashcard-review"><p class="flashcard-review__prompt">${esc(text(review.prompt))}</p>${array(review.answer_blocks).map((block) => { const value = object(block); const points = array(value.key_points); return `<section class="flashcard-review__answer"><h3>${esc(text(value.label))}</h3><p>${esc(text(value.text))}</p>${points.length ? `<ul>${points.map((point) => `<li>${esc(text(point))}</li>`).join("")}</ul>` : ""}</section>`; }).join("")}</div>`
+      : proposal.kind === "flashcard" ? `<p class="card__meta">Contenuto non disponibile per la revisione; decisione e ripasso restano disabilitati.</p>` : "";
+    const bulkControl = pending && reviewable && revisionId
+      ? `<label class="card__meta"><input type="checkbox" data-bulk-revision="${esc(revisionId)}"> Seleziona per decisione atomica <select data-bulk-decision="${esc(revisionId)}" aria-label="Decisione per ${esc(revisionId)}"><option value="accepted">Accetta</option><option value="rejected">Rifiuta</option></select></label>`
+      : "";
     const enrollmentStatus = text(first(proposal, ["enrollment_status"], ""), "");
-    const enrollment = status === "accepted" && proposal.kind === "flashcard" && revisionId
+    const enrollment = status === "accepted" && reviewable && revisionId
       ? enrollmentStatus === "not_enrolled"
         ? `<button class="button button--quiet" type="button" data-command="enroll" data-revision-id="${esc(revisionId)}">Attiva ripasso</button>`
         : enrollmentStatus && enrollmentStatus !== "enrolled"
           ? `<p class="card__meta">Ripasso: ${esc(enrollmentStatus)}. Puoi riprovare quando il servizio è disponibile.</p>`
           : enrollmentStatus === "enrolled" ? `<p class="card__meta">Ripasso attivo · la card entrerà nella coda quando sarà dovuta.</p>` : ""
       : "";
-    const actions = pending && revisionId ? `<div class="card__actions"><button class="decision-button" type="button" data-command="artifact" data-decision="accepted" data-revision-id="${esc(revisionId)}">Accetta</button><button class="decision-button decision-button--reject" type="button" data-command="artifact" data-decision="rejected" data-revision-id="${esc(revisionId)}">Rifiuta</button></div>` : pending ? `<p class="card__meta">Decisione non disponibile: manca l’identificativo della revisione.</p>` : "";
+    const actions = pending && reviewable && revisionId ? `<div class="card__actions"><button class="decision-button" type="button" data-command="artifact" data-decision="accepted" data-revision-id="${esc(revisionId)}">Accetta</button><button class="decision-button decision-button--reject" type="button" data-command="artifact" data-decision="rejected" data-revision-id="${esc(revisionId)}">Rifiuta</button></div>` : pending && !reviewable ? "" : pending ? `<p class="card__meta">Decisione non disponibile: manca l’identificativo della revisione.</p>` : "";
     const enrollmentActions = enrollment ? `<div class="card__actions">${enrollment}</div>` : "";
-    return `<article class="card card--strong"><div class="card__header"><h2 class="card__title">${esc(title)}</h2>${pill(status)}</div><p class="card__body">Revisione ${esc(revisionId || "non dichiarata")} · ${esc(first(proposal, ["session_id"], "sessione non dichiarata"))}</p><p class="card__meta">${esc(commitments.length)} impegni di fonte · nessun contenuto atteso esposto</p>${actions}${enrollmentActions}</article>`;
+    return `<article class="card card--strong"><div class="card__header"><h2 class="card__title">${esc(title)}</h2>${pill(status)}</div><p class="card__body">Revisione ${esc(revisionId || "non dichiarata")} · ${esc(first(proposal, ["session_id"], "sessione non dichiarata"))}</p><p class="card__meta">${esc(commitments.length)} impegni di fonte</p>${reviewContent}${bulkControl}${actions}${enrollmentActions}</article>`;
   }
 
   function renderVerifiche(payload) {
@@ -2144,6 +2157,18 @@
         askPinnedLesson(form).catch((error) => showCommandError(error));
       });
     });
+    $$('[data-lesson-flashcards]').forEach((form) => {
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        createPinnedFlashcards(form).catch((error) => showCommandError(error));
+      });
+    });
+    $$('[data-artifact-bulk]').forEach((form) => {
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        submitArtifactBulk(form).catch((error) => showCommandError(error));
+      });
+    });
     $$('[data-reveal-review]').forEach((control) => control.addEventListener("click", () => { state.revealedReviews[control.dataset.revealReview] = true; renderRipasso(state.viewData || {}); }));
     $$('[data-choice]').forEach((control) => control.addEventListener("change", () => {
       const card = control.closest(".assessment-card");
@@ -2233,6 +2258,27 @@
     } finally {
       setBusy(false);
     }
+  }
+
+  async function createPinnedFlashcards(form) {
+    const query = text(form.elements.namedItem("query")?.value).trim();
+    const pin = state.lesson && state.lesson.pin;
+    if (!query || !pin) return;
+    await executeCommand("/api/v1/lessons/flashcards", { query, pin }, form, "proposte");
+    setStatus("completed", "Flashcard della lezione create");
+  }
+
+  async function submitArtifactBulk(form) {
+    const decisions = $$('[data-bulk-revision]:checked', root).map((control) => {
+      const revisionId = text(control.dataset.bulkRevision);
+      const picker = $$('[data-bulk-decision]', root).find((item) => item.dataset.bulkDecision === revisionId);
+      return { revision_id: revisionId, decision: text(picker?.value, "accepted") };
+    });
+    if (!decisions.length) {
+      setStatus("ready", "Seleziona almeno una flashcard da decidere");
+      return;
+    }
+    await executeCommand("/api/v1/artifacts/decisions", { decisions }, form, "proposte");
   }
 
   /* The floor and the ceiling come from the stylesheet, so the box can

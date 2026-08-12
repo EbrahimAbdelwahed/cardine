@@ -455,6 +455,46 @@ def command_registrations() -> tuple[CommandRegistration, ...]:
             commands.handle_lesson_select,
         ),
         _registration(
+            "lesson.flashcards",
+            "Generate reviewable flashcard proposals from one complete selected lesson pin.",
+            OperationEffect.EXTERNAL_MODEL,
+            RepositoryRequirement.REQUIRED,
+            NetworkRequirement.MODEL_ONLY,
+            "stable lesson pin and host request identity",
+            "retry with the same request id, query, session, and complete pin",
+            (
+                _argument("course_id", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
+                _argument("query", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
+                _argument("lesson_pin", ArgumentKind.OPTION, ArgumentValueType.JSON, True),
+                _argument("session_id", ArgumentKind.OPTION, ArgumentValueType.STRING, True),
+                _argument("request_id", ArgumentKind.OPTION, ArgumentValueType.STRING, True),
+            ),
+            "cardine --json --repository REPOSITORY lesson flashcards COURSE QUERY",
+            _add_lesson_flashcards,
+            commands.handle_lesson_flashcards,
+        ),
+        _registration(
+            "artifact.decisions",
+            "Atomically record 1..24 explicit HUMAN artifact decisions.",
+            OperationEffect.CANONICAL_WRITE,
+            RepositoryRequirement.REQUIRED,
+            NetworkRequirement.NEVER,
+            "stable request identity, manifest, and expected sequence",
+            "retry with the same request id, decisions, session, and sequence",
+            (
+                _argument("course_id", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
+                _argument("decisions", ArgumentKind.POSITIONAL, ArgumentValueType.JSON, True),
+                _argument("session_id", ArgumentKind.OPTION, ArgumentValueType.STRING, True),
+                _argument("request_id", ArgumentKind.OPTION, ArgumentValueType.STRING, True),
+                _argument(
+                    "expected_sequence", ArgumentKind.OPTION, ArgumentValueType.INTEGER, True
+                ),
+            ),
+            "cardine --json --repository REPOSITORY artifact decisions COURSE JSON",
+            _add_artifact_decisions,
+            commands.handle_artifact_decisions,
+        ),
+        _registration(
             "source.retire",
             "Retire a source from default study surfaces.",
             OperationEffect.CANONICAL_WRITE,
@@ -998,6 +1038,34 @@ def _add_lesson_select(topology: _ParserTopology) -> None:
     parser.add_argument("course_id")
     parser.add_argument("query")
     parser.add_argument("candidate_id")
+
+
+def _add_lesson_flashcards(topology: _ParserTopology) -> None:
+    parser = _leaf(
+        topology.group("lesson", "lesson navigation commands").add_parser(
+            "flashcards", help="generate flashcards from one selected lesson"
+        ),
+        "lesson.flashcards",
+    )
+    parser.add_argument("course_id")
+    parser.add_argument("query")
+    parser.add_argument("--lesson-pin", required=True, metavar="JSON")
+    parser.add_argument("--session-id", required=True)
+    parser.add_argument("--request-id", required=True)
+
+
+def _add_artifact_decisions(topology: _ParserTopology) -> None:
+    parser = _leaf(
+        topology.group("artifact", "artifact decision commands").add_parser(
+            "decisions", help="atomically record HUMAN artifact decisions"
+        ),
+        "artifact.decisions",
+    )
+    parser.add_argument("course_id")
+    parser.add_argument("decisions", metavar="JSON")
+    parser.add_argument("--session-id", required=True)
+    parser.add_argument("--request-id", required=True)
+    parser.add_argument("--expected-sequence", required=True, type=int)
 
 
 def _add_source_mutation(topology: _ParserTopology) -> None:

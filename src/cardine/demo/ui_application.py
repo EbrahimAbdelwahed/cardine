@@ -14,6 +14,10 @@ from pathlib import Path
 from threading import Lock
 from typing import Protocol, cast
 
+from cardine.application.artifact_decisions import (
+    artifact_bulk_receipt_payload,
+    decide_artifacts,
+)
 from cardine.cli.repository import (
     LocalRepository,
     LocalRepositoryError,
@@ -63,7 +67,11 @@ from study_agent.artifacts import (
     ProjectionArtifactView,
     RetryableArtifactConflictError,
 )
-from study_agent.artifacts.content import AssessmentItemContent
+from study_agent.artifacts.content import (
+    AssessmentItemContent,
+    HybridFlashcardContent,
+    MorphologyFlashcardContent,
+)
 from study_agent.artifacts.events import decision_command_fingerprint
 from study_agent.assessments import (
     AssessmentCommandError,
@@ -144,6 +152,10 @@ from .product_shell import MAX_LEARNER_ENTRY_CHARS
 MAX_RECALL_FRONT_CHARS = 800
 MAX_RECALL_BACK_CHARS = 1800
 MAX_RECALL_PROVENANCE_ITEMS = 8
+MAX_FLASHCARD_PROMPT_CHARS = 1_200
+MAX_FLASHCARD_ANSWER_CHARS = 2_400
+MAX_FLASHCARD_KEY_POINTS = 12
+MAX_FLASHCARD_KEY_POINT_CHARS = 320
 MAX_WORKSPACE_ID_CHARS = 160
 MAX_WORKSPACE_TITLE_CHARS = 240
 MAX_WORKSPACE_LANGUAGE_CHARS = 32
@@ -472,6 +484,10 @@ class RepositoryUiApplication(UiApplicationPort):
             return self._lesson_select(command)
         if path == "/api/v1/lessons/ask":
             return self._lesson_ask(command)
+        if path == "/api/v1/lessons/flashcards":
+            return self._lesson_flashcards(command)
+        if path == "/api/v1/artifacts/decisions":
+            return self._post_artifact_decisions(command)
         continuation_fingerprint = _continuation_fingerprint(path)
         artifact_revision = _artifact_decision_target(path)
         recall_enrollment = _recall_enrollment_target(path)
@@ -690,6 +706,90 @@ class RepositoryUiApplication(UiApplicationPort):
             except (LocalRepositoryError, OSError, RuntimeError) as error:
                 raise UiRequestError(
                     "repository runtime is unavailable", status_code=503
+                ) from error
+            except ValueError as error:
+                raise UiRequestError(str(error), status_code=400) from error
+
+    def _lesson_flashcards(self, command: Mapping[str, object]) -> JsonObject:
+        request_id, _expected_sequence, payload = _workspace_command(
+            command, required_keys={"query", "pin"}
+        )
+        query = _workspace_text(payload.get("query"), "query", MAX_LEARNER_ENTRY_CHARS)
+        pin = _lesson_pin_payload_from_json(payload.get("pin"))
+        with self._lock:
+            try:
+                with self._open() as repository:
+                    receipt = asyncio.run(
+                        repository.propose_flashcards_for_pin(
+                            self._course_id,
+                            self._session_id,
+                            pin,
+                            query,
+                            self._context(request_id, request_id),
+                        )
+                    )
+                    sequence = repository.events.projection(self._course_id).sequence
+                    return {
+                        "schema_version": 1,
+                        "request_id": request_id,
+                        "status": "completed",
+                        "high_water_sequence": sequence,
+                        "pin": _lesson_pin_payload(pin),
+                        "receipt": {
+                            "run_id": str(receipt.run_id),
+                            "canonical_ids": receipt.canonical_ids,
+                            "message": receipt.content,
+                        },
+                    }
+            except ProviderConsentRequiredError as error:
+                raise UiRequestError(
+                    "provider consent is required before flashcard generation", status_code=403
+                ) from error
+            except (CourseNotFoundError, SessionNotFoundError, FileNotFoundError) as error:
+                raise UiRequestError(
+                    "selected course or session was not found", status_code=404
+                ) from error
+            except (LocalRepositoryError, OSError, RuntimeError) as error:
+                raise UiRequestError(
+                    "flashcard generation is unavailable", status_code=503
+                ) from error
+            except ValueError as error:
+                raise UiRequestError(str(error), status_code=400) from error
+
+    def _post_artifact_decisions(self, command: Mapping[str, object]) -> JsonObject:
+        request_id, expected_sequence, payload = _command(
+            command, payload_key="decisions"
+        )
+        with self._lock:
+            try:
+                with self._open() as repository:
+                    receipt = decide_artifacts(
+                        repository.artifact_service,
+                        payload.get("decisions"),
+                        self._context(request_id, request_id),
+                        expected_sequence,
+                    )
+                    projection, _snapshot = self._captured_state(repository)
+                    return {
+                        "schema_version": 1,
+                        "request_id": request_id,
+                        "status": "committed",
+                        "high_water_sequence": projection.sequence,
+                        "receipt": artifact_bulk_receipt_payload(receipt),
+                        "artifacts": _artifact_payload(
+                            ProjectionArtifactView(lambda _course_id: projection).get(
+                                self._course_id
+                            ),
+                            self._session_id,
+                        ),
+                    }
+            except RetryableArtifactConflictError as error:
+                raise UiRequestError(str(error), status_code=409) from error
+            except (ArtifactConflictError, ArtifactCommandError) as error:
+                raise UiRequestError(str(error), status_code=409) from error
+            except (LocalRepositoryError, OSError, RuntimeError) as error:
+                raise UiRequestError(
+                    "artifact decision service is unavailable", status_code=503
                 ) from error
             except ValueError as error:
                 raise UiRequestError(str(error), status_code=400) from error
@@ -2330,7 +2430,67 @@ def _artifact_revision_row(
     if enrollment_status is not None:
         row["enrollment_status"] = enrollment_status
         row["can_enroll"] = enrollment_status == "not_enrolled"
+    if revision.kind is StudyArtifactKind.FLASHCARD:
+        review = _flashcard_review_content(revision)
+        row["review"] = review
+        row["reviewable"] = review.get("status") == "ready"
     return row
+
+
+def _flashcard_review_content(revision: ArtifactRevisionRecord) -> JsonObject:
+    """Expose only bounded learner-facing flashcard fields for review."""
+
+    content = revision.content.content
+    if not isinstance(content, (HybridFlashcardContent, MorphologyFlashcardContent)):
+        return {"status": "unavailable", "reason": "content_invalid"}
+    prompt = content.prompt
+    if (
+        not isinstance(prompt, str)
+        or not prompt.strip()
+        or len(prompt) > MAX_FLASHCARD_PROMPT_CHARS
+    ):
+        return {"status": "unavailable", "reason": "content_oversized"}
+    blocks: list[JsonObject] = []
+    for block in content.answer_blocks:
+        label = block.label
+        text = block.text
+        key_points = tuple(block.key_points)
+        if (
+            not isinstance(label, str)
+            or not label.strip()
+            or len(label) > 240
+            or not isinstance(text, str)
+            or not text.strip()
+            or len(text) > MAX_FLASHCARD_ANSWER_CHARS
+            or len(key_points) > MAX_FLASHCARD_KEY_POINTS
+            or any(
+                not isinstance(point, str)
+                or not point.strip()
+                or len(point) > MAX_FLASHCARD_KEY_POINT_CHARS
+                for point in key_points
+            )
+        ):
+            return {"status": "unavailable", "reason": "content_oversized"}
+        blocks.append({"label": label, "text": text, "key_points": key_points})
+    if not blocks:
+        return {"status": "unavailable", "reason": "content_invalid"}
+    metadata: dict[str, JsonValue] = {
+        "profile": {
+            "id": content.profile.id.value,
+            "version": content.profile.version,
+        },
+        "retrieval_form": content.retrieval_form.value,
+        "role": content.role.value,
+    }
+    if isinstance(content, MorphologyFlashcardContent):
+        metadata["family"] = content.family.value
+        metadata["cognitive_function"] = content.cognitive_function.value
+    return {
+        "status": "ready",
+        "prompt": prompt,
+        "answer_blocks": tuple(blocks),
+        **metadata,
+    }
 
 
 def _enrollment_status(

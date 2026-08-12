@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable, Mapping
 from hashlib import sha256
-from typing import NoReturn
+from typing import NoReturn, cast
 
 from cardine.application.capability_completion import CapabilityCompletionProductReceipt
 from cardine.application.flashcard_profile_selection import (
@@ -48,6 +48,8 @@ from study_agent.domain import (
     ExecutionContext,
     InteractionId,
     InteractionKind,
+    ResolvedCitation,
+    RevisionId,
     RunId,
     SessionId,
     SourceId,
@@ -110,9 +112,9 @@ from study_agent.ports import (
     SourceCommitmentLookupPort,
 )
 from study_agent.ports.lesson_worker import FlashcardProfileExecutionBinding
-from study_agent.ports.retrieval import retrieval_catalog_fingerprint
+from study_agent.ports.retrieval import RetrievalDocument, retrieval_catalog_fingerprint
 from study_agent.prompts import CanonicalPromptComposer
-from study_agent.retrieval import CourseSourceContent
+from study_agent.retrieval import CourseSourceContent, SourceRevisionRecord
 from study_agent.skills import ArtifactReference, SemanticVersion
 from study_agent.state import canonical_json_bytes
 from study_agent.tools.planned_flashcard_scope_bridge import planned_flashcard_scope_tool
@@ -332,6 +334,7 @@ class FlashcardProposalComposition:
         artifact_service: ArtifactService,
         source_commitments: SourceCommitmentLookupPort,
         sessions: SessionViewPort,
+        interaction_id: InteractionId | None = None,
         retired_source_ids: Callable[[], frozenset[SourceId]]
         | frozenset[SourceId] = frozenset(),
     ) -> None:
@@ -346,6 +349,7 @@ class FlashcardProposalComposition:
         self._artifact_service = artifact_service
         self._source_commitments = source_commitments
         self._sessions = sessions
+        self._interaction_id = interaction_id
         if callable(retired_source_ids):
             self._retired_source_ids = retired_source_ids
         else:
@@ -395,6 +399,48 @@ class FlashcardProposalComposition:
         if not isinstance(artifact_service, ArtifactService):
             raise TypeError("flashcard composition requires ArtifactService")
         self._artifact_service = artifact_service
+
+    def for_pin(
+        self, pin: object, interaction_id: InteractionId | None = None
+    ) -> FlashcardProposalComposition:
+        """Return the same composition scoped to one complete lesson pin.
+
+        The capability input schema remains the canonical harness schema.  A
+        pin is therefore a Cardine composition concern: the derived content
+        adapter below exposes only whole canonical chunks inside the selected
+        span, while the worker, profile bindings, and generated-batch proof
+        continue to use the unchanged Harness contracts.
+        """
+
+        from cardine.knowledge import SourcePin
+
+        if not isinstance(pin, SourcePin):
+            raise TypeError("flashcard lesson pin is invalid")
+        scoped = _ScopedCourseSourceContent(self._content, pin)
+        if not scoped.catalog():
+            raise ValueError("lesson pin contains no complete canonical chunk")
+        return FlashcardProposalComposition(
+            course_id=self._course_id,
+            session_id=self._session_id,
+            content=cast(CourseSourceContent, scoped),
+            course_profile=self._course_profile,
+            model=self._model,
+            model_adapter=self._model_adapter,
+            runs=self._runs,
+            clock=self._clock,
+            artifact_service=self._artifact_service,
+            source_commitments=self._source_commitments,
+            sessions=self._sessions,
+            interaction_id=interaction_id,
+            retired_source_ids=self._retired_source_ids,
+        )
+
+    async def start_for_pin(
+        self, inputs: JsonObject, pin: object, context: ExecutionContext
+    ) -> CapabilityOutcome:
+        """Generate only from a validated complete lesson pin."""
+
+        return await self.for_pin(pin).start(inputs, context)
 
     async def start(self, inputs: JsonObject, context: ExecutionContext) -> CapabilityOutcome:
         public: JsonObject = inputs
@@ -530,7 +576,7 @@ class FlashcardProposalComposition:
         decision: FlashcardProfileSelectionDecision,
     ) -> LessonWorkerRequest:
         plan = _lesson_plan(self._content, self._retired_source_ids())
-        interaction_id = self._latest_interaction_id()
+        interaction_id = self._interaction_id or self._latest_interaction_id()
         receipt = decision.receipt(interaction_id)
         profile = decision.profile
         if profile is None:
@@ -867,6 +913,104 @@ def _read_set_fingerprint(evidence: tuple[RetrievalEvidence, ...]) -> str:
     from study_agent.ports import retrieval_read_set_fingerprint
 
     return retrieval_read_set_fingerprint(evidence)
+
+
+class _ScopedCourseSourceContent:
+    """Read-only canonical content view limited to one SourcePin span."""
+
+    def __init__(self, parent: CourseSourceContent, pin: object) -> None:
+        from cardine.knowledge import SourcePin
+
+        if not isinstance(pin, SourcePin):
+            raise TypeError("flashcard lesson pin is invalid")
+        self._parent = parent
+        self._pin = pin
+
+    def catalog(self) -> tuple[SourceRevisionRecord, ...]:
+        records: list[SourceRevisionRecord] = []
+        for record in self._parent.catalog():
+            if (
+                str(record.source.source_id) != self._pin.source_id
+                or str(record.source.revision_id) != self._pin.revision_id
+                or not record.is_current_revision
+            ):
+                continue
+            chunks = tuple(
+                chunk
+                for chunk in record.chunks
+                if chunk.start_offset >= self._pin.start_offset
+                and chunk.end_offset <= self._pin.end_offset
+            )
+            if chunks:
+                records.append(
+                    SourceRevisionRecord(
+                        record.course_id,
+                        record.source,
+                        chunks,
+                        _mask_outside_pin(
+                            record.text, self._pin.start_offset, self._pin.end_offset
+                        ),
+                        record.is_current_revision,
+                    )
+                )
+        return tuple(records)
+
+    def documents(self, *, include_superseded: bool = False) -> tuple[RetrievalDocument, ...]:
+        del include_superseded
+        documents = []
+        for record in self.catalog():
+            for chunk in record.chunks:
+                documents.append(
+                    RetrievalDocument(
+                        record.course_id,
+                        record.source.source_id,
+                        record.source.revision_id,
+                        chunk,
+                        record.text[chunk.start_offset : chunk.end_offset],
+                        record.source.title,
+                        record.source.kind,
+                        record.source.source_role,
+                        record.source.trust_level,
+                        record.is_current_revision,
+                    )
+                )
+        return tuple(documents)
+
+    def get_text(self, revision_id: RevisionId) -> str:
+        if str(revision_id) != self._pin.revision_id:
+            raise LookupError("lesson pin revision is outside the selected scope")
+        return _mask_outside_pin(
+            self._parent.get_text(RevisionId(self._pin.revision_id)),
+            self._pin.start_offset,
+            self._pin.end_offset,
+        )
+
+    def resolve(self, citation: Citation) -> ResolvedCitation:
+        if (
+            str(citation.source_id) != self._pin.source_id
+            or str(citation.revision_id) != self._pin.revision_id
+            or citation.start_offset < self._pin.start_offset
+            or citation.end_offset > self._pin.end_offset
+        ):
+            raise ValueError("citation lies outside the selected lesson pin")
+        return self._parent.resolve(citation)
+
+    def canonical_document(self, chunk_id: object) -> RetrievalDocument:
+        from study_agent.domain import ChunkId
+
+        if not isinstance(chunk_id, ChunkId):
+            raise TypeError("canonical chunk id is invalid")
+        if all(document.chunk.chunk_id != chunk_id for document in self.documents()):
+            raise LookupError("canonical chunk lies outside the selected lesson pin")
+        return self._parent.canonical_document(chunk_id)
+
+
+def _mask_outside_pin(text: str, start_offset: int, end_offset: int) -> str:
+    """Preserve canonical offsets while making unselected text unreadable."""
+
+    start = max(0, min(start_offset, len(text)))
+    end = max(start, min(end_offset, len(text)))
+    return " " * start + text[start:end] + " " * (len(text) - end)
 
 
 __all__ = ["FlashcardProposalComposition"]

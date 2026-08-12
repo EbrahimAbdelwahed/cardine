@@ -402,6 +402,9 @@ class LessonWorkerService:
                     ),
                     associated_overview_bundle_id=association_id,
                     overview_association_fingerprint=association_fingerprint,
+                    profile_selection_receipt=(
+                        request.profile_expectation.profile_selection_receipt
+                    ),
                 ),
                 task,
                 detail.detail.receipt,
