@@ -257,8 +257,12 @@ class _LessonEvidenceResolver:
             document = next(
                 (
                     item
-                    for item in self._content.documents()
-                    if item.source_id not in self._retired_source_ids()
+                    # A persisted lesson bundle may point at a superseded
+                    # revision (or a source retired after generation). Its
+                    # canonical evidence remains resolvable for recovery;
+                    # active-source filtering belongs to new planning and
+                    # provider inputs in ``_request``/``_profile_binding``.
+                    for item in self._content.documents(include_superseded=True)
                     if item.source_id == slot.span.source_id
                     and item.revision_id == slot.span.revision_id
                     and item.chunk.start_offset == slot.span.start_offset

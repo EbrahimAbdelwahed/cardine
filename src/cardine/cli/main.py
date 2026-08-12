@@ -15,6 +15,7 @@ from typing import Never, cast
 
 from cardine.integrations.study_agent import CardineError
 from cardine.integrations.study_agent.course_policy import (
+    ProviderConsentRequiredError,
     RetryableConsentConflictError,
     RetryableSourceLifetimeConflictError,
 )
@@ -120,6 +121,13 @@ def main(
         emit_error(
             "model_unavailable",
             "configured model adapter is unavailable",
+            json_mode=json_mode,
+        )
+        return 4
+    except ProviderConsentRequiredError:
+        emit_error(
+            "consent_required",
+            "provider consent is required before tutor execution",
             json_mode=json_mode,
         )
         return 4
