@@ -28,6 +28,12 @@ from cardine.hosts import (
     TutorHostRunStatus,
 )
 from cardine.hosts.flashcard_routing import FlashcardProfileRoutingTutorDecisionPort
+from cardine.integrations.study_agent.course_policy import (
+    ConsentModelPort,
+    CourseConsentService,
+    ProjectionConsentView,
+    register_course_policy_events,
+)
 from study_agent.adapters.filesystem import (
     FilesystemBlobStore,
     LocalRepositoryError,
@@ -852,6 +858,7 @@ class LocalRepository:
         self.blobs = blobs
         registry = EventRegistry()
         register_course_events(registry)
+        register_course_policy_events(registry)
         register_source_revision_events(registry, self.blobs.get)
         register_session_events(registry)
         register_study_context_events(registry)
@@ -869,6 +876,10 @@ class LocalRepository:
         self.courses = ProjectionCourseView(self.events.projection)
         self.course_catalog = ProjectionCourseCatalog(self.events.list_course_ids, self.courses)
         self.course_service = CourseService(self.events, self.clock, self.courses)
+        self.provider_consent = ProjectionConsentView(self.events.projection)
+        self.provider_consent_service = CourseConsentService(
+            self.events, self.clock, self.provider_consent
+        )
         self.sessions = ProjectionSessionView(self.events.projection)
         self.session_service = SessionService(self.events, self.clock, self.sessions, self.courses)
         self.artifact_service = ArtifactService(
@@ -997,7 +1008,11 @@ class LocalRepository:
             return self.conversation
         if self.config.model is None:
             raise ModelAdapterConfigurationError("no model adapter is configured")
-        model = self._model_adapters.create(self.config.model, self._environment)
+        model = ConsentModelPort(
+            self._model_adapters.create(self.config.model, self._environment),
+            course_id,
+            self.provider_consent,
+        )
         selected_session_id = (
             session_id if session_id is not None else self.sessions.list_sessions(course_id)[0].id
         )
@@ -1204,7 +1219,11 @@ class LocalRepository:
         if self.config.model is None:
             raise ModelAdapterConfigurationError("no model adapter is configured")
         course = self.for_course(course_id)
-        model = self._model_adapters.create(self.config.model, self._environment)
+        model = ConsentModelPort(
+            self._model_adapters.create(self.config.model, self._environment),
+            course_id,
+            self.provider_consent,
+        )
         model_adapter = self._model_adapters.artifact(self.config.model.adapter_id)
         engine_factory = _EngineFactory(
             model=model,
