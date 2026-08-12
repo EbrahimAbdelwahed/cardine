@@ -7,6 +7,8 @@ owned by the canonical repository services or by their shared harness surface.
 from __future__ import annotations
 
 import asyncio
+import os
+import stat
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from hashlib import sha256
@@ -22,6 +24,13 @@ from cardine.cli.repository import (
 )
 from cardine.courses import ProjectionCourseView
 from cardine.diagnostics import TurnTraceStore
+from cardine.documents import (
+    AnyDocErrorCode,
+    AnyDocWorkerError,
+    DocumentImportPolicy,
+    convert_pdf_in_worker,
+    document_import_policy,
+)
 from cardine.hosts import PendingContinuationDescriptor, TutorContinuationRecord
 from cardine.integrations.study_agent import (
     CardineRuntimeConfig,
@@ -31,6 +40,7 @@ from cardine.integrations.study_agent import (
 from cardine.integrations.study_agent.course_policy import (
     ConsentCommandError,
     ConsentConflictError,
+    ConsentReceipt,
     RetryableConsentConflictError,
     RetryableSourceLifetimeConflictError,
     SourceLifetimeCommandError,
@@ -94,6 +104,8 @@ from study_agent.domain import (
 )
 from study_agent.domain._validation import JsonObject, JsonValue
 from study_agent.domain.identifiers import Identifier
+from study_agent.domain.provenance import ContentOrigin, DocumentConversionProvenance
+from study_agent.ingestion import TextIngestionError
 from study_agent.ports import (
     CourseNotFoundError,
     ModelError,
@@ -190,15 +202,34 @@ class UiRequestError(ValueError):
         self.trace_id = trace_id
 
 
+def _read_verified_pdf(path: Path, *, byte_size: int, digest: str) -> bytes:
+    """Read the private upload without following links and rebind its identity."""
+
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    content = bytearray()
+    try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode) or opened.st_size != byte_size:
+            raise UiRequestError("uploaded PDF changed during conversion", status_code=409)
+        while block := os.read(descriptor, 1024 * 1024):
+            content.extend(block)
+            if len(content) > byte_size:
+                raise UiRequestError("uploaded PDF changed during conversion", status_code=409)
+    finally:
+        os.close(descriptor)
+    value = bytes(content)
+    if len(value) != byte_size or sha256(value).hexdigest() != digest:
+        raise UiRequestError("uploaded PDF changed during conversion", status_code=409)
+    return value
+
+
 def _source_grounding_status(
     repository: LocalRepository, course_id: CourseId, snapshot: TutorSnapshotV1
 ) -> JsonObject:
     """Expose grounding only when every displayed source has readable text."""
 
     retired = repository.source_lifetime.retired_source_ids(course_id)
-    active_materials = tuple(
-        item for item in snapshot.materials if item.source_id not in retired
-    )
+    active_materials = tuple(item for item in snapshot.materials if item.source_id not in retired)
     expected_chunks = sum(item.chunk_count for item in active_materials)
     if expected_chunks == 0:
         return {"status": "empty", "indexed_chunks": 0}
@@ -251,6 +282,7 @@ class RepositoryUiApplication(UiApplicationPort):
             LocalRepository.open
         ),
         turn_traces: TurnTraceStore | None = None,
+        document_policy: DocumentImportPolicy | None = None,
     ) -> None:
         self._repository = Path(repository)
         self._course_id = _identifier(course_id, CourseId, "course_id")
@@ -272,6 +304,7 @@ class RepositoryUiApplication(UiApplicationPort):
         )
         self._lock = _repository_mutation_lock(self._repository)
         self._turn_traces = turn_traces if turn_traces is not None else TurnTraceStore()
+        self._document_policy = document_policy or document_import_policy()
 
     @property
     def repository(self) -> Path:
@@ -288,6 +321,10 @@ class RepositoryUiApplication(UiApplicationPort):
     @property
     def turn_traces(self) -> TurnTraceStore:
         return self._turn_traces
+
+    @property
+    def document_policy(self) -> DocumentImportPolicy:
+        return self._document_policy
 
     def _workspace(self) -> JsonObject:
         with self._lock, self._open() as repository:
@@ -806,6 +843,112 @@ class RepositoryUiApplication(UiApplicationPort):
                     "repository runtime is unavailable", status_code=503
                 ) from error
 
+    def import_pdf(
+        self,
+        *,
+        input_path: Path,
+        pdf_sha256: str,
+        byte_size: int,
+        filename: str,
+        title: str,
+        request_id: str,
+    ) -> JsonObject:
+        """Convert a streamed PDF and commit one extracted Markdown revision."""
+
+        filename = _workspace_text(filename, "filename", MAX_SOURCE_FILENAME_CHARS)
+        title = _workspace_text(title, "title", MAX_SOURCE_TITLE_CHARS)
+        request_id = _workspace_text(request_id, "request_id", 200)
+        if not filename.lower().endswith(".pdf") or "/" in filename or "\\" in filename:
+            raise UiRequestError("only .pdf files are supported", status_code=415)
+        if (
+            type(byte_size) is not int
+            or not 0 < byte_size <= self._document_policy.max_document_bytes
+        ):
+            raise UiRequestError("PDF size is invalid", status_code=413)
+        try:
+            conversion = convert_pdf_in_worker(input_path, policy=self._document_policy)
+        except AnyDocWorkerError as error:
+            status = {
+                AnyDocErrorCode.UNSUPPORTED.value: 415,
+                AnyDocErrorCode.RESOURCE_LIMIT.value: 413,
+                AnyDocErrorCode.OUTPUT_LIMIT.value: 413,
+                AnyDocErrorCode.WORKER_TIMEOUT.value: 504,
+                AnyDocErrorCode.WORKER_UNAVAILABLE.value: 503,
+            }.get(error.code, 422)
+            raise UiRequestError(
+                "PDF conversion failed safely; no source was admitted",
+                status_code=status,
+                diagnostic_code=error.code,
+            ) from None
+        if conversion.pdf_sha256 != pdf_sha256:
+            raise UiRequestError("uploaded PDF changed during conversion", status_code=409)
+        original = _read_verified_pdf(
+            input_path,
+            byte_size=byte_size,
+            digest=conversion.pdf_sha256,
+        )
+        provenance = DocumentConversionProvenance(
+            pdf_sha256=conversion.pdf_sha256,
+            markdown_sha256=conversion.markdown_sha256,
+            adapter_identity="pdf-to-markdown-anydoc@1",
+            adapter_version=conversion.anydoc_version,
+            manifest_fingerprint=conversion.manifest_fingerprint,
+            normalizer_policy="gfm-normalizer@1",
+            limitations=conversion.limitations,
+            page_count=conversion.page_count,
+        )
+        source_id = SourceId("source-pdf-sha256:" + pdf_sha256)
+        with self._lock:
+            try:
+                with self._open() as repository:
+                    result = repository.for_course(self._course_id).ingestion.ingest(
+                        filename=(filename[:-4] or "document") + ".md",
+                        content=conversion.markdown,
+                        original_content=original,
+                        source_id=source_id,
+                        title=title,
+                        trust_level=80,
+                        source_role="learner_uploaded",
+                        content_origin=ContentOrigin.EXTRACTED,
+                        conversion_provenance=provenance,
+                        context=ExecutionContext(
+                            PrincipalKind.HUMAN,
+                            "cardine-pdf-upload",
+                            self._course_id,
+                            CorrelationId("cardine-pdf-upload-" + request_id),
+                            frozenset({"source:write"}),
+                            self._session_id,
+                            idempotency_key=request_id,
+                        ),
+                    )
+                    repository.rebuild_retrieval()
+                    return {
+                        "schema_version": 1,
+                        "request_id": request_id,
+                        "status": result.status.value,
+                        "high_water_sequence": result.committed_sequence,
+                        "source": {
+                            "source_id": str(result.source.source_id),
+                            "revision_id": str(result.source.revision_id),
+                            "title": result.source.title,
+                            "kind": "pdf",
+                            "chunk_count": len(result.chunks),
+                        },
+                        "conversion": {
+                            "adapter": "pdf-to-markdown-anydoc@1",
+                            "version": conversion.anydoc_version,
+                            "page_count": conversion.page_count,
+                            "pdf_sha256": conversion.pdf_sha256,
+                            "markdown_sha256": conversion.markdown_sha256,
+                            "limitations": conversion.limitations,
+                        },
+                    }
+            except TextIngestionError as error:
+                raise UiRequestError(
+                    "converted PDF could not be admitted canonically",
+                    status_code=409 if error.retryable else 422,
+                ) from error
+
     def _check_model(self, command: Mapping[str, object]) -> JsonObject:
         request_id, _expected_sequence, payload = _workspace_command(command, required_keys=set())
         if payload:
@@ -938,7 +1081,7 @@ class RepositoryUiApplication(UiApplicationPort):
                 ) from error
 
     def _consent(self, snapshot: TutorSnapshotV1, metadata: Mapping[str, object]) -> JsonObject:
-        receipt = metadata.get("provider_consent")
+        receipt = cast(ConsentReceipt | None, metadata.get("provider_consent"))
         return {
             "schema_version": 1,
             "course_id": str(snapshot.course_id),
@@ -1555,7 +1698,9 @@ class RepositoryUiApplication(UiApplicationPort):
             if getattr(item, "kind", "") == StudyArtifactKind.ASSESSMENT_ITEM.value
         )
         consent = metadata.get("provider_consent")
-        retired = {str(item) for item in metadata.get("retired_source_ids", ())}
+        retired = {
+            str(item) for item in cast(tuple[object, ...], metadata.get("retired_source_ids", ()))
+        }
         active_materials = tuple(
             item for item in snapshot.materials if str(item.source_id) not in retired
         )
@@ -1649,7 +1794,9 @@ class RepositoryUiApplication(UiApplicationPort):
     def _materials(snapshot: TutorSnapshotV1, metadata: Mapping[str, object]) -> JsonObject:
         grounding = cast(Mapping[str, object], metadata["source_grounding"])
         groundable = grounding["status"] == "available"
-        retired = {str(item) for item in metadata.get("retired_source_ids", ())}
+        retired = {
+            str(item) for item in cast(tuple[object, ...], metadata.get("retired_source_ids", ()))
+        }
         items = cast(
             tuple[JsonObject, ...],
             tuple(

@@ -41,7 +41,7 @@
       "path": "src/study_agent/application/conversation_turn.py",
       "source_path": "src/cardine/application/conversation_turn.py",
       "disposition": "CARDINE_OWNER",
-      "transition_sha256": "a2d326de31fd74c12a9a5b7878c37a02443e9d32eb199ef55176f3d12c7d29cf"
+      "transition_sha256": "e6c4f9fdff11b5f11bdff260096bd903a6d912e3e96c38e920345478af3c8937"
     },
     {
       "path": "src/study_agent/application/flashcard_profile_selection.py",
@@ -53,7 +53,7 @@
       "path": "src/study_agent/application/flashcard_proposals.py",
       "source_path": "src/cardine/application/flashcard_proposals.py",
       "disposition": "CARDINE_OWNER",
-      "transition_sha256": "fdd4f17132ae9c0232df24c921587759869f782b15afbe6ef16e32c1fb0a2846"
+      "transition_sha256": "13bd4ed51f9886b6233eb13e0abccd41da4f614296c5e9edd505af87cb2b4912"
     },
     {
       "path": "src/study_agent/application/grounding_ask.py",
@@ -107,7 +107,7 @@
       "path": "src/study_agent/cli/main.py",
       "source_path": "src/cardine/cli/main.py",
       "disposition": "CARDINE_OWNER",
-      "transition_sha256": "3f74f6991549af03668e3a851b685ebc129b0ebc6f1b120ddff6e44f3d0e57e3"
+      "transition_sha256": "0c42e393a5120533ec682693ed4e3fb9eb60aaf577cc8b44592f81761846744e"
     },
     {
       "path": "src/study_agent/cli/output.py",
@@ -125,7 +125,7 @@
       "path": "src/study_agent/cli/repository.py",
       "source_path": "src/cardine/cli/repository.py",
       "disposition": "CARDINE_OWNER",
-      "transition_sha256": "fdf1e3a4cdfbe478d3b2e96ee38bbafe8c3d845f2e913c0eb9d0b8609c89949e"
+      "transition_sha256": "386aa2e22ddc9f83e53ef838a3ff39a1dfd6579a14f6ab4daccb18beb947a171"
     },
     {
       "path": "src/study_agent/courses/__init__.py",
@@ -197,13 +197,13 @@
       "path": "src/study_agent/demo/browser.js",
       "source_path": "src/cardine/demo/browser.js",
       "disposition": "CARDINE_OWNER",
-      "transition_sha256": "834207c323d3970e3ec1b18f626bb88f4239200fc794536bd0b450d39e23ca2b"
+      "transition_sha256": "0aeb12084e66f4c00339d6eb2dde1cdd256eef288d2530f962167cef4de221af"
     },
     {
       "path": "src/study_agent/demo/browser.py",
       "source_path": "src/cardine/demo/browser.py",
       "disposition": "CARDINE_OWNER",
-      "transition_sha256": "885ab7f6de8b376b7bc19f1fbd1c9a8147c28116c8dcf1ec6d3e7faea3a78691"
+      "transition_sha256": "b230c5c4fe9adbfa215c7f64268151c388ad0c1e96da06ae45e2df191f1431a2"
     },
     {
       "path": "src/study_agent/demo/fixtures/heart-valves.md",
@@ -371,7 +371,7 @@
       "path": "src/study_agent/demo/ui_application.py",
       "source_path": "src/cardine/demo/ui_application.py",
       "disposition": "CARDINE_OWNER",
-      "transition_sha256": "64833a352eb8ba759189aede53c4881c7dd205969ff26c56870b994ff14bc430"
+      "transition_sha256": "e3e3068c9d6ca0aede1e4f87fd72c97cc139525e46d8a6f7a4d02da397652340"
     },
     {
       "path": "src/study_agent/diagnostics/__init__.py",
@@ -509,7 +509,7 @@
       "path": "src/study_agent/hosts/runner.py",
       "source_path": "src/cardine/hosts/runner.py",
       "disposition": "CARDINE_OWNER",
-      "transition_sha256": "4e5cd9612d40267088ad31e7e6e7fb8311c516704ef4fc9f7b5ebf3fde68db77"
+      "transition_sha256": "752eb706c2e2439bbf60d213b924de2f4504294e090852829d1dfcdd11467196"
     },
     {
       "path": "src/study_agent/hosts/scripted.py",

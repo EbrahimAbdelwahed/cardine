@@ -24,9 +24,10 @@ import pytest
 
 from cardine.demo.browser import ICON_ASSETS, create_server
 from cardine.demo.ui_application import UiRequestError
+from cardine.documents import DocumentImportPolicy
 from study_agent.domain._validation import JsonObject
 
-DEMO_DIR = Path(__file__).parents[2] / "src" / "study_agent" / "demo"
+DEMO_DIR = Path(__file__).parents[2] / "src" / "cardine" / "demo"
 ROUTES = {
     "oggi": "/api/v1/bootstrap",
     "sessione": "/api/v1/session",
@@ -44,6 +45,7 @@ class _ContractApplication:
     """Small closed application seam for transport and packaged-surface checks."""
 
     mode = "local_repository"
+    document_policy = DocumentImportPolicy()
 
     def get(self, path: str) -> JsonObject:
         if path == "/api/v1/bootstrap":
@@ -74,6 +76,27 @@ class _ContractApplication:
         if command.get("expected_sequence") != 2:
             raise UiRequestError("expected sequence is stale", status_code=409)
         return {"schema_version": 1, "status": "committed"}
+
+    def import_pdf(
+        self,
+        *,
+        input_path: Path,
+        pdf_sha256: str,
+        byte_size: int,
+        filename: str,
+        title: str,
+        request_id: str,
+    ) -> JsonObject:
+        assert input_path.read_bytes() == b"%PDF-transport-fixture"
+        return {
+            "schema_version": 1,
+            "status": "committed",
+            "pdf_sha256": pdf_sha256,
+            "byte_size": byte_size,
+            "filename": filename,
+            "title": title,
+            "request_id": request_id,
+        }
 
 
 class _RouteParser(HTMLParser):
@@ -162,6 +185,38 @@ def _post(url: str, path: str, payload: object) -> tuple[int, object, str]:
     except HTTPError as error:
         raw = error.read().decode("utf-8")
         return error.code, json.loads(raw) if raw else None, raw
+
+
+def _post_pdf(url: str) -> tuple[int, object]:
+    request = Request(
+        f"{url}/api/v1/sources/import/pdf",
+        data=b"%PDF-transport-fixture",
+        method="POST",
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/pdf",
+            "X-File-Name": "lezione.pdf",
+            "X-Source-Title": "Lezione PDF",
+            "Idempotency-Key": "pdf-transport-one",
+        },
+    )
+    with urlopen(request, timeout=5) as response:
+        raw = response.read().decode("utf-8")
+        return response.status, json.loads(raw)
+
+
+def test_pdf_transport_streams_a_private_file_with_bound_identity(browser_url: str) -> None:
+    status, payload = _post_pdf(browser_url)
+    assert status == 200
+    assert payload == {
+        "schema_version": 1,
+        "status": "committed",
+        "pdf_sha256": "943eda44e8d9f6d9a6fe5fb7405c0b5bc51010c4eda7367f071b5cbc1eb6c71e",
+        "byte_size": 22,
+        "filename": "lezione.pdf",
+        "title": "Lezione PDF",
+        "request_id": "pdf-transport-one",
+    }
 
 
 def test_real_http_surface_serves_every_navigation_route(browser_url: str) -> None:

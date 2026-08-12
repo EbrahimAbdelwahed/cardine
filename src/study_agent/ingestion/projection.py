@@ -9,6 +9,7 @@ from typing import cast
 from study_agent.domain._validation import JsonObject, JsonValue
 from study_agent.domain.events import DomainEvent
 from study_agent.domain.identifiers import BlobId, SubstrateId
+from study_agent.domain.provenance import DocumentConversionProvenance
 from study_agent.domain.source import BlobRef, SourceChunk, SourceDocument
 from study_agent.state import EventRegistry
 
@@ -45,8 +46,23 @@ def _blob(blob: BlobRef) -> JsonObject:
     }
 
 
-def source_manifest(source: SourceDocument) -> JsonObject:
+def _conversion(provenance: DocumentConversionProvenance) -> JsonObject:
     return {
+        "pdf_sha256": provenance.pdf_sha256,
+        "markdown_sha256": provenance.markdown_sha256,
+        "adapter_identity": provenance.adapter_identity,
+        "adapter_version": provenance.adapter_version,
+        "manifest_fingerprint": provenance.manifest_fingerprint,
+        "normalizer_policy": provenance.normalizer_policy,
+        "limitations": provenance.limitations,
+        "assets_omitted": provenance.assets_omitted,
+        "page_count": provenance.page_count,
+        "schema_version": provenance.schema_version,
+    }
+
+
+def source_manifest(source: SourceDocument) -> JsonObject:
+    manifest: dict[str, JsonValue] = {
         "source_id": str(source.source_id),
         "revision_id": str(source.revision_id),
         "kind": source.kind.value,
@@ -65,6 +81,9 @@ def source_manifest(source: SourceDocument) -> JsonObject:
         "ingestion_method": source.ingestion_method,
         "content_origin": source.content_origin.value,
     }
+    if source.conversion_provenance is not None:
+        manifest["conversion_provenance"] = _conversion(source.conversion_provenance)
+    return manifest
 
 
 def chunk_manifest(chunk: SourceChunk) -> JsonObject:
@@ -90,9 +109,7 @@ def source_revision_payload(
     max_characters: int = CHUNK_MAX_CHARACTERS,
 ) -> JsonObject:
     chunking = PersistedChunkingConfig(chunker_version, max_characters)
-    decoded = SourceRevisionIngested(
-        source, chunks, source.normalized_character_length, chunking
-    )
+    decoded = SourceRevisionIngested(source, chunks, source.normalized_character_length, chunking)
     return {
         "source": source_manifest(decoded.source),
         "chunks": tuple(chunk_manifest(chunk) for chunk in decoded.chunks),
@@ -110,9 +127,7 @@ def _mapping(value: JsonValue | None, name: str) -> Mapping[str, JsonValue]:
     return value
 
 
-def _legacy_substrate_manifest(
-    normalized_blob: BlobRef, character_length: int
-) -> JsonObject:
+def _legacy_substrate_manifest(normalized_blob: BlobRef, character_length: int) -> JsonObject:
     """Return the bytes-only substrate view shared by v0.1 and v0.2."""
     return {
         "blob": _blob(normalized_blob),
@@ -133,9 +148,7 @@ def ensure_legacy_substrates(state: JsonObject) -> Mapping[str, JsonValue]:
     changed = False
     for source_id, source_value in sources.items():
         source = _mapping(source_value, f"sources.{source_id}")
-        revisions = _mapping(
-            source.get("revisions", {}), f"sources.{source_id}.revisions"
-        )
+        revisions = _mapping(source.get("revisions", {}), f"sources.{source_id}.revisions")
         for revision_id, revision_value in revisions.items():
             revision = _mapping(
                 revision_value,
@@ -238,9 +251,7 @@ def reduce_source_revision(
     # verified canonical UTF-8 artifact, so the v0.2 substrate view can expose
     # a deterministic legacy mapping without emitting a second event.
     normalized_blob = payload.source.normalized_blob
-    legacy_substrate_id = SubstrateId(
-        f"substrate:sha256:{normalized_blob.checksum_sha256}"
-    )
+    legacy_substrate_id = SubstrateId(f"substrate:sha256:{normalized_blob.checksum_sha256}")
     substrates = dict(_mapping(state.get("substrates", {}), "substrates"))
     substrate_key = str(legacy_substrate_id)
     legacy_manifest = _legacy_substrate_manifest(
@@ -259,12 +270,8 @@ def reduce_source_revision_selected(
     sources = dict(_mapping(state.get("sources", {}), "sources"))
     source_id = str(payload.source_id)
     revision_id = str(payload.revision_id)
-    existing_source = dict(
-        _mapping(sources.get(source_id, {}), f"sources.{source_id}")
-    )
-    revisions = _mapping(
-        existing_source.get("revisions", {}), f"sources.{source_id}.revisions"
-    )
+    existing_source = dict(_mapping(sources.get(source_id, {}), f"sources.{source_id}"))
+    revisions = _mapping(existing_source.get("revisions", {}), f"sources.{source_id}.revisions")
     if revision_id not in revisions:
         raise ValueError("selected revision must already exist for its source")
     revision_ids = existing_source.get("revision_ids", ())

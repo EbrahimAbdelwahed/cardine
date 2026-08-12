@@ -11,17 +11,20 @@ import argparse
 import json
 import os
 import sys
+import tempfile
 from collections.abc import Mapping
+from hashlib import sha256
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from pathlib import Path
 from socket import socket
 from threading import BoundedSemaphore, RLock
-from typing import cast
+from typing import Protocol, cast
 from urllib.parse import unquote, urlsplit
 
 from cardine.diagnostics import TurnTraceStore
+from cardine.documents import DocumentImportPolicy
 from study_agent.domain._validation import JsonObject, JsonValue
 
 from .private_access import (
@@ -33,6 +36,22 @@ from .private_access import (
 )
 from .product_settings import PrivateSettingsApplication, RuntimeCredentialStore
 from .ui_application import UiApplicationPort, UiRequestError
+
+
+class _DocumentUiApplication(Protocol):
+    document_policy: DocumentImportPolicy
+
+    def import_pdf(
+        self,
+        *,
+        input_path: Path,
+        pdf_sha256: str,
+        byte_size: int,
+        filename: str,
+        title: str,
+        request_id: str,
+    ) -> JsonObject: ...
+
 
 DEFAULT_BROWSER_HOST = "127.0.0.1"
 DEFAULT_BROWSER_PORT = 8765
@@ -77,6 +96,7 @@ LOCAL_OWNER_SETUP_PATH = "/api/v1/auth/setup-owner"
 # small enough for the local threaded server.
 MAX_API_BODY_BYTES = 262_144
 MAX_CONCURRENT_REQUESTS = 32
+MAX_CONCURRENT_DOCUMENT_IMPORTS = 1
 REQUEST_SOCKET_TIMEOUT_SECONDS = 10.0
 MIN_LOCAL_OWNER_PASSWORD_CHARS = 12
 
@@ -143,9 +163,7 @@ class BrowserSurface:
             # before any session or credential store is activated.
             self._local_setup_origin = canonical_origin
 
-    def configure_local_owner(
-        self, password: str, *, client_id: str
-    ) -> AuthenticatedSession:
+    def configure_local_owner(self, password: str, *, client_id: str) -> AuthenticatedSession:
         """Turn an unconfigured loopback preview into an authenticated shell."""
 
         if not isinstance(password, str) or len(password) < MIN_LOCAL_OWNER_PASSWORD_CHARS:
@@ -157,9 +175,7 @@ class BrowserSurface:
             origin = self._local_setup_origin
             if origin is None:
                 raise UiRequestError("owner setup is not available", status_code=403)
-            access = PrivateAccessController(
-                hash_password(password), canonical_origin=origin
-            )
+            access = PrivateAccessController(hash_password(password), canonical_origin=origin)
             session = access.login(password, client_id=client_id)
             self._private_access = access
             self._settings = PrivateSettingsApplication(
@@ -210,8 +226,7 @@ class BrowserSurface:
         }:
             category = "invalid_request"
         print(
-            "cardine_preview_diagnostic"
-            f" path={path} status={status_code} category={category}",
+            f"cardine_preview_diagnostic path={path} status={status_code} category={category}",
             file=sys.stderr,
             flush=True,
         )
@@ -316,6 +331,35 @@ class BrowserSurface:
             self.diagnostic(path, HTTPStatus.OK, category)
         return result
 
+    @property
+    def document_policy(self) -> DocumentImportPolicy:
+        return cast(_DocumentUiApplication, self._ui).document_policy
+
+    def api_post_pdf(
+        self,
+        *,
+        input_path: Path,
+        pdf_sha256: str,
+        byte_size: int,
+        filename: str,
+        title: str,
+        request_id: str,
+        session_token: str | None,
+        csrf_token: str | None,
+    ) -> JsonObject:
+        if self._private_access is not None and not self._private_access.csrf_valid(
+            session_token, csrf_token
+        ):
+            raise UiRequestError("csrf token is invalid", status_code=403)
+        return cast(_DocumentUiApplication, self._ui).import_pdf(
+            input_path=input_path,
+            pdf_sha256=pdf_sha256,
+            byte_size=byte_size,
+            filename=filename,
+            title=title,
+            request_id=request_id,
+        )
+
 
 class _BrowserServer(ThreadingHTTPServer):
     allow_reuse_address = True
@@ -330,6 +374,7 @@ class _BrowserServer(ThreadingHTTPServer):
         super().__init__(address, _BrowserRequestHandler)
         self.surface = surface
         self._request_slots = BoundedSemaphore(MAX_CONCURRENT_REQUESTS)
+        self._document_slots = BoundedSemaphore(MAX_CONCURRENT_DOCUMENT_IMPORTS)
 
     def get_request(self) -> tuple[socket, tuple[str, int]]:
         request, address = super().get_request()
@@ -372,9 +417,7 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         if not self._host_matches_server():
-            self._send_json(
-                HTTPStatus.MISDIRECTED_REQUEST, {"error": "host is not allowed"}
-            )
+            self._send_json(HTTPStatus.MISDIRECTED_REQUEST, {"error": "host is not allowed"})
             return
         path = unquote(urlsplit(self.path).path)
         if path == "/":
@@ -433,13 +476,9 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
             return
         if path.startswith(API_PREFIX):
             try:
-                payload = self.server.surface.api_get(
-                    path, session_token=self._session_token()
-                )
+                payload = self.server.surface.api_get(path, session_token=self._session_token())
             except UiRequestError as error:
-                self.server.surface.diagnostic(
-                    path, error.status_code, _diagnostic_category(error)
-                )
+                self.server.surface.diagnostic(path, error.status_code, _diagnostic_category(error))
                 self._send_json(
                     HTTPStatus(error.status_code),
                     _ui_error_payload(error),
@@ -451,9 +490,7 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         if not self._host_matches_server():
-            self._send_json(
-                HTTPStatus.MISDIRECTED_REQUEST, {"error": "host is not allowed"}
-            )
+            self._send_json(HTTPStatus.MISDIRECTED_REQUEST, {"error": "host is not allowed"})
             return
         path = unquote(urlsplit(self.path).path)
         if path.startswith(API_PREFIX):
@@ -462,6 +499,9 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
         self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
     def _post_api(self, path: str) -> None:
+        if path == "/api/v1/sources/import/pdf":
+            self._post_pdf_api()
+            return
         if not _is_json_content_type(self.headers.get("Content-Type")):
             self._send_json(
                 HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
@@ -469,9 +509,7 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
             )
             return
         private_login = self.server.surface.private_mode and path == "/api/v1/auth/login"
-        local_owner_setup = (
-            self.server.surface.setup_required and path == LOCAL_OWNER_SETUP_PATH
-        )
+        local_owner_setup = self.server.surface.setup_required and path == LOCAL_OWNER_SETUP_PATH
         if not self._origin_matches_request(
             require_origin=self.server.surface.private_mode or local_owner_setup
         ):
@@ -503,9 +541,7 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
                 if path == "/api/v1/auth/logout" and self.server.surface.private_access:
                     self._pending_cookie = self.server.surface.private_access.clear_cookie_header()
         except UiRequestError as error:
-            self.server.surface.diagnostic(
-                path, error.status_code, _diagnostic_category(error)
-            )
+            self.server.surface.diagnostic(path, error.status_code, _diagnostic_category(error))
             self._send_json(
                 HTTPStatus(error.status_code),
                 _ui_error_payload(error),
@@ -526,6 +562,69 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
                 HTTPStatus.INTERNAL_SERVER_ERROR,
                 {"error": "request could not be completed", "code": category},
             )
+            return
+        self._send_json(HTTPStatus.OK, payload)
+
+    def _post_pdf_api(self) -> None:
+        if not self.server._document_slots.acquire(blocking=False):
+            self._send_json(HTTPStatus.TOO_MANY_REQUESTS, {"error": "PDF import is busy"})
+            return
+        try:
+            self._post_pdf_api_impl()
+        finally:
+            self.server._document_slots.release()
+
+    def _post_pdf_api_impl(self) -> None:
+        if self.server.surface.private_access is not None:
+            if not self.server.surface.private_access.authenticate(self._session_token()):
+                self._send_json(HTTPStatus.UNAUTHORIZED, {"error": "authentication required"})
+                return
+            if not self._origin_matches_request(require_origin=True):
+                self._send_json(HTTPStatus.FORBIDDEN, {"error": "origin is not allowed"})
+                return
+        if self.headers.get("Content-Type", "").split(";", 1)[0].strip() != "application/pdf":
+            self._send_json(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, {"error": "PDF required"})
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "-1"))
+        except ValueError:
+            length = -1
+        policy = self.server.surface.document_policy
+        maximum = policy.max_document_bytes
+        if not 0 < length <= maximum:
+            self._send_json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "PDF is too large"})
+            return
+        filename = self.headers.get("X-File-Name", "")
+        title = self.headers.get("X-Source-Title", "")
+        request_id = self.headers.get("Idempotency-Key", "")
+        if not filename or not title or not request_id:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "PDF headers are incomplete"})
+            return
+        try:
+            with tempfile.TemporaryDirectory(prefix="cardine-upload-") as root:
+                input_path = Path(root) / "upload.pdf"
+                digest = sha256()
+                written = 0
+                with input_path.open("xb") as output:
+                    while written < length:
+                        block = self.rfile.read(min(1024 * 1024, length - written))
+                        if not block:
+                            raise UiRequestError("PDF body is truncated", status_code=400)
+                        written += len(block)
+                        digest.update(block)
+                        output.write(block)
+                payload = self.server.surface.api_post_pdf(
+                    input_path=input_path,
+                    pdf_sha256=digest.hexdigest(),
+                    byte_size=written,
+                    filename=filename,
+                    title=title,
+                    request_id=request_id,
+                    session_token=self._session_token(),
+                    csrf_token=self.headers.get("X-CSRF-Token"),
+                )
+        except UiRequestError as error:
+            self._send_json(HTTPStatus(error.status_code), _ui_error_payload(error))
             return
         self._send_json(HTTPStatus.OK, payload)
 
@@ -667,9 +766,7 @@ def create_server(
 ) -> ThreadingHTTPServer:
     """Create one private repository-backed browser server."""
 
-    private_production = bool(
-        private_access is not None and private_access.production
-    )
+    private_production = bool(private_access is not None and private_access.production)
     _require_bind_host(
         host,
         private_production=private_production,
@@ -811,9 +908,7 @@ def main() -> None:
                 canonical_origin=canonical_origin,
                 production=args.production,
             )
-            credentials = (
-                credentials if credentials is not None else RuntimeCredentialStore()
-            )
+            credentials = credentials if credentials is not None else RuntimeCredentialStore()
             settings_application = PrivateSettingsApplication(
                 ui_application,
                 credentials=credentials,

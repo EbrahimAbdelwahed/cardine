@@ -4,6 +4,7 @@ import json
 import re
 from collections.abc import AsyncIterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
+from hashlib import sha256
 from http.client import HTTPConnection
 from pathlib import Path
 from threading import Thread
@@ -554,6 +555,44 @@ def test_repository_source_upload_rejects_unsupported_files(tmp_path: Path) -> N
                 {"filename": "lecture.pdf", "title": "Lezione", "content": "not a PDF"},
             ),
         )
+
+
+def test_repository_pdf_import_is_canonical_and_restart_safe(tmp_path: Path) -> None:
+    from tests.integration.adapters.workarounds.test_pdf_markdown_real import (
+        _minimal_text_pdf,
+    )
+
+    root, adapters, _model = _repository(tmp_path)
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    pdf = _minimal_text_pdf()
+    input_path = tmp_path / "lesson.pdf"
+    input_path.write_bytes(pdf)
+
+    receipt = app.import_pdf(
+        input_path=input_path,
+        pdf_sha256=sha256(pdf).hexdigest(),
+        byte_size=len(pdf),
+        filename="lesson.pdf",
+        title="Lezione PDF",
+        request_id="pdf-import-one",
+    )
+
+    assert receipt["status"] == "emitted"
+    assert cast(dict[str, object], receipt["conversion"])["page_count"] == 1
+    restarted = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    materials = cast(tuple[dict[str, object], ...], restarted.get("/api/v1/materials")["items"])
+    assert "Lezione PDF" in {item["title"] for item in materials}
+    with LocalRepository.open(root, model_adapters=adapters) as repository:
+        source_id = SourceId("source-pdf-sha256:" + sha256(pdf).hexdigest())
+        source = next(
+            item
+            for item in repository.for_course(COURSE).content.catalog()
+            if item.source.source_id == source_id
+        )
+        assert source.source.content_origin.value == "extracted"
+        assert source.source.conversion_provenance is not None
+        assert source.source.conversion_provenance.pdf_sha256 == sha256(pdf).hexdigest()
+        assert repository.blobs.get(source.source.blob) == pdf
 
 
 class _CountingUiApplication:

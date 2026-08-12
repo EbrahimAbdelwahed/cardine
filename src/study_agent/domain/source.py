@@ -6,7 +6,7 @@ from enum import StrEnum
 
 from ._validation import JsonObject, freeze_object, require_aware, require_text
 from .identifiers import BlobId, ChunkId, RevisionId, SourceId
-from .provenance import ContentOrigin, StructureOrigin
+from .provenance import ContentOrigin, DocumentConversionProvenance, StructureOrigin
 
 
 class SourceKind(StrEnum):
@@ -48,6 +48,7 @@ class SourceDocument:
     structure_origin: StructureOrigin
     ingestion_method: str
     content_origin: ContentOrigin = ContentOrigin.ORIGINAL
+    conversion_provenance: DocumentConversionProvenance | None = None
 
     def __post_init__(self) -> None:
         require_text(self.title, "title")
@@ -68,6 +69,11 @@ class SourceDocument:
             raise ValueError("normalized blob id must match its SHA-256 checksum")
         if not 0 <= self.trust_level <= 100:
             raise ValueError("trust_level must be between 0 and 100")
+        if self.content_origin is ContentOrigin.EXTRACTED:
+            if self.conversion_provenance is None:
+                raise ValueError("extracted content requires conversion provenance")
+        elif self.conversion_provenance is not None:
+            raise ValueError("conversion provenance requires extracted content")
 
 
 @dataclass(frozen=True, slots=True)

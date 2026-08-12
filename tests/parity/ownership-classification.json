@@ -1447,7 +1447,7 @@
       "path": "src/study_agent/domain/provenance.py",
       "removal_slice": "CA-10",
       "replacement_import_or_path": "study_agent.api.runtime",
-      "sha256": "a1d558cb3a87d93f826b7c5cf7a6dbbd84c5cb14d29b89054e431322f2c56f89",
+      "sha256": "30f6f734eef50229197140c2ea248de8059f7ed857d8c3804aee15d8cd27cd58",
       "terminal_owner": "study-agent-harness"
     },
     {
@@ -1467,7 +1467,7 @@
       "path": "src/study_agent/domain/source.py",
       "removal_slice": "CA-10",
       "replacement_import_or_path": "study_agent.api.sources",
-      "sha256": "5c1a0b6d0a396bab23619a0eb47e594590fbd2e2362bb6e22fdcb0c8a8754615",
+      "sha256": "090107e572e17ff96d7612630433b3fcdeb4a7ab71655599c975308d1177a746",
       "terminal_owner": "study-agent-harness"
     },
     {
@@ -1857,7 +1857,7 @@
       "path": "src/study_agent/ingestion/events.py",
       "removal_slice": "CA-10",
       "replacement_import_or_path": "study_agent.api.sources",
-      "sha256": "8ffb22814b17b89942271d0d2e5c1e338f47da154106c7cf1b3b5ab7f34e28bf",
+      "sha256": "61e25f8b0a1aaf6c2fb2faf5d2a90f815cba67933cf7de2c9d549fc460dfd4c3",
       "terminal_owner": "study-agent-harness"
     },
     {
@@ -1887,7 +1887,7 @@
       "path": "src/study_agent/ingestion/projection.py",
       "removal_slice": "CA-10",
       "replacement_import_or_path": "study_agent.api.sources",
-      "sha256": "3bb9eee96c788862635bd0ac1e3f4c2134ac336a0513b11fdc532a01c9c09e46",
+      "sha256": "fcaab9b1d19215bb375b46725af1677d358c4ce5684c5ffa5f6c43332c89579e",
       "terminal_owner": "study-agent-harness"
     },
     {
@@ -1897,7 +1897,7 @@
       "path": "src/study_agent/ingestion/service.py",
       "removal_slice": "CA-10",
       "replacement_import_or_path": "study_agent.api.sources",
-      "sha256": "d74d401e4e500a4bdf1ee33d6e9d0af8b3a1c8ed0181ca38d4f9fd0f6ce391fc",
+      "sha256": "fc5e08c2bb414bd3c333f560db00f7d5ba6079a9461dc51f8f9ac53a3d1793ef",
       "terminal_owner": "study-agent-harness"
     },
     {

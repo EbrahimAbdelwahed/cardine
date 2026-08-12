@@ -112,7 +112,13 @@ def _declared_package_data(config: Mapping[str, object]) -> set[str]:
             matches = tuple(path for path in package_root.glob(pattern) if path.is_file())
             if not matches:
                 raise ValueError(f"package-data pattern has no file: {package}={pattern}")
-            paths.update(path.relative_to(ROOT).as_posix() for path in matches)
+            paths.update(
+                path.relative_to(ROOT).as_posix()
+                for path in matches
+                # Third-party binary artifacts have their own exact supply-chain
+                # verifier and are not CA-01/CA-02 namespace ownership rows.
+                if not path.is_relative_to(ROOT / "src/cardine/documents/_vendor")
+            )
     return paths
 
 

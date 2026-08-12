@@ -297,7 +297,7 @@
   async function fetchJson(path, options = {}) {
     const headers = new Headers(options.headers || {});
     headers.set("Accept", "application/json");
-    if (options.body) headers.set("Content-Type", "application/json");
+    if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
     const method = text(options.method, "GET").toUpperCase();
     if (method !== "GET" && method !== "HEAD" && !path.endsWith("/auth/login") && state.auth.csrfToken) {
       headers.set("X-CSRF-Token", state.auth.csrfToken);
@@ -1324,7 +1324,7 @@
   function renderSourceFirstOnboarding(course, materials) {
     const authenticated = state.auth.mode !== "private" || state.auth.authenticated;
     const uploadBody = authenticated
-      ? `<form class="source-upload-form" data-source-upload novalidate><label for="source-upload-file">File di testo o Markdown <span class="field-optional">(facoltativo)</span></label><input id="source-upload-file" name="file" type="file" accept=".txt,.md,text/plain,text/markdown"><p class="field-note">Oppure incolla il testo qui sotto. PDF, immagini e altri formati non sono ancora importabili.</p><label for="source-upload-text">Testo della fonte <span class="field-required">obbligatorio se non carichi un file</span></label><textarea id="source-upload-text" name="content" rows="6" maxlength="196608" placeholder="Incolla appunti, programma o una lezione…"></textarea><label for="source-upload-title">Titolo <span class="field-optional">(facoltativo)</span></label><input id="source-upload-title" name="title" maxlength="240" placeholder="es. Lezione 1 · Emodinamica"><div class="state-actions"><button class="button" type="submit">Aggiungi questa fonte</button><span class="settings-card__status" data-source-upload-status role="status"></span></div></form>`
+      ? `<form class="source-upload-form" data-source-upload novalidate><label for="source-upload-file">File PDF, testo o Markdown <span class="field-optional">(facoltativo)</span></label><input id="source-upload-file" name="file" type="file" accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown"><p class="field-note">I PDF devono contenere testo selezionabile. Scansioni e immagini richiedono OCR e vengono rifiutate senza salvare una fonte.</p><label for="source-upload-text">Testo della fonte <span class="field-required">obbligatorio se non carichi un file</span></label><textarea id="source-upload-text" name="content" rows="6" maxlength="196608" placeholder="Incolla appunti, programma o una lezione…"></textarea><label for="source-upload-title">Titolo <span class="field-optional">(facoltativo)</span></label><input id="source-upload-title" name="title" maxlength="240" placeholder="es. Lezione 1 · Emodinamica"><div class="state-actions"><button class="button" type="submit">Aggiungi questa fonte</button><span class="settings-card__status" data-source-upload-status role="status"></span></div></form>`
       : `<p class="field-note">Accedi per aggiungere fonti al corso e iniziare il setup.</p><div class="state-actions"><button class="button" type="button" data-route="login">Accedi</button></div>`;
     setupView(1, "Partiamo dai materiali.", "Prima leggiamo le fonti del corso; solo dopo sceglieremo l’argomento iniziale insieme.",
       `<section class="study-setup-card" aria-labelledby="source-setup-heading"><h2 id="source-setup-heading">Aggiungi una fonte</h2><p>Cardine usa solo le fonti salvate nel repository del corso. Puoi aggiungere una lezione alla volta.</p>${uploadBody}</section>`);
@@ -1961,20 +1961,22 @@
     const status = $("[data-source-upload-status]", form);
     const titleInput = $("input[name=title]", form);
     const extension = selected ? selected.name.split(".").pop()?.toLowerCase() : "md";
-    if (selected && !["txt", "md"].includes(extension || "")) {
-      if (status) status.textContent = "Sono supportati solo file .txt e .md. PDF e immagini non sono ancora importabili.";
+    if (selected && !["txt", "md", "pdf"].includes(extension || "")) {
+      if (status) status.textContent = "Sono supportati file .pdf, .txt e .md.";
       return;
     }
-    if (selected && selected.size > 196608) {
-      if (status) status.textContent = "Il file supera il limite di 192 KB per questa prima importazione.";
+    const isPdf = selected && extension === "pdf";
+    const maximum = isPdf ? 256 * 1024 * 1024 : 196608;
+    if (selected && selected.size > maximum) {
+      if (status) status.textContent = isPdf ? "Il PDF supera il limite di 256 MiB." : "Il file supera il limite di 192 KB.";
       return;
     }
-    const content = selected ? await selected.text() : pasted;
-    if (!text(content).trim()) {
+    const content = selected && !isPdf ? await selected.text() : pasted;
+    if (!isPdf && !text(content).trim()) {
       if (status) status.textContent = "Scegli un file .txt/.md oppure incolla una fonte testuale.";
       return;
     }
-    if (new TextEncoder().encode(content).length > 196608) {
+    if (!isPdf && new TextEncoder().encode(content).length > 196608) {
       if (status) status.textContent = "Il testo supera il limite di 192 KB per questa prima importazione.";
       return;
     }
@@ -1984,10 +1986,21 @@
     if (submit) submit.disabled = true;
     if (status) status.textContent = "Salvo e indicizzo la fonte…";
     try {
-      const receipt = await fetchJson("/api/v1/sources/upload", {
-        method: "POST",
-        body: JSON.stringify(commandPayload({ filename, title, content })),
-      });
+      const receipt = isPdf
+        ? await fetchJson("/api/v1/sources/import/pdf", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/pdf",
+              "X-File-Name": filename,
+              "X-Source-Title": title,
+              "Idempotency-Key": requestId(),
+            },
+            body: selected,
+          })
+        : await fetchJson("/api/v1/sources/upload", {
+            method: "POST",
+            body: JSON.stringify(commandPayload({ filename, title, content })),
+          });
       updateSequence(first(receipt, ["high_water_sequence"], state.highWaterSequence));
       state.studySetup = null;
       await refreshBootstrapCounts();
