@@ -103,3 +103,21 @@ def test_transition_contract_detects_an_extra_consumer(
 
     assert exports == {"CourseId"}
     assert consumers == {"src/cardine/application/extra.py"}
+
+
+def test_ca02_audit_excludes_only_cardine_integration_modules(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "repository"
+    cardine = root / "src/cardine/integrations/approved.py"
+    harness = root / "src/study_agent/integrations/unreviewed.py"
+    cardine.parent.mkdir(parents=True)
+    harness.parent.mkdir(parents=True)
+    cardine.write_text("value = 1\n", encoding="utf-8")
+    harness.write_text("value = 1\n", encoding="utf-8")
+    monkeypatch.setattr(audit, "ROOT", root)
+
+    paths = audit._source_paths()
+
+    assert "src/cardine/integrations/approved.py" not in paths
+    assert "src/study_agent/integrations/unreviewed.py" in paths

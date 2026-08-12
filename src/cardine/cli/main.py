@@ -13,6 +13,7 @@ from io import StringIO
 from pathlib import Path
 from typing import Never, cast
 
+from cardine.integrations.study_agent import CardineError
 from study_agent.application import GroundingAskError
 from study_agent.domain._validation import JsonObject
 from study_agent.lifecycle import RetryableLifecycleConflictError, StaleLifecyclePlanError
@@ -118,7 +119,7 @@ def main(
             json_mode=json_mode,
         )
         return 4
-    except (LocalConfigError, LocalRepositoryError):
+    except (CardineError, LocalConfigError, LocalRepositoryError):
         emit_error(
             "repository_error",
             "local repository is absent or incompatible",

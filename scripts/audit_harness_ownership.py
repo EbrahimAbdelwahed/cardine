@@ -134,6 +134,9 @@ def _source_paths() -> set[str]:
             and "/__pycache__/" not in path.as_posix()
             and path.suffix != ".pyc"
             and "_transition" not in path.parts
+            # CA-02 freezes namespace ownership. Later Cardine integration
+            # modules have their own slice boundary and are not CA-01 rows.
+            and not path.is_relative_to(ROOT / "src/cardine/integrations")
         )
     return paths
 

@@ -13,6 +13,11 @@ from uuid import uuid4
 
 from cardine.courses import course_profile_manifest
 from cardine.domain.course import CourseProfile, SourcePolicy, TerminologyPolicy
+from cardine.integrations.study_agent import (
+    CardineRuntimeConfig,
+    StudyRuntimeAdapter,
+    compose_study_runtime,
+)
 from study_agent.adapters.filesystem import FilesystemExportWriter, FilesystemSourceInput
 from study_agent.adapters.filesystem.lifecycle import load_lifecycle_manifest
 from study_agent.application import ExportService, ExportVersion
@@ -72,11 +77,16 @@ async def execute(
     if registration.repository is RepositoryRequirement.NONE:
         result = registration.handler(request, None)
         return result if isinstance(result, CommandOutcome) else await result
-    with LocalRepository.open(
-        request.repository,
-        model_adapters=model_adapters,
-        environment=environment,
-    ) as repository:
+    runtime: StudyRuntimeAdapter[object, LocalRepository] = compose_study_runtime(
+        CardineRuntimeConfig(
+            opener=lambda: LocalRepository.open(
+                request.repository,
+                model_adapters=model_adapters,
+                environment=environment,
+            )
+        )
+    )
+    with runtime.open_repository() as repository:
         result = registration.handler(request, repository)
         return result if isinstance(result, CommandOutcome) else await result
 
@@ -97,7 +107,10 @@ def handle_init(
 ) -> CommandOutcome:
     if repository is not None:
         raise RuntimeError("init cannot execute through an open repository")
-    return _init(request)
+    runtime: StudyRuntimeAdapter[CommandOutcome, object] = compose_study_runtime(
+        CardineRuntimeConfig(initializer=lambda: _init(request))
+    )
+    return runtime.initialize_repository()
 
 
 async def handle_course_create(

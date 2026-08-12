@@ -44,7 +44,7 @@ from study_agent.repository_config import LocalRepositoryConfig, ModelAdapterCon
 
 COURSE = CourseId("closure-course")
 SESSION = SessionId("closure-session")
-DEMO_DIR = Path(__file__).parents[4] / "src" / "study_agent" / "demo"
+DEMO_DIR = Path(__file__).parents[4] / "src" / "cardine" / "demo"
 ROUTES = {
     "oggi": "/api/v1/bootstrap",
     "sessione": "/api/v1/session",

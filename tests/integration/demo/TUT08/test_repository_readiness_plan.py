@@ -109,7 +109,7 @@ def test_repository_plan_conflict_is_explicit_and_shell_warns(
 
 def test_browser_plan_uses_server_values_without_date_math() -> None:
     javascript = (
-        Path(__file__).parents[4] / "src/study_agent/demo/browser.js"
+        Path(__file__).parents[4] / "src/cardine/demo/browser.js"
     ).read_text(encoding="utf-8")
 
     assert 'endpoint: "/api/v1/plan"' in javascript

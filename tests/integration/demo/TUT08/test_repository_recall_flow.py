@@ -641,7 +641,7 @@ def test_exact_concurrent_enrollment_across_ui_instances_schedules_once(
 
 def test_browser_reveal_ratings_and_count_refresh_are_wired() -> None:
     javascript = (
-        Path(__file__).parents[4] / "src/study_agent/demo/browser.js"
+        Path(__file__).parents[4] / "src/cardine/demo/browser.js"
     ).read_text(encoding="utf-8")
 
     assert "state.revealedReviews[revisionId]" in javascript

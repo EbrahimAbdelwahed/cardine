@@ -23,6 +23,11 @@ from cardine.cli.repository import (
 from cardine.courses import ProjectionCourseView
 from cardine.diagnostics import TurnTraceStore
 from cardine.hosts import PendingContinuationDescriptor, TutorContinuationRecord
+from cardine.integrations.study_agent import (
+    CardineRuntimeConfig,
+    StudyRuntimeAdapter,
+    compose_study_runtime,
+)
 from study_agent.application import (
     ConversationTurnCommand,
     ConversationTurnError,
@@ -234,11 +239,20 @@ class RepositoryUiApplication(UiApplicationPort):
         self._repository = Path(repository)
         self._course_id = _identifier(course_id, CourseId, "course_id")
         self._session_id = _identifier(session_id, SessionId, "session_id")
-        self._model_adapters = model_adapters
-        self._environment = environment
-        self._recall_scheduler = recall_scheduler
-        self._recall_scheduler_factory = recall_scheduler_factory
-        self._repository_opener = repository_opener
+        def open_repository() -> AbstractContextManager[LocalRepository]:
+            kwargs: dict[str, object] = {
+                "model_adapters": model_adapters,
+                "environment": environment,
+            }
+            if recall_scheduler is not None:
+                kwargs["recall_scheduler"] = recall_scheduler
+            if recall_scheduler_factory is not None:
+                kwargs["recall_scheduler_factory"] = recall_scheduler_factory
+            return repository_opener(self._repository, **kwargs)
+
+        self._runtime: StudyRuntimeAdapter[object, LocalRepository] = compose_study_runtime(
+            CardineRuntimeConfig(opener=open_repository)
+        )
         self._lock = _repository_mutation_lock(self._repository)
         self._turn_traces = turn_traces if turn_traces is not None else TurnTraceStore()
 
@@ -1319,15 +1333,7 @@ class RepositoryUiApplication(UiApplicationPort):
                 ) from error
 
     def _open(self) -> AbstractContextManager[LocalRepository]:
-        kwargs: dict[str, object] = {
-            "model_adapters": self._model_adapters,
-            "environment": self._environment,
-        }
-        if self._recall_scheduler is not None:
-            kwargs["recall_scheduler"] = self._recall_scheduler
-        if self._recall_scheduler_factory is not None:
-            kwargs["recall_scheduler_factory"] = self._recall_scheduler_factory
-        return self._repository_opener(self._repository, **kwargs)
+        return self._runtime.open_repository()
 
     def _snapshot(self, repository: LocalRepository) -> TutorSnapshotV1:
         repository.courses.get(self._course_id)
