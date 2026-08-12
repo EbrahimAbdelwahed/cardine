@@ -144,6 +144,7 @@
     lastTurn: null,
     authProbeUnavailable: false,
     diagnosticTraceId: "",
+    lesson: { query: "", candidates: [], pin: null, answer: null },
   };
 
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -1311,7 +1312,20 @@
     const createCourse = state.auth.authenticated
       ? `<button class="chat-home__course-action" type="button" data-open-course-creation>Crea un corso</button>`
       : "";
-    setView("oggi", `<section class="chat-home" aria-labelledby="home-heading"><div class="chat-home__center"><p class="eyebrow">${esc(text(course.title, "corso locale"))}</p><h1 id="home-heading">${suspended ? "Riprendiamo da dove eravamo?" : "Come vuoi studiare oggi?"}</h1>${entryForm("hero-entry", "Scrivi al tutor", "Chiedi qualsiasi cosa sul corso…")}${createCourse}${renderChatCourseCreation()}${suspended ? `<button class="resume-chat" type="button" data-route="sessione">Riprendi la sessione in corso</button>` : ""}${today}</div>${support}</section>`);
+    setView("oggi", `<section class="chat-home" aria-labelledby="home-heading"><div class="chat-home__center"><p class="eyebrow">${esc(text(course.title, "corso locale"))}</p><h1 id="home-heading">${suspended ? "Riprendiamo da dove eravamo?" : "Come vuoi studiare oggi?"}</h1>${entryForm("hero-entry", "Scrivi al tutor", "Chiedi qualsiasi cosa sul corso…")}${renderLessonStudy()}${createCourse}${renderChatCourseCreation()}${suspended ? `<button class="resume-chat" type="button" data-route="sessione">Riprendi la sessione in corso</button>` : ""}${today}</div>${support}</section>`);
+  }
+
+  function renderLessonStudy() {
+    const lesson = state.lesson || { query: "", candidates: [], pin: null, answer: null };
+    const candidates = Array.isArray(lesson.candidates) ? lesson.candidates : [];
+    const rows = candidates.length
+      ? `<ul class="lesson-search-results">${candidates.map((candidate) => `<li><button class="button button--quiet" type="button" data-lesson-select="${esc(text(candidate.candidate_id))}">${esc(text(candidate.section_title, "Lezione"))}</button><span class="field-note">${esc(shortId(candidate.source_id, 12))} · ${esc(text(candidate.revision_id))}</span></li>`).join("")}</ul>`
+      : "";
+    const pin = lesson.pin && typeof lesson.pin === "object";
+    const answer = lesson.answer && typeof lesson.answer === "object"
+      ? `<article class="lesson-answer" aria-live="polite"><p class="section-kicker">risposta ancorata alla lezione</p><pre>${esc(JSON.stringify(lesson.answer, null, 2))}</pre></article>`
+      : "";
+    return `<section class="lesson-study" aria-labelledby="lesson-study-heading"><p class="section-kicker">selezione esplicita · grounding</p><h2 id="lesson-study-heading">Cerca una lezione</h2><p class="field-note">La domanda usa solo il pin selezionato e fallisce se la fonte è cambiata.</p><form data-lesson-search novalidate><label for="lesson-query">Titolo o argomento</label><input id="lesson-query" name="query" value="${esc(text(lesson.query))}" required maxlength="512" placeholder="es. Lezione 1"><button class="button" type="submit">Cerca</button></form>${rows}${pin ? `<form data-lesson-ask novalidate><label for="lesson-question">Domanda sulla lezione selezionata</label><textarea id="lesson-question" name="question" required maxlength="4000" placeholder="Cosa spiega questa lezione?"></textarea><button class="button" type="submit">Chiedi sulla lezione selezionata</button></form>` : ""}${answer}</section>`;
   }
 
   /* A three-step setup shows where you are and lets you go back. The frame
@@ -2113,6 +2127,23 @@
         resizeComposer(textarea);
       }
     });
+    $$('[data-lesson-search]').forEach((form) => {
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        searchLessons(form).catch((error) => showCommandError(error));
+      });
+    });
+    $$('[data-lesson-select]').forEach((control) => {
+      control.addEventListener("click", () => {
+        selectLesson(control).catch((error) => showCommandError(error));
+      });
+    });
+    $$('[data-lesson-ask]').forEach((form) => {
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        askPinnedLesson(form).catch((error) => showCommandError(error));
+      });
+    });
     $$('[data-reveal-review]').forEach((control) => control.addEventListener("click", () => { state.revealedReviews[control.dataset.revealReview] = true; renderRipasso(state.viewData || {}); }));
     $$('[data-choice]').forEach((control) => control.addEventListener("change", () => {
       const card = control.closest(".assessment-card");
@@ -2142,6 +2173,66 @@
       state.diagnosticTraceId = text(control.dataset.openTurnTrace, state.diagnosticTraceId);
       loadRoute("impostazioni");
     }));
+  }
+
+  async function searchLessons(form) {
+    const query = text(form.elements.namedItem("query")?.value).trim();
+    if (!query) return;
+    const request = requestId();
+    setBusy(true);
+    try {
+      const receipt = await fetchJson("/api/v1/lessons/search", {
+        method: "POST",
+        body: JSON.stringify(commandPayload({ query }, request)),
+      });
+      state.lesson = { query, candidates: array(receipt.candidates), pin: null, answer: null };
+      updateSequence(first(receipt, ["high_water_sequence"], state.highWaterSequence));
+      renderOggi(state.viewData || state.bootstrap || {});
+      setStatus(text(receipt.status, "ready"), "Ricerca lezione completata");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function selectLesson(control) {
+    const lesson = state.lesson || {};
+    const query = text(lesson.query).trim();
+    const candidateId = text(control.dataset.lessonSelect).trim();
+    if (!query || !candidateId) return;
+    const request = requestId();
+    setBusy(true);
+    try {
+      const receipt = await fetchJson("/api/v1/lessons/select", {
+        method: "POST",
+        body: JSON.stringify(commandPayload({ query, candidate_id: candidateId }, request)),
+      });
+      state.lesson = { ...lesson, pin: object(receipt.pin), answer: null };
+      updateSequence(first(receipt, ["high_water_sequence"], state.highWaterSequence));
+      renderOggi(state.viewData || state.bootstrap || {});
+      setStatus("selected", "Lezione fissata per il grounding");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function askPinnedLesson(form) {
+    const question = text(form.elements.namedItem("question")?.value).trim();
+    const pin = state.lesson && state.lesson.pin;
+    if (!question || !pin) return;
+    const request = requestId();
+    setBusy(true);
+    try {
+      const receipt = await fetchJson("/api/v1/lessons/ask", {
+        method: "POST",
+        body: JSON.stringify(commandPayload({ question, pin }, request)),
+      });
+      state.lesson = { ...state.lesson, answer: object(receipt.answer) };
+      updateSequence(first(receipt, ["high_water_sequence"], state.highWaterSequence));
+      renderOggi(state.viewData || state.bootstrap || {});
+      setStatus(text(receipt.status, "completed"), "Risposta ancorata completata");
+    } finally {
+      setBusy(false);
+    }
   }
 
   /* The floor and the ceiling come from the stylesheet, so the box can

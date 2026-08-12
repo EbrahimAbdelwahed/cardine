@@ -40,14 +40,17 @@ from cardine.integrations.study_agent.course_policy import (
     ConsentCommandError,
     ConsentConflictError,
     ConsentReceipt,
+    ProviderConsentRequiredError,
     RetryableConsentConflictError,
     RetryableSourceLifetimeConflictError,
     SourceLifetimeCommandError,
 )
+from cardine.knowledge import LessonCandidate, SourcePin
 from study_agent.application import (
     ConversationTurnCommand,
     ConversationTurnError,
     ConversationTurnErrorCode,
+    GroundingAskError,
     StudyReadinessSnapshot,
 )
 from study_agent.artifacts import (
@@ -124,6 +127,7 @@ from study_agent.recall import (
 from study_agent.recall.events import REVIEW_RECORDED, SCHEDULE_APPLIED
 from study_agent.retrieval import SourceContentError
 from study_agent.sessions import ProjectionTutorPresentationView
+from study_agent.sessions.events import grounded_answer_manifest
 from study_agent.state import PayloadValidationError, Projection
 from study_agent.study_context import (
     ProjectionStudyContextView,
@@ -462,6 +466,12 @@ class RepositoryUiApplication(UiApplicationPort):
             return self._source_lifetime_mutation(path.rsplit("/", 1)[-1], command)
         if path == "/api/v1/settings/model/check":
             return self._check_model(command)
+        if path == "/api/v1/lessons/search":
+            return self._lesson_search(command)
+        if path == "/api/v1/lessons/select":
+            return self._lesson_select(command)
+        if path == "/api/v1/lessons/ask":
+            return self._lesson_ask(command)
         continuation_fingerprint = _continuation_fingerprint(path)
         artifact_revision = _artifact_decision_target(path)
         recall_enrollment = _recall_enrollment_target(path)
@@ -577,6 +587,112 @@ class RepositoryUiApplication(UiApplicationPort):
                     status_code=503,
                     trace_id=trace_id,
                 ) from error
+
+    def _lesson_search(self, command: Mapping[str, object]) -> JsonObject:
+        request_id, _expected, payload = _workspace_command(
+            command, required_keys={"query"}
+        )
+        query = _workspace_text(payload.get("query"), "query", MAX_LEARNER_ENTRY_CHARS)
+        try:
+            with self._lock, self._open() as repository:
+                result = repository.search_lessons(self._course_id, query)
+                sequence = repository.events.projection(self._course_id).sequence
+        except (CourseNotFoundError, FileNotFoundError) as error:
+            raise UiRequestError("selected course was not found", status_code=404) from error
+        except (LocalRepositoryError, OSError, RuntimeError) as error:
+            raise UiRequestError("repository runtime is unavailable", status_code=503) from error
+        except ValueError as error:
+            raise UiRequestError(str(error), status_code=400) from error
+        return {
+            "schema_version": 1,
+            "request_id": request_id,
+            "status": result.disposition.value,
+            "high_water_sequence": sequence,
+            "candidates": tuple(_lesson_candidate_payload(item) for item in result.candidates),
+        }
+
+    def _lesson_select(self, command: Mapping[str, object]) -> JsonObject:
+        request_id, _expected, payload = _workspace_command(
+            command, required_keys={"query", "candidate_id"}
+        )
+        query = _workspace_text(payload.get("query"), "query", MAX_LEARNER_ENTRY_CHARS)
+        candidate_id = _workspace_text(
+            payload.get("candidate_id"), "candidate_id", MAX_WORKSPACE_ID_CHARS
+        )
+        try:
+            with self._lock, self._open() as repository:
+                pin = repository.select_lesson(self._course_id, query, candidate_id)
+                sequence = repository.events.projection(self._course_id).sequence
+        except (CourseNotFoundError, FileNotFoundError) as error:
+            raise UiRequestError("selected course was not found", status_code=404) from error
+        except (LocalRepositoryError, OSError, RuntimeError) as error:
+            raise UiRequestError("repository runtime is unavailable", status_code=503) from error
+        except ValueError as error:
+            raise UiRequestError(str(error), status_code=400) from error
+        return {
+            "schema_version": 1,
+            "request_id": request_id,
+            "status": "selected",
+            "high_water_sequence": sequence,
+            "pin": _lesson_pin_payload(pin),
+        }
+
+    def _lesson_ask(self, command: Mapping[str, object]) -> JsonObject:
+        request_id, expected_sequence, payload = _workspace_command(
+            command, required_keys={"question", "pin"}
+        )
+        question = _workspace_text(
+            payload.get("question"), "question", MAX_LEARNER_ENTRY_CHARS
+        )
+        pin = _lesson_pin_payload_from_json(payload.get("pin"))
+        with self._lock:
+            try:
+                with self._open() as repository:
+                    receipt = repository.rebuild_retrieval()
+                    service = repository.grounding_service(
+                        self._course_id,
+                        repository.course_index_receipt(self._course_id, receipt),
+                        lesson_pin=pin,
+                    )
+                    result = asyncio.run(
+                        service.ask(
+                            question,
+                            self._context(request_id, request_id),
+                            expected_sequence=expected_sequence,
+                        )
+                    )
+                    sequence = repository.events.projection(self._course_id).sequence
+                    return {
+                        "schema_version": 1,
+                        "request_id": request_id,
+                        "status": "completed",
+                        "high_water_sequence": sequence,
+                        "pin": _lesson_pin_payload(pin),
+                        "answer": grounded_answer_manifest(result.answer.answer),
+                        "answer_id": str(result.answer.id),
+                        "run_id": str(result.answer.run_id),
+                    }
+            except GroundingAskError as error:
+                status = 409 if error.code.value == "retryable_conflict" else 400
+                raise UiRequestError(str(error), status_code=status) from error
+            except ProviderConsentRequiredError as error:
+                raise UiRequestError(
+                    "provider consent is required before tutor execution", status_code=403
+                ) from error
+            except ModelAdapterConfigurationError as error:
+                raise UiRequestError(
+                    "configured model credential is unavailable", status_code=503
+                ) from error
+            except (CourseNotFoundError, SessionNotFoundError, FileNotFoundError) as error:
+                raise UiRequestError(
+                    "selected course or session was not found", status_code=404
+                ) from error
+            except (LocalRepositoryError, OSError, RuntimeError) as error:
+                raise UiRequestError(
+                    "repository runtime is unavailable", status_code=503
+                ) from error
+            except ValueError as error:
+                raise UiRequestError(str(error), status_code=400) from error
 
     def _select_workspace(self, command: Mapping[str, object]) -> JsonObject:
         request_id, _expected_sequence, payload = _workspace_command(
@@ -2571,6 +2687,68 @@ def _workspace_text(value: object, name: str, maximum: int) -> str:
     if not normalized or len(normalized) > maximum or not _is_utf8(normalized):
         raise UiRequestError(f"{name} is invalid")
     return normalized
+
+
+def _lesson_candidate_payload(item: LessonCandidate) -> JsonObject:
+    return {
+        "candidate_id": item.candidate_id,
+        "course_id": item.course_id,
+        "source_id": item.source_id,
+        "revision_id": item.revision_id,
+        "section_title": item.section_title,
+        "start_offset": item.start_offset,
+        "end_offset": item.end_offset,
+        "content_sha256": item.content_sha256,
+        "catalog_fingerprint": item.catalog_fingerprint,
+    }
+
+
+def _lesson_pin_payload(pin: SourcePin) -> JsonObject:
+    return {
+        "course_id": pin.course_id,
+        "source_id": pin.source_id,
+        "revision_id": pin.revision_id,
+        "section_title": pin.section_title,
+        "start_offset": pin.start_offset,
+        "end_offset": pin.end_offset,
+        "content_sha256": pin.content_sha256,
+        "catalog_fingerprint": pin.catalog_fingerprint,
+    }
+
+
+def _lesson_pin_payload_from_json(value: object) -> SourcePin:
+    if not isinstance(value, Mapping):
+        raise UiRequestError("lesson pin is invalid")
+    expected = {
+        "course_id",
+        "source_id",
+        "revision_id",
+        "section_title",
+        "start_offset",
+        "end_offset",
+        "content_sha256",
+        "catalog_fingerprint",
+    }
+    if set(value) != expected:
+        raise UiRequestError("lesson pin is incomplete")
+    text_fields = expected - {"start_offset", "end_offset"}
+    if any(not isinstance(value.get(key), str) for key in text_fields):
+        raise UiRequestError("lesson pin text fields are invalid")
+    if any(type(value.get(key)) is not int for key in ("start_offset", "end_offset")):
+        raise UiRequestError("lesson pin offsets are invalid")
+    try:
+        return SourcePin(
+            cast(str, value["course_id"]),
+            cast(str, value["source_id"]),
+            cast(str, value["revision_id"]),
+            cast(str, value["section_title"]),
+            cast(int, value["start_offset"]),
+            cast(int, value["end_offset"]),
+            cast(str, value["content_sha256"]),
+            cast(str, value["catalog_fingerprint"]),
+        )
+    except (TypeError, ValueError) as error:
+        raise UiRequestError("lesson pin is invalid") from error
 
 
 def _source_upload_content(value: object) -> str:

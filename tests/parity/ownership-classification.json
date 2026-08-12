@@ -477,7 +477,7 @@
       "path": "src/study_agent/artifacts/__init__.py",
       "removal_slice": "CA-10",
       "replacement_import_or_path": "study_agent.api.artifacts",
-      "sha256": "0bfab738970dbe15b36b891bba8fea1d64e5dbc6a2631433c335ad4df22ac4ae",
+      "sha256": "e47b35eee8c8e5d05e81ca22ab95591af7436881998f86234987bd53fe4511f8",
       "terminal_owner": "study-agent-harness"
     },
     {
@@ -507,7 +507,7 @@
       "path": "src/study_agent/artifacts/contracts.py",
       "removal_slice": "CA-10",
       "replacement_import_or_path": "study_agent.api.artifacts",
-      "sha256": "ce326cb5c59a26cceffc88574ab44d546d26fa935e05a296695712ffcac193ab",
+      "sha256": "06d85e274998b099b72264940534b1288a3d1ae7503aa774cda5d49be0b0aec8",
       "terminal_owner": "study-agent-harness"
     },
     {
@@ -517,7 +517,7 @@
       "path": "src/study_agent/artifacts/events.py",
       "removal_slice": "CA-10",
       "replacement_import_or_path": "study_agent.api.artifacts",
-      "sha256": "1589f374ebe130785267194e88fe48f171f0e82e6266467e732644212a9f42cb",
+      "sha256": "756b559681433be39ec5b0b1a12731dcb57e596afdce48899cab8c1eca58e2fe",
       "terminal_owner": "study-agent-harness"
     },
     {
@@ -567,7 +567,7 @@
       "path": "src/study_agent/artifacts/service.py",
       "removal_slice": "CA-10",
       "replacement_import_or_path": "study_agent.api.artifacts",
-      "sha256": "c9e19780ce4162d88991eb4bd09a22ab6107e97f7c3fa0e8abda4a1bc69ea0f7",
+      "sha256": "dc25fe343b08b449e154d3fbdb04e4a37bcc8807574080695991d018fab693e2",
       "terminal_owner": "study-agent-harness"
     },
     {
@@ -2157,7 +2157,7 @@
       "path": "src/study_agent/ports/artifact.py",
       "removal_slice": "CA-10",
       "replacement_import_or_path": "study_agent.api.artifacts",
-      "sha256": "4ef6e8ad24282ca9a8e374384864e270c2cf38eb52a502a1db4c999bdfa399f2",
+      "sha256": "87b83744eb194815250be2e1e7615130d12ff07df810db6a3d5d87bc09971f0d",
       "terminal_owner": "study-agent-harness"
     },
     {

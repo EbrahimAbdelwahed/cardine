@@ -508,6 +508,7 @@ def command_registrations() -> tuple[CommandRegistration, ...]:
                 _argument("question", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
                 _argument("session_id", ArgumentKind.OPTION, ArgumentValueType.STRING, False),
                 _argument("idempotency_key", ArgumentKind.OPTION, ArgumentValueType.STRING, False),
+                _argument("lesson_pin", ArgumentKind.OPTION, ArgumentValueType.JSON, False),
             ),
             "cardine --json --repository REPOSITORY ask COURSE_ID QUESTION --help",
             _add_ask,
@@ -1017,6 +1018,7 @@ def _add_ask(topology: _ParserTopology) -> None:
     parser.add_argument("question")
     parser.add_argument("--session-id")
     parser.add_argument("--idempotency-key")
+    parser.add_argument("--lesson-pin", metavar="JSON")
 
 
 def _add_session_list(topology: _ParserTopology) -> None:

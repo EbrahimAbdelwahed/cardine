@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import signal
 import threading
 from collections.abc import Mapping
@@ -24,7 +25,7 @@ from cardine.integrations.study_agent import (
     StudyRuntimeAdapter,
     compose_study_runtime,
 )
-from cardine.knowledge import PageIndexProjection
+from cardine.knowledge import PageIndexProjection, SourcePin
 from study_agent.adapters.filesystem import FilesystemExportWriter, FilesystemSourceInput
 from study_agent.adapters.filesystem.lifecycle import load_lifecycle_manifest
 from study_agent.application import ExportService, ExportVersion
@@ -708,6 +709,7 @@ async def _ask(repository: LocalRepository, values: dict[str, object]) -> Comman
     session_value = values.get("session_id")
     session_id = SessionId(str(session_value or f"session-{uuid4()}"))
     key = str(values.get("idempotency_key") or f"ask-{uuid4()}")
+    lesson_pin = _lesson_pin(values.get("lesson_pin"))
     context = _context(
         course_id,
         session_id=session_id,
@@ -716,7 +718,9 @@ async def _ask(repository: LocalRepository, values: dict[str, object]) -> Comman
     )
     receipt = repository.rebuild_retrieval()
     service = repository.grounding_service(
-        course_id, repository.course_index_receipt(course_id, receipt)
+        course_id,
+        repository.course_index_receipt(course_id, receipt),
+        lesson_pin=lesson_pin,
     )
     if session_value is not None:
         session = repository.sessions.get_session(course_id, session_id)
@@ -734,6 +738,49 @@ async def _ask(repository: LocalRepository, values: dict[str, object]) -> Comman
             "run_id": str(result.answer.run_id),
             "answer": grounded_answer_manifest(result.answer.answer),
         },
+    )
+
+
+def _lesson_pin(value: object) -> SourcePin | None:
+    if value is None:
+        return None
+    raw: object = value
+    if isinstance(value, str):
+        try:
+            raw = json.loads(value)
+        except json.JSONDecodeError as error:
+            raise ValueError("lesson pin must be valid JSON") from error
+    if not isinstance(raw, Mapping):
+        raise ValueError("lesson pin must be an object")
+    expected = {
+        "course_id",
+        "source_id",
+        "revision_id",
+        "section_title",
+        "start_offset",
+        "end_offset",
+        "content_sha256",
+        "catalog_fingerprint",
+    }
+    if set(raw) != expected:
+        raise ValueError("lesson pin fields are incomplete")
+    values = {key: raw[key] for key in expected}
+    if any(
+        not isinstance(values[key], str)
+        for key in expected - {"start_offset", "end_offset"}
+    ):
+        raise ValueError("lesson pin text fields are invalid")
+    if any(type(values[key]) is not int for key in ("start_offset", "end_offset")):
+        raise ValueError("lesson pin offsets are invalid")
+    return SourcePin(
+        values["course_id"],
+        values["source_id"],
+        values["revision_id"],
+        values["section_title"],
+        values["start_offset"],
+        values["end_offset"],
+        values["content_sha256"],
+        values["catalog_fingerprint"],
     )
 
 

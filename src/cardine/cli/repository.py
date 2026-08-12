@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, replace
 from hashlib import sha256
 from pathlib import Path
 from types import MappingProxyType
@@ -149,9 +149,13 @@ from study_agent.playbooks import (
 from study_agent.playbooks.builtin import GROUNDED_ANSWER_FLOW
 from study_agent.ports import IndexReceipt, ModelCapabilities, ModelPort
 from study_agent.ports.retrieval import (
+    EvidenceStatus,
     RetrievalDocument,
+    RetrievalEvidenceSet,
+    RetrievalPort,
     RetrievalQuery,
     retrieval_catalog_fingerprint,
+    retrieval_read_set_fingerprint,
 )
 from study_agent.ports.scheduling import SchedulingPolicyPort
 from study_agent.ports.tutor_runner import (
@@ -212,6 +216,39 @@ _GENERIC_TUTOR_FAILURE_MESSAGE = (
 _PAGEINDEX_RECONCILE_BUDGET = 32
 _PAGEINDEX_ADMISSION_BUDGET = 4
 _LESSON_SEARCH_SOURCE_BUDGET = 32
+
+
+class _PinnedRetrieval:
+    """Restrict canonical retrieval evidence to one validated lesson pin."""
+
+    def __init__(self, inner: RetrievalPort, pin: SourcePin) -> None:
+        self._inner = inner
+        self._pin = pin
+
+    def index(self, documents: Sequence[RetrievalDocument]) -> IndexReceipt:
+        return self._inner.index(documents)
+
+    def search(self, query: RetrievalQuery) -> RetrievalEvidenceSet:
+        scoped = replace(query, revision_ids=(RevisionId(self._pin.revision_id),))
+        evidence = self._inner.search(scoped)
+        selected = tuple(
+            item
+            for item in evidence.evidence
+            if str(item.citation.source_id) == self._pin.source_id
+            and str(item.citation.revision_id) == self._pin.revision_id
+            and item.citation.start_offset >= self._pin.start_offset
+            and item.citation.end_offset <= self._pin.end_offset
+        )
+        status = evidence.status if selected else EvidenceStatus.INSUFFICIENT
+        return RetrievalEvidenceSet(
+            status,
+            selected,
+            evidence.query_fingerprint,
+            evidence.strategy_id,
+            evidence.strategy_version,
+            evidence.index_version,
+            retrieval_read_set_fingerprint(selected),
+        )
 
 
 def _cardine_fallback_message(status: TutorHostRunStatus, failure_reason: str | None) -> str:
@@ -1496,9 +1533,32 @@ class LocalRepository:
 
     def validate_lesson_pin(self, pin: SourcePin) -> LessonSource:
         sources = self._lesson_sources(CourseId(pin.course_id))
-        return LessonSelectionService(
+        source = LessonSelectionService(
             _RepositoryLessonEvidence(self.for_course(CourseId(pin.course_id)).retrieval)
         ).validate_pin(pin, sources)
+        if source.kind.casefold() == "markdown":
+            candidates = self.search_lessons(
+                CourseId(pin.course_id), pin.section_title
+            ).candidates
+            if not any(
+                item.source_id == pin.source_id
+                and item.revision_id == pin.revision_id
+                and item.section_title == pin.section_title
+                and item.start_offset == pin.start_offset
+                and item.end_offset == pin.end_offset
+                for item in candidates
+            ):
+                raise ValueError("lesson pin is not a current canonical candidate")
+        elif not (
+            pin.section_title == source.title
+            and any(
+                chunk.start_offset == pin.start_offset
+                and chunk.end_offset == pin.end_offset
+                for chunk in source.chunks
+            )
+        ):
+            raise ValueError("lesson pin is not a current canonical candidate")
+        return source
 
     def pageindex_summary(self, course_id: CourseId) -> JsonObject:
         statuses = self.pageindex_status(course_id)
@@ -1573,8 +1633,24 @@ class LocalRepository:
         )
 
     def grounding_service(
-        self, course_id: CourseId, index_receipt: IndexReceipt
+        self,
+        course_id: CourseId,
+        index_receipt: IndexReceipt,
+        *,
+        lesson_pin: SourcePin | None = None,
     ) -> GroundingAskService:
+        retrieval: RetrievalPort = self.for_course(course_id).retrieval
+        if lesson_pin is not None:
+            if not isinstance(lesson_pin, SourcePin) or lesson_pin.course_id != str(course_id):
+                raise ValueError("lesson pin belongs to another course")
+            source = self.validate_lesson_pin(lesson_pin)
+            if not any(
+                chunk.start_offset >= lesson_pin.start_offset
+                and chunk.end_offset <= lesson_pin.end_offset
+                for chunk in source.chunks
+            ):
+                raise ValueError("lesson pin contains no complete canonical chunk")
+            retrieval = _PinnedRetrieval(retrieval, lesson_pin)
         if self.config.model is None:
             raise ModelAdapterConfigurationError("no model adapter is configured")
         course = self.for_course(course_id)
@@ -1613,13 +1689,17 @@ class LocalRepository:
             courses=self.courses,
             session_service=self.session_service,
             sessions=self.sessions,
-            retrieval=course.retrieval,
+            retrieval=retrieval,
             catalog=course.content,
             content=course.content,
             finalizer=finalizer,
             engine_factory=engine_factory,
             run_store=self.runs,
-            configuration=GroundingAskConfiguration(pins, index_receipt),
+            configuration=GroundingAskConfiguration(
+                pins,
+                index_receipt,
+                lesson_pin=lesson_pin,
+            ),
             events=self.events,
         )
 

@@ -9,6 +9,7 @@ from hashlib import sha256
 from typing import Protocol
 
 from cardine.courses import course_profile_manifest
+from cardine.knowledge import SourcePin
 from study_agent.domain import (
     AnswerId,
     Citation,
@@ -141,11 +142,14 @@ class GroundingAskConfiguration:
     index_receipt: IndexReceipt
     retrieval_limit: int = 8
     configuration_version: str = "grounding-ask-service@1"
+    lesson_pin: SourcePin | None = None
 
     def __post_init__(self) -> None:
         require_text(self.configuration_version, "configuration_version")
         if self.retrieval_limit < 1:
             raise ValueError("retrieval_limit must be positive")
+        if self.lesson_pin is not None and not isinstance(self.lesson_pin, SourcePin):
+            raise TypeError("lesson_pin must be a SourcePin")
         _validate_builtin_pins(self.pins)
 
 
@@ -214,15 +218,6 @@ class GroundingAskService:
                 "grounded questions require an active session",
             )
 
-        existing = self._existing_by_key(context.course_id, session_id, key)
-        if existing is not None:
-            if self._existing_question(context.course_id, session_id, existing) != question:
-                raise GroundingAskError(
-                    GroundingAskErrorCode.CONFLICT,
-                    "idempotency key already names a different grounded question",
-                )
-            return _result(existing, context.course_id, session_id)
-
         if expected_sequence is not None:
             if self._events is None:
                 raise GroundingAskError(
@@ -268,6 +263,24 @@ class GroundingAskService:
             _fingerprint({"question": question}),
             dependencies,
         )
+        existing = self._existing_by_key(context.course_id, session_id, key)
+        if existing is not None:
+            if self._existing_question(context.course_id, session_id, existing) != question:
+                raise GroundingAskError(
+                    GroundingAskErrorCode.CONFLICT,
+                    "idempotency key already names a different grounded question",
+                )
+            expected_pin = (
+                None
+                if self._configuration.lesson_pin is None
+                else _pin_fingerprint(self._configuration.lesson_pin)
+            )
+            if self._stored_lesson_pin(existing.run_id) != expected_pin:
+                raise GroundingAskError(
+                    GroundingAskErrorCode.CONFLICT,
+                    "request identity is bound to a different lesson pin or read set",
+                )
+            return _result(existing, context.course_id, session_id)
         inputs: JsonObject = {
             "course_id": str(context.course_id),
             "session_id": str(session_id),
@@ -424,6 +437,40 @@ class GroundingAskService:
             )
         return status
 
+    def _stored_lesson_pin(self, run_id: RunId) -> str | None:
+        try:
+            payload = self._run_store.load(run_id)
+        except (KeyError, FileNotFoundError) as error:
+            raise GroundingAskError(
+                GroundingAskErrorCode.INCOMPATIBLE_RUNTIME,
+                "the persisted run state is not readable",
+            ) from error
+        except OSError as error:
+            raise GroundingAskError(
+                GroundingAskErrorCode.EXECUTION_FAILED,
+                "the persisted run state could not be read",
+            ) from error
+        try:
+            root = json.loads(payload)
+            raw_dependencies = root["checkpoint"]["read_dependencies"]
+            if not isinstance(raw_dependencies, list):
+                raise TypeError
+            matches = tuple(
+                item
+                for item in raw_dependencies
+                if isinstance(item, list)
+                and len(item) == 3
+                and item[0] == "lesson_pin"
+            )
+            if len(matches) > 1 or (matches and not isinstance(matches[0][2], str)):
+                raise ValueError
+        except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+            raise GroundingAskError(
+                GroundingAskErrorCode.INCOMPATIBLE_RUNTIME,
+                "the persisted run state is not readable",
+            ) from error
+        return None if not matches else matches[0][2]
+
     def _raise_existing_state(self, state: str) -> None:
         mapping = {
             "running": (GroundingAskErrorCode.RUNNING, "grounded-answer execution is running"),
@@ -507,7 +554,14 @@ class GroundingAskService:
                 str(session.id),
                 _session_fingerprint(session, summary_json),
             ),
-        )
+        ) + (() if self._configuration.lesson_pin is None else (
+            ReadDependency(
+                "lesson_pin",
+                f"{self._configuration.lesson_pin.course_id}:"
+                f"{self._configuration.lesson_pin.source_id}",
+                _pin_fingerprint(self._configuration.lesson_pin),
+            ),
+        ))
 
     def _run_id(
         self,
@@ -525,6 +579,11 @@ class GroundingAskService:
             "pins": _pins_manifest(self._configuration.pins),
             "configuration_version": self._configuration.configuration_version,
             "retrieval_limit": self._configuration.retrieval_limit,
+            "lesson_pin": (
+                None
+                if self._configuration.lesson_pin is None
+                else _pin_manifest(self._configuration.lesson_pin)
+            ),
             "read_dependencies": tuple(
                 {
                     "kind": dependency.kind,
@@ -580,6 +639,23 @@ def _pins_manifest(pins: VersionPins) -> JsonObject:
             "version": str(pins.state_contract.version),
         },
     }
+
+
+def _pin_manifest(pin: SourcePin) -> JsonObject:
+    return {
+        "course_id": pin.course_id,
+        "source_id": pin.source_id,
+        "revision_id": pin.revision_id,
+        "section_title": pin.section_title,
+        "start_offset": pin.start_offset,
+        "end_offset": pin.end_offset,
+        "content_sha256": pin.content_sha256,
+        "catalog_fingerprint": pin.catalog_fingerprint,
+    }
+
+
+def _pin_fingerprint(pin: SourcePin) -> str:
+    return _fingerprint(_pin_manifest(pin))
 
 
 def _source_fingerprint(
