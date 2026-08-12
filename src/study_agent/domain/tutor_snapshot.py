@@ -19,7 +19,11 @@ from .identifiers import (
 )
 from .session import ContinuationSummaryV1, SessionStatus
 from .source import SourceKind
-from .study_context import StudyStatementInput, StudyStatementKind, StudyStatementValue
+from cardine.domain.study_context import (
+    StudyStatementInput,
+    StudyStatementKind,
+    StudyStatementValue,
+)
 
 TUTOR_SNAPSHOT_SCHEMA_VERSION = 1
 

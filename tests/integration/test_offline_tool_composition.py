@@ -9,9 +9,9 @@ from typing import NoReturn, cast
 
 import pytest
 
-from study_agent.application.grounding_ask import GroundingAskService
-from study_agent.cli.config import EMPTY_CONFIG
-from study_agent.cli.repository import LocalRepository, initialize_local_repository
+from cardine.application.grounding_ask import GroundingAskService
+from cardine.cli.config import EMPTY_CONFIG
+from cardine.cli.repository import LocalRepository, initialize_local_repository
 from study_agent.domain import (
     CorrelationId,
     CourseId,

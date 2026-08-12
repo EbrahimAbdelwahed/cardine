@@ -8,7 +8,7 @@ from typing import Any, cast
 import pytest
 
 from study_agent.adapters.sqlite.capability_gap_store import SQLiteCapabilityGapStore
-from study_agent.feedback import (
+from cardine.feedback import (
     CapabilityGapAggregate,
     CapabilityGapObservation,
     CapabilityGapService,

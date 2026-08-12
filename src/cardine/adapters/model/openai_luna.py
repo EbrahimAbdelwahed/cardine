@@ -12,7 +12,7 @@ from study_agent.ports.model import (
     ModelResponse,
 )
 
-from .openai_compatible import (
+from study_agent.adapters.model.openai_compatible import (
     HttpTransport,
     OpenAICompatibleConfig,
     OpenAICompatibleModel,

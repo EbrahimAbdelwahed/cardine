@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from study_agent.adapters.sqlite import SQLiteEventStore
-from study_agent.courses import (
+from cardine.courses import (
     CourseService,
     ProjectionCourseCatalog,
     ProjectionCourseView,

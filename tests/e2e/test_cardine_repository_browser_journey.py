@@ -29,9 +29,9 @@ from urllib.request import urlopen
 import pytest
 
 from study_agent.adapters.filesystem import initialize_local_repository
-from study_agent.cli.repository import LocalRepository, ModelAdapterRegistry
-from study_agent.demo.browser import create_server
-from study_agent.demo.ui_application import RepositoryUiApplication
+from cardine.cli.repository import LocalRepository, ModelAdapterRegistry
+from cardine.demo.browser import create_server
+from cardine.demo.ui_application import RepositoryUiApplication
 from study_agent.domain import (
     CorrelationId,
     CourseId,

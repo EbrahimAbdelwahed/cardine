@@ -16,7 +16,7 @@ from study_agent.assessments import (
     ProjectionLearnerEvidenceView,
 )
 from study_agent.assessments.evidence import LearnerEvidenceSnapshot
-from study_agent.courses import ProjectionCourseView
+from cardine.courses import ProjectionCourseView
 from study_agent.domain import (
     CourseId,
     StatementStatus,

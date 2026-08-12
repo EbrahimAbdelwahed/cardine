@@ -10,7 +10,7 @@ from typing import cast
 import pytest
 
 from study_agent.adapters.sqlite import SQLiteEventStore
-from study_agent.courses import CourseService, ProjectionCourseView, register_course_events
+from cardine.courses import CourseService, ProjectionCourseView, register_course_events
 from study_agent.domain import (
     AssistantTurnRecord,
     CorrelationId,

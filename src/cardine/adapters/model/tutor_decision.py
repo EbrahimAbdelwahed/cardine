@@ -6,9 +6,9 @@ import json
 from collections.abc import Mapping
 from typing import cast
 
-from study_agent.diagnostics import record_turn_decision
+from cardine.diagnostics import record_turn_decision
 from study_agent.domain._validation import JsonObject, JsonValue
-from study_agent.hosts import (
+from cardine.hosts import (
     TutorDecision,
     TutorHostContext,
     decision_from_bytes,

@@ -16,7 +16,7 @@ from study_agent.adapters.filesystem import (
 from study_agent.adapters.filesystem import export as export_adapter
 from study_agent.adapters.sqlite import SQLiteEventStore
 from study_agent.application import ExportService, ExportStateError
-from study_agent.courses import (
+from cardine.courses import (
     CourseService,
     ProjectionCourseView,
     register_course_events,

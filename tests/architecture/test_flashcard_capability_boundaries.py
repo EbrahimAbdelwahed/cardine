@@ -69,7 +69,7 @@ def test_dispatcher_depends_on_candidate_codec_but_not_product_or_provider_layer
     forbidden = (
         "study_agent.adapters",
         "study_agent.application",
-        "study_agent.cli",
+        "cardine.cli",
         "study_agent.sessions",
         "study_agent.state",
         "study_agent.tools",

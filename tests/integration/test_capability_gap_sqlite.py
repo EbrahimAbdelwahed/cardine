@@ -15,7 +15,7 @@ from study_agent.adapters.sqlite.event_store import (
     SQLiteConnectionIdentityError,
     _writable_nofollow_uri,
 )
-from study_agent.feedback import (
+from cardine.feedback import (
     CapabilityGapAggregate,
     CapabilityGapCorruptionError,
     CapabilityGapObservation,

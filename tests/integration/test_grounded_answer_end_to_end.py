@@ -18,7 +18,7 @@ from study_agent.adapters.model import (
     ScriptedModel,
 )
 from study_agent.adapters.sqlite import SQLiteEventStore
-from study_agent.courses import register_course_events
+from cardine.courses import register_course_events
 from study_agent.domain import (
     ChunkId,
     Citation,

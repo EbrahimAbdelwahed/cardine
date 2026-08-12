@@ -16,8 +16,8 @@ from typing import cast
 import pytest
 
 from study_agent.adapters.filesystem import initialize_local_repository
-from study_agent.cli.repository import LocalRepository, ModelAdapterRegistry
-from study_agent.demo.ui_application import (
+from cardine.cli.repository import LocalRepository, ModelAdapterRegistry
+from cardine.demo.ui_application import (
     RepositoryUiApplication,
     UiRequestError,
 )

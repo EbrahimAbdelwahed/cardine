@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping
 from datetime import date
 from typing import cast
 
-from study_agent.courses import ProjectionCourseView
+from cardine.courses import ProjectionCourseView
 from study_agent.domain import (
     AnswerId,
     AnswerRecord,
@@ -36,7 +36,7 @@ from study_agent.domain import (
     TutorTimelineStatus,
 )
 from study_agent.domain._validation import JsonValue
-from study_agent.domain.study_context import StudyStatementValue
+from cardine.domain.study_context import StudyStatementValue
 from study_agent.ingestion import decode_source_revision_ingested
 from study_agent.ports import EventStore
 from study_agent.sessions import (

@@ -43,7 +43,7 @@ def test_capability_gateway_does_not_import_tools_or_product_layers() -> None:
     package = SOURCE_ROOT / "capabilities"
     forbidden = (
         "study_agent.tools.registry",
-        "study_agent.cli",
+        "cardine.cli",
         "study_agent.adapters",
         "study_agent.application",
         "study_agent.sessions",

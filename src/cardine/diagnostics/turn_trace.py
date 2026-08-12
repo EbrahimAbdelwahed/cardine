@@ -83,7 +83,7 @@ class TurnTraceStore:
 
         # Import lazily: ``hosts`` composes the source-grounding adapter which
         # itself imports this module.
-        from study_agent.hosts.contracts import (
+        from cardine.hosts.contracts import (
             AnswerDialogueDecision,
             AskLearnerDecision,
             AssistantMessageDecision,

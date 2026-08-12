@@ -9,7 +9,7 @@ from .openai_compatible import (
     OpenAICompatibleModel,
     StdlibHttpTransport,
 )
-from .openai_luna import (
+from cardine.adapters.model.openai_luna import (
     GPT_5_6_LUNA_ADAPTER_ID,
     GPT_5_6_LUNA_ADAPTER_VERSION,
     GPT_5_6_LUNA_ENDPOINT,
@@ -19,7 +19,7 @@ from .openai_luna import (
     OpenAIGpt56LunaModel,
 )
 from .scripted import ScriptedExchange, ScriptedModel
-from .tutor_decision import (
+from cardine.adapters.model.tutor_decision import (
     MAX_DECISION_OUTPUT_TOKENS,
     ModelTutorDecisionError,
     ModelTutorDecisionPort,

@@ -8,7 +8,7 @@ import pytest
 
 from study_agent.adapters.workarounds import PDF_MARKDOWN_MANIFEST, PdfMarkdownExecutor
 from study_agent.adapters.workarounds.worker import containment_supported
-from study_agent.feedback import (
+from cardine.feedback import (
     WorkaroundApprovalReceipt,
     WorkaroundInputKind,
     WorkaroundOutputKind,

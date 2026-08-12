@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import cast
 
-from study_agent.application.grounding_ask import (
+from cardine.application.grounding_ask import (
     GroundingAskError,
     GroundingAskErrorCode,
     GroundingAskService,
 )
-from study_agent.courses import (
+from cardine.courses import (
     CourseCommandError,
     CourseConflictError,
     RetryableCourseConflictError,

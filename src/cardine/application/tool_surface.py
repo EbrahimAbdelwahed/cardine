@@ -12,8 +12,8 @@ from dataclasses import dataclass
 from hashlib import sha256
 from typing import Protocol, cast
 
-from study_agent.courses import course_profile_manifest
-from study_agent.courses.service import CourseService
+from cardine.courses import course_profile_manifest
+from cardine.courses.service import CourseService
 from study_agent.domain import (
     CourseId,
     CourseProfile,

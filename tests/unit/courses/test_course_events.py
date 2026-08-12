@@ -4,7 +4,7 @@ from datetime import UTC, date, datetime
 
 import pytest
 
-from study_agent.courses import (
+from cardine.courses import (
     COURSE_CREATED,
     COURSE_SCHEMA_VERSION,
     course_command_fingerprint,

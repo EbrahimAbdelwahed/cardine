@@ -10,7 +10,7 @@ from hashlib import sha256
 from study_agent.capabilities.bindings import CapabilityBinding, CapabilityDependencyResolver
 from study_agent.capabilities.builtin import ANALYZE_EXAM_SAMPLE_MANIFEST
 from study_agent.domain._validation import JsonObject, JsonValue, freeze_object
-from study_agent.exams.contracts import (
+from cardine.exams.contracts import (
     ExamAnalysisProposal,
     ExamAnalysisRequest,
     ExamObservation,

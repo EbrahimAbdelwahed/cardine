@@ -16,7 +16,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol, cast
 
-from study_agent.hosts.contracts import (
+from cardine.hosts.contracts import (
     TutorDecision,
     TutorHostContext,
     decision_from_bytes,

@@ -9,7 +9,7 @@ FORBIDDEN_MODULES = {
     "fsrs",
     "anki",
     "study_agent.adapters",
-    "study_agent.cli",
+    "cardine.cli",
     "study_agent.application",
     "study_agent.ports.storage",
     "study_agent.prompts",

@@ -33,8 +33,8 @@ else:
             _repository,
         )
 
-from study_agent.cli.repository import LocalRepository
-from study_agent.demo.ui_application import RepositoryUiApplication
+from cardine.cli.repository import LocalRepository
+from cardine.demo.ui_application import RepositoryUiApplication
 from study_agent.domain import (
     PrincipalKind,
     StudyStatementInput,

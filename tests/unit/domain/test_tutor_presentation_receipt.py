@@ -6,7 +6,7 @@ from dataclasses import replace
 import pytest
 
 from study_agent.domain import TutorPresentationKind
-from study_agent.hosts import TutorPresentationReceipt
+from cardine.hosts import TutorPresentationReceipt
 
 SHA_A = "a" * 64
 SHA_B = "b" * 64

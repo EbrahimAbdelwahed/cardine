@@ -6,11 +6,11 @@ import os
 
 import pytest
 
-from study_agent.adapters.host import (
+from cardine.adapters.host import (
     OpenAIResponsesTutorConfig,
     OpenAIResponsesTutorDecisionPort,
 )
-from study_agent.hosts import AdvertisedCapability, TutorHostContext, validate_decision
+from cardine.hosts import AdvertisedCapability, TutorHostContext, validate_decision
 
 _SHA = "a" * 64
 

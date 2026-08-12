@@ -6,9 +6,9 @@ from typing import cast
 
 import pytest
 
-import study_agent.feedback as feedback
+import cardine.feedback as feedback
 from study_agent.domain._validation import JsonObject
-from study_agent.feedback import (
+from cardine.feedback import (
     CapabilityGapAggregate,
     CapabilityGapCollisionError,
     CapabilityGapCorruptionError,

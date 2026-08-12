@@ -14,7 +14,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any, cast
 
-from study_agent.cli.repository import LocalRepository
+from cardine.cli.repository import LocalRepository
 from study_agent.domain import (
     CorrelationId,
     CourseId,

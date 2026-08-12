@@ -12,7 +12,7 @@ from study_agent.capabilities import (
     CapabilityOutcome,
     TutorCapabilityId,
 )
-from study_agent.demo.product_shell import (
+from cardine.demo.product_shell import (
     DueReview,
     ProductShell,
     ProductShellStatus,
@@ -30,7 +30,7 @@ from study_agent.domain import (
     TutorSnapshotV1,
 )
 from study_agent.domain._validation import JsonObject, JsonValue
-from study_agent.hosts import TutorHostRunResult, TutorHostRunStatus
+from cardine.hosts import TutorHostRunResult, TutorHostRunStatus
 
 COURSE = CourseId("course")
 SESSION = SessionId("session")

@@ -15,7 +15,7 @@ from study_agent.application import (
     ConversationTurnErrorCode,
 )
 from study_agent.capabilities import CapabilityContinuation, TutorCapabilityId
-from study_agent.cli import EMPTY_CONFIG, LocalRepository, initialize_local_repository
+from cardine.cli import EMPTY_CONFIG, LocalRepository, initialize_local_repository
 from study_agent.domain import (
     CorrelationId,
     CourseId,
@@ -26,7 +26,7 @@ from study_agent.domain import (
     SessionId,
     TutorPresentationKind,
 )
-from study_agent.hosts import (
+from cardine.hosts import (
     PendingContinuationDescriptor,
     TutorContinuationRecord,
     TutorHostRunner,

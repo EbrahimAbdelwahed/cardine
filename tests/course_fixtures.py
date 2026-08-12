@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from study_agent.adapters.sqlite import SQLiteEventStore
-from study_agent.courses import CourseService, ProjectionCourseView
+from cardine.courses import CourseService, ProjectionCourseView
 from study_agent.domain import (
     CorrelationId,
     CourseId,

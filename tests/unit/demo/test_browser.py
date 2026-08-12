@@ -6,14 +6,14 @@ from typing import cast
 
 import pytest
 
-from study_agent.demo.browser import (
+from cardine.demo.browser import (
     MIN_LOCAL_OWNER_PASSWORD_CHARS,
     PREVIEW_RUNTIME_ID,
     BrowserSurface,
     _require_bind_host,
     create_server,
 )
-from study_agent.demo.product_settings import RuntimeCredentialStore
+from cardine.demo.product_settings import RuntimeCredentialStore
 from study_agent.domain._validation import JsonObject
 
 

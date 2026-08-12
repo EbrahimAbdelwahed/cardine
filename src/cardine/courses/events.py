@@ -8,7 +8,7 @@ from datetime import date
 from hashlib import sha256
 
 from study_agent.domain._validation import JsonObject, JsonValue
-from study_agent.domain.course import (
+from cardine.domain.course import (
     CourseProfile,
     SourcePolicy,
     TerminologyEntry,

@@ -36,8 +36,8 @@ from study_agent.capabilities.hybrid_flashcards import (
     HybridPlannedBundleWorker,
     hybrid_flashcards_binding,
 )
-from study_agent.cli.registry import public_study_tool_entries
-from study_agent.cli.repository import LocalRepository, initialize_local_repository
+from cardine.cli.registry import public_study_tool_entries
+from cardine.cli.repository import LocalRepository, initialize_local_repository
 from study_agent.domain import (
     Actor,
     ArtifactDecision,
@@ -60,15 +60,15 @@ from study_agent.domain import (
     session_event_id_for,
 )
 from study_agent.domain._validation import JsonObject, JsonValue, freeze_object
-from study_agent.exams import (
+from cardine.exams import (
     ExamAnalysisFacade,
     ExamAnalysisRequest,
     ExamPromptEvidenceProjection,
     PreparedExamSample,
     PreparedExamSampleScope,
 )
-from study_agent.exams.analysis import ExamAnalysisTaskFactory, analyze_exam_sample_binding
-from study_agent.exams.worker import ExamAnalysisCompactView
+from cardine.exams.analysis import ExamAnalysisTaskFactory, analyze_exam_sample_binding
+from cardine.exams.worker import ExamAnalysisCompactView
 from study_agent.flashcards.lesson_worker_contracts import (
     LessonWorkerRequest,
     LessonWorkerStatus,

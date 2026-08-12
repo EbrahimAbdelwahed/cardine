@@ -101,7 +101,7 @@ def test_gateway_adapter_and_proof_are_provider_neutral_operational_modules() ->
         "study_agent.adapters",
         "study_agent.artifacts",
         "study_agent.flashcards",
-        "study_agent.exams",
+        "cardine.exams",
         "study_agent.state.events",
         "study_agent.state.store",
         "study_agent.ports.model",

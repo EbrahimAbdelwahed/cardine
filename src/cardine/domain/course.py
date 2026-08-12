@@ -4,8 +4,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 
-from ._validation import require_text
-from .identifiers import CourseId
+from cardine._transition.study_agent import CourseId, require_text
 
 
 def _owned_typed_tuple[T](value: Sequence[T], item_type: type[T], name: str) -> tuple[T, ...]:

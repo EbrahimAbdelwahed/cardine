@@ -5,14 +5,14 @@ from collections.abc import Mapping
 
 import pytest
 
-from study_agent.demo.product_settings import (
+from cardine.demo.product_settings import (
     LUNA_ADAPTER_ID,
     LUNA_MODEL_LABEL,
     MAX_RUNTIME_CREDENTIAL_CHARS,
     PrivateSettingsApplication,
     RuntimeCredentialStore,
 )
-from study_agent.demo.ui_application import UiRequestError
+from cardine.demo.ui_application import UiRequestError
 from study_agent.domain._validation import JsonObject
 
 SECRET = "sk-test-runtime-secret"

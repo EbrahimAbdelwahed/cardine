@@ -19,7 +19,7 @@ from study_agent.application import (
     GroundingAskErrorCode,
     GroundingAskService,
 )
-from study_agent.courses import course_profile_manifest, register_course_events
+from cardine.courses import course_profile_manifest, register_course_events
 from study_agent.domain import (
     CorrelationId,
     CourseId,

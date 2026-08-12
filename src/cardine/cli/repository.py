@@ -54,7 +54,7 @@ from study_agent.application import (
     GroundingEngineFactory,
     StudyReadinessView,
 )
-from study_agent.application.flashcard_proposals import FlashcardProposalComposition
+from cardine.application.flashcard_proposals import FlashcardProposalComposition
 from study_agent.artifacts import (
     ArtifactService,
     ProjectionArtifactView,
@@ -77,7 +77,7 @@ from study_agent.capabilities import (
     builtin_tutor_validators,
     explain_concept_binding,
 )
-from study_agent.courses import (
+from cardine.courses import (
     CourseService,
     ProjectionCourseCatalog,
     ProjectionCourseView,
@@ -100,7 +100,7 @@ from study_agent.grounding import (
     EvidenceSufficiencyValidator,
     GroundedAnswerIntegrityValidator,
 )
-from study_agent.hosts import (
+from cardine.hosts import (
     HostActionIdentity,
     SourceGroundedTutorDecisionPort,
     TutorCapabilityCompletionReference,
@@ -109,7 +109,7 @@ from study_agent.hosts import (
     TutorHostRunner,
     TutorHostRunStatus,
 )
-from study_agent.hosts.flashcard_routing import FlashcardProfileRoutingTutorDecisionPort
+from cardine.hosts.flashcard_routing import FlashcardProfileRoutingTutorDecisionPort
 from study_agent.ingestion import TextIngestionService, register_source_revision_events
 from study_agent.playbooks import (
     PlaybookEngine,
@@ -165,7 +165,7 @@ if TYPE_CHECKING:
         VerifiedGeneratedArtifactBatch,
     )
     from study_agent.domain import RunId
-    from study_agent.hosts.context import HarnessToolManifestView
+    from cardine.hosts.context import HarnessToolManifestView
     from study_agent.tools import StudyToolRegistry
 
 _V1 = SemanticVersion.parse("1.0.0")
@@ -1285,7 +1285,7 @@ class LocalRepository:
         the shared canonical surface for the repository UI and tutor host.
         """
         from study_agent.application import HarnessToolSurface
-        from study_agent.application.tool_surface import HarnessToolOwner
+        from cardine.application.tool_surface import HarnessToolOwner
 
         return HarnessToolSurface(cast(HarnessToolOwner, self))
 

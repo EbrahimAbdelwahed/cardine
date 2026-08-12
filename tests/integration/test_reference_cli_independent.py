@@ -5,8 +5,8 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
-from study_agent.cli.main import main
-from study_agent.cli.repository import LocalRepository
+from cardine.cli.main import main
+from cardine.cli.repository import LocalRepository
 
 
 def _run(capsys: Any, *arguments: str) -> tuple[int, dict[str, Any]]:

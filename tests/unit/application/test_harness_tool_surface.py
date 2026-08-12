@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 
 from study_agent.adapters.filesystem import initialize_local_repository
-from study_agent.cli.repository import LocalRepository
+from cardine.cli.repository import LocalRepository
 from study_agent.domain import CorrelationId, CourseId, ExecutionContext, PrincipalKind, SessionId
 from study_agent.repository_config import LocalRepositoryConfig
 

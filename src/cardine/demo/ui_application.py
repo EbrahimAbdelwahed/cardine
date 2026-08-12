@@ -46,14 +46,14 @@ from study_agent.assessments import (
     RetryableAssessmentConflictError,
     SingleChoiceResponse,
 )
-from study_agent.cli.repository import (
+from cardine.cli.repository import (
     LocalRepository,
     LocalRepositoryError,
     ModelAdapterConfigurationError,
     ModelAdapterRegistry,
 )
-from study_agent.courses import ProjectionCourseView
-from study_agent.diagnostics import TurnTraceStore
+from cardine.courses import ProjectionCourseView
+from cardine.diagnostics import TurnTraceStore
 from study_agent.domain import (
     ArtifactDecision,
     ArtifactRevisionId,
@@ -80,7 +80,7 @@ from study_agent.domain import (
 )
 from study_agent.domain._validation import JsonObject, JsonValue
 from study_agent.domain.identifiers import Identifier
-from study_agent.hosts import PendingContinuationDescriptor, TutorContinuationRecord
+from cardine.hosts import PendingContinuationDescriptor, TutorContinuationRecord
 from study_agent.ports import (
     CourseNotFoundError,
     ModelError,

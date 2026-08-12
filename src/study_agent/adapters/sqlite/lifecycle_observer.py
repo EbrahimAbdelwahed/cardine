@@ -11,7 +11,7 @@ from study_agent.adapters.filesystem.blob_store import FilesystemBlobStore
 from study_agent.adapters.filesystem.repository_target import RepositoryObservationHandle
 from study_agent.artifacts import register_artifact_events
 from study_agent.assessments import register_assessment_events
-from study_agent.courses import ProjectionCourseView, register_course_events
+from cardine.courses import ProjectionCourseView, register_course_events
 from study_agent.domain import ChunkId, Citation, CourseId, ResolvedCitation
 from study_agent.ingestion import register_source_revision_events
 from study_agent.lifecycle import (

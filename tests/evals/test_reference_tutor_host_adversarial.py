@@ -24,7 +24,7 @@ from study_agent.adapters.memory import MemoryHostFileIdentity, MemoryHostFileSn
 from study_agent.capabilities import StaleCapabilityOutcome, TutorCapabilityId
 from study_agent.domain import CourseId, ExecutionContext, RunId, SessionId
 from study_agent.domain._validation import JsonValue
-from study_agent.hosts import (
+from cardine.hosts import (
     HostFileError,
     HostFileReference,
     HostFileRegistry,

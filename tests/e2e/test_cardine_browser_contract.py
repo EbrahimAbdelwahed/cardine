@@ -22,8 +22,8 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-from study_agent.demo.browser import ICON_ASSETS, create_server
-from study_agent.demo.ui_application import UiRequestError
+from cardine.demo.browser import ICON_ASSETS, create_server
+from cardine.demo.ui_application import UiRequestError
 from study_agent.domain._validation import JsonObject
 
 DEMO_DIR = Path(__file__).parents[2] / "src" / "study_agent" / "demo"

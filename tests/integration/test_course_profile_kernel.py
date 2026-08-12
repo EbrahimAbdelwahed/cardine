@@ -7,7 +7,7 @@ import pytest
 
 from study_agent.adapters.filesystem import FilesystemBlobStore
 from study_agent.adapters.sqlite import SQLiteEventStore
-from study_agent.courses import (
+from cardine.courses import (
     COURSE_CREATED,
     COURSE_SCHEMA_VERSION,
     CourseCommandError,

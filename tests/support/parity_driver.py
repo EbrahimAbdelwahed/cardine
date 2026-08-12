@@ -36,8 +36,8 @@ from study_agent.assessments import (
     register_assessment_events,
 )
 from study_agent.capabilities import StudyCapabilityGateway, builtin_capability_bindings
-from study_agent.courses import CourseService, ProjectionCourseView, register_course_events
-from study_agent.courses.service import (
+from cardine.courses import CourseService, ProjectionCourseView, register_course_events
+from cardine.courses.service import (
     CourseCommandError,
     CourseConflictError,
     RetryableCourseConflictError,

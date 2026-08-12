@@ -33,7 +33,7 @@ from study_agent.domain import (
     TutorTimelineEntry,
 )
 from study_agent.domain._validation import JsonObject
-from study_agent.hosts import (
+from cardine.hosts import (
     PendingContinuationDescriptor,
     TutorHostRunResult,
     TutorHostRunStatus,

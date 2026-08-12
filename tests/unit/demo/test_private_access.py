@@ -8,7 +8,7 @@ from typing import cast
 
 import pytest
 
-from study_agent.demo.private_access import (
+from cardine.demo.private_access import (
     DEFAULT_SESSION_TTL_SECONDS,
     MIN_PASSWORD_LENGTH,
     LoginRateLimited,

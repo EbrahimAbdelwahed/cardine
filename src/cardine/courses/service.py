@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from study_agent.domain.context import ExecutionContext
-from study_agent.domain.course import CourseProfile
+from cardine.domain.course import CourseProfile
 from study_agent.domain.events import Actor, DomainEvent, PrincipalKind
 from study_agent.domain.identifiers import CourseId
 from study_agent.ports import ClockPort, CourseNotFoundError, CourseViewPort, EventStore

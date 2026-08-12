@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from study_agent.domain.course import CourseProfile
+from cardine.domain.course import CourseProfile
 from study_agent.domain.identifiers import CourseId
 from study_agent.domain.source import SourceKind
 from study_agent.lifecycle import (
@@ -437,7 +437,7 @@ def test_plan_bytes_and_fingerprint_are_stable_in_a_fresh_python_process() -> No
     plan = plan_lifecycle(_manifest(), (_snapshot(),), _observation())
     program = """
 from hashlib import sha256
-from study_agent.domain.course import CourseProfile
+from cardine.domain.course import CourseProfile
 from study_agent.domain.identifiers import CourseId
 from study_agent.domain.source import SourceKind
 from study_agent.lifecycle import *

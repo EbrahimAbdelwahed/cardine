@@ -17,7 +17,7 @@ from hashlib import sha256
 from importlib import resources
 from typing import cast
 
-from study_agent.adapters.host import (
+from cardine.adapters.host import (
     OpenAIResponsesResource,
     OpenAIResponsesTutorConfig,
     OpenAIResponsesTutorDecisionPort,
@@ -40,7 +40,7 @@ from study_agent.domain import (
     SessionId,
 )
 from study_agent.domain._validation import JsonObject
-from study_agent.hosts import (
+from cardine.hosts import (
     AdvertisedCapability,
     AnswerDialogueDecision,
     HostActionIdentity,
@@ -81,7 +81,7 @@ _FIXTURE_EVIDENCE = (
 
 def _fixture_content() -> bytes:
     return (
-        resources.files("study_agent.demo")
+        resources.files("cardine.demo")
         .joinpath("fixtures/heart-valves.md")
         .read_bytes()
     )

@@ -7,7 +7,7 @@ from hashlib import sha256
 from typing import Protocol
 
 from study_agent.domain import ExecutionContext, RunId
-from study_agent.exams.contracts import (
+from cardine.exams.contracts import (
     ExamAnalysisRequest,
     ExamEvidenceMapping,
     ExamPromptEvidenceProjection,

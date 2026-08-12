@@ -12,7 +12,7 @@ from pathlib import Path
 from threading import Lock
 from typing import cast
 
-from study_agent.feedback.contracts import (
+from cardine.feedback.contracts import (
     CapabilityGapAggregate,
     CapabilityGapCollisionError,
     CapabilityGapCorruptionError,
@@ -330,7 +330,7 @@ class SQLiteCapabilityGapStore:
             except sqlite3.DatabaseError:
                 raise CapabilityGapCorruptionError("gap_store_corrupt") from None
         if row is None:
-            from study_agent.feedback.contracts import CapabilityGapUnavailableError
+            from cardine.feedback.contracts import CapabilityGapUnavailableError
 
             raise CapabilityGapUnavailableError("gap_not_found")
         if row[1] != "blob" or not isinstance(row[0], bytes):
@@ -548,7 +548,7 @@ class SQLiteCapabilityGapStore:
                     (gap_key,),
                 ).fetchone()
                 if row is None:
-                    from study_agent.feedback.contracts import CapabilityGapUnavailableError
+                    from cardine.feedback.contracts import CapabilityGapUnavailableError
 
                     raise CapabilityGapUnavailableError("gap_not_found")
                 if row[1] != "blob" or not isinstance(row[0], bytes):
@@ -669,7 +669,7 @@ class SQLiteCapabilityGapStore:
                     (gap_key,),
                 ).fetchone()
                 if row is None:
-                    from study_agent.feedback.contracts import CapabilityGapUnavailableError
+                    from cardine.feedback.contracts import CapabilityGapUnavailableError
 
                     raise CapabilityGapUnavailableError("gap_not_found")
                 if row[1] != "blob" or not isinstance(row[0], bytes):
@@ -772,7 +772,7 @@ class SQLiteCapabilityGapStore:
                         (key,),
                     ).fetchone()
                     if row is None:
-                        from study_agent.feedback.contracts import CapabilityGapUnavailableError
+                        from cardine.feedback.contracts import CapabilityGapUnavailableError
 
                         raise CapabilityGapUnavailableError("gap_not_found")
                     if row[1] != "blob" or not isinstance(row[0], bytes):

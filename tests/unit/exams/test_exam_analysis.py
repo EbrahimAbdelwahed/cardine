@@ -12,13 +12,13 @@ from study_agent.domain import (
     SourceChunk,
     SourceId,
 )
-from study_agent.exams.analysis import (
+from cardine.exams.analysis import (
     ExamAnalysisTaskFactory,
     ExamBlueprintIntegrityValidator,
     ExamSampleReadinessValidator,
     analyze_exam_sample_binding,
 )
-from study_agent.exams.contracts import (
+from cardine.exams.contracts import (
     ExamAnalysisRequest,
     ExamPromptEvidenceProjection,
     PreparedExamSample,

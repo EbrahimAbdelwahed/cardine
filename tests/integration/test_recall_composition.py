@@ -6,7 +6,7 @@ from typing import cast
 
 import pytest
 
-from study_agent.cli.repository import LocalRepository, initialize_local_repository
+from cardine.cli.repository import LocalRepository, initialize_local_repository
 from study_agent.domain import CourseId, DomainEvent
 from study_agent.ports.scheduling import SchedulingPolicyPort
 from study_agent.recall.composition import (

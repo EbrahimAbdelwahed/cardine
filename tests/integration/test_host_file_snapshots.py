@@ -9,7 +9,7 @@ from study_agent.adapters.memory import MemoryHostFileIdentity, MemoryHostFileSn
 from study_agent.domain import CorrelationId, CourseId, SessionId, SourceId
 from study_agent.domain.context import ExecutionContext
 from study_agent.domain.events import PrincipalKind
-from study_agent.hosts.files import (
+from cardine.hosts.files import (
     HostFileError,
     HostFileReference,
     HostFileRegistry,

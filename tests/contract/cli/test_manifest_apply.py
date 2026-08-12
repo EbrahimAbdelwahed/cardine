@@ -12,9 +12,9 @@ import pytest
 
 from study_agent.adapters.sqlite import SQLiteEventStore
 from study_agent.adapters.sqlite.event_store import SQLiteConnectionGuard
-from study_agent.cli.lifecycle import LocalLifecycleRuntime
-from study_agent.cli.main import main
-from study_agent.cli.registry import (
+from cardine.cli.lifecycle import LocalLifecycleRuntime
+from cardine.cli.main import main
+from cardine.cli.registry import (
     NetworkRequirement,
     OperationEffect,
     RepositoryRequirement,
@@ -158,7 +158,7 @@ def test_absent_repository_requires_init_then_replan_and_converges_without_model
     manifest = _write_manifest(tmp_path)
     repository = tmp_path / "runtime" / "repository"
 
-    import study_agent.cli.repository as repository_module
+    import cardine.cli.repository as repository_module
 
     def forbidden_model(*args: object, **kwargs: object) -> None:
         del args, kwargs

@@ -12,7 +12,7 @@ from typing import Any, cast
 import pytest
 
 from study_agent import __version__
-from study_agent.cli.main import main
+from cardine.cli.main import main
 from study_agent.operator_skill import skill_bytes, skill_fingerprint
 
 
@@ -130,7 +130,7 @@ def test_documented_external_agent_runs_the_actual_blank_project_journey(
     executable = tmp_path / "study-agent"
     executable.write_text(
         f"#!{sys.executable}\n"
-        "from study_agent.cli.main import main\n"
+        "from cardine.cli.main import main\n"
         "raise SystemExit(main())\n",
         encoding="utf-8",
     )

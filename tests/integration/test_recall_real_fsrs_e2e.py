@@ -10,7 +10,7 @@ from study_agent.adapters.filesystem import FilesystemExportWriter
 from study_agent.adapters.scheduling import PyFsrsSchedulingPolicy
 from study_agent.application import ExportBundleV3, ExportService, ExportVersion
 from study_agent.artifacts import ArtifactProposalOrigin, artifact_batch_id_for
-from study_agent.cli.repository import LocalRepository, initialize_local_repository
+from cardine.cli.repository import LocalRepository, initialize_local_repository
 from study_agent.domain import (
     Actor,
     ArtifactDecision,

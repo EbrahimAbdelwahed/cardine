@@ -16,7 +16,7 @@ from study_agent.adapters.filesystem.repository_target import (
 )
 from study_agent.adapters.sqlite import observe_local_repository
 from study_agent.application import ExportService, ExportStateError
-from study_agent.cli.repository import LocalRepository
+from cardine.cli.repository import LocalRepository
 from study_agent.domain import (
     Actor,
     CorrelationId,

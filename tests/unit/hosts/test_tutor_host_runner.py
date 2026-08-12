@@ -14,7 +14,7 @@ from study_agent.domain import (
     RunId,
     SessionId,
 )
-from study_agent.hosts import (
+from cardine.hosts import (
     AssistantMessageDecision,
     HostActionIdentity,
     HostRetryReceipt,
@@ -29,7 +29,7 @@ from study_agent.hosts import (
     TutorHostRunStatus,
     decision_fingerprint,
 )
-from study_agent.hosts.contracts import AdvertisedCapability, PendingContinuationDescriptor
+from cardine.hosts.contracts import AdvertisedCapability, PendingContinuationDescriptor
 from study_agent.playbooks import ToolBehaviorPin, VersionPins
 from study_agent.skills import ArtifactReference, SemanticVersion
 
@@ -352,7 +352,7 @@ def test_decision_retry_budget_counts_exact_provider_calls() -> None:
             del context, interruption
             self.calls += 1
             if self.calls == 1:
-                from study_agent.hosts import RetryableTutorDecisionError
+                from cardine.hosts import RetryableTutorDecisionError
 
                 raise RetryableTutorDecisionError("transient")
             return AssistantMessageDecision("hello")
@@ -387,7 +387,7 @@ def test_decision_retry_budget_preserves_last_provider_failure_reason(
     class AlwaysRetry:
         async def decide(self, context: TutorHostContext, interruption: _Token) -> object:
             del context, interruption
-            from study_agent.hosts import RetryableTutorDecisionError
+            from cardine.hosts import RetryableTutorDecisionError
 
             raise RetryableTutorDecisionError(
                 "transient", failure_reason=failure_reason

@@ -9,7 +9,11 @@ from study_agent.domain._validation import freeze_object
 from study_agent.tools.builtin import _study_event
 from study_agent.tools.contracts import StudyEvent, StudyEventKind
 
-from .grounding_ask import GroundingAskError, GroundingAskErrorCode, GroundingAskService
+from cardine.application.grounding_ask import (
+    GroundingAskError,
+    GroundingAskErrorCode,
+    GroundingAskService,
+)
 
 
 class StudyHarness:

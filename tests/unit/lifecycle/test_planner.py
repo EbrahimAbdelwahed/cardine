@@ -4,7 +4,7 @@ from hashlib import sha256
 
 import pytest
 
-from study_agent.domain.course import CourseProfile
+from cardine.domain.course import CourseProfile
 from study_agent.domain.identifiers import CourseId
 from study_agent.domain.source import SourceKind
 from study_agent.lifecycle import (

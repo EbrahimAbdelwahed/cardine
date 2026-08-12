@@ -18,7 +18,7 @@ def _run(*arguments: str, env: dict[str, str] | None = None) -> subprocess.Compl
     if env is not None:
         process_env.update(env)
     return subprocess.run(
-        [sys.executable, "-m", "study_agent.cli", *arguments],
+        [sys.executable, "-m", "cardine.cli", *arguments],
         cwd=PROJECT_ROOT,
         env=process_env,
         text=True,

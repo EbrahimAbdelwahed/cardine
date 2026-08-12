@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from study_agent.domain import ExecutionContext, RunId
-from study_agent.hosts import TutorCapabilityCompletionReference
+from cardine.hosts import TutorCapabilityCompletionReference
 
 MAX_COMPLETION_CONTENT_CHARS = 4_000
 MAX_CANONICAL_IDS = 64

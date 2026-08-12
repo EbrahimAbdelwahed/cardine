@@ -14,7 +14,7 @@ if TYPE_CHECKING:
         CapabilityOutcome,
         TutorCapabilityId,
     )
-    from study_agent.hosts.contracts import HostActionIdentity
+    from cardine.hosts.contracts import HostActionIdentity
 
 
 class TutorCapabilityGatewayPort(Protocol):

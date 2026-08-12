@@ -1,11 +1,11 @@
 """Application use cases and transaction boundaries."""
 
-from .capability_completion import (
+from cardine.application.capability_completion import (
     CapabilityCompletionHandler,
     CapabilityCompletionHandlerRegistry,
     CapabilityCompletionProductReceipt,
 )
-from .conversation_turn import (
+from cardine.application.conversation_turn import (
     MAX_LEARNER_TURN_CHARS,
     ConversationTurnApplication,
     ConversationTurnCommand,
@@ -24,7 +24,7 @@ from .export import (
     ExportStateError,
     ExportVersion,
 )
-from .grounding_ask import (
+from cardine.application.grounding_ask import (
     GroundingAskConfiguration,
     GroundingAskError,
     GroundingAskErrorCode,
@@ -35,7 +35,7 @@ from .grounding_ask import (
     GroundingStudyEventKind,
 )
 from .harness import StudyHarness
-from .study_readiness import (
+from cardine.application.study_readiness import (
     AttributedValue,
     ReadinessArtifactCount,
     ReadinessBlueprint,
@@ -47,7 +47,7 @@ from .study_readiness import (
     StudyReadinessSnapshot,
     StudyReadinessView,
 )
-from .tool_surface import HarnessToolSurface
+from cardine.application.tool_surface import HarnessToolSurface
 
 __all__ = [
     "EXPORT_SCHEMA_VERSION",

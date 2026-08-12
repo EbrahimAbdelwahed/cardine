@@ -13,8 +13,8 @@ from study_agent.artifacts import (
     HumanAuthoredArtifactProvenance,
     StudyArtifactEnvelope,
 )
-from study_agent.cli.repository import LocalRepository
-from study_agent.demo.ui_application import (
+from cardine.cli.repository import LocalRepository
+from cardine.demo.ui_application import (
     RepositoryUiApplication,
     UiRequestError,
 )

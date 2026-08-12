@@ -21,7 +21,7 @@ from study_agent.adapters.sqlite import (
     SQLiteConnectionIdentityError,
     observe_local_repository,
 )
-from study_agent.courses import CourseConflictError, RetryableCourseConflictError
+from cardine.courses import CourseConflictError, RetryableCourseConflictError
 from study_agent.domain import SourceId
 from study_agent.domain.context import ExecutionContext
 from study_agent.ingestion import IngestionErrorCode, TextIngestionError

@@ -27,7 +27,7 @@ from study_agent.artifacts.candidates import (
     FlashcardOmission,
     FlashcardPedagogicalRole,
 )
-from study_agent.cli.repository import LocalRepository, initialize_local_repository
+from cardine.cli.repository import LocalRepository, initialize_local_repository
 from study_agent.domain import (
     ArtifactDecision,
     ArtifactReadDependency,

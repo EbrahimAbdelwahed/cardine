@@ -6,8 +6,15 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
 
-from ._validation import require_aware, require_text
-from .identifiers import CourseId, EventId, InteractionId, SessionId, StatementId
+from cardine._transition.study_agent import (
+    CourseId,
+    EventId,
+    InteractionId,
+    SessionId,
+    StatementId,
+    require_aware,
+    require_text,
+)
 
 type StudyStatementValue = str | date | int
 

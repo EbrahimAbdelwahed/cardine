@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from study_agent.cli.main import main
+from cardine.cli.main import main
 
 
 def _json_command(capsys: object, *arguments: str) -> tuple[int, dict[str, object]]:

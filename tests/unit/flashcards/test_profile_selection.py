@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from study_agent.application.flashcard_profile_selection import (
+from cardine.application.flashcard_profile_selection import (
     FlashcardProfileRouteKind,
     select_flashcard_profile,
 )

@@ -27,7 +27,7 @@ from study_agent.domain import (
     RunId,
     SessionId,
 )
-from study_agent.hosts import (
+from cardine.hosts import (
     AdvertisedCapability,
     AnswerDialogueDecision,
     AskLearnerDecision,

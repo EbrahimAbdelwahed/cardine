@@ -34,13 +34,13 @@ from urllib.request import HTTPCookieProcessor, Request, build_opener, urlopen
 import pytest
 
 from study_agent.adapters.filesystem import initialize_local_repository
-from study_agent.cli.repository import (
+from cardine.cli.repository import (
     LocalRepository,
     ModelAdapterBuilder,
     ModelAdapterRegistry,
 )
-from study_agent.demo.browser import create_server
-from study_agent.demo.ui_application import RepositoryUiApplication, UiApplicationPort
+from cardine.demo.browser import create_server
+from cardine.demo.ui_application import RepositoryUiApplication, UiApplicationPort
 from study_agent.domain import (
     CorrelationId,
     CourseId,
@@ -182,8 +182,8 @@ def _private_server(
     request or browser payload.
     """
 
-    from study_agent.demo.private_access import PrivateAccessController, hash_password
-    from study_agent.demo.product_settings import (
+    from cardine.demo.private_access import PrivateAccessController, hash_password
+    from cardine.demo.product_settings import (
         PrivateSettingsApplication,
         RuntimeCredentialStore,
     )

@@ -13,7 +13,7 @@ if TYPE_CHECKING:
         GeneratedBatchOwnerReceipt,
         LessonGeneratedBatchOwnerReceipt,
     )
-    from study_agent.exams.contracts import (
+    from cardine.exams.contracts import (
         ExamAnalysisRequest,
         ExamEvidenceMapping,
         ExamPromptEvidenceProjection,

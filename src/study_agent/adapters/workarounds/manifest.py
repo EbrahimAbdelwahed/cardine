@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from hashlib import sha256
 
-from study_agent.feedback.workarounds import (
+from cardine.feedback.workarounds import (
     WorkaroundApprovalPolicy,
     WorkaroundEffect,
     WorkaroundInputKind,

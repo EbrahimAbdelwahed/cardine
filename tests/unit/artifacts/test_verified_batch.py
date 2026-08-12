@@ -41,13 +41,13 @@ from study_agent.domain import (
     SessionId,
 )
 from study_agent.domain._validation import JsonObject, freeze_object
-from study_agent.exams.analysis import ExamAnalysisTaskFactory, analyze_exam_sample_binding
-from study_agent.exams.contracts import (
+from cardine.exams.analysis import ExamAnalysisTaskFactory, analyze_exam_sample_binding
+from cardine.exams.contracts import (
     ExamAnalysisRequest,
     ExamEvidenceMapping,
     ExamPromptEvidenceProjection,
 )
-from study_agent.exams.worker import ExamAnalysisFacade
+from cardine.exams.worker import ExamAnalysisFacade
 from study_agent.flashcards.lesson_worker_contracts import (
     LessonWorkerCheckpoint,
     LessonWorkerPageCheckpoint,

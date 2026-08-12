@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).parents[2]
 
 
-def test_project_metadata_is_cardine_private_and_keeps_core_aliases_explicit() -> None:
+def test_project_metadata_is_cardine_private_and_publishes_only_cardine_commands() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
 
     assert project["name"] == "cardine"
@@ -31,8 +31,14 @@ def test_project_metadata_is_cardine_private_and_keeps_core_aliases_explicit() -
         "cardine-private-password-hash",
     ):
         assert name in scripts
-    # The copied core's aliases are compatibility surface, not the product name.
-    assert scripts["cardine"] == scripts["study-agent"]
+    assert set(scripts) == {
+        "cardine",
+        "cardine-demo",
+        "cardine-shell",
+        "cardine-shell-web",
+        "cardine-private-password-hash",
+    }
+    assert all(target.startswith("cardine.") for target in scripts.values())
 
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     notice = (ROOT / "NOTICE.md").read_text(encoding="utf-8")
@@ -52,7 +58,7 @@ def test_package_manifest_declares_product_assets_and_notices() -> None:
     package_data = configuration["tool"]["setuptools"]["package-data"]
     assert package_data["study_agent"] == ["py.typed"]
     assert package_data["study_agent.operator_skill"] == ["SKILL.md"]
-    demo_patterns = set(package_data["study_agent.demo"])
+    demo_patterns = set(package_data["cardine.demo"])
     assert {
         "browser.html",
         "browser.css",
@@ -68,16 +74,16 @@ def test_package_manifest_declares_product_assets_and_notices() -> None:
 
     for path in (
         "src/study_agent/py.typed",
-        "src/study_agent/demo/browser.html",
-        "src/study_agent/demo/browser.css",
-        "src/study_agent/demo/browser.js",
-        "src/study_agent/demo/ai-primitives.css",
-        "src/study_agent/demo/ai-primitives.js",
-        "src/study_agent/demo/fixtures/heart-valves.md",
-        "src/study_agent/demo/icons/favicon.svg",
-        "src/study_agent/demo/icons/LICENSE.phosphor.txt",
-        "src/study_agent/demo/fonts/ibm-plex-mono-400.woff2",
-        "src/study_agent/demo/fonts/LICENSE.txt",
+        "src/cardine/demo/browser.html",
+        "src/cardine/demo/browser.css",
+        "src/cardine/demo/browser.js",
+        "src/cardine/demo/ai-primitives.css",
+        "src/cardine/demo/ai-primitives.js",
+        "src/cardine/demo/fixtures/heart-valves.md",
+        "src/cardine/demo/icons/favicon.svg",
+        "src/cardine/demo/icons/LICENSE.phosphor.txt",
+        "src/cardine/demo/fonts/ibm-plex-mono-400.woff2",
+        "src/cardine/demo/fonts/LICENSE.txt",
         "src/study_agent/operator_skill/SKILL.md",
         "LICENSE",
         "LICENSE-CARDINE.md",

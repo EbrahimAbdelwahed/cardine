@@ -15,7 +15,7 @@ from .artifact import (
 )
 from .assessment import CriterionStatus, GradeLifecycle, GradeStatus
 from .context import ExecutionContext
-from .course import CourseProfile, SourcePolicy, TerminologyEntry, TerminologyPolicy
+from cardine.domain.course import CourseProfile, SourcePolicy, TerminologyEntry, TerminologyPolicy
 from .errors import ErrorCode, StudyError
 from .events import Actor, DomainEvent, PrincipalKind
 from .grounding import AnswerSegment, AnswerStatus, GroundedAnswer, SegmentKind
@@ -99,7 +99,7 @@ from .session import (
     VerifiedRunOutputRef,
 )
 from .source import BlobRef, Citation, ResolvedCitation, SourceChunk, SourceDocument, SourceKind
-from .study_context import (
+from cardine.domain.study_context import (
     StatementStatus,
     StudyContextConflict,
     StudyContextResolution,

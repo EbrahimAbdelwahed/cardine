@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from study_agent.domain.course import CourseProfile
+from cardine.domain.course import CourseProfile
 from study_agent.domain.identifiers import CourseId
 
 

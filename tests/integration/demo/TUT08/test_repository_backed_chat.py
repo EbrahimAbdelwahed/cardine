@@ -18,13 +18,13 @@ from study_agent.adapters.model import (
     OpenAIGpt56LunaConfig,
     OpenAIGpt56LunaModel,
 )
-from study_agent.cli.repository import (
+from cardine.cli.repository import (
     LocalRepository,
     ModelAdapterRegistry,
     initialize_local_repository,
 )
-from study_agent.demo.browser import create_server
-from study_agent.demo.ui_application import RepositoryUiApplication, UiRequestError
+from cardine.demo.browser import create_server
+from cardine.demo.ui_application import RepositoryUiApplication, UiRequestError
 from study_agent.domain import (
     CorrelationId,
     CourseId,

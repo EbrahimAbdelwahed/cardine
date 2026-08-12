@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from study_agent.application.study_readiness import StudyReadinessView
+from cardine.application.study_readiness import StudyReadinessView
 from study_agent.domain import CourseId
 from study_agent.state import Projection
 

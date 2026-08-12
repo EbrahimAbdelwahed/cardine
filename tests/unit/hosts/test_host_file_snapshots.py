@@ -9,7 +9,7 @@ import pytest
 
 from study_agent.adapters.memory import MemoryHostFileIdentity, MemoryHostFileSnapshotStore
 from study_agent.domain import CourseId, SessionId
-from study_agent.hosts.files import (
+from cardine.hosts.files import (
     HostFileError,
     HostFileReference,
     HostFileRegistry,

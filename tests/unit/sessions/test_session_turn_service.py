@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from study_agent.adapters.sqlite import SQLiteEventStore
-from study_agent.courses import CourseService, ProjectionCourseView, register_course_events
+from cardine.courses import CourseService, ProjectionCourseView, register_course_events
 from study_agent.domain import (
     CorrelationId,
     CourseId,
@@ -17,7 +17,7 @@ from study_agent.domain import (
     SessionId,
     TutorPresentationKind,
 )
-from study_agent.hosts import TutorPresentationReceipt
+from cardine.hosts import TutorPresentationReceipt
 from study_agent.sessions import (
     IdempotencyConflictError,
     ProjectionAssistantTurnView,

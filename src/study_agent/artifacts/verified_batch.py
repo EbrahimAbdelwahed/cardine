@@ -26,7 +26,7 @@ from study_agent.domain import (
     VersionPins,
 )
 from study_agent.domain._validation import JsonObject, freeze_object
-from study_agent.exams.contracts import (
+from cardine.exams.contracts import (
     ExamAnalysisProposal,
     ExamAnalysisRequest,
     ExamEvidenceMapping,

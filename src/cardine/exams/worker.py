@@ -6,8 +6,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from study_agent.domain import ExecutionContext, RunId
-from study_agent.exams.analysis import ExamAnalysisTaskFactory
-from study_agent.exams.contracts import (
+from cardine.exams.analysis import ExamAnalysisTaskFactory
+from cardine.exams.contracts import (
     ExamAnalysisProofReference,
     ExamAnalysisProposal,
     ExamAnalysisRequest,

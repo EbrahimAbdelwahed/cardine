@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import Any, cast
 
 from study_agent.application import StudyHarness
-from study_agent.cli.main import main
-from study_agent.cli.repository import LocalRepository, ModelAdapterRegistry
+from cardine.cli.main import main
+from cardine.cli.repository import LocalRepository, ModelAdapterRegistry
 from study_agent.domain import (
     CorrelationId,
     CourseId,

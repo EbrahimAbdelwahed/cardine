@@ -27,7 +27,7 @@ from study_agent.domain import (
     tutor_presentation_id_for,
 )
 from study_agent.domain._validation import JsonObject, require_text
-from study_agent.hosts.contracts import TutorPresentationReceipt
+from cardine.hosts.contracts import TutorPresentationReceipt
 from study_agent.playbooks import (
     PlaybookDefinition,
     PlaybookEngine,

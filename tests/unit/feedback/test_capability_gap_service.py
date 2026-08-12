@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from study_agent.adapters.sqlite.capability_gap_store import SQLiteCapabilityGapStore
-from study_agent.feedback import (
+from cardine.feedback import (
     CapabilityGapObservation,
     CapabilityGapService,
     CapabilityGapWriteContext,

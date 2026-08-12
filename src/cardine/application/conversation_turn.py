@@ -29,7 +29,7 @@ from study_agent.domain import (
     TutorSnapshotV1,
 )
 from study_agent.domain._validation import require_text
-from study_agent.hosts import (
+from cardine.hosts import (
     PendingContinuationDescriptor,
     TutorCompletionHandoff,
     TutorCompletionHandoffState,

@@ -8,7 +8,7 @@ from enum import StrEnum
 from hashlib import sha256
 from typing import Protocol
 
-from study_agent.courses import course_profile_manifest
+from cardine.courses import course_profile_manifest
 from study_agent.domain import (
     AnswerId,
     Citation,

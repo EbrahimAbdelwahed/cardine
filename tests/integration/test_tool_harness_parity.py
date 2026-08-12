@@ -8,8 +8,8 @@ from typing import cast
 
 from study_agent.adapters.model import ScriptedExchange, ScriptedModel
 from study_agent.application import StudyHarness
-from study_agent.application.grounding_ask import GroundingAskService
-from study_agent.courses import course_profile_manifest
+from cardine.application.grounding_ask import GroundingAskService
+from cardine.courses import course_profile_manifest
 from study_agent.domain._validation import JsonObject
 from study_agent.grounding import EvidenceEnvelope
 from study_agent.playbooks import ModelStep

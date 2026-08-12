@@ -21,7 +21,7 @@ from threading import BoundedSemaphore, RLock
 from typing import cast
 from urllib.parse import unquote, urlsplit
 
-from study_agent.diagnostics import TurnTraceStore
+from cardine.diagnostics import TurnTraceStore
 from study_agent.domain._validation import JsonObject, JsonValue
 
 from .private_access import (
@@ -222,7 +222,7 @@ class BrowserSurface:
     def page(self) -> bytes:
         """Return the packaged page bytes without filesystem or network access."""
 
-        return resources.files("study_agent.demo").joinpath("browser.html").read_bytes()
+        return resources.files("cardine.demo").joinpath("browser.html").read_bytes()
 
     def asset(self, name: str) -> bytes:
         """Return one allowlisted packaged browser asset."""
@@ -233,11 +233,11 @@ class BrowserSurface:
             "ai-primitives.css",
             "ai-primitives.js",
         }:
-            return resources.files("study_agent.demo").joinpath(name).read_bytes()
+            return resources.files("cardine.demo").joinpath(name).read_bytes()
         if name.startswith("icons/") and name.removeprefix("icons/") in ICON_ASSETS:
-            return resources.files("study_agent.demo").joinpath(name).read_bytes()
+            return resources.files("cardine.demo").joinpath(name).read_bytes()
         if name.startswith("fonts/") and name.removeprefix("fonts/") in FONT_ASSETS:
-            return resources.files("study_agent.demo").joinpath(name).read_bytes()
+            return resources.files("cardine.demo").joinpath(name).read_bytes()
         raise ValueError("unknown browser asset")
 
     def api_get(self, path: str, *, session_token: str | None = None) -> JsonObject:

@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from study_agent.adapters.model import OpenAICompatibleModel, OpenAIGpt56LunaModel
-from study_agent.cli import (
+from cardine.cli import (
     EMPTY_CONFIG,
     LocalRepository,
     LocalRepositoryConfig,
@@ -278,7 +278,7 @@ def test_registry_does_not_expose_unrelated_environment_or_builder_errors() -> N
 
 def test_default_adapter_resolves_key_only_at_construction() -> None:
     registry = __import__(
-        "study_agent.cli", fromlist=["default_model_adapters"]
+        "cardine.cli", fromlist=["default_model_adapters"]
     ).default_model_adapters(allow_configurable_endpoints=True)
     config = model_config().model
     assert config is not None
@@ -293,7 +293,7 @@ def test_default_adapter_resolves_key_only_at_construction() -> None:
 
 def test_default_adapter_selects_provider_json_object_mode() -> None:
     registry = __import__(
-        "study_agent.cli", fromlist=["default_model_adapters"]
+        "cardine.cli", fromlist=["default_model_adapters"]
     ).default_model_adapters(allow_configurable_endpoints=True)
     config = ModelAdapterConfig(
         "openai-compatible-http",
@@ -313,7 +313,7 @@ def test_default_adapter_selects_provider_json_object_mode() -> None:
 
 def test_default_registry_selects_fixed_luna_adapter_from_credential_reference() -> None:
     registry = __import__(
-        "study_agent.cli", fromlist=["default_model_adapters"]
+        "cardine.cli", fromlist=["default_model_adapters"]
     ).default_model_adapters()
     config = ModelAdapterConfig(
         "openai-gpt-5.6-luna",
@@ -331,7 +331,7 @@ def test_default_registry_selects_fixed_luna_adapter_from_credential_reference()
 
 def test_default_registry_exposes_only_the_fixed_luna_network_destination() -> None:
     registry = __import__(
-        "study_agent.cli", fromlist=["default_model_adapters"]
+        "cardine.cli", fromlist=["default_model_adapters"]
     ).default_model_adapters()
 
     assert registry.adapter_ids == ("openai-gpt-5.6-luna",)
@@ -339,7 +339,7 @@ def test_default_registry_exposes_only_the_fixed_luna_network_destination() -> N
 
 def test_luna_registry_rejects_an_alternate_credential_environment() -> None:
     registry = __import__(
-        "study_agent.cli", fromlist=["default_model_adapters"]
+        "cardine.cli", fromlist=["default_model_adapters"]
     ).default_model_adapters()
     config = ModelAdapterConfig(
         "openai-gpt-5.6-luna",
@@ -363,7 +363,7 @@ def test_luna_registry_rejects_missing_or_overridable_fixed_settings(
     settings: JsonObject,
 ) -> None:
     registry = __import__(
-        "study_agent.cli", fromlist=["default_model_adapters"]
+        "cardine.cli", fromlist=["default_model_adapters"]
     ).default_model_adapters()
     config = ModelAdapterConfig(
         "openai-gpt-5.6-luna",

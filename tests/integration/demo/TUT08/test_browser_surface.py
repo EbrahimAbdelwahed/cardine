@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from http.client import HTTPConnection
 from typing import cast
 
-from study_agent.demo.browser import create_server
+from cardine.demo.browser import create_server
 from study_agent.domain._validation import JsonObject
 
 

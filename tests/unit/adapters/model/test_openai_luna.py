@@ -15,7 +15,7 @@ from study_agent.adapters.model import (
     OpenAIGpt56LunaConfig,
     OpenAIGpt56LunaModel,
 )
-from study_agent.hosts import AssistantMessageDecision, TutorHostContext
+from cardine.hosts import AssistantMessageDecision, TutorHostContext
 from study_agent.ports import (
     MessageRole,
     ModelError,

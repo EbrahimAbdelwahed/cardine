@@ -20,7 +20,7 @@ from study_agent.adapters.workarounds.filesystem import (
     validate_portable_path,
 )
 from study_agent.adapters.workarounds.worker import PdfWorkerError
-from study_agent.feedback import (
+from cardine.feedback import (
     WorkaroundApprovalReceipt,
     WorkaroundInputKind,
     WorkaroundOutputKind,

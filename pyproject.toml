@@ -28,21 +28,12 @@ Issues = "https://github.com/EbrahimAbdelwahed/cardine/issues"
 Source = "https://github.com/EbrahimAbdelwahed/cardine"
 
 [project.scripts]
-# Cardine product entry points.  The implementation modules intentionally keep
-# their internal ``study_agent`` namespace and protocol identifiers.
-cardine = "study_agent.cli.main:main"
-cardine-demo = "study_agent.demo.anatomy:main"
-cardine-shell = "study_agent.demo.product_shell:main"
-cardine-shell-web = "study_agent.demo.browser:main"
-cardine-private-password-hash = "study_agent.demo.private_access:main"
-
-# Compatibility entry points for the copied Harness core.  These aliases are
-# not the Cardine product identity, but preserve existing host integrations.
-study-agent = "study_agent.cli.main:main"
-study-agent-demo = "study_agent.demo.anatomy:main"
-study-agent-shell = "study_agent.demo.product_shell:main"
-study-agent-shell-web = "study_agent.demo.browser:main"
-study-agent-private-password-hash = "study_agent.demo.private_access:main"
+# Cardine's five product commands are the only published console surface.
+cardine = "cardine.cli.main:main"
+cardine-demo = "cardine.demo.anatomy:main"
+cardine-shell = "cardine.demo.product_shell:main"
+cardine-shell-web = "cardine.demo.browser:main"
+cardine-private-password-hash = "cardine.demo.private_access:main"
 
 [project.optional-dependencies]
 dev = [
@@ -60,7 +51,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 study_agent = ["py.typed"]
-"study_agent.demo" = ["fixtures/*.md", "browser.html", "browser.css", "browser.js", "ai-primitives.css", "ai-primitives.js", "icons/*.svg", "icons/*.txt", "fonts/*.woff2", "fonts/*.txt"]
+"cardine.demo" = ["fixtures/*.md", "browser.html", "browser.css", "browser.js", "ai-primitives.css", "ai-primitives.js", "icons/*.svg", "icons/*.txt", "fonts/*.woff2", "fonts/*.txt"]
 "study_agent.operator_skill" = ["SKILL.md"]
 
 [tool.pytest.ini_options]

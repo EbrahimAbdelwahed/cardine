@@ -54,7 +54,7 @@ from study_agent.domain.session import (
     VerifiedRunOutputRef,
 )
 from study_agent.domain.source import Citation
-from study_agent.hosts.contracts import TutorPresentationReceipt
+from cardine.hosts.contracts import TutorPresentationReceipt
 from study_agent.portability import reject_provider_selectors
 from study_agent.state import canonical_json_bytes
 from study_agent.tools.schema import validate_schema_definition
