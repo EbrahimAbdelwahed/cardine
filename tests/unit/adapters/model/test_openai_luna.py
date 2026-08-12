@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from cardine.hosts import AssistantMessageDecision, TutorHostContext
 from study_agent.adapters.model import (
     GPT_5_6_LUNA_ADAPTER_ID,
     GPT_5_6_LUNA_MODEL_ID,
@@ -15,7 +16,6 @@ from study_agent.adapters.model import (
     OpenAIGpt56LunaConfig,
     OpenAIGpt56LunaModel,
 )
-from cardine.hosts import AssistantMessageDecision, TutorHostContext
 from study_agent.ports import (
     MessageRole,
     ModelError,

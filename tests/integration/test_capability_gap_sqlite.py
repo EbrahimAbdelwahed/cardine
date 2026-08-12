@@ -7,14 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from study_agent.adapters.sqlite.capability_gap_store import (
-    SQLiteCapabilityGapStore,
-    UnsupportedSQLiteCapabilityGapDatabaseError,
-)
-from study_agent.adapters.sqlite.event_store import (
-    SQLiteConnectionIdentityError,
-    _writable_nofollow_uri,
-)
 from cardine.feedback import (
     CapabilityGapAggregate,
     CapabilityGapCorruptionError,
@@ -29,6 +21,14 @@ from cardine.feedback import (
     SafeTargetKind,
     proposal_for,
     report_id_for,
+)
+from study_agent.adapters.sqlite.capability_gap_store import (
+    SQLiteCapabilityGapStore,
+    UnsupportedSQLiteCapabilityGapDatabaseError,
+)
+from study_agent.adapters.sqlite.event_store import (
+    SQLiteConnectionIdentityError,
+    _writable_nofollow_uri,
 )
 
 

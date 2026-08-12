@@ -5,15 +5,6 @@ from dataclasses import replace
 
 import pytest
 
-from study_agent.capabilities import CapabilityContinuation, TutorCapabilityId
-from study_agent.domain import (
-    CorrelationId,
-    CourseId,
-    ExecutionContext,
-    PrincipalKind,
-    RunId,
-    SessionId,
-)
 from cardine.hosts import (
     AssistantMessageDecision,
     HostActionIdentity,
@@ -30,6 +21,15 @@ from cardine.hosts import (
     decision_fingerprint,
 )
 from cardine.hosts.contracts import AdvertisedCapability, PendingContinuationDescriptor
+from study_agent.capabilities import CapabilityContinuation, TutorCapabilityId
+from study_agent.domain import (
+    CorrelationId,
+    CourseId,
+    ExecutionContext,
+    PrincipalKind,
+    RunId,
+    SessionId,
+)
 from study_agent.playbooks import ToolBehaviorPin, VersionPins
 from study_agent.skills import ArtifactReference, SemanticVersion
 

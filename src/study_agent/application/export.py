@@ -6,16 +6,16 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
+from cardine.courses import register_course_events
+from cardine.courses.events import COURSE_CREATED, decode_course_created
+from cardine.domain.course import CourseProfile
 from study_agent.artifacts import (
     ARTIFACT_EVENT_TYPES,
     ProjectionArtifactView,
     register_artifact_events,
 )
 from study_agent.assessments import ASSESSMENT_EVENT_TYPES, register_assessment_events
-from cardine.courses import register_course_events
-from cardine.courses.events import COURSE_CREATED, decode_course_created
 from study_agent.domain._validation import JsonObject, freeze_object
-from cardine.domain.course import CourseProfile
 from study_agent.domain.events import Actor, DomainEvent, PrincipalKind
 from study_agent.domain.grounding import GroundedAnswer
 from study_agent.domain.identifiers import CorrelationId, CourseId, EventId

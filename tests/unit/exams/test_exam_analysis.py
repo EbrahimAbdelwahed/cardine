@@ -3,15 +3,6 @@ from __future__ import annotations
 import asyncio
 from hashlib import sha256
 
-from study_agent.domain import (
-    ChunkId,
-    Citation,
-    CourseId,
-    ResolvedCitation,
-    RevisionId,
-    SourceChunk,
-    SourceId,
-)
 from cardine.exams.analysis import (
     ExamAnalysisTaskFactory,
     ExamBlueprintIntegrityValidator,
@@ -23,6 +14,15 @@ from cardine.exams.contracts import (
     ExamPromptEvidenceProjection,
     PreparedExamSample,
     PreparedExamSampleScope,
+)
+from study_agent.domain import (
+    ChunkId,
+    Citation,
+    CourseId,
+    ResolvedCitation,
+    RevisionId,
+    SourceChunk,
+    SourceId,
 )
 from study_agent.grounding import EvidenceEnvelope
 from study_agent.playbooks.builtin.analyze_exam_sample_flow import ANALYZE_EXAM_SAMPLE_FLOW

@@ -7,13 +7,13 @@ from dataclasses import dataclass
 from datetime import date
 from hashlib import sha256
 
-from study_agent.domain._validation import JsonObject, JsonValue
 from cardine.domain.course import (
     CourseProfile,
     SourcePolicy,
     TerminologyEntry,
     TerminologyPolicy,
 )
+from study_agent.domain._validation import JsonObject, JsonValue
 from study_agent.domain.events import Actor, DomainEvent, PrincipalKind
 from study_agent.domain.identifiers import CorrelationId, CourseId, EventId
 from study_agent.state.serialization import canonical_json_bytes

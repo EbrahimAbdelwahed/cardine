@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from hashlib import sha256
 
+from cardine.hosts.contracts import TutorPresentationReceipt
 from study_agent.domain._validation import JsonObject, JsonValue
 from study_agent.domain.events import Actor, DomainEvent, PrincipalKind
 from study_agent.domain.grounding import (
@@ -54,7 +55,6 @@ from study_agent.domain.session import (
     VerifiedRunOutputRef,
 )
 from study_agent.domain.source import Citation
-from cardine.hosts.contracts import TutorPresentationReceipt
 from study_agent.portability import reject_provider_selectors
 from study_agent.state import canonical_json_bytes
 from study_agent.tools.schema import validate_schema_definition

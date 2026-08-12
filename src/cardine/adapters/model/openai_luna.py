@@ -4,18 +4,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from study_agent.adapters.model.openai_compatible import (
+    HttpTransport,
+    OpenAICompatibleConfig,
+    OpenAICompatibleModel,
+)
 from study_agent.ports.model import (
     ModelCapabilities,
     ModelError,
     ModelErrorCode,
     ModelRequest,
     ModelResponse,
-)
-
-from study_agent.adapters.model.openai_compatible import (
-    HttpTransport,
-    OpenAICompatibleConfig,
-    OpenAICompatibleModel,
 )
 
 GPT_5_6_LUNA_ADAPTER_ID = "openai-gpt-5.6-luna"

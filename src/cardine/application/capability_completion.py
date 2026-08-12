@@ -11,8 +11,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from study_agent.domain import ExecutionContext, RunId
 from cardine.hosts import TutorCapabilityCompletionReference
+from study_agent.domain import ExecutionContext, RunId
 
 MAX_COMPLETION_CONTENT_CHARS = 4_000
 MAX_CANONICAL_IDS = 64

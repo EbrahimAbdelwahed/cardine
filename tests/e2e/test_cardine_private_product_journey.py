@@ -33,7 +33,6 @@ from urllib.request import HTTPCookieProcessor, Request, build_opener, urlopen
 
 import pytest
 
-from study_agent.adapters.filesystem import initialize_local_repository
 from cardine.cli.repository import (
     LocalRepository,
     ModelAdapterBuilder,
@@ -41,6 +40,7 @@ from cardine.cli.repository import (
 )
 from cardine.demo.browser import create_server
 from cardine.demo.ui_application import RepositoryUiApplication, UiApplicationPort
+from study_agent.adapters.filesystem import initialize_local_repository
 from study_agent.domain import (
     CorrelationId,
     CourseId,

@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from cardine.courses import CourseConflictError, RetryableCourseConflictError
 from study_agent.adapters.filesystem import FilesystemSourceInput
 from study_agent.adapters.filesystem.lifecycle import load_lifecycle_manifest
 from study_agent.adapters.filesystem.repository_target import (
@@ -21,7 +22,6 @@ from study_agent.adapters.sqlite import (
     SQLiteConnectionIdentityError,
     observe_local_repository,
 )
-from cardine.courses import CourseConflictError, RetryableCourseConflictError
 from study_agent.domain import SourceId
 from study_agent.domain.context import ExecutionContext
 from study_agent.ingestion import IngestionErrorCode, TextIngestionError

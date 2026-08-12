@@ -15,9 +15,9 @@ else:
     except ModuleNotFoundError:
         from test_repository_backed_chat import _command, _repository
 
-from study_agent.capabilities import FailedCapabilityOutcome
 from cardine.cli.repository import LocalRepository
 from cardine.demo.ui_application import RepositoryUiApplication
+from study_agent.capabilities import FailedCapabilityOutcome
 from study_agent.domain import CorrelationId, CourseId, ExecutionContext, PrincipalKind, SessionId
 from study_agent.domain._validation import JsonObject
 from study_agent.ports import (

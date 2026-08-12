@@ -6,20 +6,6 @@ from typing import Any, cast
 
 import pytest
 
-from study_agent.capabilities import (
-    CapabilityContinuation,
-    CompletedCapabilityOutcome,
-    StaleCapabilityOutcome,
-    TutorCapabilityId,
-)
-from study_agent.domain import (
-    CorrelationId,
-    CourseId,
-    ExecutionContext,
-    PrincipalKind,
-    RunId,
-    SessionId,
-)
 from cardine.hosts import (
     AdvertisedCapability,
     AnswerDialogueDecision,
@@ -35,6 +21,20 @@ from cardine.hosts import (
     TutorHostRunner,
     TutorHostRunStatus,
     completion_handoff_key,
+)
+from study_agent.capabilities import (
+    CapabilityContinuation,
+    CompletedCapabilityOutcome,
+    StaleCapabilityOutcome,
+    TutorCapabilityId,
+)
+from study_agent.domain import (
+    CorrelationId,
+    CourseId,
+    ExecutionContext,
+    PrincipalKind,
+    RunId,
+    SessionId,
 )
 from study_agent.playbooks import (
     PlaybookRunStatus,

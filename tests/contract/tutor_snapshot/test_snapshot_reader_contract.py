@@ -7,10 +7,10 @@ from typing import cast
 
 import pytest
 
-from study_agent.adapters.filesystem import initialize_local_repository
-from study_agent.adapters.sqlite import SQLiteEventStore
 from cardine.cli.repository import LocalRepository
 from cardine.courses import CourseService, ProjectionCourseView, register_course_events
+from study_agent.adapters.filesystem import initialize_local_repository
+from study_agent.adapters.sqlite import SQLiteEventStore
 from study_agent.domain import (
     Actor,
     CorrelationId,

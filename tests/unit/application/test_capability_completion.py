@@ -6,8 +6,8 @@ from cardine.application.capability_completion import (
     CapabilityCompletionHandlerRegistry,
     CapabilityCompletionProductReceipt,
 )
-from study_agent.domain import ExecutionContext, RunId
 from cardine.hosts import TutorCapabilityCompletionReference
+from study_agent.domain import ExecutionContext, RunId
 
 
 def _reference() -> TutorCapabilityCompletionReference:

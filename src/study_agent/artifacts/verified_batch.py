@@ -5,6 +5,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from hashlib import sha256
 
+from cardine.exams.contracts import (
+    ExamAnalysisProposal,
+    ExamAnalysisRequest,
+    ExamEvidenceMapping,
+    ExamPromptEvidenceProjection,
+)
 from study_agent.artifacts.candidates import (
     FlashcardCandidate,
     FlashcardCandidateBatch,
@@ -26,12 +32,6 @@ from study_agent.domain import (
     VersionPins,
 )
 from study_agent.domain._validation import JsonObject, freeze_object
-from cardine.exams.contracts import (
-    ExamAnalysisProposal,
-    ExamAnalysisRequest,
-    ExamEvidenceMapping,
-    ExamPromptEvidenceProjection,
-)
 from study_agent.flashcards.lesson_worker_contracts import (
     LessonWorkerCheckpoint,
     LessonWorkerPageStatus,

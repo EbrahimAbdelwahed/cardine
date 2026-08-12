@@ -8,6 +8,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Final
 
+from cardine.cli.repository import LocalRepository, initialize_local_repository
 from study_agent.application import ExportBundleV2, ExportService, ExportVersion
 from study_agent.artifacts import (
     AnswerBlock,
@@ -27,7 +28,6 @@ from study_agent.artifacts.candidates import (
     FlashcardOmission,
     FlashcardPedagogicalRole,
 )
-from cardine.cli.repository import LocalRepository, initialize_local_repository
 from study_agent.domain import (
     ArtifactDecision,
     ArtifactReadDependency,

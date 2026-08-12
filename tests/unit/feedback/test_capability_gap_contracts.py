@@ -7,7 +7,6 @@ from typing import cast
 import pytest
 
 import cardine.feedback as feedback
-from study_agent.domain._validation import JsonObject
 from cardine.feedback import (
     CapabilityGapAggregate,
     CapabilityGapCollisionError,
@@ -27,6 +26,7 @@ from cardine.feedback import (
     proposal_for,
     report_id_for,
 )
+from study_agent.domain._validation import JsonObject
 from study_agent.state import canonical_json_bytes
 
 SHA_A = "a" * 64

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from cardine.cli.repository import LocalRepository
 from study_agent.adapters.filesystem import initialize_local_repository
 from study_agent.adapters.filesystem.repository_target import (
     LocalRepositoryPaths,
@@ -16,7 +17,6 @@ from study_agent.adapters.filesystem.repository_target import (
 )
 from study_agent.adapters.sqlite import observe_local_repository
 from study_agent.application import ExportService, ExportStateError
-from cardine.cli.repository import LocalRepository
 from study_agent.domain import (
     Actor,
     CorrelationId,

@@ -11,10 +11,11 @@ from pathlib import Path
 from types import FrameType
 from uuid import uuid4
 
+from cardine.courses import course_profile_manifest
+from cardine.domain.course import CourseProfile, SourcePolicy, TerminologyPolicy
 from study_agent.adapters.filesystem import FilesystemExportWriter, FilesystemSourceInput
 from study_agent.adapters.filesystem.lifecycle import load_lifecycle_manifest
 from study_agent.application import ExportService, ExportVersion
-from cardine.courses import course_profile_manifest
 from study_agent.domain import (
     CorrelationId,
     CourseId,
@@ -24,7 +25,6 @@ from study_agent.domain import (
     SourceId,
 )
 from study_agent.domain._validation import JsonObject
-from cardine.domain.course import CourseProfile, SourcePolicy, TerminologyPolicy
 from study_agent.domain.session import SessionStatus, StudySessionRecord
 from study_agent.ingestion.projection import source_manifest
 from study_agent.lifecycle import (

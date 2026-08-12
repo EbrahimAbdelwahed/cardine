@@ -22,6 +22,11 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Protocol, cast
 
+from cardine.hosts import (
+    PendingContinuationDescriptor,
+    TutorHostRunResult,
+    TutorHostRunStatus,
+)
 from study_agent.capabilities import CapabilityManifest
 from study_agent.domain import (
     CourseId,
@@ -33,11 +38,6 @@ from study_agent.domain import (
     TutorTimelineEntry,
 )
 from study_agent.domain._validation import JsonObject
-from cardine.hosts import (
-    PendingContinuationDescriptor,
-    TutorHostRunResult,
-    TutorHostRunStatus,
-)
 from study_agent.ports import TutorCapabilityGatewayPort, TutorSnapshotPort
 
 MAX_LEARNER_ENTRY_CHARS = 4_000

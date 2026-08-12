@@ -8,6 +8,15 @@ from typing import cast
 
 import pytest
 
+from cardine.cli import EMPTY_CONFIG, LocalRepository, initialize_local_repository
+from cardine.hosts import (
+    PendingContinuationDescriptor,
+    TutorContinuationRecord,
+    TutorHostRunner,
+    TutorHostRunResult,
+    TutorHostRunStatus,
+    TutorPresentationReceipt,
+)
 from study_agent.application import (
     ConversationTurnApplication,
     ConversationTurnCommand,
@@ -15,7 +24,6 @@ from study_agent.application import (
     ConversationTurnErrorCode,
 )
 from study_agent.capabilities import CapabilityContinuation, TutorCapabilityId
-from cardine.cli import EMPTY_CONFIG, LocalRepository, initialize_local_repository
 from study_agent.domain import (
     CorrelationId,
     CourseId,
@@ -25,14 +33,6 @@ from study_agent.domain import (
     RunId,
     SessionId,
     TutorPresentationKind,
-)
-from cardine.hosts import (
-    PendingContinuationDescriptor,
-    TutorContinuationRecord,
-    TutorHostRunner,
-    TutorHostRunResult,
-    TutorHostRunStatus,
-    TutorPresentationReceipt,
 )
 from study_agent.playbooks import ToolBehaviorPin, VersionPins
 from study_agent.ports import TutorContinuationStore, TutorSnapshotPort

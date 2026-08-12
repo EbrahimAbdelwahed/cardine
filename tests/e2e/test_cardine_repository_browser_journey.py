@@ -28,10 +28,10 @@ from urllib.request import urlopen
 
 import pytest
 
-from study_agent.adapters.filesystem import initialize_local_repository
 from cardine.cli.repository import LocalRepository, ModelAdapterRegistry
 from cardine.demo.browser import create_server
 from cardine.demo.ui_application import RepositoryUiApplication
+from study_agent.adapters.filesystem import initialize_local_repository
 from study_agent.domain import (
     CorrelationId,
     CourseId,

@@ -8,6 +8,7 @@ from datetime import UTC, date, datetime
 from types import MappingProxyType
 from typing import cast
 
+from cardine.courses import ProjectionCourseView
 from study_agent.artifacts import ExamBlueprintContent, ProjectionArtifactView
 from study_agent.artifacts.content import EvidenceObservation
 from study_agent.artifacts.contracts import ArtifactSnapshot
@@ -16,7 +17,6 @@ from study_agent.assessments import (
     ProjectionLearnerEvidenceView,
 )
 from study_agent.assessments.evidence import LearnerEvidenceSnapshot
-from cardine.courses import ProjectionCourseView
 from study_agent.domain import (
     CourseId,
     StatementStatus,

@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+from cardine.courses import register_course_events
 from study_agent.adapters.filesystem import FilesystemBlobStore
 from study_agent.adapters.sqlite import SQLiteEventStore, SQLiteFtsRetrieval
-from cardine.courses import register_course_events
 from study_agent.domain import (
     CorrelationId,
     CourseId,

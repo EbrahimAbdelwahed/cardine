@@ -5,16 +5,16 @@ from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 
-from study_agent.adapters.memory import MemoryHostFileIdentity, MemoryHostFileSnapshotStore
-from study_agent.domain import CorrelationId, CourseId, SessionId, SourceId
-from study_agent.domain.context import ExecutionContext
-from study_agent.domain.events import PrincipalKind
 from cardine.hosts.files import (
     HostFileError,
     HostFileReference,
     HostFileRegistry,
     TrustedHostFileIngestionCommand,
 )
+from study_agent.adapters.memory import MemoryHostFileIdentity, MemoryHostFileSnapshotStore
+from study_agent.domain import CorrelationId, CourseId, SessionId, SourceId
+from study_agent.domain.context import ExecutionContext
+from study_agent.domain.events import PrincipalKind
 from study_agent.ports.source_input import SourceSnapshot
 
 

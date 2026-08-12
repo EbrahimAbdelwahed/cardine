@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from study_agent.domain import ExecutionContext, RunId
 from cardine.exams.analysis import ExamAnalysisTaskFactory
 from cardine.exams.contracts import (
     ExamAnalysisProofReference,
@@ -15,6 +14,7 @@ from cardine.exams.contracts import (
     ExamPromptEvidenceProjection,
     PreparedExamSampleScope,
 )
+from study_agent.domain import ExecutionContext, RunId
 from study_agent.ports.exam import (
     ExamGeneratedBatchOwnerCommitment,
     ExamGeneratedBatchOwnerPublication,

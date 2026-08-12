@@ -6,13 +6,14 @@ from collections.abc import AsyncIterator, Mapping
 from hashlib import sha256
 from typing import NoReturn
 
-from study_agent.adapters.sqlite import NamespacedSQLiteRunStore, SQLiteRunStore
 from cardine.application.capability_completion import CapabilityCompletionProductReceipt
 from cardine.application.flashcard_profile_selection import (
     FlashcardProfileRouteKind,
     FlashcardProfileSelectionDecision,
     select_flashcard_profile,
 )
+from cardine.hosts import TutorCapabilityCompletionReference
+from study_agent.adapters.sqlite import NamespacedSQLiteRunStore, SQLiteRunStore
 from study_agent.artifacts import ArtifactService, ArtifactSnapshot
 from study_agent.artifacts.runtime import (
     VerifiedGeneratedBatchRuntime,
@@ -76,7 +77,6 @@ from study_agent.flashcards.planning import (
 )
 from study_agent.flashcards.worker_router import ClosedHistoricalPlannedBundleWorkerRouter
 from study_agent.grounding import EvidenceEnvelope
-from cardine.hosts import TutorCapabilityCompletionReference
 from study_agent.pedagogy import (
     HYBRID_MACRO_DETAIL_V1,
     MORPHOLOGY_FIRST_ANATOMY_V1,

@@ -8,16 +8,16 @@ from typing import TYPE_CHECKING, Protocol
 from study_agent.domain import ExecutionContext, RunId
 
 if TYPE_CHECKING:
-    from study_agent.artifacts.generated_owner import (
-        ExamGeneratedBatchOwnerReceipt,
-        GeneratedBatchOwnerReceipt,
-        LessonGeneratedBatchOwnerReceipt,
-    )
     from cardine.exams.contracts import (
         ExamAnalysisRequest,
         ExamEvidenceMapping,
         ExamPromptEvidenceProjection,
         PreparedExamSampleScope,
+    )
+    from study_agent.artifacts.generated_owner import (
+        ExamGeneratedBatchOwnerReceipt,
+        GeneratedBatchOwnerReceipt,
+        LessonGeneratedBatchOwnerReceipt,
     )
     from study_agent.flashcards.lesson_worker_contracts import LessonWorkerCheckpoint
     from study_agent.flashcards.planning import PreparedPlannedFlashcardScope

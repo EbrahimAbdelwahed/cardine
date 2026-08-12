@@ -7,8 +7,8 @@ from typing import cast
 
 import pytest
 
-from study_agent.adapters.sqlite import SQLiteEventStore
 from cardine.courses import ProjectionCourseView, register_course_events
+from study_agent.adapters.sqlite import SQLiteEventStore
 from study_agent.domain import (
     AnswerRecord,
     ContinuationSummaryV1,

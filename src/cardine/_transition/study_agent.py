@@ -20,9 +20,9 @@ def _leaf_module(name: str) -> ModuleType:
         # package shell so the two leaf modules load under their canonical
         # names, preserving class identity without running the cyclic __init__.
         package_name = "study_agent.domain"
-        package_path = Path(__file__).resolve().parents[3] / "study_agent" / "domain"
+        package_path = Path(__file__).resolve().parents[2] / "study_agent" / "domain"
         package = ModuleType(package_name)
-        package.__path__ = [str(package_path)]  # type: ignore[attr-defined]
+        package.__path__ = [str(package_path)]
         package.__package__ = package_name
         sys.modules[package_name] = package
         try:

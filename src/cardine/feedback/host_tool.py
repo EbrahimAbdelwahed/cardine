@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
-from study_agent.domain._validation import JsonObject, freeze_object
 from cardine.feedback.contracts import (
     CapabilityGapObservation,
     CapabilityGapValidationError,
@@ -27,6 +26,7 @@ from cardine.feedback.contracts import (
     TrustedLimitationReceipt,
 )
 from cardine.feedback.view import CapabilityGapCompactView
+from study_agent.domain._validation import JsonObject, freeze_object
 from study_agent.ports.capability_gap import (
     CapabilityGapReportDispatcher,
     FeatureGapSink,

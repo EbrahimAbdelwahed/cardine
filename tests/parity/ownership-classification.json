@@ -3136,7 +3136,7 @@
       "first_consuming_slice": "CA-02",
       "path": "entrypoint:cardine",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent.cli.main:main",
+      "replacement_import_or_path": "cardine.cli.main:main",
       "sha256": "78b800af24e6095cfb6a7e7f7519efc3f525be77afb12339776cd6118c83ce22",
       "terminal_owner": "cardine"
     },
@@ -3146,7 +3146,7 @@
       "first_consuming_slice": "CA-02",
       "path": "entrypoint:cardine-demo",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent.demo.anatomy:main",
+      "replacement_import_or_path": "cardine.demo.anatomy:main",
       "sha256": "8300881f30c5f443691e0ed23ed757d28f2b9f0835abacfdf9e037f97867d126",
       "terminal_owner": "cardine"
     },
@@ -3156,7 +3156,7 @@
       "first_consuming_slice": "CA-02",
       "path": "entrypoint:cardine-private-password-hash",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent.demo.private_access:main",
+      "replacement_import_or_path": "cardine.demo.private_access:main",
       "sha256": "fa98d4e6e60b3538331a0b4c7c0fe5b7347d4079d697ef6db1db181eb892779e",
       "terminal_owner": "cardine"
     },
@@ -3166,7 +3166,7 @@
       "first_consuming_slice": "CA-02",
       "path": "entrypoint:cardine-shell",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent.demo.product_shell:main",
+      "replacement_import_or_path": "cardine.demo.product_shell:main",
       "sha256": "6e371bf14049af5ff09c178d61fbce6214d93718306e1cfcc093a725f4052eeb",
       "terminal_owner": "cardine"
     },
@@ -3176,7 +3176,7 @@
       "first_consuming_slice": "CA-02",
       "path": "entrypoint:cardine-shell-web",
       "removal_slice": "CA-10",
-      "replacement_import_or_path": "study_agent.demo.browser:main",
+      "replacement_import_or_path": "cardine.demo.browser:main",
       "sha256": "17d80bd6e9ddcaf8d02b550989bdfe936fa6ac92a06a878d0b9d0c3c80f02446",
       "terminal_owner": "cardine"
     },

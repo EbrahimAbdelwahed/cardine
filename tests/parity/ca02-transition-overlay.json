@@ -1,0 +1,757 @@
+{
+  "schema_version": 1,
+  "columns": [
+    "path",
+    "source_path",
+    "disposition",
+    "transition_sha256"
+  ],
+  "rows": [
+    {
+      "path": "src/study_agent/adapters/host/__init__.py",
+      "source_path": "src/cardine/adapters/host/__init__.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "3b1f6cbe167d632e1d9578f527b7e7e25f1d278b96311798145aa01f6d5a0239"
+    },
+    {
+      "path": "src/study_agent/adapters/host/openai_responses.py",
+      "source_path": "src/cardine/adapters/host/openai_responses.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "da2e9e6f9cb8cb34ef3b6bd661095b3af6dc453f7a92e5dc01d2c5e7aeaab5df"
+    },
+    {
+      "path": "src/study_agent/adapters/model/openai_luna.py",
+      "source_path": "src/cardine/adapters/model/openai_luna.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "5fa4bf73950256337595cfec81d8c09c3c1ea6cc6a02e0a43eb4c9d8ce166f9a"
+    },
+    {
+      "path": "src/study_agent/adapters/model/tutor_decision.py",
+      "source_path": "src/cardine/adapters/model/tutor_decision.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "7808ac581ab9f98aa891c9ea6fdd54fb2255b7954a498a81369bf06d0af092e9"
+    },
+    {
+      "path": "src/study_agent/application/capability_completion.py",
+      "source_path": "src/cardine/application/capability_completion.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "d29786d6bde1388f76296d50eacf0f07f60cd439e7adcbadb6ee7a3353cf8c64"
+    },
+    {
+      "path": "src/study_agent/application/conversation_turn.py",
+      "source_path": "src/cardine/application/conversation_turn.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "a2d326de31fd74c12a9a5b7878c37a02443e9d32eb199ef55176f3d12c7d29cf"
+    },
+    {
+      "path": "src/study_agent/application/flashcard_profile_selection.py",
+      "source_path": "src/cardine/application/flashcard_profile_selection.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "2d9a6b9c03a86f16527ec20e4411dbcde54400a648dfe4ee2c968863c89c328d"
+    },
+    {
+      "path": "src/study_agent/application/flashcard_proposals.py",
+      "source_path": "src/cardine/application/flashcard_proposals.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "fdd4f17132ae9c0232df24c921587759869f782b15afbe6ef16e32c1fb0a2846"
+    },
+    {
+      "path": "src/study_agent/application/grounding_ask.py",
+      "source_path": "src/cardine/application/grounding_ask.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "891a0b302dcdf46d35c99a1a4114003e319a59b4a085943a60adef3794bfbc14"
+    },
+    {
+      "path": "src/study_agent/application/study_readiness.py",
+      "source_path": "src/cardine/application/study_readiness.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "d0eb30d8ac55a409db1f27ef1ee4dc78f7fa2680de909b7c0df17aa2e797f395"
+    },
+    {
+      "path": "src/study_agent/application/tool_surface.py",
+      "source_path": "src/cardine/application/tool_surface.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "ac8caa0eee213627b7188ac2c571e630007681f605018021832b1e8402e1c505"
+    },
+    {
+      "path": "src/study_agent/cli/__init__.py",
+      "source_path": "src/cardine/cli/__init__.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "8c38e7cf58a5319f608b935513f34b65644b86bfa660923f1660b20bedca9e5e"
+    },
+    {
+      "path": "src/study_agent/cli/__main__.py",
+      "source_path": "src/cardine/cli/__main__.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "130acafaef8483625c857235eb995dace14121a5ba10eec2c7464c9f045153a7"
+    },
+    {
+      "path": "src/study_agent/cli/commands.py",
+      "source_path": "src/cardine/cli/commands.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "4415e64add8a075e685ee58956708e8e0c6c366c296e2aa36b8f3dba96975843"
+    },
+    {
+      "path": "src/study_agent/cli/config.py",
+      "source_path": "src/cardine/cli/config.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "83c86e2925aa5f7efd0e158571880f2b53bb1cfbb18ada56b316f4281357409b"
+    },
+    {
+      "path": "src/study_agent/cli/lifecycle.py",
+      "source_path": "src/cardine/cli/lifecycle.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "2fd964e10c9cde526f9b581f74e47f276d9c56ae276deb1eeb2c1554d4f7db94"
+    },
+    {
+      "path": "src/study_agent/cli/main.py",
+      "source_path": "src/cardine/cli/main.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "d18cb90be8d2acf2c183303a3adec876fdf937ea6ec030b11766b37d635a5f42"
+    },
+    {
+      "path": "src/study_agent/cli/output.py",
+      "source_path": "src/cardine/cli/output.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "a89eedd81f06d91236d3ddbf60417fe93be32c1fa64003eaef6d152eff569b8c"
+    },
+    {
+      "path": "src/study_agent/cli/registry.py",
+      "source_path": "src/cardine/cli/registry.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "becf84e9e1cac9898d924b661839b7ba70c65c2dd9bffbca7c4649adabd3b701"
+    },
+    {
+      "path": "src/study_agent/cli/repository.py",
+      "source_path": "src/cardine/cli/repository.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "ee51f7b984871722a0d80e37c72a0a595eb53016a86fb51c5cb89a7936f37b1f"
+    },
+    {
+      "path": "src/study_agent/courses/__init__.py",
+      "source_path": "src/cardine/courses/__init__.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "9f71b423b834be047566364a613c7d27208120f8a453cf07e3ac71e1e0339904"
+    },
+    {
+      "path": "src/study_agent/courses/events.py",
+      "source_path": "src/cardine/courses/events.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "75a68f8332ab6c4745726fef76810105065d3c3b045a794ee1c3334cfa177cc3"
+    },
+    {
+      "path": "src/study_agent/courses/projection.py",
+      "source_path": "src/cardine/courses/projection.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "705f1682bcce61bfaadac8e62bc37c63282366d2f17d00c99ca673b4a952c824"
+    },
+    {
+      "path": "src/study_agent/courses/service.py",
+      "source_path": "src/cardine/courses/service.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "1a198e855046a394fc678561ea4831063f83ccd1290975f6f68673c2cfb05a9c"
+    },
+    {
+      "path": "src/study_agent/courses/view.py",
+      "source_path": "src/cardine/courses/view.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "946a1eb8521efd7c44f77eeea7191f6163d4b0c020109fe105afa1e9e49cf0b7"
+    },
+    {
+      "path": "src/study_agent/demo/__init__.py",
+      "source_path": "src/cardine/demo/__init__.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "5b3599853f4728968574ea007a6d66a7123554fae0fef6df43822a1487928b67"
+    },
+    {
+      "path": "src/study_agent/demo/ai-primitives.css",
+      "source_path": "src/cardine/demo/ai-primitives.css",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "729a11489264dfb6ea73fe40d1b311cb5aaec51a01bdbd72d5469333a4390c72"
+    },
+    {
+      "path": "src/study_agent/demo/ai-primitives.js",
+      "source_path": "src/cardine/demo/ai-primitives.js",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "8ec2f45e5bbe09e808197cf119af976ceff8343ef1959434dcb4082a8d80e9c3"
+    },
+    {
+      "path": "src/study_agent/demo/anatomy.py",
+      "source_path": "src/cardine/demo/anatomy.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "2528c7b02937558f3d82e4bdfcd9e746440171098c169eb2dcc2224cf30a785c"
+    },
+    {
+      "path": "src/study_agent/demo/browser.css",
+      "source_path": "src/cardine/demo/browser.css",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "3265ac57ff49e9c1aa0093694710bf71b59e9abc91fc5f44349e870b371eadfc"
+    },
+    {
+      "path": "src/study_agent/demo/browser.html",
+      "source_path": "src/cardine/demo/browser.html",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "d423246d69877ad26e35e1f979dc9c2bf4890468d74303d4a5a4d3a4570857bd"
+    },
+    {
+      "path": "src/study_agent/demo/browser.js",
+      "source_path": "src/cardine/demo/browser.js",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "3aac25a3964e6aae20242522ba6e0bbf629aff847990b6448623e0d01a303ba3"
+    },
+    {
+      "path": "src/study_agent/demo/browser.py",
+      "source_path": "src/cardine/demo/browser.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "07bf43c289fd03564c2cdd706123594513808306dd581b0d3e738986f03a2c18"
+    },
+    {
+      "path": "src/study_agent/demo/fixtures/heart-valves.md",
+      "source_path": "src/cardine/demo/fixtures/heart-valves.md",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "fdfa93abaee988eddaec4a6727f15476041bc3a14f3f7ea473aa8b6a24a802b7"
+    },
+    {
+      "path": "src/study_agent/demo/fonts/LICENSE.txt",
+      "source_path": "src/cardine/demo/fonts/LICENSE.txt",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "dab5b9e4fcdc7d98d43932a8a9f2af324f03ad622f667896a66ae8554a583d86"
+    },
+    {
+      "path": "src/study_agent/demo/fonts/ibm-plex-mono-400.woff2",
+      "source_path": "src/cardine/demo/fonts/ibm-plex-mono-400.woff2",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "c36f509c0a8f9f85f29cb44bc8701d8a9e0b14c499e77a884f789ead7093a7ac"
+    },
+    {
+      "path": "src/study_agent/demo/fonts/ibm-plex-mono-600.woff2",
+      "source_path": "src/cardine/demo/fonts/ibm-plex-mono-600.woff2",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "ad4580d8cb4b5f627c2d18457656732f7f7b070f7837fbc380e08054157e6f6c"
+    },
+    {
+      "path": "src/study_agent/demo/fonts/instrument-serif-400.woff2",
+      "source_path": "src/cardine/demo/fonts/instrument-serif-400.woff2",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "60c06664b5a95c7de6cc3e00d1f9034d78bd1e40b564016b241674449a067d4d"
+    },
+    {
+      "path": "src/study_agent/demo/icons/LICENSE.phosphor.txt",
+      "source_path": "src/cardine/demo/icons/LICENSE.phosphor.txt",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "b5b1f1da112d18ea2147decfd48ddc1bf2b5aeb6c265381579340e95b15a2bb2"
+    },
+    {
+      "path": "src/study_agent/demo/icons/arrow-up.svg",
+      "source_path": "src/cardine/demo/icons/arrow-up.svg",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "203081bc75bac0f1296da11e1225cd2315d8ae996b63a31f6ce133f3cd170bc5"
+    },
+    {
+      "path": "src/study_agent/demo/icons/book-open.svg",
+      "source_path": "src/cardine/demo/icons/book-open.svg",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "64378c41db8f257fc69b65eaa6931f66e7ea0246f1c69e19afa19909234b3c39"
+    },
+    {
+      "path": "src/study_agent/demo/icons/calendar-blank.svg",
+      "source_path": "src/cardine/demo/icons/calendar-blank.svg",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "6268583ae0ea04e93fd24f1e70d47a8e8d79c88fc304af397b95b318980215d6"
+    },
+    {
+      "path": "src/study_agent/demo/icons/cards.svg",
+      "source_path": "src/cardine/demo/icons/cards.svg",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "de7215a56d6131de7ebded00390671efb03233830b77c41f7736a28baf2eb4da"
+    },
+    {
+      "path": "src/study_agent/demo/icons/caret-down.svg",
+      "source_path": "src/cardine/demo/icons/caret-down.svg",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "9257147c4510788a10c3065f1d0f6c3c68da5bb265e03892b960f45d3d50d903"
+    },
+    {
+      "path": "src/study_agent/demo/icons/chart-line-up.svg",
+      "source_path": "src/cardine/demo/icons/chart-line-up.svg",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "1bcf22abc6fe9cfb6195f0781d3056509aade1a35d4279ed46de7f282cca8937"
+    },
+    {
+      "path": "src/study_agent/demo/icons/chat-circle.svg",
+      "source_path": "src/cardine/demo/icons/chat-circle.svg",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "09e36aa820a39bbc8cffe705ad84c836d1e5733f83dc1d2212a965fdacdf4a67"
+    },
+    {
+      "path": "src/study_agent/demo/icons/exam.svg",
+      "source_path": "src/cardine/demo/icons/exam.svg",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "bb4ddb2f4c548c6c657cd83bd8459c2c8bec1653a9c5578bf0ef6fb439106c5d"
+    },
+    {
+      "path": "src/study_agent/demo/icons/favicon.svg",
+      "source_path": "src/cardine/demo/icons/favicon.svg",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "04d9c8a92d7f5d463c66a0c74402baa775a3cf301e70d70413a12cb3fafaa5e5"
+    },
+    {
+      "path": "src/study_agent/demo/icons/gear.svg",
+      "source_path": "src/cardine/demo/icons/gear.svg",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "6b6c64a6ae9730650b6b4157d8d43727fa706c571110bc54bd74e48546da43da"
+    },
+    {
+      "path": "src/study_agent/demo/icons/magnifying-glass.svg",
+      "source_path": "src/cardine/demo/icons/magnifying-glass.svg",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "f9fa2561978a9a3291e8ae0ebfcb651104f5069fade8f84871627bca68889cde"
+    },
+    {
+      "path": "src/study_agent/demo/icons/note-pencil.svg",
+      "source_path": "src/cardine/demo/icons/note-pencil.svg",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "85f05d1a02f8d808ca9b023e765e7dec7ec2d706313dddf464010f35c9469264"
+    },
+    {
+      "path": "src/study_agent/demo/icons/plus.svg",
+      "source_path": "src/cardine/demo/icons/plus.svg",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "d688feb9dd2e41c1721d6906a05a2a42e18cd774762fe706d72b2bdfd91cddc4"
+    },
+    {
+      "path": "src/study_agent/demo/icons/select-caret-inverse.svg",
+      "source_path": "src/cardine/demo/icons/select-caret-inverse.svg",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "cd935485996d045de2a1a0fe3431de0464323d81b97fc756b790e97fa99a9447"
+    },
+    {
+      "path": "src/study_agent/demo/icons/select-caret.svg",
+      "source_path": "src/cardine/demo/icons/select-caret.svg",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "2d0e3bae22b2c07daf7dd8bc458e4ae734e6285bc0f731324d81e6cc272e1328"
+    },
+    {
+      "path": "src/study_agent/demo/icons/shield-check.svg",
+      "source_path": "src/cardine/demo/icons/shield-check.svg",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "e0ed8d2d4c6f7c0baed041114f3ab967a400f467790b9b9ecfcfc8728fd99480"
+    },
+    {
+      "path": "src/study_agent/demo/icons/sidebar-simple.svg",
+      "source_path": "src/cardine/demo/icons/sidebar-simple.svg",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "36818e1212cb24f5e1aa7e10480b0f4dc399d2c61d9b9b53c062d799dde162a3"
+    },
+    {
+      "path": "src/study_agent/demo/icons/warning-circle.svg",
+      "source_path": "src/cardine/demo/icons/warning-circle.svg",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "e48a90760a68659fd3f06dd9187e471aead4877c72e915339071b2c7f7bd714c"
+    },
+    {
+      "path": "src/study_agent/demo/private_access.py",
+      "source_path": "src/cardine/demo/private_access.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "ff927602b668861e46889d54f4c7085c0a83e979e1dc97d021709cfaa599caa7"
+    },
+    {
+      "path": "src/study_agent/demo/product_settings.py",
+      "source_path": "src/cardine/demo/product_settings.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "03eab2efbbf380c9cb94044da11c307f44363975f783624d5f3a141f74b449c4"
+    },
+    {
+      "path": "src/study_agent/demo/product_shell.py",
+      "source_path": "src/cardine/demo/product_shell.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "9aac51d01cf921854a3206b240542dfe452d3a2afc41dcb024f376ba0fa81250"
+    },
+    {
+      "path": "src/study_agent/demo/ui_application.py",
+      "source_path": "src/cardine/demo/ui_application.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "0d929ccccf9e79bcfe111dc9e86b795a9b6e2987c5e654036c24f303a66398bc"
+    },
+    {
+      "path": "src/study_agent/diagnostics/__init__.py",
+      "source_path": "src/cardine/diagnostics/__init__.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "086db697e79b69c44c6b376e44be1919d04df64de638f30dbca50635650c1925"
+    },
+    {
+      "path": "src/study_agent/diagnostics/turn_trace.py",
+      "source_path": "src/cardine/diagnostics/turn_trace.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "c15efd83ce09658f7aa4cc6c401d961d2472aa4321e2d584a5038ab8d6f82a47"
+    },
+    {
+      "path": "src/study_agent/domain/course.py",
+      "source_path": "src/cardine/domain/course.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "c8629c02b784577c13c9c08e812d26751ef80928bbd2edea6f7e8b69c7eace12"
+    },
+    {
+      "path": "src/study_agent/domain/study_context.py",
+      "source_path": "src/cardine/domain/study_context.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "a04ce0e91bacfe867406cb55fbc44b6b1c5aacb04f469f23043b2cac0b67a5ab"
+    },
+    {
+      "path": "src/study_agent/exams/__init__.py",
+      "source_path": "src/cardine/exams/__init__.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "6c0e0fcaf490c6469f3650e909297974e80204b25f28a97ebe6cac0aa72308fb"
+    },
+    {
+      "path": "src/study_agent/exams/analysis.py",
+      "source_path": "src/cardine/exams/analysis.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "1db48316c8b1ebdf86f12b61c1c4073c293fdc6195a7424cfb75922e249396df"
+    },
+    {
+      "path": "src/study_agent/exams/contracts.py",
+      "source_path": "src/cardine/exams/contracts.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "f6fcb85ddfed976f61822f72ad3507bb1b1a2752e8f6168ac772daf15d669bf5"
+    },
+    {
+      "path": "src/study_agent/exams/worker.py",
+      "source_path": "src/cardine/exams/worker.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "fd9f4fe167dde39bc672478effc29fa3e3649f123a4fecc3c3155da696a9cd64"
+    },
+    {
+      "path": "src/study_agent/feedback/__init__.py",
+      "source_path": "src/cardine/feedback/__init__.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "5db0b0cef5ff2cf27d2d66642431e7dfd30471eb0faa47ee7e16402811eaa42d"
+    },
+    {
+      "path": "src/study_agent/feedback/contracts.py",
+      "source_path": "src/cardine/feedback/contracts.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "8b60d5ef71dd98cdf01702bbb38f89a8e28385f538b4d212734269938974ba96"
+    },
+    {
+      "path": "src/study_agent/feedback/host_tool.py",
+      "source_path": "src/cardine/feedback/host_tool.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "b27f8232dc139329ba739489beceedbccbe58bcca7359c48d2836dc518defda4"
+    },
+    {
+      "path": "src/study_agent/feedback/outbox.py",
+      "source_path": "src/cardine/feedback/outbox.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "e1efe338427eb8407249ca333d69229b302434f878da5a57ef55a2f6dd290ea7"
+    },
+    {
+      "path": "src/study_agent/feedback/service.py",
+      "source_path": "src/cardine/feedback/service.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "43dadb898583256b337c3cfa1e8f519fd239cbda47dd51d43417ab803f4f3654"
+    },
+    {
+      "path": "src/study_agent/feedback/source_tracer.py",
+      "source_path": "src/cardine/feedback/source_tracer.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "3b9ed846a069d3c09d3ae7dcd3abc73b87b19e05714588f5be991eb803930f0f"
+    },
+    {
+      "path": "src/study_agent/feedback/view.py",
+      "source_path": "src/cardine/feedback/view.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "0e435adb728e5a09b70cf4434da050aded5bd8e56d49099c26dcca03aa8c0ab9"
+    },
+    {
+      "path": "src/study_agent/feedback/workaround_service.py",
+      "source_path": "src/cardine/feedback/workaround_service.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "4f1eec1f16741529a32646cc296cde73ab236356d1b82fd12d3ecc2a7e7a5bc8"
+    },
+    {
+      "path": "src/study_agent/feedback/workarounds.py",
+      "source_path": "src/cardine/feedback/workarounds.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "6d3528e959a0dc996dfb7049272379243fd36efdf3ca9e54c8226a36f57c61d8"
+    },
+    {
+      "path": "src/study_agent/hosts/__init__.py",
+      "source_path": "src/cardine/hosts/__init__.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "07dc81cbe0599ba84f433742b2d5cc1bceac575eb1851180fe2af7e860ecdb32"
+    },
+    {
+      "path": "src/study_agent/hosts/context.py",
+      "source_path": "src/cardine/hosts/context.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "a74c261c84eeb4d3d0efb0104072337acabceb8264c93e1d69723f89041f9571"
+    },
+    {
+      "path": "src/study_agent/hosts/contracts.py",
+      "source_path": "src/cardine/hosts/contracts.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "4342029578cd07b80605664a9517b6ece32a240ec4e7e125bf1f03e4782ea34d"
+    },
+    {
+      "path": "src/study_agent/hosts/files.py",
+      "source_path": "src/cardine/hosts/files.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "92538e0565ef0b03d4ba4d5789acce9a1a0b90611ec01980e2e3fbed5e764b76"
+    },
+    {
+      "path": "src/study_agent/hosts/flashcard_routing.py",
+      "source_path": "src/cardine/hosts/flashcard_routing.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "b754cc162dea18819273670a907595e2d781d4108dc0d8228b793a9de9c81600"
+    },
+    {
+      "path": "src/study_agent/hosts/runner.py",
+      "source_path": "src/cardine/hosts/runner.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "4e5cd9612d40267088ad31e7e6e7fb8311c516704ef4fc9f7b5ebf3fde68db77"
+    },
+    {
+      "path": "src/study_agent/hosts/scripted.py",
+      "source_path": "src/cardine/hosts/scripted.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "820127f286f4252246a94d557571e26ca14d16452dca39bc99214071e0263713"
+    },
+    {
+      "path": "src/study_agent/hosts/source_grounding.py",
+      "source_path": "src/cardine/hosts/source_grounding.py",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "c286dfe8b41a2a45c0d44c7b5f07232fefa756d3ced8117626af26c0c6ec0fd3"
+    },
+    {
+      "path": "src/study_agent/adapters/memory/host_file.py",
+      "source_path": "src/study_agent/adapters/memory/host_file.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "daef9e544379b4ea3f14f573122d28c5f06c3911ac7b4156fcd6b327dbac2987"
+    },
+    {
+      "path": "src/study_agent/adapters/model/__init__.py",
+      "source_path": "src/study_agent/adapters/model/__init__.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "cc4a84c8a4ba36199c640e9ac9bb54b04d7fdd3702541297ca921f26ca47503a"
+    },
+    {
+      "path": "src/study_agent/adapters/sqlite/capability_gap_store.py",
+      "source_path": "src/study_agent/adapters/sqlite/capability_gap_store.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "d5f4ad63ff84855976e3385003d6083c1856f9dfe2e15832615b99d953612336"
+    },
+    {
+      "path": "src/study_agent/adapters/sqlite/lifecycle_observer.py",
+      "source_path": "src/study_agent/adapters/sqlite/lifecycle_observer.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "9216d0b0590fbc6686418cec25b872c6cc6e8ae8e2dbee5e0d8b2e6a227b2022"
+    },
+    {
+      "path": "src/study_agent/adapters/workarounds/manifest.py",
+      "source_path": "src/study_agent/adapters/workarounds/manifest.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "79098272a70d6bdbf1dd9e4b3e5229a72edf0e3c4f22f1935fea8943eb4ac2f0"
+    },
+    {
+      "path": "src/study_agent/adapters/workarounds/pdf_markdown.py",
+      "source_path": "src/study_agent/adapters/workarounds/pdf_markdown.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "5a4a2f130562ee561eb77d64f793a5d25b99ce33091dcce89ce5c701dc78e897"
+    },
+    {
+      "path": "src/study_agent/application/__init__.py",
+      "source_path": "src/study_agent/application/__init__.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "305a673cbcf98ee2d3dc170528a0aa24dd87f44034e6dadb1c6b1850f340d818"
+    },
+    {
+      "path": "src/study_agent/application/export.py",
+      "source_path": "src/study_agent/application/export.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "304a0d37619636c1e12dead9e495af9a8c93391305fc57c1db2104c03d30ffbf"
+    },
+    {
+      "path": "src/study_agent/application/harness.py",
+      "source_path": "src/study_agent/application/harness.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "f49ae03b0f914de6b59abd193729a25d02be30a75a0a8c3525f93e13374288b9"
+    },
+    {
+      "path": "src/study_agent/artifacts/verified_batch.py",
+      "source_path": "src/study_agent/artifacts/verified_batch.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "af9bc627f2c85275644c3cffbc7f85ace100b36a05c8c7f454db64c231fa1fd3"
+    },
+    {
+      "path": "src/study_agent/capabilities/morphology_flashcards.py",
+      "source_path": "src/study_agent/capabilities/morphology_flashcards.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "377f4f78ad86c0aad27070ac667f79b4fffe8b85e24a86c7b76ca8b1093e3fd5"
+    },
+    {
+      "path": "src/study_agent/domain/__init__.py",
+      "source_path": "src/study_agent/domain/__init__.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "36030c52eec1841bf4e9868157304883530935c67182324ec655a90e0badbaa8"
+    },
+    {
+      "path": "src/study_agent/domain/tutor_snapshot.py",
+      "source_path": "src/study_agent/domain/tutor_snapshot.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "b9f851e2ace2ae9e74539c0ae0cb611378192cb5a751021fcc6b048212eca2db"
+    },
+    {
+      "path": "src/study_agent/flashcards/lesson_worker_service.py",
+      "source_path": "src/study_agent/flashcards/lesson_worker_service.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "a8556391c292dfa7f96bd139458bc77795bbc220deba238902eb3e2336213fdc"
+    },
+    {
+      "path": "src/study_agent/lifecycle/contracts.py",
+      "source_path": "src/study_agent/lifecycle/contracts.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "56478d7195a4a17401cbe84015a20a2d30c363541dc4eef65276960139f20279"
+    },
+    {
+      "path": "src/study_agent/lifecycle/planner.py",
+      "source_path": "src/study_agent/lifecycle/planner.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "68d01bfa658b5c599fe0f6110f36491579ff223185d15dcba2e38f51e35c8e33"
+    },
+    {
+      "path": "src/study_agent/ports/capability_gap.py",
+      "source_path": "src/study_agent/ports/capability_gap.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "79392f9b64db1b4ea5056343851d69b41a26d81aabf002f22663a939d9c27473"
+    },
+    {
+      "path": "src/study_agent/ports/course.py",
+      "source_path": "src/study_agent/ports/course.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "5e7730fbdc8e05a9c1077aec7193f6b94c42c9c69b0661b4268db59e6931159f"
+    },
+    {
+      "path": "src/study_agent/ports/exam.py",
+      "source_path": "src/study_agent/ports/exam.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "d061bcdc353380fce3b5fa3cc45db734036498d1d0c77466bd8cd17f14a122df"
+    },
+    {
+      "path": "src/study_agent/ports/tutor_host.py",
+      "source_path": "src/study_agent/ports/tutor_host.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "5c9b6203c0407503896857398567589e9ffa35f616d45ef45109bd7eb82b6ce5"
+    },
+    {
+      "path": "src/study_agent/ports/tutor_runner.py",
+      "source_path": "src/study_agent/ports/tutor_runner.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "7453a43b5792dde3e0ec831516fa26b56dcd99a26f2e9daf9bdcc77a6c2ff485"
+    },
+    {
+      "path": "src/study_agent/ports/verified_batch.py",
+      "source_path": "src/study_agent/ports/verified_batch.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "a232495f3d98d917645f20c98a8921303e676875c029f81d1c1a558cd0966e57"
+    },
+    {
+      "path": "src/study_agent/ports/workaround.py",
+      "source_path": "src/study_agent/ports/workaround.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "410069e0fe8c42672045f32beaeac0e11a891061b758c69fbc5556179c70ed3c"
+    },
+    {
+      "path": "src/study_agent/prompts/morphology_flashcards_v1.py",
+      "source_path": "src/study_agent/prompts/morphology_flashcards_v1.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "9f2f13814b6906a8bb187e660b36956a941355b452325d3d91e9c71e89f5e111"
+    },
+    {
+      "path": "src/study_agent/sessions/events.py",
+      "source_path": "src/study_agent/sessions/events.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "a6ed2252d567de84c598f0395a3a626329b2c29cda6528767a98d0edea115503"
+    },
+    {
+      "path": "src/study_agent/sessions/turn_service.py",
+      "source_path": "src/study_agent/sessions/turn_service.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "7a3a3263508c4c33bf460a2d87565b959c3495ac5839a5219da655a588ad529d"
+    },
+    {
+      "path": "src/study_agent/tools/builtin.py",
+      "source_path": "src/study_agent/tools/builtin.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "fe85d7bf71fe059187c37f76969685ff8e834fd17b03aeb915f928f2fa27853c"
+    },
+    {
+      "path": "src/study_agent/tools/exam_scope_bridge.py",
+      "source_path": "src/study_agent/tools/exam_scope_bridge.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "1ab81288d412bc160ba36b5d3268c99a2f0a54e1e7cd3eddb96de2c71e3b1842"
+    },
+    {
+      "path": "src/study_agent/tools/registry.py",
+      "source_path": "src/study_agent/tools/registry.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "ba0c78bcace4c229e8456de0e6486f7ac993ebfda6def06b6d3e40eb3fbb9dc6"
+    },
+    {
+      "path": "src/study_agent/tutor_snapshot/reader.py",
+      "source_path": "src/study_agent/tutor_snapshot/reader.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "ca6c2fb2323b25fe5491201d8d5972d42c172330a7838eb1b1068c673cc025d1"
+    },
+    {
+      "path": "src/study_agent/workers/proof.py",
+      "source_path": "src/study_agent/workers/proof.py",
+      "disposition": "HARNESS_IMPORT",
+      "transition_sha256": "ec54638fd6c13fa9ec5bba567438ff8d82fca3a317334971d84093964060db96"
+    },
+    {
+      "path": "src/cardine/domain/course.py",
+      "source_path": "src/cardine/domain/course.py",
+      "disposition": "TRANSITION_CONSUMER",
+      "transition_sha256": "c8629c02b784577c13c9c08e812d26751ef80928bbd2edea6f7e8b69c7eace12"
+    },
+    {
+      "path": "src/cardine/domain/study_context.py",
+      "source_path": "src/cardine/domain/study_context.py",
+      "disposition": "TRANSITION_CONSUMER",
+      "transition_sha256": "a04ce0e91bacfe867406cb55fbc44b6b1c5aacb04f469f23043b2cac0b67a5ab"
+    }
+  ],
+  "entrypoints": [
+    {
+      "path": "entrypoint:cardine",
+      "source_path": "cardine.cli.main:main",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "465ea04219079f98ee37a18e5fd5761c1480e19d1697138d93c353167a68458c"
+    },
+    {
+      "path": "entrypoint:cardine-demo",
+      "source_path": "cardine.demo.anatomy:main",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "6024d4f3e10320e19d3a898d5c51139089a9b42750835cda884ef7f56523d54b"
+    },
+    {
+      "path": "entrypoint:cardine-private-password-hash",
+      "source_path": "cardine.demo.private_access:main",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "6672bc442684aa0df2b6df4dc9aad82f09a4289135142aaefd9692c33c751a10"
+    },
+    {
+      "path": "entrypoint:cardine-shell",
+      "source_path": "cardine.demo.product_shell:main",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "f0367eb45057ad9721b5fe376daa9409c08acba76182f010d6a3e5d0e26fab21"
+    },
+    {
+      "path": "entrypoint:cardine-shell-web",
+      "source_path": "cardine.demo.browser:main",
+      "disposition": "CARDINE_OWNER",
+      "transition_sha256": "7e8a58106d3802185c114e21a7db25979c5c0f8fc28babf6abab27b8ce413b4b"
+    }
+  ]
+}

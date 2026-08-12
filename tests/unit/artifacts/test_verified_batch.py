@@ -6,6 +6,13 @@ from typing import cast
 
 import pytest
 
+from cardine.exams.analysis import ExamAnalysisTaskFactory, analyze_exam_sample_binding
+from cardine.exams.contracts import (
+    ExamAnalysisRequest,
+    ExamEvidenceMapping,
+    ExamPromptEvidenceProjection,
+)
+from cardine.exams.worker import ExamAnalysisFacade
 from study_agent.artifacts.candidates import (
     FlashcardAnswerBlock,
     FlashcardCandidate,
@@ -41,13 +48,6 @@ from study_agent.domain import (
     SessionId,
 )
 from study_agent.domain._validation import JsonObject, freeze_object
-from cardine.exams.analysis import ExamAnalysisTaskFactory, analyze_exam_sample_binding
-from cardine.exams.contracts import (
-    ExamAnalysisRequest,
-    ExamEvidenceMapping,
-    ExamPromptEvidenceProjection,
-)
-from cardine.exams.worker import ExamAnalysisFacade
 from study_agent.flashcards.lesson_worker_contracts import (
     LessonWorkerCheckpoint,
     LessonWorkerPageCheckpoint,

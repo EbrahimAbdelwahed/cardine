@@ -6,10 +6,10 @@ from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
-from study_agent.adapters.model import ScriptedExchange, ScriptedModel
-from study_agent.application import StudyHarness
 from cardine.application.grounding_ask import GroundingAskService
 from cardine.courses import course_profile_manifest
+from study_agent.adapters.model import ScriptedExchange, ScriptedModel
+from study_agent.application import StudyHarness
 from study_agent.domain._validation import JsonObject
 from study_agent.grounding import EvidenceEnvelope
 from study_agent.playbooks import ModelStep

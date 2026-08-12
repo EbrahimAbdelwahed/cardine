@@ -8,6 +8,11 @@ from pathlib import Path
 
 import pytest
 
+from cardine.courses import (
+    CourseService,
+    ProjectionCourseView,
+    register_course_events,
+)
 from study_agent.adapters.filesystem import (
     ExportDestinationExistsError,
     FilesystemBlobStore,
@@ -16,11 +21,6 @@ from study_agent.adapters.filesystem import (
 from study_agent.adapters.filesystem import export as export_adapter
 from study_agent.adapters.sqlite import SQLiteEventStore
 from study_agent.application import ExportService, ExportStateError
-from cardine.courses import (
-    CourseService,
-    ProjectionCourseView,
-    register_course_events,
-)
 from study_agent.domain import (
     Actor,
     AnswerId,

@@ -10,9 +10,9 @@ from collections.abc import AsyncIterator, Mapping
 from pathlib import Path
 from typing import Any, cast
 
-from study_agent.application import StudyHarness
 from cardine.cli.main import main
 from cardine.cli.repository import LocalRepository, ModelAdapterRegistry
+from study_agent.application import StudyHarness
 from study_agent.domain import (
     CorrelationId,
     CourseId,

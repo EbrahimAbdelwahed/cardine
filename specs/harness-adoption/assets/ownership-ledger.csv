@@ -311,11 +311,11 @@ src/study_agent/workers/contracts.py,c50cc7f0439def399d7cc123967c5680f866681cd0a
 src/study_agent/workers/proof.py,12eab1936fc6572f68db09853663af9855e07104c2816e8520dbf893c3261f86,HARNESS_IMPORT,study-agent-harness,study_agent.api.artifacts,CA-04,CA-10
 src/study_agent/workers/service.py,d5c302e09ae33f2c745b0f3228737f0b16a29744417f50852dc58be10825484e,HARNESS_IMPORT,study-agent-harness,study_agent.api.artifacts,CA-04,CA-10
 src/study_agent/workers/view.py,37a81258d4616232318382b72b618fa2cb02e37985dd5ae22dc03bdb166871c7,HARNESS_IMPORT,study-agent-harness,study_agent.api.artifacts,CA-04,CA-10
-entrypoint:cardine,78b800af24e6095cfb6a7e7f7519efc3f525be77afb12339776cd6118c83ce22,CARDINE_OWNER,cardine,study_agent.cli.main:main,CA-02,CA-10
-entrypoint:cardine-demo,8300881f30c5f443691e0ed23ed757d28f2b9f0835abacfdf9e037f97867d126,CARDINE_OWNER,cardine,study_agent.demo.anatomy:main,CA-02,CA-10
-entrypoint:cardine-private-password-hash,fa98d4e6e60b3538331a0b4c7c0fe5b7347d4079d697ef6db1db181eb892779e,CARDINE_OWNER,cardine,study_agent.demo.private_access:main,CA-02,CA-10
-entrypoint:cardine-shell,6e371bf14049af5ff09c178d61fbce6214d93718306e1cfcc093a725f4052eeb,CARDINE_OWNER,cardine,study_agent.demo.product_shell:main,CA-02,CA-10
-entrypoint:cardine-shell-web,17d80bd6e9ddcaf8d02b550989bdfe936fa6ac92a06a878d0b9d0c3c80f02446,CARDINE_OWNER,cardine,study_agent.demo.browser:main,CA-02,CA-10
+entrypoint:cardine,78b800af24e6095cfb6a7e7f7519efc3f525be77afb12339776cd6118c83ce22,CARDINE_OWNER,cardine,cardine.cli.main:main,CA-02,CA-10
+entrypoint:cardine-demo,8300881f30c5f443691e0ed23ed757d28f2b9f0835abacfdf9e037f97867d126,CARDINE_OWNER,cardine,cardine.demo.anatomy:main,CA-02,CA-10
+entrypoint:cardine-private-password-hash,fa98d4e6e60b3538331a0b4c7c0fe5b7347d4079d697ef6db1db181eb892779e,CARDINE_OWNER,cardine,cardine.demo.private_access:main,CA-02,CA-10
+entrypoint:cardine-shell,6e371bf14049af5ff09c178d61fbce6214d93718306e1cfcc093a725f4052eeb,CARDINE_OWNER,cardine,cardine.demo.product_shell:main,CA-02,CA-10
+entrypoint:cardine-shell-web,17d80bd6e9ddcaf8d02b550989bdfe936fa6ac92a06a878d0b9d0c3c80f02446,CARDINE_OWNER,cardine,cardine.demo.browser:main,CA-02,CA-10
 entrypoint:study-agent,b939323d72a4b3de5c6814d9e6a553ecfb3ce2341a20fb78d206d5ac53d098bb,HARNESS_IMPORT,study-agent-harness,study-agent,CA-04,CA-02
 entrypoint:study-agent-demo,67ab340983ce3104cd8f76dad2525a115e46921b466dff6e9fc112feca0ccfcf,HARNESS_IMPORT,study-agent-harness,study-agent-demo,CA-04,CA-02
 entrypoint:study-agent-private-password-hash,e101f62054902cdf3224b995b74a30479b63b76e3ba07a3905f8291a380ca50e,HARNESS_IMPORT,study-agent-harness,study-agent-private-password-hash,CA-04,CA-02

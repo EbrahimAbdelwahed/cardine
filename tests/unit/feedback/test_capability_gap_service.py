@@ -4,7 +4,6 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from study_agent.adapters.sqlite.capability_gap_store import SQLiteCapabilityGapStore
 from cardine.feedback import (
     CapabilityGapObservation,
     CapabilityGapService,
@@ -16,6 +15,7 @@ from cardine.feedback import (
     RequestedOperationKind,
     SafeTargetKind,
 )
+from study_agent.adapters.sqlite.capability_gap_store import SQLiteCapabilityGapStore
 
 
 def _observation(operation: RequestedOperationKind) -> CapabilityGapObservation:

@@ -17,6 +17,12 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
+from cardine.courses import CourseService, ProjectionCourseView, register_course_events
+from cardine.courses.service import (
+    CourseCommandError,
+    CourseConflictError,
+    RetryableCourseConflictError,
+)
 from study_agent.adapters.filesystem import FilesystemBlobStore
 from study_agent.adapters.model import ScriptedModel
 from study_agent.adapters.sqlite import SQLiteEventStore, SQLiteRunStore
@@ -36,12 +42,6 @@ from study_agent.assessments import (
     register_assessment_events,
 )
 from study_agent.capabilities import StudyCapabilityGateway, builtin_capability_bindings
-from cardine.courses import CourseService, ProjectionCourseView, register_course_events
-from cardine.courses.service import (
-    CourseCommandError,
-    CourseConflictError,
-    RetryableCourseConflictError,
-)
 from study_agent.domain import (
     ArtifactDecision,
     ArtifactReadDependency,

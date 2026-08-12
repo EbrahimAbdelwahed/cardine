@@ -6,6 +6,17 @@ from datetime import timedelta
 
 import pytest
 
+from cardine.hosts import (
+    HostFileError,
+    HostFileReference,
+    HostFileRegistry,
+    RetryableTutorDecisionError,
+    ScriptedTutorDecisionPort,
+    StartCapabilityDecision,
+    TutorHostLimits,
+    TutorHostRunner,
+    TutorHostRunStatus,
+)
 from examples.reference_tutor_host import (
     COURSE_ID,
     SESSION_ID,
@@ -24,17 +35,6 @@ from study_agent.adapters.memory import MemoryHostFileIdentity, MemoryHostFileSn
 from study_agent.capabilities import StaleCapabilityOutcome, TutorCapabilityId
 from study_agent.domain import CourseId, ExecutionContext, RunId, SessionId
 from study_agent.domain._validation import JsonValue
-from cardine.hosts import (
-    HostFileError,
-    HostFileReference,
-    HostFileRegistry,
-    RetryableTutorDecisionError,
-    ScriptedTutorDecisionPort,
-    StartCapabilityDecision,
-    TutorHostLimits,
-    TutorHostRunner,
-    TutorHostRunStatus,
-)
 
 
 def test_prompt_and_tool_injection_in_learner_text_remains_inert() -> None:

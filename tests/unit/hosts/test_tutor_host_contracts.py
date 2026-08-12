@@ -6,17 +6,6 @@ from dataclasses import dataclass, replace
 
 import pytest
 
-from study_agent.assessments import LearnerEvidenceSnapshot
-from study_agent.domain import (
-    CourseId,
-    SessionId,
-    SessionStatus,
-    StudyStatementKind,
-    TutorContextField,
-    TutorContextState,
-    TutorSnapshotV1,
-)
-from study_agent.domain._validation import JsonObject
 from cardine.hosts import (
     AdvertisedCapability,
     AnswerDialogueDecision,
@@ -37,6 +26,17 @@ from cardine.hosts import (
     decision_schema,
     decision_to_bytes,
 )
+from study_agent.assessments import LearnerEvidenceSnapshot
+from study_agent.domain import (
+    CourseId,
+    SessionId,
+    SessionStatus,
+    StudyStatementKind,
+    TutorContextField,
+    TutorContextState,
+    TutorSnapshotV1,
+)
+from study_agent.domain._validation import JsonObject
 
 SHA_A = "a" * 64
 SHA_B = "b" * 64

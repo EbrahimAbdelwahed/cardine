@@ -8,13 +8,13 @@ from study_agent.domain import CourseId, ExecutionContext, SessionId
 from study_agent.domain._validation import JsonObject, JsonValue
 
 if TYPE_CHECKING:
+    from cardine.hosts.contracts import HostActionIdentity
     from study_agent.capabilities.contracts import (
         CapabilityContinuation,
         CapabilityManifest,
         CapabilityOutcome,
         TutorCapabilityId,
     )
-    from cardine.hosts.contracts import HostActionIdentity
 
 
 class TutorCapabilityGatewayPort(Protocol):

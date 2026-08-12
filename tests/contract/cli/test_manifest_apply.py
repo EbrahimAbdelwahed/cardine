@@ -10,8 +10,6 @@ from typing import Any, cast
 
 import pytest
 
-from study_agent.adapters.sqlite import SQLiteEventStore
-from study_agent.adapters.sqlite.event_store import SQLiteConnectionGuard
 from cardine.cli.lifecycle import LocalLifecycleRuntime
 from cardine.cli.main import main
 from cardine.cli.registry import (
@@ -20,6 +18,8 @@ from cardine.cli.registry import (
     RepositoryRequirement,
     registration_for,
 )
+from study_agent.adapters.sqlite import SQLiteEventStore
+from study_agent.adapters.sqlite.event_store import SQLiteConnectionGuard
 from study_agent.ingestion import IngestionErrorCode, TextIngestionError, TextIngestionService
 from study_agent.retrieval import (
     CourseSourceContent,

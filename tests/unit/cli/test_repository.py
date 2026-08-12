@@ -9,7 +9,6 @@ from pathlib import Path
 
 import pytest
 
-from study_agent.adapters.model import OpenAICompatibleModel, OpenAIGpt56LunaModel
 from cardine.cli import (
     EMPTY_CONFIG,
     LocalRepository,
@@ -20,6 +19,7 @@ from cardine.cli import (
     ModelAdapterRegistry,
     initialize_local_repository,
 )
+from study_agent.adapters.model import OpenAICompatibleModel, OpenAIGpt56LunaModel
 from study_agent.domain import (
     CorrelationId,
     CourseId,

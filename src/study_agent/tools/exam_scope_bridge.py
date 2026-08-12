@@ -1,8 +1,8 @@
 """Request-bound private bridge for complete exam-sample evidence."""
 
+from cardine.exams.contracts import ExamAnalysisRequest, ExamPromptEvidenceProjection
 from study_agent.domain import ExecutionContext
 from study_agent.domain._validation import JsonObject
-from cardine.exams.contracts import ExamAnalysisRequest, ExamPromptEvidenceProjection
 from study_agent.ports.exam import ExamSampleScopePreparationPort
 from study_agent.skills import SemanticVersion
 

@@ -7,13 +7,13 @@ from collections.abc import Mapping
 from typing import cast
 
 from cardine.diagnostics import record_turn_decision
-from study_agent.domain._validation import JsonObject, JsonValue
 from cardine.hosts import (
     TutorDecision,
     TutorHostContext,
     decision_from_bytes,
     decision_schema,
 )
+from study_agent.domain._validation import JsonObject, JsonValue
 from study_agent.ports import (
     MessageRole,
     ModelError,

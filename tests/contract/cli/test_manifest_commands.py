@@ -9,11 +9,11 @@ from typing import Any, cast
 
 import pytest
 
+from cardine.cli.main import main
 from study_agent.adapters.filesystem.lifecycle import (
     ManifestReadError,
     load_lifecycle_manifest,
 )
-from cardine.cli.main import main
 
 FIXTURE = (
     Path(__file__).parents[3]

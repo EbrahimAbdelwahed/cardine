@@ -15,6 +15,17 @@ from enum import StrEnum
 from hashlib import sha256
 from typing import Protocol
 
+from cardine.hosts import (
+    PendingContinuationDescriptor,
+    TutorCompletionHandoff,
+    TutorCompletionHandoffState,
+    TutorContinuationRecord,
+    TutorHostRunner,
+    TutorHostRunResult,
+    TutorHostRunStatus,
+    TutorPresentationReceipt,
+    completion_handoff_key,
+)
 from study_agent.domain import (
     MAX_TUTOR_PRESENTATION_TEXT,
     CorrelationId,
@@ -29,17 +40,6 @@ from study_agent.domain import (
     TutorSnapshotV1,
 )
 from study_agent.domain._validation import require_text
-from cardine.hosts import (
-    PendingContinuationDescriptor,
-    TutorCompletionHandoff,
-    TutorCompletionHandoffState,
-    TutorContinuationRecord,
-    TutorHostRunner,
-    TutorHostRunResult,
-    TutorHostRunStatus,
-    TutorPresentationReceipt,
-    completion_handoff_key,
-)
 from study_agent.ports import (
     SessionViewPort,
     TutorCompletionHandoffStore,

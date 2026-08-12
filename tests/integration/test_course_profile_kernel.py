@@ -5,8 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from study_agent.adapters.filesystem import FilesystemBlobStore
-from study_agent.adapters.sqlite import SQLiteEventStore
 from cardine.courses import (
     COURSE_CREATED,
     COURSE_SCHEMA_VERSION,
@@ -19,6 +17,8 @@ from cardine.courses import (
     course_profile_manifest,
     register_course_events,
 )
+from study_agent.adapters.filesystem import FilesystemBlobStore
+from study_agent.adapters.sqlite import SQLiteEventStore
 from study_agent.domain import (
     Actor,
     CorrelationId,

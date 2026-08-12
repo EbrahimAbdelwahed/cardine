@@ -6,7 +6,6 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from study_agent.adapters.model import ModelTutorDecisionError, ModelTutorDecisionPort
 from cardine.hosts import (
     AdvertisedCapability,
     AssistantMessageDecision,
@@ -14,6 +13,7 @@ from cardine.hosts import (
     StartCapabilityDecision,
     TutorHostContext,
 )
+from study_agent.adapters.model import ModelTutorDecisionError, ModelTutorDecisionPort
 from study_agent.ports import (
     CancellationToken,
     ModelCapabilities,

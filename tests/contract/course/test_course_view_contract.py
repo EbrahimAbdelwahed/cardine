@@ -5,13 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from study_agent.adapters.sqlite import SQLiteEventStore
 from cardine.courses import (
     CourseService,
     ProjectionCourseCatalog,
     ProjectionCourseView,
     register_course_events,
 )
+from study_agent.adapters.sqlite import SQLiteEventStore
 from study_agent.domain import (
     CorrelationId,
     CourseId,

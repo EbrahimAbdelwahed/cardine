@@ -5,8 +5,8 @@ from __future__ import annotations
 from hashlib import sha256
 from threading import RLock
 
-from study_agent.domain.identifiers import CourseId, SessionId
 from cardine.hosts.contracts import MAX_HOST_FILES
+from study_agent.domain.identifiers import CourseId, SessionId
 from study_agent.ports.host_file import HostFileIdentityPort
 from study_agent.ports.source_input import MAX_TOTAL_SOURCE_BYTES
 

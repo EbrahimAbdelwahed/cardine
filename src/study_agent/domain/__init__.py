@@ -1,5 +1,16 @@
 """Framework-free, immutable study-domain contracts."""
 
+from cardine.domain.course import CourseProfile, SourcePolicy, TerminologyEntry, TerminologyPolicy
+from cardine.domain.study_context import (
+    StatementStatus,
+    StudyContextConflict,
+    StudyContextResolution,
+    StudyContextSnapshot,
+    StudyContextStatement,
+    StudyStatementInput,
+    StudyStatementKind,
+)
+
 from .artifact import (
     ArtifactDecision,
     ArtifactReadDependency,
@@ -15,7 +26,6 @@ from .artifact import (
 )
 from .assessment import CriterionStatus, GradeLifecycle, GradeStatus
 from .context import ExecutionContext
-from cardine.domain.course import CourseProfile, SourcePolicy, TerminologyEntry, TerminologyPolicy
 from .errors import ErrorCode, StudyError
 from .events import Actor, DomainEvent, PrincipalKind
 from .grounding import AnswerSegment, AnswerStatus, GroundedAnswer, SegmentKind
@@ -99,15 +109,6 @@ from .session import (
     VerifiedRunOutputRef,
 )
 from .source import BlobRef, Citation, ResolvedCitation, SourceChunk, SourceDocument, SourceKind
-from cardine.domain.study_context import (
-    StatementStatus,
-    StudyContextConflict,
-    StudyContextResolution,
-    StudyContextSnapshot,
-    StudyContextStatement,
-    StudyStatementInput,
-    StudyStatementKind,
-)
 from .substrate import (
     NormalizedTextSubstrate,
     PageMapEntry,

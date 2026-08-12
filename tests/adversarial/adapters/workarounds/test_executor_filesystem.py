@@ -6,6 +6,13 @@ from pathlib import Path
 
 import pytest
 
+from cardine.feedback import (
+    WorkaroundApprovalReceipt,
+    WorkaroundInputKind,
+    WorkaroundOutputKind,
+    WorkaroundReceiptStatus,
+    WorkaroundTask,
+)
 from study_agent.adapters.workarounds import (
     PDF_MARKDOWN_MANIFEST,
     PdfMarkdownExecutor,
@@ -20,13 +27,6 @@ from study_agent.adapters.workarounds.filesystem import (
     validate_portable_path,
 )
 from study_agent.adapters.workarounds.worker import PdfWorkerError
-from cardine.feedback import (
-    WorkaroundApprovalReceipt,
-    WorkaroundInputKind,
-    WorkaroundOutputKind,
-    WorkaroundReceiptStatus,
-    WorkaroundTask,
-)
 
 type _PathValue = str | bytes | os.PathLike[str] | os.PathLike[bytes]
 

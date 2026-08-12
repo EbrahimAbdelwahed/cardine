@@ -10,6 +10,24 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Protocol, cast
 
+from cardine.application.flashcard_proposals import FlashcardProposalComposition
+from cardine.courses import (
+    CourseService,
+    ProjectionCourseCatalog,
+    ProjectionCourseView,
+    course_profile_manifest,
+    register_course_events,
+)
+from cardine.hosts import (
+    HostActionIdentity,
+    SourceGroundedTutorDecisionPort,
+    TutorCapabilityCompletionReference,
+    TutorHostContextAssembler,
+    TutorHostLimits,
+    TutorHostRunner,
+    TutorHostRunStatus,
+)
+from cardine.hosts.flashcard_routing import FlashcardProfileRoutingTutorDecisionPort
 from study_agent.adapters.filesystem import (
     FilesystemBlobStore,
     LocalRepositoryError,
@@ -54,7 +72,6 @@ from study_agent.application import (
     GroundingEngineFactory,
     StudyReadinessView,
 )
-from cardine.application.flashcard_proposals import FlashcardProposalComposition
 from study_agent.artifacts import (
     ArtifactService,
     ProjectionArtifactView,
@@ -77,13 +94,6 @@ from study_agent.capabilities import (
     builtin_tutor_validators,
     explain_concept_binding,
 )
-from cardine.courses import (
-    CourseService,
-    ProjectionCourseCatalog,
-    ProjectionCourseView,
-    course_profile_manifest,
-    register_course_events,
-)
 from study_agent.domain import (
     ChunkId,
     Citation,
@@ -100,16 +110,6 @@ from study_agent.grounding import (
     EvidenceSufficiencyValidator,
     GroundedAnswerIntegrityValidator,
 )
-from cardine.hosts import (
-    HostActionIdentity,
-    SourceGroundedTutorDecisionPort,
-    TutorCapabilityCompletionReference,
-    TutorHostContextAssembler,
-    TutorHostLimits,
-    TutorHostRunner,
-    TutorHostRunStatus,
-)
-from cardine.hosts.flashcard_routing import FlashcardProfileRoutingTutorDecisionPort
 from study_agent.ingestion import TextIngestionService, register_source_revision_events
 from study_agent.playbooks import (
     PlaybookEngine,
@@ -158,6 +158,7 @@ from study_agent.tools import BoundSourceSearchExecutor
 from study_agent.tutor_snapshot import TutorSnapshotReader
 
 if TYPE_CHECKING:
+    from cardine.hosts.context import HarnessToolManifestView
     from study_agent.application import HarnessToolSurface
     from study_agent.artifacts.contracts import (
         ServiceDecisionPolicyReceipt,
@@ -165,7 +166,6 @@ if TYPE_CHECKING:
         VerifiedGeneratedArtifactBatch,
     )
     from study_agent.domain import RunId
-    from cardine.hosts.context import HarnessToolManifestView
     from study_agent.tools import StudyToolRegistry
 
 _V1 = SemanticVersion.parse("1.0.0")
@@ -1284,8 +1284,8 @@ class LocalRepository:
         This does not replace the released seven-tool public registry; it is
         the shared canonical surface for the repository UI and tutor host.
         """
-        from study_agent.application import HarnessToolSurface
         from cardine.application.tool_surface import HarnessToolOwner
+        from study_agent.application import HarnessToolSurface
 
         return HarnessToolSurface(cast(HarnessToolOwner, self))
 

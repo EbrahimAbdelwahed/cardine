@@ -7,9 +7,9 @@ from hashlib import sha256
 from pathlib import Path
 from typing import cast
 
+from cardine.courses import register_course_events
 from study_agent.adapters.model import ScriptedExchange, ScriptedModel
 from study_agent.adapters.sqlite import SQLiteEventStore
-from cardine.courses import register_course_events
 from study_agent.domain import (
     ChunkId,
     Citation,

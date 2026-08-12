@@ -35,19 +35,19 @@ EXPECTED_TOOLS = (
 
 
 def _installed_executable() -> str:
-    configured = os.environ.get("STUDY_AGENT_BIN")
-    executable = configured or shutil.which("study-agent")
+    configured = os.environ.get("CARDINE_BIN")
+    executable = configured or shutil.which("cardine")
     if executable is None:
         raise RuntimeError("install Cardine and verify cardine --help first")
     return str(Path(executable).expanduser().absolute())
 
 
-STUDY_AGENT_BIN = _installed_executable()
+CARDINE_BIN = _installed_executable()
 
 
 def _run(*arguments: str, cwd: Path | None = None) -> dict[str, Any]:
     process = subprocess.run(
-        (STUDY_AGENT_BIN, "--json", *arguments),
+        (CARDINE_BIN, "--json", *arguments),
         cwd=cwd,
         text=True,
         capture_output=True,
@@ -57,7 +57,7 @@ def _run(*arguments: str, cwd: Path | None = None) -> dict[str, Any]:
         raise RuntimeError(process.stdout.strip() or process.stderr.strip())
     value = json.loads(process.stdout)
     if not isinstance(value, dict) or value.get("ok") is not True:
-        raise RuntimeError("study-agent returned an invalid success envelope")
+        raise RuntimeError("cardine returned an invalid success envelope")
     return cast(dict[str, Any], value)
 
 
@@ -65,7 +65,7 @@ def discover_and_extract_skill(destination: Path) -> dict[str, Any]:
     """Negotiate the versioned contract before allowing an agent to act."""
     described = _run("describe")["data"]
     if described["contract_version"] != "agent-operations@1":
-        raise RuntimeError("unsupported study-agent operation contract")
+        raise RuntimeError("unsupported Cardine operation contract")
     names = tuple(item["manifest"]["name"] for item in described["study_tools"])
     if names != EXPECTED_TOOLS:
         raise RuntimeError("unexpected StudyTool authority surface")

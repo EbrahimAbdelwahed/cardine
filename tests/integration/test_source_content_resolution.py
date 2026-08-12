@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
+from cardine.courses import register_course_events
 from study_agent.adapters.filesystem import FilesystemBlobStore
 from study_agent.adapters.sqlite import SQLiteEventStore
-from cardine.courses import register_course_events
 from study_agent.domain import (
     Citation,
     CorrelationId,

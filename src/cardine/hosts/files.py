@@ -19,10 +19,10 @@ from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Any, cast
 
+from cardine.hosts.contracts import MAX_HOST_FILES, HostFileDescriptor
 from study_agent.domain._validation import require_aware
 from study_agent.domain.context import ExecutionContext
 from study_agent.domain.identifiers import CourseId, SessionId, SourceId
-from cardine.hosts.contracts import MAX_HOST_FILES, HostFileDescriptor
 from study_agent.ports.clock import ClockPort
 from study_agent.ports.host_file import (
     HostFileIdentityPort,

@@ -11,13 +11,6 @@ from typing import cast
 
 import pytest
 
-from study_agent.adapters.model import (
-    GPT_5_6_LUNA_ADAPTER_ID,
-    GPT_5_6_LUNA_ADAPTER_VERSION,
-    HttpResponse,
-    OpenAIGpt56LunaConfig,
-    OpenAIGpt56LunaModel,
-)
 from cardine.cli.repository import (
     LocalRepository,
     ModelAdapterRegistry,
@@ -25,6 +18,13 @@ from cardine.cli.repository import (
 )
 from cardine.demo.browser import create_server
 from cardine.demo.ui_application import RepositoryUiApplication, UiRequestError
+from study_agent.adapters.model import (
+    GPT_5_6_LUNA_ADAPTER_ID,
+    GPT_5_6_LUNA_ADAPTER_VERSION,
+    HttpResponse,
+    OpenAIGpt56LunaConfig,
+    OpenAIGpt56LunaModel,
+)
 from study_agent.domain import (
     CorrelationId,
     CourseId,
