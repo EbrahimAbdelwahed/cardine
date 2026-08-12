@@ -510,3 +510,52 @@ def test_grounding_composition_uses_injected_adapter_and_durable_run_store(
 
     with LocalRepository.open(root) as reopened:
         assert reopened.runs.load(run_id)
+
+
+def test_pageindex_restart_search_and_lexical_fallback_share_canonical_source(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repository"
+    initialize_local_repository(root, EMPTY_CONFIG)
+    course_id = CourseId("course-pageindex")
+    markdown = b"# Lezione 1\nIl nervo vago e il decimo nervo cranico.\n# Lezione 2\nAltro.\n"
+
+    with LocalRepository.open(root) as repository:
+        create_canonical_course(repository.events, course_id)
+        admitted = repository.for_course(course_id).ingestion.ingest(
+            filename="lezioni.md",
+            content=markdown,
+            source_id=SourceId("source-pageindex"),
+            title="Lezioni",
+            trust_level=100,
+            source_role="reference",
+            context=ExecutionContext(
+                PrincipalKind.SERVICE,
+                "pageindex-test",
+                course_id,
+                CorrelationId("ingest-pageindex"),
+            ),
+        )
+        repository.rebuild_retrieval()
+        assert repository.pageindex_status(course_id)[0].status.value == "queued"
+        assert repository.reconcile_pageindex(course_id, budget=1)[0].status.value == "ready"
+        structural = repository.search_lessons(course_id, "Lezione 1")
+        assert structural.disposition.value == "unique"
+        pin = repository.select_lesson(
+            course_id, "Lezione 1", structural.candidates[0].candidate_id
+        )
+        assert repository.validate_lesson_pin(pin).source_id == "source-pageindex"
+        assert pin.end_offset < len(markdown.decode())
+        projection = repository.disable_pageindex(
+            course_id,
+            admitted.source.source_id,
+            admitted.source.revision_id,
+        )
+        assert projection.status.value == "disabled"
+        lexical = repository.search_lessons(course_id, "Lezione 1")
+        assert lexical.disposition.value == "unique"
+        assert lexical.candidates[0].start_offset == pin.start_offset
+
+    with LocalRepository.open(root) as restarted:
+        assert restarted.pageindex_status(course_id)[0].status.value == "disabled"
+        assert restarted.search_lessons(course_id, "Lezione 1").disposition.value == "unique"

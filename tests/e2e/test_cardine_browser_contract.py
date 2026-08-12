@@ -280,6 +280,8 @@ def test_chat_home_and_session_markers_preserve_learner_tutor_boundary() -> None
     # The conversation landmark belongs to the view that renders it.
     assert 'id="conversation-heading"' in javascript
     assert "class=\"chat-home\"" in javascript
+    assert "data-pageindex-status" in javascript
+    assert "Il testo resta ricercabile anche se la struttura è ridotta" in javascript
     assert "class=\"chat-session\"" in javascript
     assert "thread-message--learner" in javascript
     assert "thread-message--assistant" in javascript

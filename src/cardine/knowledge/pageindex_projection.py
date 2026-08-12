@@ -117,7 +117,9 @@ def _walk_tree(tree: object) -> tuple[Mapping[str, object], ...]:
     flattened: list[Mapping[str, object]] = []
     stack: list[tuple[object, int]] = [(node, 1) for node in reversed(tree)]
     seen_node_ids: set[str] = set()
-    while stack and len(flattened) < 256:
+    while stack:
+        if len(flattened) >= 256:
+            return ()
         raw, depth = stack.pop()
         if not isinstance(raw, Mapping) or depth > 32:
             continue

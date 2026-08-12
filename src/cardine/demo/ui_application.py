@@ -403,6 +403,7 @@ class RepositoryUiApplication(UiApplicationPort):
                         "source_grounding": _source_grounding_status(
                             repository, self._course_id, snapshot
                         ),
+                        "pageindex": repository.pageindex_summary(self._course_id),
                         "provider_consent": repository.provider_consent.get(self._course_id),
                         "retired_source_ids": repository.source_lifetime.retired_source_ids(
                             self._course_id
@@ -796,6 +797,8 @@ class RepositoryUiApplication(UiApplicationPort):
                         )
                     )
                     result = _surface_value(surface_result)
+                    repository.rebuild_retrieval()
+                    repository.reconcile_pageindex(self._course_id)
                     return {
                         "schema_version": 1,
                         "request_id": request_id,
@@ -1644,6 +1647,7 @@ class RepositoryUiApplication(UiApplicationPort):
     def _bootstrap(snapshot: TutorSnapshotV1, metadata: Mapping[str, object]) -> JsonObject:
         readiness = cast(StudyReadinessSnapshot, metadata["readiness"])
         source_grounding = cast(Mapping[str, object], metadata["source_grounding"])
+        pageindex = cast(Mapping[str, object], metadata.get("pageindex", {}))
         grounding_status = str(source_grounding.get("status", "unavailable"))
         artifact_counts = tuple(getattr(readiness, "artifact_counts", ()))
         recall = getattr(readiness, "recall", None)
@@ -1667,6 +1671,16 @@ class RepositoryUiApplication(UiApplicationPort):
         }
         active_materials = tuple(
             item for item in snapshot.materials if str(item.source_id) not in retired
+        )
+        active_revisions_value = pageindex.get("active_revisions", 0)
+        active_revisions = (
+            active_revisions_value if type(active_revisions_value) is int else 0
+        )
+        items_value = pageindex.get("items", ())
+        pageindex_items = (
+            tuple(item for item in items_value if isinstance(item, Mapping))
+            if isinstance(items_value, (tuple, list))
+            else ()
         )
         return {
             "schema_version": 1,
@@ -1709,6 +1723,11 @@ class RepositoryUiApplication(UiApplicationPort):
                     }
                     for item in active_materials
                 ),
+            },
+            "pageindex": {
+                "status": str(pageindex.get("status", "empty")),
+                "active_revisions": active_revisions,
+                "items": pageindex_items,
             },
             "onboarding": {
                 "needs_study_intent": bool(active_materials)

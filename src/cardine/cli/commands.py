@@ -24,6 +24,7 @@ from cardine.integrations.study_agent import (
     StudyRuntimeAdapter,
     compose_study_runtime,
 )
+from cardine.knowledge import PageIndexProjection
 from study_agent.adapters.filesystem import FilesystemExportWriter, FilesystemSourceInput
 from study_agent.adapters.filesystem.lifecycle import load_lifecycle_manifest
 from study_agent.application import ExportService, ExportVersion
@@ -32,6 +33,7 @@ from study_agent.domain import (
     CourseId,
     ExecutionContext,
     PrincipalKind,
+    RevisionId,
     SessionId,
     SourceId,
 )
@@ -175,6 +177,32 @@ async def handle_source_status(
     request: CommandRequest, repository: LocalRepository | None
 ) -> CommandOutcome:
     return await _source_status(_required_repository(repository), request.values)
+
+
+async def handle_pageindex_status(
+    request: CommandRequest, repository: LocalRepository | None
+) -> CommandOutcome:
+    return await _pageindex_status(_required_repository(repository), request.values)
+
+
+async def handle_pageindex_mutation(
+    request: CommandRequest, repository: LocalRepository | None
+) -> CommandOutcome:
+    values = dict(request.values)
+    values["action"] = request.name.rsplit(".", 1)[-1]
+    return await _pageindex_mutation(_required_repository(repository), values)
+
+
+async def handle_lesson_search(
+    request: CommandRequest, repository: LocalRepository | None
+) -> CommandOutcome:
+    return await _lesson_search(_required_repository(repository), request.values)
+
+
+async def handle_lesson_select(
+    request: CommandRequest, repository: LocalRepository | None
+) -> CommandOutcome:
+    return await _lesson_select(_required_repository(repository), request.values)
 
 
 async def handle_ask(request: CommandRequest, repository: LocalRepository | None) -> CommandOutcome:
@@ -439,6 +467,7 @@ async def _source_add(repository: LocalRepository, values: dict[str, object]) ->
     }
     try:
         receipt = repository.rebuild_retrieval()
+        repository.reconcile_pageindex(course_id)
     except Exception as error:
         raise SourceIndexError(canonical) from error
     return CommandOutcome(
@@ -570,6 +599,105 @@ async def _source_status(repository: LocalRepository, values: dict[str, object])
             "source_id": str(source_id),
             "retired": bool(receipt and receipt.retired),
             "receipt": None if receipt is None else _receipt_json(receipt),
+        },
+    )
+
+
+def _pageindex_json(projection: PageIndexProjection) -> JsonObject:
+    return {
+        "course_id": projection.course_id,
+        "source_id": projection.source_id,
+        "revision_id": projection.revision_id,
+        "content_sha256": projection.content_sha256,
+        "status": projection.status.value,
+        "attempt": projection.attempt,
+        "candidate_count": len(projection.candidates),
+        "error_code": projection.error_code,
+    }
+
+
+async def _pageindex_status(
+    repository: LocalRepository, values: dict[str, object]
+) -> CommandOutcome:
+    course_id = CourseId(_text(values, "course_id"))
+    repository.courses.get(course_id)
+    projections = tuple(repository.pageindex_status(course_id))
+    return CommandOutcome(
+        "pageindex.status",
+        {
+            "course_id": str(course_id),
+            "revisions": tuple(
+                _pageindex_json(projection)
+                for projection in projections
+            ),
+        },
+    )
+
+
+async def _pageindex_mutation(
+    repository: LocalRepository, values: dict[str, object]
+) -> CommandOutcome:
+    course_id = CourseId(_text(values, "course_id"))
+    source_id = SourceId(_text(values, "source_id"))
+    revision_id = RevisionId(_text(values, "revision_id"))
+    action = _text(values, "action")
+    method = {
+        "rebuild": repository.rebuild_pageindex,
+        "disable": repository.disable_pageindex,
+        "enable": repository.enable_pageindex,
+    }.get(action)
+    if method is None:
+        raise ValueError("unknown PageIndex action")
+    projection = method(course_id, source_id, revision_id)
+    return CommandOutcome(f"pageindex.{action}", _pageindex_json(projection))
+
+
+async def _lesson_search(repository: LocalRepository, values: dict[str, object]) -> CommandOutcome:
+    course_id = CourseId(_text(values, "course_id"))
+    repository.courses.get(course_id)
+    result = repository.search_lessons(course_id, _text(values, "query"))
+    return CommandOutcome(
+        "lesson.search",
+        {
+            "course_id": str(course_id),
+            "disposition": result.disposition.value,
+            "candidates": tuple(
+                {
+                    "candidate_id": item.candidate_id,
+                    "course_id": item.course_id,
+                    "source_id": item.source_id,
+                    "revision_id": item.revision_id,
+                    "section_title": item.section_title,
+                    "start_offset": item.start_offset,
+                    "end_offset": item.end_offset,
+                    "content_sha256": item.content_sha256,
+                    "catalog_fingerprint": item.catalog_fingerprint,
+                }
+                for item in result.candidates
+            ),
+        },
+    )
+
+
+async def _lesson_select(repository: LocalRepository, values: dict[str, object]) -> CommandOutcome:
+    course_id = CourseId(_text(values, "course_id"))
+    repository.courses.get(course_id)
+    pin = repository.select_lesson(
+        course_id,
+        _text(values, "query"),
+        _text(values, "candidate_id"),
+    )
+    return CommandOutcome(
+        "lesson.select",
+        {
+            "course_id": pin.course_id,
+            "source_id": pin.source_id,
+            "revision_id": pin.revision_id,
+            "section_title": pin.section_title,
+            "start_offset": pin.start_offset,
+            "end_offset": pin.end_offset,
+            "content_sha256": pin.content_sha256,
+            "catalog_fingerprint": pin.catalog_fingerprint,
         },
     )
 

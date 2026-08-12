@@ -77,6 +77,9 @@
     degraded: "funzionalità ridotta",
     recovered: "pronta",
     error: "non disponibile",
+    queued: "in coda",
+    indexing: "in indicizzazione",
+    disabled: "disattivato",
   });
 
   const MODE_LABELS = Object.freeze({
@@ -1279,6 +1282,7 @@
     const suspended = status === "suspended" || status === "needs_learner_input";
     const counts = object(payload.counts);
     const readiness = object(payload.readiness);
+    const pageindex = object(payload.pageindex);
     const recall = object(readiness.recall);
     const due = first(counts, ["due_reviews"], first(recall, ["due_count"], 0));
     const pending = first(counts, ["pending_proposals"], 0);
@@ -1299,7 +1303,11 @@
       source: sourceLabel(item),
     }));
     if (!insights.length) insights.push({ title: "Stato della sessione", detail: `La sessione è ${statusLabel(status)}.`, source: "proiezione locale" });
-    const support = `<details class="chat-home__support"><summary>Panoramica di studio</summary><div class="chat-home__support-grid"><div class="ai-home-card">${aiTaskList({ title: "Lavoro aperto", tasks: taskItems })}</div><div class="ai-home-card">${aiRecommendation({ title: openWork > 0 ? "Un passo alla volta" : "Pronto per una domanda", detail: openWork > 0 ? "Scegli una coda già dichiarata dal corso e continua senza cambiare stato dal browser." : "Scrivi al tutor e mantieni la sessione al centro.", prompt: openWork > 0 ? "Aiutami a scegliere il prossimo ripasso" : "Fammi una domanda di ripasso sulle fonti disponibili", actionLabel: openWork > 0 ? "Chiedimi cosa fare" : "Prepara una domanda" })}</div><div class="ai-home-card">${aiInsightDeck({ title: "Segnali utili", insights })}</div></div></details>`;
+    const pageindexStatus = text(pageindex.status, "empty");
+    const pageindexDetail = pageindexStatus === "empty"
+      ? "Nessuna revisione Markdown attiva."
+      : `${text(pageindex.active_revisions, "0")} revisioni Markdown · ${statusLabel(pageindexStatus)}.`;
+    const support = `<details class="chat-home__support"><summary>Panoramica di studio</summary><div class="chat-home__support-grid"><div class="ai-home-card">${aiTaskList({ title: "Lavoro aperto", tasks: taskItems })}</div><div class="ai-home-card">${aiRecommendation({ title: openWork > 0 ? "Un passo alla volta" : "Pronto per una domanda", detail: openWork > 0 ? "Scegli una coda già dichiarata dal corso e continua senza cambiare stato dal browser." : "Scrivi al tutor e mantieni la sessione al centro.", prompt: openWork > 0 ? "Aiutami a scegliere il prossimo ripasso" : "Fammi una domanda di ripasso sulle fonti disponibili", actionLabel: openWork > 0 ? "Chiedimi cosa fare" : "Prepara una domanda" })}</div><div class="ai-home-card">${aiInsightDeck({ title: "Segnali utili", insights })}</div></div><p class="field-note" data-pageindex-status>Struttura delle lezioni: ${esc(pageindexDetail)} Il testo resta ricercabile anche se la struttura è ridotta.</p></details>`;
     const createCourse = state.auth.authenticated
       ? `<button class="chat-home__course-action" type="button" data-open-course-creation>Crea un corso</button>`
       : "";

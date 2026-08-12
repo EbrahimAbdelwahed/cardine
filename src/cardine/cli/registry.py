@@ -358,6 +358,103 @@ def command_registrations() -> tuple[CommandRegistration, ...]:
             commands.handle_source_status,
         ),
         _registration(
+            "pageindex.status",
+            "Read bounded per-revision PageIndex navigation status.",
+            OperationEffect.READ_ONLY,
+            RepositoryRequirement.REQUIRED,
+            NetworkRequirement.NEVER,
+            "not applicable",
+            "safe to retry",
+            (_argument("course_id", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),),
+            "cardine --json --repository REPOSITORY pageindex status COURSE_ID",
+            _add_pageindex_status,
+            commands.handle_pageindex_status,
+        ),
+        _registration(
+            "pageindex.rebuild",
+            "Rebuild one active Markdown PageIndex projection.",
+            OperationEffect.OPERATIONAL_WRITE,
+            RepositoryRequirement.REQUIRED,
+            NetworkRequirement.NEVER,
+            "stable source and revision identity",
+            "retry with the same course, source, and revision identities",
+            (
+                _argument("course_id", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
+                _argument("source_id", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
+                _argument("revision_id", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
+            ),
+            "cardine --json --repository REPOSITORY pageindex rebuild COURSE SOURCE REVISION",
+            _add_pageindex_mutation,
+            commands.handle_pageindex_mutation,
+        ),
+        _registration(
+            "pageindex.disable",
+            "Disable one active Markdown PageIndex projection.",
+            OperationEffect.OPERATIONAL_WRITE,
+            RepositoryRequirement.REQUIRED,
+            NetworkRequirement.NEVER,
+            "stable source and revision identity",
+            "retry with the same course, source, and revision identities",
+            (
+                _argument("course_id", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
+                _argument("source_id", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
+                _argument("revision_id", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
+            ),
+            "cardine --json --repository REPOSITORY pageindex disable COURSE SOURCE REVISION",
+            _add_pageindex_mutation,
+            commands.handle_pageindex_mutation,
+        ),
+        _registration(
+            "pageindex.enable",
+            "Enable one active Markdown PageIndex projection.",
+            OperationEffect.OPERATIONAL_WRITE,
+            RepositoryRequirement.REQUIRED,
+            NetworkRequirement.NEVER,
+            "stable source and revision identity",
+            "retry with the same course, source, and revision identities",
+            (
+                _argument("course_id", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
+                _argument("source_id", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
+                _argument("revision_id", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
+            ),
+            "cardine --json --repository REPOSITORY pageindex enable COURSE SOURCE REVISION",
+            _add_pageindex_mutation,
+            commands.handle_pageindex_mutation,
+        ),
+        _registration(
+            "lesson.search",
+            "Search bounded course lessons with explicit ambiguity.",
+            OperationEffect.READ_ONLY,
+            RepositoryRequirement.REQUIRED,
+            NetworkRequirement.NEVER,
+            "not applicable",
+            "safe to retry",
+            (
+                _argument("course_id", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
+                _argument("query", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
+            ),
+            "cardine --json --repository REPOSITORY lesson search COURSE QUERY",
+            _add_lesson_search,
+            commands.handle_lesson_search,
+        ),
+        _registration(
+            "lesson.select",
+            "Select one explicit lesson candidate and return a complete source pin.",
+            OperationEffect.READ_ONLY,
+            RepositoryRequirement.REQUIRED,
+            NetworkRequirement.NEVER,
+            "stable candidate and query identity",
+            "retry with the same course, query, and candidate identity",
+            (
+                _argument("course_id", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
+                _argument("query", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
+                _argument("candidate_id", ArgumentKind.POSITIONAL, ArgumentValueType.STRING, True),
+            ),
+            "cardine --json --repository REPOSITORY lesson select COURSE QUERY CANDIDATE",
+            _add_lesson_select,
+            commands.handle_lesson_select,
+        ),
+        _registration(
             "source.retire",
             "Retire a source from default study surfaces.",
             OperationEffect.CANONICAL_WRITE,
@@ -856,6 +953,50 @@ def _add_source_status(topology: _ParserTopology) -> None:
     )
     parser.add_argument("course_id")
     parser.add_argument("source_id")
+
+
+def _add_pageindex_status(topology: _ParserTopology) -> None:
+    parser = _leaf(
+        topology.group("pageindex", "derived PageIndex navigation commands").add_parser(
+            "status", help="read per-revision PageIndex status"
+        ),
+        "pageindex.status",
+    )
+    parser.add_argument("course_id")
+
+
+def _add_pageindex_mutation(topology: _ParserTopology) -> None:
+    actions = topology.group("pageindex", "derived PageIndex navigation commands")
+    for action in ("rebuild", "disable", "enable"):
+        if action in actions.choices:
+            continue
+        parser = _leaf(actions.add_parser(action), f"pageindex.{action}")
+        parser.add_argument("course_id")
+        parser.add_argument("source_id")
+        parser.add_argument("revision_id")
+
+
+def _add_lesson_search(topology: _ParserTopology) -> None:
+    parser = _leaf(
+        topology.group("lesson", "lesson navigation commands").add_parser(
+            "search", help="search bounded course lessons"
+        ),
+        "lesson.search",
+    )
+    parser.add_argument("course_id")
+    parser.add_argument("query")
+
+
+def _add_lesson_select(topology: _ParserTopology) -> None:
+    parser = _leaf(
+        topology.group("lesson", "lesson navigation commands").add_parser(
+            "select", help="select one explicit lesson candidate"
+        ),
+        "lesson.select",
+    )
+    parser.add_argument("course_id")
+    parser.add_argument("query")
+    parser.add_argument("candidate_id")
 
 
 def _add_source_mutation(topology: _ParserTopology) -> None:

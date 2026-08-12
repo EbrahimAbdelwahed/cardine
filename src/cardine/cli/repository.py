@@ -10,6 +10,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Protocol, cast
 
+from cardine.adapters.pageindex import PageIndexCoordinator, PageIndexRevision
 from cardine.application.flashcard_proposals import FlashcardProposalComposition
 from cardine.courses import (
     CourseService,
@@ -36,6 +37,18 @@ from cardine.integrations.study_agent.course_policy import (
     ProviderConsentRequiredError,
     SourceLifetimeService,
     register_course_policy_events,
+)
+from cardine.knowledge import (
+    LessonCandidate,
+    LessonChunk,
+    LessonEvidencePort,
+    LessonSearchResult,
+    LessonSelectionService,
+    LessonSource,
+    PageIndexProjection,
+    PageIndexStatus,
+    SearchDisposition,
+    SourcePin,
 )
 from study_agent.adapters.filesystem import (
     FilesystemBlobStore,
@@ -104,6 +117,8 @@ from study_agent.capabilities import (
     explain_concept_binding,
 )
 from study_agent.domain import (
+    BlobId,
+    BlobRef,
     ChunkId,
     Citation,
     CorrelationId,
@@ -111,8 +126,10 @@ from study_agent.domain import (
     ExecutionContext,
     PrincipalKind,
     ResolvedCitation,
+    RevisionId,
     SessionId,
     SourceCommitment,
+    SourceId,
 )
 from study_agent.domain._validation import JsonObject, JsonValue
 from study_agent.grounding import (
@@ -131,7 +148,11 @@ from study_agent.playbooks import (
 )
 from study_agent.playbooks.builtin import GROUNDED_ANSWER_FLOW
 from study_agent.ports import IndexReceipt, ModelCapabilities, ModelPort
-from study_agent.ports.retrieval import RetrievalDocument, retrieval_catalog_fingerprint
+from study_agent.ports.retrieval import (
+    RetrievalDocument,
+    RetrievalQuery,
+    retrieval_catalog_fingerprint,
+)
 from study_agent.ports.scheduling import SchedulingPolicyPort
 from study_agent.ports.tutor_runner import (
     TutorCompletionHandoffStore,
@@ -187,6 +208,10 @@ _GENERIC_TUTOR_FAILURE_MESSAGE = (
     "Non sono riuscito a completare questa risposta. "
     "Riprova tra poco oppure riformula la richiesta."
 )
+
+_PAGEINDEX_RECONCILE_BUDGET = 32
+_PAGEINDEX_ADMISSION_BUDGET = 4
+_LESSON_SEARCH_SOURCE_BUDGET = 32
 
 
 def _cardine_fallback_message(status: TutorHostRunStatus, failure_reason: str | None) -> str:
@@ -716,6 +741,34 @@ class CourseRepository:
     ingestion: TextIngestionService
 
 
+class _RepositoryLessonEvidence(LessonEvidencePort):
+    """Adapt the existing course FTS index to Cardine lesson navigation."""
+
+    def __init__(self, retrieval: SQLiteFtsRetrieval) -> None:
+        self._retrieval = retrieval
+
+    def search(self, source: LessonSource, query: str) -> tuple[LessonChunk, ...]:
+        result = self._retrieval.search(
+            RetrievalQuery(
+                CourseId(source.course_id),
+                query,
+                limit=8,
+                revision_ids=(RevisionId(source.revision_id),),
+                include_superseded=True,
+            )
+        )
+        return tuple(
+            LessonChunk(
+                item.chunk.start_offset,
+                item.chunk.end_offset,
+                item.text,
+            )
+            for item in result.evidence
+            if str(item.chunk.source_id) == source.source_id
+            and str(item.chunk.revision_id) == source.revision_id
+        )
+
+
 class _RepositorySourceCatalog:
     """Complete canonical catalog required by the single repository FTS database."""
 
@@ -887,6 +940,7 @@ class LocalRepository:
             events_database, registry, connection_identity_guard=events_guard
         )
         self.runs = SQLiteRunStore(runs_database, connection_identity_guard=runs_guard)
+        self.pageindex = PageIndexCoordinator(self.runs)
         self.provider_consent = ProjectionConsentView(self.events.projection)
         self.source_lifetime = ProjectionSourceLifetimeView(self.events.projection)
         self._source_catalog = _RepositorySourceCatalog(
@@ -895,6 +949,10 @@ class LocalRepository:
         self.artifacts = ProjectionArtifactView(self.events.projection)
         self.courses = ProjectionCourseView(self.events.projection)
         self.course_catalog = ProjectionCourseCatalog(self.events.list_course_ids, self.courses)
+        # Startup only reconciles the bounded operational queue.  It never
+        # invokes the worker, so read-only status/bootstrap inspection remains
+        # load-only and restart stays playable through lexical fallback.
+        self._queue_pageindex_backfill()
         self.course_service = CourseService(self.events, self.clock, self.courses)
         self.provider_consent_service = CourseConsentService(
             self.events, self.clock, self.provider_consent, self.courses
@@ -1198,6 +1256,275 @@ class LocalRepository:
             ),
         )
 
+    def _pageindex_revisions(
+        self, course_id: CourseId | None = None, *, limit: int | None = None
+    ) -> tuple[PageIndexRevision, ...]:
+        revisions: list[PageIndexRevision] = []
+        course_ids = (course_id,) if course_id is not None else self.events.list_course_ids()
+        for selected_course in course_ids:
+            retired = self.source_lifetime.retired_source_ids(selected_course)
+            state = self.events.projection(selected_course).state
+            raw_sources = state.get("sources", {})
+            if not isinstance(raw_sources, Mapping):
+                raise LocalRepositoryError("source projection is incompatible")
+            for source_id, raw_source in sorted(raw_sources.items()):
+                if not isinstance(source_id, str) or not isinstance(raw_source, Mapping):
+                    raise LocalRepositoryError("source projection is incompatible")
+                if SourceId(source_id) in retired:
+                    continue
+                revision_id = raw_source.get("current_revision_id")
+                raw_revisions = raw_source.get("revisions")
+                if not isinstance(revision_id, str) or not isinstance(raw_revisions, Mapping):
+                    raise LocalRepositoryError("source projection is incompatible")
+                raw_revision = raw_revisions.get(revision_id)
+                if not isinstance(raw_revision, Mapping):
+                    raise LocalRepositoryError("source projection is incompatible")
+                raw_manifest = raw_revision.get("source")
+                if not isinstance(raw_manifest, Mapping):
+                    raise LocalRepositoryError("source projection is incompatible")
+                if raw_manifest.get("kind") != "markdown":
+                    continue
+                raw_blob = raw_manifest.get("normalized_blob")
+                if not isinstance(raw_blob, Mapping):
+                    raise LocalRepositoryError("source projection is incompatible")
+                blob_id = raw_blob.get("id")
+                checksum = raw_blob.get("checksum_sha256")
+                byte_length = raw_blob.get("byte_length")
+                if (
+                    not isinstance(blob_id, str)
+                    or not isinstance(checksum, str)
+                    or type(byte_length) is not int
+                ):
+                    raise LocalRepositoryError("source projection is incompatible")
+                try:
+                    reference = BlobRef(BlobId(blob_id), checksum, byte_length)
+                    content = self.blobs.get(reference).decode("utf-8", errors="strict")
+                except (LookupError, OSError, UnicodeError, ValueError) as error:
+                    raise LocalRepositoryError(
+                        "source projection content is unavailable"
+                    ) from error
+                digest = sha256(content.encode("utf-8")).hexdigest()
+                revisions.append(
+                    PageIndexRevision(
+                        str(selected_course),
+                        source_id,
+                        revision_id,
+                        content,
+                        digest,
+                    )
+                )
+                if limit is not None and len(revisions) >= limit:
+                    return tuple(revisions)
+        return tuple(
+            sorted(revisions, key=lambda item: (item.course_id, item.source_id, item.revision_id))
+        )
+
+    def _queue_pageindex_backfill(self, course_id: CourseId | None = None) -> None:
+        for revision in self._pageindex_revisions(
+            course_id, limit=_PAGEINDEX_RECONCILE_BUDGET
+        ):
+            self.pageindex.request(revision)
+
+    def reconcile_pageindex(
+        self, course_id: CourseId | None = None, *, budget: int = _PAGEINDEX_ADMISSION_BUDGET
+    ) -> tuple[PageIndexProjection, ...]:
+        """Process a small restart/admission backfill through the isolated worker."""
+
+        if type(budget) is not int or not 0 <= budget <= _PAGEINDEX_RECONCILE_BUDGET:
+            raise ValueError("PageIndex reconcile budget is outside the bound")
+        revisions = self._pageindex_revisions(course_id, limit=budget)
+        return self.pageindex.reconcile(revisions, budget=budget)
+
+    def pageindex_status(self, course_id: CourseId) -> tuple[PageIndexProjection, ...]:
+        """Return per-revision status without creating or processing projections."""
+
+        result: list[PageIndexProjection] = []
+        for revision in self._pageindex_revisions(course_id):
+            try:
+                result.append(self.pageindex.load(revision))
+            except KeyError:
+                # A projection can be absent when an older repository was
+                # opened before this derived surface existed or when the
+                # bounded startup queue has not reached this revision. Report
+                # the truthful queued state without mutating or invoking a
+                # worker.
+                result.append(
+                    PageIndexProjection(
+                        revision.course_id,
+                        revision.source_id,
+                        revision.revision_id,
+                        revision.content_sha256,
+                        PageIndexStatus.QUEUED,
+                        0,
+                    )
+                )
+        return tuple(result)
+
+    def _pageindex_revision(
+        self, course_id: CourseId, source_id: SourceId, revision_id: RevisionId
+    ) -> PageIndexRevision:
+        for revision in self._pageindex_revisions(course_id):
+            if revision.source_id == str(source_id) and revision.revision_id == str(revision_id):
+                return revision
+        raise LookupError("active Markdown revision was not found")
+
+    def rebuild_pageindex(
+        self, course_id: CourseId, source_id: SourceId, revision_id: RevisionId
+    ) -> PageIndexProjection:
+        revision = self._pageindex_revision(course_id, source_id, revision_id)
+        self.pageindex.rebuild(revision)
+        return self.pageindex.process(revision)
+
+    def disable_pageindex(
+        self, course_id: CourseId, source_id: SourceId, revision_id: RevisionId
+    ) -> PageIndexProjection:
+        revision = self._pageindex_revision(course_id, source_id, revision_id)
+        return self.pageindex.disable(revision)
+
+    def enable_pageindex(
+        self, course_id: CourseId, source_id: SourceId, revision_id: RevisionId
+    ) -> PageIndexProjection:
+        revision = self._pageindex_revision(course_id, source_id, revision_id)
+        return self.pageindex.enable(revision)
+
+    def _lesson_sources(self, course_id: CourseId) -> tuple[LessonSource, ...]:
+        retired = self.source_lifetime.retired_source_ids(course_id)
+        content = self.for_course(course_id).content
+        records = tuple(
+            record
+            for record in content.catalog()
+            if record.is_current_revision and record.source.source_id not in retired
+        )
+        if len(records) > _LESSON_SEARCH_SOURCE_BUDGET:
+            raise ValueError("lesson search exceeds the bounded source budget")
+        documents = tuple(content.documents())
+        catalog_fingerprint = retrieval_catalog_fingerprint(documents)
+        return tuple(
+            LessonSource(
+                str(course_id),
+                str(record.source.source_id),
+                str(record.source.revision_id),
+                record.source.title,
+                record.source.kind.value,
+                record.text,
+                sha256(record.text.encode("utf-8")).hexdigest(),
+                catalog_fingerprint,
+                tuple(
+                    LessonChunk(
+                        chunk.start_offset,
+                        chunk.end_offset,
+                        record.text[chunk.start_offset : chunk.end_offset],
+                    )
+                    for chunk in record.chunks
+                ),
+            )
+            for record in records
+        )
+
+    def search_lessons(self, course_id: CourseId, query: str) -> LessonSearchResult:
+        sources = self._lesson_sources(course_id)
+        retrieval = self.for_course(course_id).retrieval
+        statuses = {
+            (item.source_id, item.revision_id): item
+            for item in self.pageindex_status(course_id)
+        }
+        fallback_sources = tuple(
+            source
+            for source in sources
+            if not (
+                source.kind.casefold() == "markdown"
+                and statuses.get((source.source_id, source.revision_id)) is not None
+                and statuses[(source.source_id, source.revision_id)].status
+                is PageIndexStatus.READY
+            )
+        )
+        lexical = LessonSelectionService(_RepositoryLessonEvidence(retrieval)).search(
+            str(course_id), query, fallback_sources
+        )
+        candidates = list(lexical.candidates)
+        needle = query.casefold().strip()
+        for source in sources:
+            if source.kind.casefold() != "markdown":
+                continue
+            projection = statuses.get((source.source_id, source.revision_id))
+            if projection is None or projection.status is not PageIndexStatus.READY:
+                continue
+            for item in projection.candidates:
+                if item.title.casefold() != needle:
+                    continue
+                identity = "\0".join(
+                    (
+                        source.course_id,
+                        source.source_id,
+                        source.revision_id,
+                        str(item.start_offset),
+                        str(item.end_offset),
+                        item.title,
+                    )
+                ).encode()
+                candidates.append(
+                    LessonCandidate(
+                        f"lesson-sha256:{sha256(identity).hexdigest()}",
+                        source.course_id,
+                        source.source_id,
+                        source.revision_id,
+                        item.title,
+                        item.start_offset,
+                        item.end_offset,
+                        source.content_sha256,
+                        source.catalog_fingerprint,
+                    )
+                )
+        ordered = tuple(sorted(candidates, key=lambda item: (item.source_id, item.start_offset)))
+        disposition = (
+            SearchDisposition.NOT_FOUND
+            if not ordered
+            else SearchDisposition.UNIQUE
+            if len(ordered) == 1
+            else SearchDisposition.AMBIGUOUS
+        )
+        return LessonSearchResult(disposition, ordered)
+
+    def select_lesson(
+        self, course_id: CourseId, query: str, candidate_id: str
+    ) -> SourcePin:
+        result = self.search_lessons(course_id, query)
+        service = LessonSelectionService(
+            _RepositoryLessonEvidence(self.for_course(course_id).retrieval)
+        )
+        return service.select(candidate_id, result)
+
+    def validate_lesson_pin(self, pin: SourcePin) -> LessonSource:
+        sources = self._lesson_sources(CourseId(pin.course_id))
+        return LessonSelectionService(
+            _RepositoryLessonEvidence(self.for_course(CourseId(pin.course_id)).retrieval)
+        ).validate_pin(pin, sources)
+
+    def pageindex_summary(self, course_id: CourseId) -> JsonObject:
+        statuses = self.pageindex_status(course_id)
+        rows = tuple(
+            {
+                "source_id": item.source_id,
+                "revision_id": item.revision_id,
+                "status": item.status.value,
+                "attempt": item.attempt,
+                "candidate_count": len(item.candidates),
+                "error_code": item.error_code,
+            }
+            for item in statuses
+        )
+        return {
+            "status": (
+                "empty"
+                if not rows
+                else "ready"
+                if all(item["status"] == "ready" for item in rows)
+                else "degraded"
+            ),
+            "active_revisions": len(rows),
+            "items": rows,
+        }
+
     def rebuild_retrieval(self) -> IndexReceipt:
         """Rebuild the one discardable index from the complete canonical catalog."""
         retrieval = SQLiteFtsRetrieval(
@@ -1206,7 +1533,9 @@ class LocalRepository:
             connection_identity_guard=self._retrieval_connection_identity_guard,
         )
         documents = tuple(self._source_catalog.documents(include_superseded=True))
-        return retrieval.rebuild(documents)
+        receipt = retrieval.rebuild(documents)
+        self._queue_pageindex_backfill()
+        return receipt
 
     def course_index_receipt(
         self, course_id: CourseId, repository_receipt: IndexReceipt

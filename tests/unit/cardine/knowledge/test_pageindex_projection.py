@@ -39,3 +39,24 @@ def test_projection_status_enum_is_closed() -> None:
     )
     with pytest.raises(ValueError):
         PageIndexStatus("unknown")
+
+
+def test_mapping_degrades_instead_of_silently_truncating_more_than_256_nodes() -> None:
+    content = "\n".join(f"# Heading {index}" for index in range(257))
+    tree = [
+        {
+            "node_id": f"{index:04d}",
+            "title": f"Heading {index}",
+            "text": f"# Heading {index}",
+            "line_num": index + 1,
+        }
+        for index in range(257)
+    ]
+
+    assert map_structural_tree(
+        course_id="course",
+        source_id="source",
+        revision_id="revision",
+        content=content,
+        tree=tree,
+    ) == ()

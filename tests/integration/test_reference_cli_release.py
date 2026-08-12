@@ -189,17 +189,6 @@ def test_offline_release_journey_survives_restart_and_is_deterministic(
             "course-anatomy",
             source,
         )[0] == 0
-    assert _run(
-        capsys,
-        registry,
-        *base,
-        "consent",
-        "grant",
-        "course-anatomy",
-        "--request-id",
-        "consent-release-1",
-    )[0] == 0
-
     ask = (
         *base,
         "ask",
@@ -409,6 +398,72 @@ def test_cli_admits_pdf_through_the_same_canonical_source_ledger(
     assert receipt["data"]["input_kind"] == "pdf"
     assert receipt["data"]["source"]["content_origin"] == "extracted"
     assert receipt["data"]["source"]["conversion_provenance"]["page_count"] == 1
+
+
+def test_cli_pageindex_status_and_explicit_lesson_selection(
+    tmp_path: Path, capsys: Any
+) -> None:
+    root = tmp_path / "study"
+    registry = _registry([])
+    assert _run(capsys, registry, "init", str(root))[0] == 0
+    base = ("--repository", str(root))
+    assert _run(
+        capsys,
+        registry,
+        *base,
+        "course",
+        "create",
+        "--course-id",
+        "course-lessons",
+        "--title",
+        "Lessons",
+        "--learning-goal",
+        "Study one selected lesson",
+    )[0] == 0
+    (root / "lessons.md").write_text(
+        "# Lezione 1\nPrimo contenuto.\n# Lezione 2\nSecondo contenuto.\n",
+        encoding="utf-8",
+    )
+    assert _run(
+        capsys,
+        registry,
+        *base,
+        "source",
+        "add",
+        "course-lessons",
+        "lessons.md",
+    )[0] == 0
+
+    status_code, status = _run(
+        capsys, registry, *base, "pageindex", "status", "course-lessons"
+    )
+    assert status_code == 0
+    assert status["data"]["revisions"][0]["status"] == "ready"
+    search_code, search = _run(
+        capsys,
+        registry,
+        *base,
+        "lesson",
+        "search",
+        "course-lessons",
+        "Lezione 1",
+    )
+    assert search_code == 0
+    assert search["data"]["disposition"] == "unique"
+    candidate = search["data"]["candidates"][0]
+    select_code, selected = _run(
+        capsys,
+        registry,
+        *base,
+        "lesson",
+        "select",
+        "course-lessons",
+        "Lezione 1",
+        candidate["candidate_id"],
+    )
+    assert select_code == 0
+    assert selected["data"]["source_id"] == candidate["source_id"]
+    assert selected["data"]["end_offset"] == candidate["end_offset"]
 
 
 def test_fixture_adapter_is_not_an_implicit_cli_fallback(tmp_path: Path, capsys: Any) -> None:
