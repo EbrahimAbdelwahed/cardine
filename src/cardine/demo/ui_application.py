@@ -195,11 +195,19 @@ def _source_grounding_status(
 ) -> JsonObject:
     """Expose grounding only when every displayed source has readable text."""
 
-    expected_chunks = sum(item.chunk_count for item in snapshot.materials)
+    retired = repository.source_lifetime.retired_source_ids(course_id)
+    active_materials = tuple(
+        item for item in snapshot.materials if item.source_id not in retired
+    )
+    expected_chunks = sum(item.chunk_count for item in active_materials)
     if expected_chunks == 0:
         return {"status": "empty", "indexed_chunks": 0}
     try:
-        documents = tuple(repository.for_course(course_id).content.documents())
+        documents = tuple(
+            item
+            for item in repository.for_course(course_id).content.documents()
+            if item.source_id not in retired
+        )
     except (SourceContentError, OSError, ValueError):
         return {"status": "unavailable", "indexed_chunks": 0}
     if len(documents) != expected_chunks:
@@ -2687,6 +2695,7 @@ def _conversation_ui_error(
         ConversationTurnErrorCode.FAILED: 503,
         ConversationTurnErrorCode.INTERRUPTED: 503,
         ConversationTurnErrorCode.INCOMPATIBLE_RUNTIME: 503,
+        ConversationTurnErrorCode.CONSENT_REQUIRED: 428,
     }[error.code]
     message = (
         "expected sequence is stale"
@@ -2701,6 +2710,8 @@ def _conversation_ui_error(
         }
         else "repository runtime is unavailable"
         if status == 503
+        else "provider consent is required before tutor execution"
+        if error.code is ConversationTurnErrorCode.CONSENT_REQUIRED
         else "request is invalid"
         if status == 400
         else "request is not available"
@@ -2714,6 +2725,8 @@ def _conversation_ui_error(
         }
         else "repository_runtime_unavailable"
         if status == 503
+        else "provider_consent_required"
+        if error.code is ConversationTurnErrorCode.CONSENT_REQUIRED
         else None
     )
     return UiRequestError(

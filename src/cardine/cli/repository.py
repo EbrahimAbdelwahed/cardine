@@ -33,6 +33,7 @@ from cardine.integrations.study_agent.course_policy import (
     CourseConsentService,
     ProjectionConsentView,
     ProjectionSourceLifetimeView,
+    ProviderConsentRequiredError,
     SourceLifetimeService,
     register_course_policy_events,
 )
@@ -263,6 +264,7 @@ class _RepositoryTutorGateway:
         inputs: JsonObject,
         context: ExecutionContext,
     ) -> CapabilityOutcome:
+        self._require_provider_consent()
         if capability_id is TutorCapabilityId.PROPOSE_FLASHCARDS:
             if self._flashcards is None:
                 raise ValueError("flashcard capability is not executable")
@@ -276,6 +278,7 @@ class _RepositoryTutorGateway:
         response: JsonValue,
         context: ExecutionContext,
     ) -> CapabilityOutcome:
+        self._require_provider_consent()
         if continuation.capability_id is TutorCapabilityId.PROPOSE_FLASHCARDS:
             raise ValueError("flashcard lesson workers do not expose dialogue continuation")
         inputs = getattr(continuation, "inputs", None)
@@ -283,6 +286,11 @@ class _RepositoryTutorGateway:
             raise TypeError("continuation inputs are invalid")
         outcome = await self._gateway(inputs, context).resume(continuation, response, context)
         return outcome
+
+    def _require_provider_consent(self) -> None:
+        receipt = self._repository.provider_consent.get(self._course_id)
+        if receipt is None or not receipt.granted:
+            raise ProviderConsentRequiredError("provider consent is required")
 
     def _gateway(
         self, inputs: Mapping[str, object], context: ExecutionContext
@@ -1048,6 +1056,7 @@ class LocalRepository:
                 artifact_service=self.artifact_service,
                 source_commitments=self._source_catalog,
                 sessions=self.sessions,
+                retired_source_ids=lambda: self.source_lifetime.retired_source_ids(course_id),
             )
             self.artifact_service = ArtifactService(
                 self.events,

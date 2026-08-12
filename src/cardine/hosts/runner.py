@@ -187,6 +187,7 @@ class TutorHostRunResult:
                 "timeout",
                 "protocol_error",
                 "unavailable",
+                "consent_required",
             }
         ):
             raise ValueError("host failure reason is invalid")
@@ -1128,11 +1129,11 @@ class TutorHostRunner:
                             TutorHostRunStatus.IN_PROGRESS, retry_action
                         )
                     return _failed(retry_action)
-                except Exception:
+                except Exception as error:
                     return (
                         _interrupted_result(selected, retry_action)
                         if _interrupted(interruption)
-                        else _failed(retry_action)
+                        else _failed(retry_action, getattr(error, "failure_reason", None))
                     )
             elif isinstance(decision, AnswerDialogueDecision):
                 if selected is None:
@@ -1203,8 +1204,8 @@ class TutorHostRunner:
                             TutorHostRunStatus.IN_PROGRESS, retry_action
                         )
                     return _failed(retry_action)
-                except Exception:
-                    return _failed(retry_action)
+                except Exception as error:
+                    return _failed(retry_action, getattr(error, "failure_reason", None))
             else:
                 return _failed()
 

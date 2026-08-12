@@ -52,6 +52,8 @@ class RetryableConsentConflictError(RuntimeError):
 class ProviderConsentRequiredError(RuntimeError):
     """A provider call was blocked before any request left Cardine."""
 
+    failure_reason = "consent_required"
+
 
 class SourceLifetimeCommandError(ValueError):
     """A source retirement command is invalid or lacks HUMAN authority."""

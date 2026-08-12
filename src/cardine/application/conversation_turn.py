@@ -91,6 +91,7 @@ class ConversationTurnErrorCode(StrEnum):
     FAILED = "failed"
     INTERRUPTED = "interrupted"
     INCOMPATIBLE_RUNTIME = "incompatible_runtime"
+    CONSENT_REQUIRED = "consent_required"
 
 
 class ConversationTurnError(RuntimeError):
@@ -115,6 +116,7 @@ class ConversationTurnError(RuntimeError):
             "timeout",
             "protocol_error",
             "unavailable",
+            "consent_required",
         }:
             raise ValueError("conversation failure reason is invalid")
         self.code = code
@@ -454,6 +456,12 @@ class ConversationTurnApplication:
                 # represented by a safe canonical chat outcome.  Provider and
                 # runtime details remain outside learner-visible state.
                 host_result = TutorHostRunResult(TutorHostRunStatus.FAILED)
+            if host_result.failure_reason == "consent_required":
+                raise ConversationTurnError(
+                    ConversationTurnErrorCode.CONSENT_REQUIRED,
+                    "provider consent is required before tutor execution",
+                    learner_persisted=learner_persisted,
+                )
             if host_result.failure_reason in _TRANSIENT_FAILURE_REASONS:
                 # Only the closed transient provider set is retryable. Keep
                 # the learner fact committed, but do not settle a terminal

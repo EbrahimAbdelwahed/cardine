@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from hashlib import sha256
 from typing import NoReturn
 
@@ -50,6 +50,7 @@ from study_agent.domain import (
     InteractionKind,
     RunId,
     SessionId,
+    SourceId,
 )
 from study_agent.domain._validation import JsonObject, JsonValue, freeze_object
 from study_agent.flashcards.lesson_worker_contracts import (
@@ -235,8 +236,13 @@ class _ProfileWorker:
 
 
 class _LessonEvidenceResolver:
-    def __init__(self, content: CourseSourceContent) -> None:
+    def __init__(
+        self,
+        content: CourseSourceContent,
+        retired_source_ids: Callable[[], frozenset[SourceId]],
+    ) -> None:
         self._content = content
+        self._retired_source_ids = retired_source_ids
 
     def resolve(
         self,
@@ -251,7 +257,8 @@ class _LessonEvidenceResolver:
             document = next(
                 (
                     item
-                    for item in self._content.documents(include_superseded=True)
+                    for item in self._content.documents()
+                    if item.source_id not in self._retired_source_ids()
                     if item.source_id == slot.span.source_id
                     and item.revision_id == slot.span.revision_id
                     and item.chunk.start_offset == slot.span.start_offset
@@ -321,6 +328,8 @@ class FlashcardProposalComposition:
         artifact_service: ArtifactService,
         source_commitments: SourceCommitmentLookupPort,
         sessions: SessionViewPort,
+        retired_source_ids: Callable[[], frozenset[SourceId]]
+        | frozenset[SourceId] = frozenset(),
     ) -> None:
         self._course_id = course_id
         self._session_id = session_id
@@ -333,11 +342,15 @@ class FlashcardProposalComposition:
         self._artifact_service = artifact_service
         self._source_commitments = source_commitments
         self._sessions = sessions
+        if callable(retired_source_ids):
+            self._retired_source_ids = retired_source_ids
+        else:
+            retired = frozenset(retired_source_ids)
+            self._retired_source_ids = lambda: retired
         self._lesson_store = _namespaced(runs, "lesson-worker")
         self._owner_store = _namespaced(runs, "generated-owner")
         self._generation_store = _namespaced(runs, "generation-worker")
         self._proof_store = _namespaced(runs, "verified-proof")
-        self._source_catalog_fingerprint = retrieval_catalog_fingerprint(content.documents())
         self._course_profile_fingerprint = sha256(
             canonical_json_bytes(course_profile)
         ).hexdigest()
@@ -355,6 +368,16 @@ class FlashcardProposalComposition:
             exam_scope=_UnavailableExamScope(),
             source_content=content,
         )
+
+    def _source_catalog_fingerprint(self) -> str:
+        """Fingerprint only the active, non-retired current revision set."""
+
+        active = tuple(
+            document
+            for document in self._content.documents()
+            if document.source_id not in self._retired_source_ids()
+        )
+        return retrieval_catalog_fingerprint(active)
 
     @property
     def runtime(self) -> VerifiedGeneratedBatchRuntime:
@@ -383,7 +406,7 @@ class FlashcardProposalComposition:
             worker = self._worker_for_request(request)
             service = LessonWorkerService(
                 store=self._lesson_store,
-                resolver=_LessonEvidenceResolver(self._content),
+                resolver=_LessonEvidenceResolver(self._content, self._retired_source_ids),
                 task_binding=worker.task_binding,
                 worker=worker,
                 owner_writer=self._runtime.lesson_owner_writer,
@@ -435,7 +458,7 @@ class FlashcardProposalComposition:
             worker = self._worker_for_request(request)
             service = LessonWorkerService(
                 store=self._lesson_store,
-                resolver=_LessonEvidenceResolver(self._content),
+                resolver=_LessonEvidenceResolver(self._content, self._retired_source_ids),
                 task_binding=worker.task_binding,
                 worker=worker,
                 owner_writer=self._runtime.lesson_owner_writer,
@@ -502,7 +525,7 @@ class FlashcardProposalComposition:
         context: ExecutionContext,
         decision: FlashcardProfileSelectionDecision,
     ) -> LessonWorkerRequest:
-        plan = _lesson_plan(self._content)
+        plan = _lesson_plan(self._content, self._retired_source_ids())
         interaction_id = self._latest_interaction_id()
         receipt = decision.receipt(interaction_id)
         profile = decision.profile
@@ -514,6 +537,7 @@ class FlashcardProposalComposition:
             RevisionContentCommitment(record.source.revision_id, record.source.checksum_sha256)
             for record in self._content.catalog()
             if record.is_current_revision
+            and record.source.source_id not in self._retired_source_ids()
         )
         return LessonWorkerRequest(
             plan,
@@ -619,7 +643,7 @@ def _profile_binding(
             ReadDependency(
                 "source_revision_set",
                 str(context.course_id),
-                composition._source_catalog_fingerprint,
+                composition._source_catalog_fingerprint(),
             ),
         ]
         dependencies.extend(
@@ -630,6 +654,7 @@ def _profile_binding(
             )
             for record in composition._content.catalog()
             if record.is_current_revision
+            and record.source.source_id not in composition._retired_source_ids()
         )
         return tuple(dependencies)
     if profile == HYBRID_MACRO_DETAIL_V1:
@@ -678,8 +703,14 @@ def _profile_expectation(
     )
 
 
-def _lesson_plan(content: CourseSourceContent) -> FlashcardLessonPlan:
-    records = tuple(record for record in content.catalog() if record.is_current_revision)
+def _lesson_plan(
+    content: CourseSourceContent, retired_source_ids: frozenset[SourceId] = frozenset()
+) -> FlashcardLessonPlan:
+    records = tuple(
+        record
+        for record in content.catalog()
+        if record.is_current_revision and record.source.source_id not in retired_source_ids
+    )
     topics: list[LessonTopic] = []
     paragraphs: list[LessonParagraph] = []
     position = 0
