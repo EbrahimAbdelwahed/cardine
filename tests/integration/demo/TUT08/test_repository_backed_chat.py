@@ -156,6 +156,24 @@ class _FixtureModel:
                     ),
                     "unsupported_information_note": None,
                 }
+            elif explain_output == {"fixture": "long-cited-lesson-answer"}:
+                evidence_ids = tuple(dict.fromkeys(_EVIDENCE_ID.findall(rendered)))
+                assert len(evidence_ids) >= 10
+                explain_output = {
+                    "status": "answered",
+                    "segments": tuple(
+                        {
+                            "kind": "supported_claim",
+                            "text": f"Punto didattico {index}: "
+                            + ("contenuto verificato " * 9).strip(),
+                            "evidence_ids": tuple(
+                                dict.fromkeys((evidence_ids[0], evidence_id))
+                            ),
+                        }
+                        for index, evidence_id in enumerate(evidence_ids[:10], start=1)
+                    ),
+                    "unsupported_information_note": None,
+                }
             return ModelResponse(
                 "",
                 None,
@@ -796,6 +814,75 @@ def test_unrenderable_grounded_completion_still_returns_a_visible_chat_message(
     assert timeline[-1]["role"] == "assistant"
     assert "Non sono riuscito" in str(timeline[-1]["content"])
     assert len(model.requests) == 2
+
+
+def test_attached_long_lesson_publishes_complete_answer_with_compact_sources(
+    tmp_path: Path,
+) -> None:
+    lesson = "# Lezione 1\n\n" + "\n\n".join(
+        f"Concetto canonico {index}. " * 30
+        for index in range(1, 13)
+    ) + "\n\n# Lezione 2\n\nContenuto estraneo.\n"
+    root, adapters, _model = _repository(
+        tmp_path,
+        (
+            {
+                "kind": "start_capability",
+                "capability_id": "explain_concept",
+                "inputs": {
+                    "query": "avvia una spiegazione",
+                    "target": "avvia una spiegazione",
+                    "language": "it",
+                    "learner_goal": None,
+                    "continuation_summary_json": None,
+                },
+            },
+        ),
+        explain_output={"fixture": "long-cited-lesson-answer"},
+        source_content=lesson.encode(),
+    )
+    with LocalRepository.open(root, model_adapters=adapters) as repository:
+        repository.queue_indexing()
+        repository.reconcile_indexing()
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+    search = app.post(
+        "/api/v1/lessons/search",
+        _workspace_command("long-lesson-search", sequence, {"query": "Lezione 1"}),
+    )
+    candidate = cast(tuple[dict[str, object], ...], search["candidates"])[0]
+    selected = app.post(
+        "/api/v1/lessons/select",
+        _workspace_command(
+            "long-lesson-select",
+            sequence,
+            {"query": "Lezione 1", "candidate_id": candidate["candidate_id"]},
+        ),
+    )
+    command = _command("long-pinned-turn", sequence, "Avvia una spiegazione")
+    cast(dict[str, object], command["payload"])["lesson_pin"] = selected["pin"]
+
+    receipt = app.post("/api/v1/session/turns", command)
+
+    assert receipt["status"] == "completed"
+    timeline = cast(tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"])
+    answer = str(timeline[-1]["content"])
+    expected_body = "\n\n".join(
+        f"Punto didattico {index}: " + ("contenuto verificato " * 9).strip()
+        for index in range(1, 11)
+    )
+    body, sources = answer.split("\n\nFonti verificate:", 1)
+    assert body == expected_body
+    source_lines = tuple(
+        line.removeprefix("- ")
+        for line in sources.splitlines()
+        if line.startswith("- ") and not line.startswith("- Altre ")
+    )
+    assert source_lines
+    assert len(source_lines) == len(set(source_lines))
+    assert "Non sono riuscito" not in answer
+    assert answer.count("Fonti verificate:") == 1
+    assert len(answer) <= 4_000
 
 
 @pytest.mark.parametrize(

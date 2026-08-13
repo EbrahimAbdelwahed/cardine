@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 from cardine.adapters.model.retrieval_query_recovery import RetrievalQueryRecovery
 from cardine.adapters.pageindex import PageIndexCoordinator, PageIndexRevision
+from cardine.application.capability_completion import MAX_COMPLETION_CONTENT_CHARS
 from cardine.application.flashcard_proposals import FlashcardProposalComposition
 from cardine.application.indexing import (
     IndexingCoordinator,
@@ -665,6 +666,8 @@ def _explanation_product_receipt(
         return None
     pieces: list[str] = []
     canonical_ids: set[str] = set()
+    locators: list[str] = []
+    seen_locators: set[str] = set()
     for raw_segment in raw_segments:
         if not isinstance(raw_segment, Mapping):
             return None
@@ -674,7 +677,6 @@ def _explanation_product_receipt(
             return None
         if not isinstance(citations, tuple):
             return None
-        labels: list[str] = []
         for citation in citations:
             if not isinstance(citation, Mapping):
                 return None
@@ -701,11 +703,12 @@ def _explanation_product_receipt(
                 and quote == quote.strip()
             ):
                 return None
-            labels.append(f"{locator}\n«{quote[:240]}»")
+            if locator not in seen_locators:
+                seen_locators.add(locator)
+                locators.append(locator)
             canonical_ids.update((source_id, revision_id, chunk_id))
-        suffix = f"\n\nFonti: {', '.join(labels)}" if labels else ""
-        pieces.append(text + suffix)
-    content = "\n\n".join(pieces).strip()
+        pieces.append(text)
+    content = _completion_content_with_sources("\n\n".join(pieces).strip(), locators)
     try:
         return CapabilityCompletionProductReceipt(
             reference.capability_identity,
@@ -715,6 +718,36 @@ def _explanation_product_receipt(
         )
     except (TypeError, ValueError):
         return None
+
+
+def _completion_content_with_sources(content: str, locators: Sequence[str]) -> str:
+    """Append one compact source list without truncating the model's answer."""
+
+    if not locators or len(content) >= MAX_COMPLETION_CONTENT_CHARS:
+        return content
+    heading = "\n\nFonti verificate:"
+    available = MAX_COMPLETION_CONTENT_CHARS - len(content) - len(heading)
+    if available <= 0:
+        return content
+    lines: list[str] = []
+    used = 0
+    for locator in locators:
+        line = f"\n- {locator}"
+        if used + len(line) > available:
+            break
+        lines.append(line)
+        used += len(line)
+    omitted = len(locators) - len(lines)
+    if omitted:
+        summary = f"\n- Altre {omitted} citazioni verificate."
+        while lines and used + len(summary) > available:
+            removed = lines.pop()
+            used -= len(removed)
+            omitted += 1
+            summary = f"\n- Altre {omitted} citazioni verificate."
+        if used + len(summary) <= available:
+            lines.append(summary)
+    return content + heading + "".join(lines) if lines else content
 
 
 class _RepositoryTutorToolGateway:
