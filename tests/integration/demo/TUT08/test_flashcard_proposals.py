@@ -223,6 +223,53 @@ def test_repository_chat_publishes_verified_pending_flashcard_proposal(tmp_path:
     assert flashcard_requests[-1].metadata["prompt_id"] == "hybrid_flashcards.v1"
 
 
+def test_repository_chat_flashcards_respect_the_attached_lesson_scope(tmp_path: Path) -> None:
+    source = "\n".join(
+        f"# Lezione {position}\nLa valvola della lezione {position} ha tre cuspidi."
+        for position in range(1, 261)
+    ).encode()
+    root, adapters, model = _repository(tmp_path, source_content=source)
+    flashcard_requests = _install_hybrid_flashcard_model(model)
+    with LocalRepository.open(root, model_adapters=adapters) as repository:
+        result = repository.search_lessons(COURSE, "Lezione 1")
+        candidate = next(
+            item for item in result.candidates if item.section_title == "Lezione 1"
+        )
+        pin = repository.select_lesson(COURSE, "Lezione 1", candidate.candidate_id)
+
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+    command = _command(
+        "create-pinned-flashcard",
+        sequence,
+        "Crea una flashcard sulla lezione allegata",
+    )
+    command["payload"] = {
+        "content": "Crea una flashcard sulla lezione allegata",
+        "lesson_pin": {
+            "course_id": pin.course_id,
+            "source_id": pin.source_id,
+            "revision_id": pin.revision_id,
+            "section_title": pin.section_title,
+            "start_offset": pin.start_offset,
+            "end_offset": pin.end_offset,
+            "content_sha256": pin.content_sha256,
+            "catalog_fingerprint": pin.catalog_fingerprint,
+        },
+    }
+
+    receipt = app.post("/api/v1/session/turns", command)
+
+    assert receipt["status"] == "completed", receipt
+    activity = cast(dict[str, object], receipt["activity"])
+    assert activity["kind"] == "flashcard_generation"
+    assert cast(int, activity["proposal_count"]) >= 1
+    assert len(flashcard_requests) == 1
+    prompt = "\n".join(message.content for message in flashcard_requests[0].messages)
+    assert "Lezione 1" in prompt
+    assert "Lezione 2" not in prompt
+
+
 def test_direct_selected_lesson_flashcards_create_human_interaction_before_generation(
     tmp_path: Path,
 ) -> None:

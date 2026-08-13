@@ -1134,23 +1134,6 @@
   }
   .continuation__prompt { font-family: var(--font-display); font-size: var(--text-xl); line-height: var(--leading-snug); }
 
-  .ai-session-activity { margin-top: var(--space-6); }
-  .ai-session-activity > summary {
-    display: flex;
-    width: fit-content;
-    align-items: center;
-    min-height: var(--control-height);
-    gap: var(--space-2);
-    padding-inline: var(--space-2);
-    color: var(--muted);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    font-size: var(--text-md);
-    list-style: none;
-  }
-  .ai-session-activity > summary:hover { color: var(--ink); background: var(--surface-hover); }
-  .ai-session-activity__grid { display: grid; gap: var(--space-4); margin-top: var(--space-4); }
-
   /* Shell slots that host an AI primitive. They own placement only; the
      primitive owns its own surface. */
   .ai-fonts-search { display: flex; justify-content: flex-start; }

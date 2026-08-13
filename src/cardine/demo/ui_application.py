@@ -29,7 +29,7 @@ from cardine.cli.repository import (
     ModelAdapterRegistry,
 )
 from cardine.courses import ProjectionCourseView
-from cardine.diagnostics import TurnTraceStore
+from cardine.diagnostics import TurnActivityStore, TurnTraceStore
 from cardine.documents import (
     AnyDocErrorCode,
     AnyDocWorkerError,
@@ -281,6 +281,7 @@ class RepositoryUiApplication(UiApplicationPort):
             LocalRepository.open
         ),
         turn_traces: TurnTraceStore | None = None,
+        turn_activity: TurnActivityStore | None = None,
         document_policy: DocumentImportPolicy | None = None,
     ) -> None:
         self._repository = Path(repository)
@@ -304,6 +305,7 @@ class RepositoryUiApplication(UiApplicationPort):
         self._lock = _repository_mutation_lock(self._repository)
         self._indexing_worker_lock = Lock()
         self._turn_traces = turn_traces if turn_traces is not None else TurnTraceStore()
+        self._turn_activity = turn_activity if turn_activity is not None else TurnActivityStore()
         self._document_policy = document_policy or document_import_policy()
         self._indexing_view: JsonObject = {
             "status": "empty",
@@ -345,6 +347,10 @@ class RepositoryUiApplication(UiApplicationPort):
         return self._turn_traces
 
     @property
+    def turn_activity(self) -> TurnActivityStore:
+        return self._turn_activity
+
+    @property
     def document_policy(self) -> DocumentImportPolicy:
         return self._document_policy
 
@@ -380,6 +386,12 @@ class RepositoryUiApplication(UiApplicationPort):
             }
 
     def get(self, path: str) -> JsonObject:
+        prefix = "/api/v1/turns/"
+        suffix = "/activity"
+        if path.startswith(prefix) and path.endswith(suffix):
+            request_id = path[len(prefix) : -len(suffix)]
+            if request_id and "/" not in request_id:
+                return self._turn_activity.snapshot(request_id)
         if path == "/api/v1/workspace":
             return self._workspace()
         if path == "/api/v1/indexing/status":
@@ -579,7 +591,10 @@ class RepositoryUiApplication(UiApplicationPort):
             if payload.get("lesson_pin") is not None
             else None
         )
-        with self._turn_traces.capture(request_id, expected_sequence) as trace_id, self._lock:
+        activity_status = "done"
+        with self._turn_activity.capture(request_id), self._turn_traces.capture(
+            request_id, expected_sequence
+        ) as trace_id, self._lock:
             try:
                 with self._open() as repository:
                     before_artifacts = repository.artifacts.get(self._course_id)
@@ -633,6 +648,17 @@ class RepositoryUiApplication(UiApplicationPort):
                         and item.status is ArtifactRevisionStatus.PROPOSED
                         and item.kind is StudyArtifactKind.FLASHCARD
                     )
+                    settled_activity = self._turn_activity.settle(request_id, status="done")
+                    timeline = list(cast(Sequence[JsonObject], session.get("timeline", ())))
+                    for index in range(len(timeline) - 1, -1, -1):
+                        if timeline[index].get("role") in {"assistant", "tutor"}:
+                            timeline[index] = {
+                                **timeline[index],
+                                "activity_records": settled_activity["records"],
+                                "activity_state": settled_activity["state"],
+                            }
+                            break
+                    session = {**session, "timeline": tuple(timeline)}
                     return {
                         "schema_version": 1,
                         "request_id": request_id,
@@ -655,20 +681,25 @@ class RepositoryUiApplication(UiApplicationPort):
                                 "destination": "proposte",
                             }
                         ),
+                        "activity_records": settled_activity["records"],
                     }
             except UiRequestError:
+                activity_status = "failed"
                 raise
             except ConversationTurnError as error:
+                activity_status = "failed"
                 raise _conversation_ui_error(
                     error, request_id=request_id, trace_id=trace_id
                 ) from error
             except (CourseNotFoundError, SessionNotFoundError, FileNotFoundError) as error:
+                activity_status = "failed"
                 raise UiRequestError(
                     "selected course or session was not found",
                     status_code=404,
                     trace_id=trace_id,
                 ) from error
             except ModelAdapterConfigurationError as error:
+                activity_status = "failed"
                 raise UiRequestError(
                     "configured model credential is unavailable",
                     status_code=503,
@@ -681,11 +712,14 @@ class RepositoryUiApplication(UiApplicationPort):
                 ValueError,
                 RuntimeError,
             ) as error:
+                activity_status = "failed"
                 raise UiRequestError(
                     "repository runtime is unavailable",
                     status_code=503,
                     trace_id=trace_id,
                 ) from error
+            finally:
+                self._turn_activity.settle(request_id, status=activity_status)
 
     def _lesson_search(self, command: Mapping[str, object]) -> JsonObject:
         request_id, _expected, payload = _workspace_command(

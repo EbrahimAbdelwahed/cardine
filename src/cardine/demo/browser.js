@@ -142,8 +142,10 @@
     chatCourseCreation: null,
     studySetup: null,
     lastTurn: null,
+    turnActivities: Object.create(null),
     authProbeUnavailable: false,
     indexingPollToken: 0,
+    activityPollToken: 0,
     diagnosticTraceId: "",
     lesson: { query: "", candidates: [], pin: null, answer: null },
   };
@@ -283,6 +285,7 @@
   const aiAnswer = (options) => typeof CardineAI.answer === "function" ? CardineAI.answer(options || {}) : "";
   const aiApproval = (options) => typeof CardineAI.approval === "function" ? CardineAI.approval(options || {}) : "";
   const aiToolStack = (options) => typeof CardineAI.toolStack === "function" ? CardineAI.toolStack(options || {}) : "";
+  const aiToolChips = (options) => typeof CardineAI.toolChips === "function" ? CardineAI.toolChips(options || {}) : "";
   const aiTaskList = (options) => typeof CardineAI.taskList === "function" ? CardineAI.taskList(options || {}) : "";
   const aiChatPanel = (options) => typeof CardineAI.chatPanel === "function" ? CardineAI.chatPanel(options || {}) : "";
   const aiRecommendation = (options) => typeof CardineAI.recommendation === "function" ? CardineAI.recommendation(options || {}) : "";
@@ -1509,6 +1512,19 @@
       const messageRole = text(first(object(message), ["role", "speaker", "who"], "assistant"), "assistant").toLowerCase();
       if (!["learner", "user", "student"].includes(messageRole)) lastAssistantIndex = index;
     });
+    displayMessages.forEach((message, index) => {
+      const item = object(message);
+      const presentationId = text(first(item, ["interaction_id", "presentation_id"], ""), "");
+      const remembered = object(state.turnActivities[presentationId]);
+      const records = array(remembered.records);
+      if (presentationId && records.length) {
+        displayMessages[index] = {
+          ...item,
+          activity_records: records,
+          activity_state: text(remembered.state, "settled"),
+        };
+      }
+    });
     const thread = displayMessages.length
       ? displayMessages.map((message, index) => renderMessage(message, index === lastAssistantIndex)).join("")
       : emptyState(
@@ -1527,14 +1543,6 @@
       })
       : "";
     const continuationHtml = continuation && Object.keys(continuation).length ? `<div class="continuation"><p class="section-kicker">richiesta del tutor</p><p class="continuation__prompt">${esc(continuationPrompt)}</p>${continuationApproval}${continuationFingerprint ? entryForm("continuation-entry", "Risposta", "Scrivi la risposta…", "", `data-fingerprint="${esc(continuationFingerprint)}"`) : emptyState("Continuazione non disponibile", "Manca il riferimento necessario per riprendere la conversazione.")}</div>` : "";
-    const activityDisclosure = `<details class="ai-session-activity"><summary>Attività</summary><div class="ai-session-activity__grid">${aiThinking({
-      summary: "Trace di ragionamento non esposto",
-      hint: "Cardine mostra solo attività dichiarata dal contratto.",
-      steps: [{ label: "Risposta canonica disponibile", detail: "Il servizio non espone il ragionamento interno del modello.", status: "unavailable" }],
-    })}${aiToolStack({
-      title: "Attività tecnica",
-      tools: [{ label: "Strumenti usati", detail: "Il servizio non ha dichiarato strumenti usati in questa conversazione.", status: "unavailable" }],
-    })}</div></details>`;
     const createCourse = state.auth.authenticated
       ? `<button class="text-button" type="button" data-open-course-creation>Crea un corso</button>`
       : "";
@@ -1545,7 +1553,7 @@
       title: text(first(snapshot, ["title", "topic"], object(state.bootstrap?.course).title), "Sessione di studio"),
       subtitle: statusLabel(status),
       thread,
-      extras: `${continuationHtml}${activityDisclosure}`,
+      extras: continuationHtml,
       actions: `${createCourse}${tutorStatus}<button class="text-button" type="button" data-route="fonti">Fonti</button>`,
       placeholder: "Rispondi al tutor…",
     }));
@@ -1571,10 +1579,10 @@
     const citations = Object.keys(citation).length ? [citation] : [];
     const followUps = array(first(item, ["follow_ups", "followUps", "suggestions", "actions"], []));
     const thinking = array(first(item, ["thinking", "trace", "steps", "activity"], []));
-    const tools = array(first(item, ["tools", "tool_activity", "capabilities", "retrieval"], []));
+    const tools = array(first(item, ["activity_records", "tools", "tool_activity", "capabilities", "retrieval"], []));
     const answer = aiAnswer({ answer: text(content, "Messaggio senza testo visualizzabile."), citations, followUps, status: first(item, ["status", "state"], "ready"), reveal: showFineTune });
     const thinkingView = thinking.length ? aiThinking({ steps: thinking, summary: "Come ho costruito questa risposta" }) : "";
-    const toolsView = tools.length ? aiToolStack({ tools, title: "Attività dichiarata" }) : "";
+    const toolsView = tools.length ? aiToolChips({ records: tools, state: text(first(item, ["activity_state", "state"], "settled"), "settled") }) : "";
     const fineTune = showFineTune ? aiFineTune({
       title: "Continua",
       detail: "Ogni opzione prepara un follow-up nel campo di scrittura, senza inviarlo.",
@@ -1916,6 +1924,7 @@
     if (isTutorTurn) {
       state.pendingTurn = { requestId: request, content: text(payload.content || payload.response) };
       renderOptimisticTurn(state.pendingTurn.content);
+      pollTurnActivity(request).catch(() => {});
     }
     setBusy(true);
     setStatus(
@@ -1925,6 +1934,11 @@
     try {
       const receipt = await fetchJson(endpoint, { method: "POST", body: JSON.stringify(commandPayload(payload, request)) });
       const activity = object(receipt.activity);
+      const settledRecords = array(receipt.activity_records);
+      const presentationId = text(receipt.presentation_id, "");
+      if (isTutorTurn && presentationId && settledRecords.length) {
+        state.turnActivities[presentationId] = { records: settledRecords, state: "settled" };
+      }
       const flashcardCompleted = text(activity.kind) === "flashcard_generation"
         && text(activity.status) === "completed";
       const traceId = text(receipt.trace_id, "");
@@ -1939,6 +1953,7 @@
       // command for an explicit transient retry action.
       if (commandIsCurrent) state.lastCommand = null;
       if (isTutorTurn && state.pendingTurn?.requestId === request) state.pendingTurn = null;
+      if (isTutorTurn) state.activityPollToken += 1;
       if (endpoint === "/api/v1/session/turns" || endpoint.includes("/session/continuations/")) {
         state.continuationDraft = "";
       }
@@ -1954,8 +1969,22 @@
         state.viewData = object(receipt.result);
         renderSessione(state.viewData);
         dismissAlert();
+      } else if (originIsStillActive && isTutorTurn) {
+        // The receipt is the only first-delivery carrier for process-local
+        // activity records. Rendering it directly keeps the settled chips on
+        // the answer without pretending they survive a later reload.
+        state.route = "sessione";
+        state.viewData = object(receipt.result);
+        renderSessione(state.viewData);
       } else if (originIsStillActive) {
         await loadRoute((isFlashcardCommand || flashcardCompleted) && status === "completed" ? "proposte" : refreshRoute);
+      }
+      if (isTutorTurn && originIsStillActive && receipt.result) {
+        const assistant = $$(".thread-message--assistant", root).at(-1);
+        if (assistant && settledRecords.length) {
+          const existing = $(".thread-message__activity", assistant);
+          if (existing) patch(existing, aiToolChips({ records: settledRecords, state: "settled" }));
+        }
       }
       const nextComposer = originIsStillActive ? $("#session-entry-text") : null;
       if (nextComposer) nextComposer.focus({ preventScroll: true });
@@ -2003,7 +2032,7 @@
     const pendingCopy = flashcards
       ? "Sto generando e verificando le proposte flashcard…"
       : "Sto preparando una risposta basata sulle fonti del corso…";
-    const pending = `<article class="thread-message thread-message--assistant thread-message--pending" data-optimistic-turn><p class="thread-message__role">tutor</p><p class="thread-message__text">${pendingCopy}</p></article>`;
+    const pending = `<article class="thread-message thread-message--assistant thread-message--pending" data-optimistic-turn><p class="thread-message__role">tutor</p><p class="thread-message__text">${pendingCopy}</p><div class="thread-message__activity" data-turn-activity aria-live="polite"></div></article>`;
     const thread = $(".session-thread", root);
     if (thread) {
       thread.insertAdjacentHTML("beforeend", outgoing + pending);
@@ -2022,6 +2051,25 @@
 
   function removeOptimisticTurn() {
     $$('[data-optimistic-turn]', root).forEach((item) => item.remove());
+  }
+
+  async function pollTurnActivity(requestId) {
+    const token = ++state.activityPollToken;
+    const navigationVersion = state.navigationVersion;
+    let failures = 0;
+    for (let attempt = 0; attempt < 240 && token === state.activityPollToken && navigationVersion === state.navigationVersion && state.pendingTurn?.requestId === requestId && failures < 3; attempt += 1) {
+      try {
+        const payload = await fetchJson(`/api/v1/turns/${encodeURIComponent(requestId)}/activity`);
+        failures = 0;
+        const node = $("[data-turn-activity]", root);
+        if (node && token === state.activityPollToken) patch(node, aiToolChips(payload));
+        if (["settled", "failed"].includes(text(payload.state))) return;
+        await new Promise((resolve) => window.setTimeout(resolve, 600));
+      } catch (_) {
+        failures += 1;
+        await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      }
+    }
   }
 
   function restoreFailedTurnDraft(content, originForm) {

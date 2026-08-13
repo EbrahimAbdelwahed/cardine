@@ -368,6 +368,43 @@
   .ai-tool-stack__item small, .ai-task-list__copy small { display: block; color: var(--muted); font-size: var(--text-sm); overflow-wrap: anywhere; }
   .ai-task-list__copy { min-width: 0; }
 
+  /* ---- Live tool chips -------------------------------------------------- */
+  .ai-tool-chips { margin-block: var(--space-3); }
+  .ai-tool-chips > summary {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: var(--control-height);
+    padding: var(--space-1) var(--space-2);
+    color: var(--muted);
+    background: var(--paper-deep);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: var(--text-sm);
+    font-weight: var(--weight-semibold);
+  }
+  .ai-tool-chips > summary:hover { color: var(--ink); background: var(--surface-hover); }
+  .ai-tool-chips > summary .icon { width: var(--icon-size-sm); height: var(--icon-size-sm); }
+  .ai-tool-chips__list { display: grid; gap: var(--space-2); margin-block: var(--space-2) 0; padding: 0; list-style: none; }
+  .ai-tool-chips__chip {
+    display: grid;
+    grid-template-columns: var(--icon-size-sm) auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    padding: var(--space-2) var(--space-3);
+    color: var(--ink-soft);
+    background: var(--paper-deep);
+    border-radius: var(--radius-sm);
+  }
+  .ai-tool-chips__chip[data-state="running"] { animation: ai-tool-chip-running var(--duration-slow) var(--ease-out) infinite; }
+  .ai-tool-chips__chip[data-state="failed"] { color: var(--danger); }
+  .ai-tool-chips__verb { font-weight: var(--weight-semibold); white-space: nowrap; }
+  .ai-tool-chips__target { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ai-tool-chips__count { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .ai-tool-chips__chip .icon { width: var(--icon-size-sm); height: var(--icon-size-sm); color: var(--muted); }
+  @keyframes ai-tool-chip-running { 0% { opacity: 1; } 50% { opacity: .72; } 100% { opacity: 1; } }
+
   /* ---- Chat panel ------------------------------------------------------- */
   .ai-chat-panel { gap: 0; padding: 0; overflow: hidden; }
   .ai-chat-panel__header { padding: var(--space-4); box-shadow: inset 0 -1px 0 var(--line); }

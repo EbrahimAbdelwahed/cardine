@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass, replace
 from hashlib import sha256
 from pathlib import Path
@@ -28,6 +29,7 @@ from cardine.courses import (
     course_profile_manifest,
     register_course_events,
 )
+from cardine.diagnostics import add_settled, begin_activity, finish_activity
 from cardine.hosts import (
     HostActionIdentity,
     SourceGroundedTutorDecisionPort,
@@ -242,6 +244,45 @@ _PAGEINDEX_RECONCILE_BUDGET = 32
 _PAGEINDEX_ADMISSION_BUDGET = 4
 _LESSON_SEARCH_SOURCE_BUDGET = 32
 
+HARNESS_TOOL_LABELS = {
+    "course.create": "Registro nel repository",
+    "course.list": "Leggo il repository",
+    "session.start": "Avvio la sessione",
+    "source.ingest": "Registro la fonte",
+    "context.get": "Leggo il contesto",
+    "recall.get": "Leggo il ripasso",
+    "artifact.get": "Leggo gli artefatti",
+    "assessment.get": "Leggo la valutazione",
+    "evidence.get": "Leggo le evidenze",
+}
+
+
+class _ObservedToolExecutor:
+    """Record one source search without forwarding its query or evidence."""
+
+    name = "source.search"
+    behavior_version = BoundSourceSearchExecutor.behavior_version
+
+    def __init__(self, inner: BoundSourceSearchExecutor, *, target: str, ref: str) -> None:
+        self._inner = inner
+        self._target = target
+        self._ref = ref
+
+    async def invoke(self, arguments: JsonObject) -> JsonObject:
+        token = None
+        with suppress(TypeError, ValueError):
+            token = begin_activity(
+                kind="retrieval", ref=self._ref, target=self._target
+            )
+        try:
+            output = await self._inner.invoke(arguments)
+            count = len(output.get("items", ())) if isinstance(output, Mapping) else None
+            finish_activity(token, status="done", count=count)
+            return output
+        except Exception:
+            finish_activity(token, status="failed", error_code="tool_failed")
+            raise
+
 
 class _PinnedRetrieval:
     """Restrict canonical retrieval evidence to one validated lesson pin."""
@@ -378,6 +419,18 @@ def _cardine_fallback_message(status: TutorHostRunStatus, failure_reason: str | 
     return _GENERIC_TUTOR_FAILURE_MESSAGE
 
 
+def _record_failed_verification() -> None:
+    add_settled(
+        {
+            "kind": "verification",
+            "ref": "verification.answer",
+            "target": "",
+            "status": "failed",
+            "error_code": "capability_failed",
+        }
+    )
+
+
 class _RepositoryTutorGateway:
     """Request-bound real explain capability over canonical repository reads."""
 
@@ -450,12 +503,54 @@ class _RepositoryTutorGateway:
         if capability_id is TutorCapabilityId.PROPOSE_FLASHCARDS:
             if self._flashcards is None:
                 raise ValueError("flashcard capability is not executable")
-            return await self._flashcards.start(inputs, context)
-        gateway = self._gateway(inputs, context)
-        recovered_query = await self._recover_empty_retrieval_query(inputs)
-        if recovered_query is not None:
-            gateway = self._gateway(inputs, context, recovered_query=recovered_query)
-        outcome = await gateway.start(capability_id, inputs, context)
+            try:
+                if self._lesson_pin is not None:
+                    outcome = await self._flashcards.start_for_pin(
+                        inputs, self._lesson_pin, context
+                    )
+                else:
+                    outcome = await self._flashcards.start(inputs, context)
+            except Exception:
+                _record_failed_verification()
+                raise
+            add_settled(
+                {
+                    "kind": "verification",
+                    "ref": "verification.answer",
+                    "target": "",
+                    "status": (
+                        "done"
+                        if isinstance(outcome, CompletedCapabilityOutcome)
+                        else "failed"
+                    ),
+                    "error_code": None
+                    if isinstance(outcome, CompletedCapabilityOutcome)
+                    else "capability_failed",
+                }
+            )
+            return outcome
+        try:
+            gateway = self._gateway(inputs, context)
+            recovered_query = await self._recover_empty_retrieval_query(inputs)
+            if recovered_query is not None:
+                gateway = self._gateway(inputs, context, recovered_query=recovered_query)
+            outcome = await gateway.start(capability_id, inputs, context)
+        except Exception:
+            _record_failed_verification()
+            raise
+        add_settled(
+            {
+                "kind": "verification",
+                "ref": "verification.answer",
+                "target": "",
+                "status": (
+                    "done" if isinstance(outcome, CompletedCapabilityOutcome) else "failed"
+                ),
+                "error_code": None
+                if isinstance(outcome, CompletedCapabilityOutcome)
+                else "capability_failed",
+            }
+        )
         return outcome
 
     async def resume(
@@ -470,7 +565,26 @@ class _RepositoryTutorGateway:
         inputs = getattr(continuation, "inputs", None)
         if not isinstance(inputs, Mapping):
             raise TypeError("continuation inputs are invalid")
-        outcome = await self._gateway(inputs, context).resume(continuation, response, context)
+        try:
+            outcome = await self._gateway(inputs, context).resume(
+                continuation, response, context
+            )
+        except Exception:
+            _record_failed_verification()
+            raise
+        add_settled(
+            {
+                "kind": "verification",
+                "ref": "verification.answer",
+                "target": "",
+                "status": (
+                    "done" if isinstance(outcome, CompletedCapabilityOutcome) else "failed"
+                ),
+                "error_code": None
+                if isinstance(outcome, CompletedCapabilityOutcome)
+                else "capability_failed",
+            }
+        )
         return outcome
 
     def _require_provider_consent(self) -> None:
@@ -634,13 +748,18 @@ class _RepositoryTutorGateway:
             index_receipt=course_receipt,
             limit=retrieval_limit,
         )
+        search_executor = _ObservedToolExecutor(
+            search,
+            target="" if lesson_pin is None else lesson_pin.section_title,
+            ref="retrieval.search" if lesson_pin is None else "retrieval.lesson",
+        )
         engine = PlaybookEngine(
             engine_version=_V1,
             model_adapter=self._model_adapter,
             state_contract=ArtifactReference("event_state", _V1),
             model=self._model,
             registries=RuntimeRegistries(
-                (search,),
+                (search_executor,),
                 builtin_tutor_validators(course.content),
                 (PromptComposerRegistration(binding.pins.prompt, CanonicalPromptComposer()),),
             ),
@@ -772,6 +891,12 @@ class _RepositoryTutorToolGateway:
         manifest = next((item for item in surface.manifests if item.name == name), None)
         if manifest is None:
             raise ValueError("tutor named an unknown harness tool")
+        ref = name if name in HARNESS_TOOL_LABELS else None
+        token = (
+            begin_activity(kind="tool", ref=ref)
+            if ref is not None
+            else None
+        )
         target_course = course_id
         target_session: SessionId | None = session_id
         if name == "course.create":
@@ -782,19 +907,29 @@ class _RepositoryTutorToolGateway:
                 "course-tutor-sha256:" + sha256(f"{course_id}:{host_turn_id}".encode()).hexdigest()
             )
             target_session = None
-        return await surface.invoke(
-            name,
-            arguments,
-            ExecutionContext(
-                PrincipalKind.SERVICE,
-                "study-agent-tutor-tool-host",
-                target_course,
-                CorrelationId(f"cardine-tutor-tool-{host_turn_id}"),
-                frozenset(manifest.required_capabilities),
-                target_session,
-                idempotency_key=f"{host_turn_id}:{name}",
-            ),
-        )
+        try:
+            result = await surface.invoke(
+                name,
+                arguments,
+                ExecutionContext(
+                    PrincipalKind.SERVICE,
+                    "study-agent-tutor-tool-host",
+                    target_course,
+                    CorrelationId(f"cardine-tutor-tool-{host_turn_id}"),
+                    frozenset(manifest.required_capabilities),
+                    target_session,
+                    idempotency_key=f"{host_turn_id}:{name}",
+                ),
+            )
+            finish_activity(
+                token,
+                status="failed" if getattr(result, "error", None) is not None else "done",
+                error_code="tool_failed" if getattr(result, "error", None) is not None else None,
+            )
+            return result
+        except Exception:
+            finish_activity(token, status="failed", error_code="tool_failed")
+            raise
 
 
 class _RepositoryTutorAuthority:

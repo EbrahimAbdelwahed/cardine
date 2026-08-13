@@ -227,7 +227,7 @@
       }
       if (seenCitations[label]) return "";
       seenCitations[label] = true;
-      return '<span class="ai-citation" title="' + escapeAttribute(label) + '">' +
+      return '<span class="ai-citation" data-tooltip="' + escapeAttribute(label) + '">' +
         '<span class="icon icon--book-open" aria-hidden="true"></span>' +
         '<span class="ai-citation__label">' + escapeText(label) + "</span></span>";
     }).filter(Boolean);
@@ -277,6 +277,44 @@
     }).join("");
     return '<section class="ai-tool-stack" aria-labelledby="ai-tool-stack-title"><header><div><p class="ai-eyebrow">attività</p><h2 id="ai-tool-stack-title">' + escapeText(config.title || "Strumenti usati") +
       '</h2></div>' + statusPill(config.status, config.statusLabel) + '</header><ul>' + (chips || '<li class="ai-empty">Nessuna attività dichiarata.</li>') + "</ul></section>";
+  }
+
+  function renderToolChips(options) {
+    var config = options || {};
+    var records = list(config.records || config.items);
+    if (!records.length) return "";
+    var state = value(config.state, "settled");
+    var failed = records.filter(function (record) {
+      return value(read(record, ["status", "state"], "done"), "done") === "failed";
+    }).length;
+    var countLabel = records.length === 1 ? "1 attività" : records.length + " attività";
+    var suffix = (state === "running" ? " · in corso" : "") +
+      (failed ? " · " + failed + " errore" + (failed === 1 ? "" : "i") : "");
+    var icons = {
+      retrieval: "book-open",
+      capability: "note-pencil",
+      verification: "shield-check",
+      tool: "gear",
+      model: "chat-circle"
+    };
+    var rows = records.map(function (record) {
+      var item = record && typeof record === "object" ? record : { label: record };
+      var itemState = value(read(item, ["status", "state"], "done"), "done");
+      var kind = value(item.kind, "model");
+      var icon = icons[kind] || "gear";
+      var target = bounded(read(item, ["target", "title"], ""), "");
+      var count = item.count === null || item.count === undefined || item.count === "" ? "" : '<span class="ai-tool-chips__count">' + escapeText(item.count) + " risultati</span>";
+      return '<li class="ai-tool-chips__chip" data-state="' + escapeAttribute(itemState) + '" data-tone="' + escapeAttribute(kind) + '">' +
+        '<span class="icon icon--' + escapeAttribute(icon) + '" aria-hidden="true"></span>' +
+        '<span class="ai-tool-chips__verb">' + escapeText(read(item, ["label", "verb", "title"], "Attività")) + "</span>" +
+        (target ? '<span class="ai-tool-chips__target">' + escapeText(target) + "</span>" : "") + count + "</li>";
+    }).join("");
+    var rootState = state === "running" ? "running" : state === "failed" || failed ? "failed" : "settled";
+    return '<details class="ai-tool-chips" data-ai-disclosure data-state="' + escapeAttribute(rootState) + '">' +
+      '<summary data-ai-disclosure-trigger><span class="icon icon--gear" aria-hidden="true"></span>' +
+      '<span class="ai-tool-chips__summary">' + escapeText(countLabel + suffix) + '</span>' +
+      '<span class="ai-disclosure-caret" aria-hidden="true"></span></summary>' +
+      '<ul class="ai-tool-chips__list" aria-label="Attività registrate">' + rows + "</ul></details>";
   }
 
   function renderTaskList(options) {
@@ -421,6 +459,7 @@
       answer: renderAnswer,
       approval: renderApproval,
       toolStack: renderToolStack,
+      toolChips: renderToolChips,
       taskList: renderTaskList,
       chatPanel: renderChatPanel,
       recommendation: renderRecommendation,
@@ -725,6 +764,7 @@
     answer: renderAnswer,
     approval: renderApproval,
     toolStack: renderToolStack,
+    toolChips: renderToolChips,
     taskList: renderTaskList,
     chatPanel: renderChatPanel,
     recommendation: renderRecommendation,
