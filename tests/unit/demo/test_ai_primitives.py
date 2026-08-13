@@ -113,6 +113,74 @@ console.log(JSON.stringify(output));
     assert result["longBounded"] is True
 
 
+def test_answer_renders_safe_markdown_and_verified_sources_as_compact_chips() -> None:
+    source = json.dumps(str(PRIMITIVES))
+    script = f"""
+const path = {source};
+require(path);
+const answer = `# Struttura
+
+La pompa ha una **subunità alfa** e usa \\`ATP\\`.
+
+- Primo passaggio
+- Secondo passaggio
+
+> Punto da ricordare.
+
+Fonti verificate:
+- Biochimica · Lezione 1
+- <script>alert('fonte')</script>`;
+console.log(JSON.stringify(CardineAI.answer({{answer}})));
+"""
+
+    rendered = _run_node(script)
+
+    assert isinstance(rendered, str)
+    assert '<div class="ai-answer__markdown">' in rendered
+    assert '<h2>Struttura</h2>' in rendered
+    assert '<strong>subunità alfa</strong>' in rendered
+    assert '<code>ATP</code>' in rendered
+    assert '<ul><li>Primo passaggio</li><li>Secondo passaggio</li></ul>' in rendered
+    assert '<blockquote><p>Punto da ricordare.</p></blockquote>' in rendered
+    assert "Fonti verificate:" not in rendered
+    assert rendered.count('class="ai-citation"') == 2
+    assert 'class="icon icon--book-open"' in rendered
+    assert "Biochimica · Lezione 1" in rendered
+    assert "&lt;script&gt;alert(&#39;fonte&#39;)&lt;/script&gt;" in rendered
+    assert "<script>alert('fonte')</script>" not in rendered
+
+
+def test_answer_hides_legacy_verbatim_chunks_and_keeps_their_source_chips() -> None:
+    source = json.dumps(str(PRIMITIVES))
+    script = f"""
+const path = {source};
+require(path);
+const answer = `Primo paragrafo della spiegazione.
+
+Fonti: Biochimica · pagina 451
+«Chunk verbatim che non deve essere mostrato.», Biochimica · pagina 452
+«Secondo chunk verbatim.»
+
+Secondo paragrafo con **concetto importante**.
+
+Fonti: Biochimica · pagina 451
+«Lo stesso chunk ripetuto.»`;
+console.log(JSON.stringify(CardineAI.answer({{answer}})));
+"""
+
+    rendered = _run_node(script)
+
+    assert isinstance(rendered, str)
+    assert "Primo paragrafo della spiegazione." in rendered
+    assert "Secondo paragrafo con <strong>concetto importante</strong>." in rendered
+    assert "Fonti:" not in rendered
+    assert "Chunk verbatim" not in rendered
+    assert "Lo stesso chunk ripetuto" not in rendered
+    assert rendered.count('class="ai-citation"') == 2
+    assert rendered.count('class="ai-citation__label">Biochimica · pagina 451') == 1
+    assert rendered.count('class="ai-citation__label">Biochimica · pagina 452') == 1
+
+
 def test_enhance_binds_local_hooks_without_submitting_or_networking() -> None:
     source = json.dumps(str(PRIMITIVES))
     script = f"""

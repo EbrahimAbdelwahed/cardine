@@ -68,6 +68,118 @@
       escapeText(value(label, normalized.replace(/_/g, " "))) + "</span>";
   }
 
+  function renderInlineMarkdown(input) {
+    var code = [];
+    var tokenized = value(input, "").replace(/`([^`\n]+)`/g, function (_match, content) {
+      var index = code.push(escapeText(content)) - 1;
+      return "CARDINECODETOKEN" + index + "END";
+    });
+    var rendered = escapeText(tokenized)
+      .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/__([^_\n]+)__/g, "<strong>$1</strong>")
+      .replace(/(^|[\s(])\*([^*\n]+)\*/g, "$1<em>$2</em>")
+      .replace(/(^|[\s(])_([^_\n]+)_/g, "$1<em>$2</em>");
+    return rendered.replace(/CARDINECODETOKEN(\d+)END/g, function (match, index) {
+      return code[Number(index)] === undefined ? match : "<code>" + code[Number(index)] + "</code>";
+    });
+  }
+
+  function markdownBlockStart(line) {
+    return /^(?:#{1,4}\s+|```|>\s?|[-*+]\s+|\d+[.)]\s+|(?:---+|___+|\*\*\*+)\s*$)/.test(line);
+  }
+
+  function renderMarkdown(input) {
+    var lines = value(input, "").replace(/\r\n?/g, "\n").split("\n");
+    var output = [];
+    var index = 0;
+    while (index < lines.length) {
+      var line = lines[index];
+      if (!line.trim()) { index += 1; continue; }
+      if (/^```[^\n]*$/.test(line)) {
+        var code = [];
+        index += 1;
+        while (index < lines.length && !/^```\s*$/.test(lines[index])) {
+          code.push(lines[index]);
+          index += 1;
+        }
+        if (index < lines.length) index += 1;
+        output.push("<pre><code>" + escapeText(code.join("\n")) + "</code></pre>");
+        continue;
+      }
+      var heading = line.match(/^(#{1,4})\s+(.+)$/);
+      if (heading) {
+        var level = Math.min(heading[1].length + 1, 4);
+        output.push("<h" + level + ">" + renderInlineMarkdown(heading[2]) + "</h" + level + ">");
+        index += 1;
+        continue;
+      }
+      if (/^(?:---+|___+|\*\*\*+)\s*$/.test(line)) {
+        output.push("<hr>");
+        index += 1;
+        continue;
+      }
+      if (/^>\s?/.test(line)) {
+        var quote = [];
+        while (index < lines.length && /^>\s?/.test(lines[index])) {
+          quote.push(lines[index].replace(/^>\s?/, ""));
+          index += 1;
+        }
+        output.push("<blockquote><p>" + renderInlineMarkdown(quote.join(" ")) + "</p></blockquote>");
+        continue;
+      }
+      var unordered = line.match(/^[-*+]\s+(.+)$/);
+      var ordered = line.match(/^\d+[.)]\s+(.+)$/);
+      if (unordered || ordered) {
+        var tag = unordered ? "ul" : "ol";
+        var matcher = unordered ? /^[-*+]\s+(.+)$/ : /^\d+[.)]\s+(.+)$/;
+        var items = [];
+        while (index < lines.length) {
+          var item = lines[index].match(matcher);
+          if (!item) break;
+          items.push("<li>" + renderInlineMarkdown(item[1]) + "</li>");
+          index += 1;
+        }
+        output.push("<" + tag + ">" + items.join("") + "</" + tag + ">");
+        continue;
+      }
+      var paragraph = [line.trim()];
+      index += 1;
+      while (index < lines.length && lines[index].trim() && !markdownBlockStart(lines[index])) {
+        paragraph.push(lines[index].trim());
+        index += 1;
+      }
+      output.push("<p>" + renderInlineMarkdown(paragraph.join(" ")) + "</p>");
+    }
+    return output.join("");
+  }
+
+  function verifiedSourcePresentation(input) {
+    var answer = bounded(input, "");
+    var legacySources = [];
+    answer = answer.replace(
+      /\n\nFonti: [^\n]+\n«[\s\S]*?»(?:, [^\n]+\n«[\s\S]*?»)*/g,
+      function (block) {
+        var locator = /(?:Fonti: |», )([^\n]+)\n«/g;
+        var match;
+        while ((match = locator.exec(block)) !== null) legacySources.push(match[1].trim());
+        return "";
+      }
+    );
+    var marker = "\n\nFonti verificate:";
+    var markerIndex = answer.lastIndexOf(marker);
+    if (markerIndex < 0) return { answer: answer.trim(), sources: legacySources };
+    var lines = answer.slice(markerIndex + marker.length).trim().split("\n");
+    if (!lines.length || lines.some(function (line) { return !/^-\s+\S/.test(line); })) {
+      return { answer: answer.trim(), sources: legacySources };
+    }
+    return {
+      answer: answer.slice(0, markerIndex).trim(),
+      sources: legacySources.concat(
+        lines.map(function (line) { return line.replace(/^-\s+/, "").trim(); })
+      )
+    };
+  }
+
   function renderLoading(options) {
     var config = options || {};
     var label = bounded(config.label, "Preparazione del tutor");
@@ -99,14 +211,19 @@
 
   function renderAnswer(options) {
     var config = options || {};
-    var answer = bounded(read(config, ["answer", "text", "content"], ""), "");
-    var citations = list(config.citations || config.sources);
+    var presentation = verifiedSourcePresentation(read(config, ["answer", "text", "content"], ""));
+    var answer = presentation.answer;
+    var citations = list(config.citations || config.sources).concat(presentation.sources);
     var followUps = list(config.followUps || config.follow_ups);
-    var citationHtml = citations.map(function (citation, index) {
+    var seenCitations = Object.create(null);
+    var citationHtml = citations.map(function (citation) {
       var item = typeof citation === "object" && citation !== null ? citation : { label: citation };
-      return '<span class="ai-citation" data-citation-index="' + escapeAttribute(index) + '">' +
-        '<span class="ai-citation__index" aria-hidden="true">' + escapeText(index + 1) + '</span>' +
-        escapeText(read(item, ["label", "title", "locator", "path"], "Fonte")) + "</span>";
+      var label = bounded(read(item, ["label", "title", "locator", "path"], "Fonte"), "Fonte");
+      if (seenCitations[label]) return "";
+      seenCitations[label] = true;
+      return '<span class="ai-citation" title="' + escapeAttribute(label) + '">' +
+        '<span class="icon icon--book-open" aria-hidden="true"></span>' +
+        '<span class="ai-citation__label">' + escapeText(label) + "</span></span>";
     }).join("");
     var followHtml = followUps.map(function (followUp) {
       var label = bounded(read(followUp, ["label", "title", "text"], followUp), "Continua");
@@ -115,7 +232,7 @@
     }).join("");
     var reveal = config.reveal === true ? ' data-ai-reveal="true"' : "";
     return '<article class="ai-answer"><div class="ai-answer__header"><p class="ai-eyebrow">risposta</p>' + statusPill(config.status, config.statusLabel) +
-      '</div><div class="ai-answer__body">' + (answer ? '<p' + reveal + '>' + escapeText(answer) + "</p>" : '<p class="ai-empty">Nessuna risposta disponibile.</p>') +
+      '</div><div class="ai-answer__body">' + (answer ? '<div class="ai-answer__markdown"' + reveal + '>' + renderMarkdown(answer) + "</div>" : '<p class="ai-empty">Nessuna risposta disponibile.</p>') +
       '</div>' + (citationHtml ? '<footer class="ai-answer__sources" aria-label="Fonti">' + citationHtml + "</footer>" : "") +
       (followHtml ? '<div class="ai-answer__follow-ups" aria-label="Continua lo studio">' + followHtml + "</div>" : "") + "</article>";
   }
