@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from study_agent.skills import ArtifactReference, SemanticVersion
 
-VERSION = SemanticVersion.parse("1.3.0")
+VERSION = SemanticVersion.parse("1.3.1")
 TUTOR_DECISION_PROMPT = ArtifactReference("tutor_decision.v1", VERSION)
 
 _BASE_INSTRUCTION = (
@@ -55,8 +55,10 @@ _BASE_INSTRUCTION = (
 _CAPABILITY_GUIDANCE = {
     "explain_concept": (
         "Output: a bounded explanation grounded in canonical course evidence. Positive: "
-        "'Spiegami il legame peptidico'. Negative: greetings, product help, source listing, "
-        "or generic planning. Never promise an explanation later; select this capability now."
+        "'Spiegami il legame peptidico' and 'Studiamo la lezione 1: di cosa parla?'. "
+        "Natural study language is an action request even without an imperative verb. Negative: "
+        "greetings, product help, source listing, or a social mention such as 'Oggi ho la lezione "
+        "1'. Never promise an explanation later; select this capability now."
     ),
     "assess_understanding": (
         "Output: learner questions grounded in course evidence. Positive: 'Fammi una verifica "

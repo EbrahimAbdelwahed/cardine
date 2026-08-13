@@ -57,6 +57,7 @@ from cardine.knowledge import (
     PageIndexStatus,
     SearchDisposition,
     SourcePin,
+    lesson_title_matches,
 )
 from study_agent.adapters.filesystem import (
     BlobIntegrityError,
@@ -304,22 +305,23 @@ class _StructuralRangeRetrieval:
         )
         if len(documents) > 100:
             raise ValueError("lesson scope exceeds the canonical evidence bound")
-        evidence = tuple(
-            RetrievalEvidence(
-                document.chunk,
+        evidence_rows: list[RetrievalEvidence] = []
+        for document in sorted(documents, key=lambda item: item.chunk.ordinal):
+            resolved = self._catalog.resolve(
                 Citation(
                     document.source_id,
                     document.revision_id,
                     document.chunk.chunk_id,
                     document.chunk.start_offset,
                     document.chunk.end_offset,
+                    "cardine-structural-range",
                     document.text,
-                ),
-                document.text,
-                1.0,
+                )
             )
-            for document in sorted(documents, key=lambda item: item.chunk.ordinal)
-        )
+            evidence_rows.append(
+                RetrievalEvidence(document.chunk, resolved.citation, resolved.text, 1.0)
+            )
+        evidence = tuple(evidence_rows)
         fingerprint = sha256(
             b"cardine-structural-query@1\0" + canonical_json_bytes(
                 {
@@ -1607,7 +1609,6 @@ class LocalRepository:
             str(course_id), query, fallback_sources
         )
         candidates = list(lexical.candidates)
-        needle = query.casefold().strip()
         for source in sources:
             if source.kind.casefold() != "markdown":
                 continue
@@ -1615,7 +1616,7 @@ class LocalRepository:
             if projection is None or projection.status is not PageIndexStatus.READY:
                 continue
             for item in projection.candidates:
-                if item.title.casefold() != needle:
+                if not lesson_title_matches(item.title, query):
                     continue
                 identity = "\0".join(
                     (
@@ -1671,7 +1672,9 @@ class LocalRepository:
             dict.fromkeys(
                 match.group(0).strip()
                 for match in re.finditer(
-                    r"\blezione\s+(?:numero\s+)?[\w.-]+\b", normalized
+                    r"(?:\blezione\s+(?:numero\s+)?\d+\b|"
+                    r"\bl[\s_-]*0*\d+(?=$|[\s_./-]))",
+                    normalized,
                 )
             )
         )

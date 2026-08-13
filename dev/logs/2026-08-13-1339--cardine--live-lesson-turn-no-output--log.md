@@ -56,4 +56,5 @@ lesson navigation the converted `L01` heading convention. Add one regression
 for the exact live wording and one for canonical structural evidence before
 changing production behavior.
 
-No production code was changed during this diagnosis.
+The targeted correction is recorded in
+[Lesson routing usability](2026-08-13-1404--cardine--lesson-routing-usability--log.md).
