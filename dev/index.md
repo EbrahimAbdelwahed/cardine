@@ -14,6 +14,7 @@ archive and must not be treated as Cardine's current state.
 - [Wave A recovery plan](plans/2026-08-12-1930--cardine--wave-a-text-knowledge-recovery--plan.md) — reconstruction contract after the temporary worktree loss.
 - [Wave A closure log](logs/2026-08-13-0200--cardine--wave-a-product-closure--log.md) — recovered study journey and qualification evidence.
 - [Usability fixes 1–4 log](logs/2026-08-13-1305--cardine--rapid-usability-fixes-1-4--log.md) — structural lesson retrieval, observable indexing, robust routing, and flashcard feedback.
+- [Live lesson-turn diagnosis](logs/2026-08-13-1339--cardine--live-lesson-turn-no-output--log.md) — reproduced causes behind the failed “studiamo la lezione 1” journey; production remains unfixed.
 - [Memory consolidation log](logs/2026-08-13-1420--cardine--dev-memory-consolidation--log.md) — why this repository-local index is now the sole current entrypoint.
 
 ## Durable decisions
