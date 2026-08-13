@@ -216,15 +216,29 @@
     var citations = list(config.citations || config.sources).concat(presentation.sources);
     var followUps = list(config.followUps || config.follow_ups);
     var seenCitations = Object.create(null);
-    var citationHtml = citations.map(function (citation) {
+    var omittedCitationCount = 0;
+    var citationRows = citations.map(function (citation) {
       var item = typeof citation === "object" && citation !== null ? citation : { label: citation };
       var label = bounded(read(item, ["label", "title", "locator", "path"], "Fonte"), "Fonte");
+      var omitted = label.match(/^Altre (\d+) citazioni verificate\.$/i);
+      if (omitted) {
+        omittedCitationCount += Number(omitted[1]);
+        return "";
+      }
       if (seenCitations[label]) return "";
       seenCitations[label] = true;
       return '<span class="ai-citation" title="' + escapeAttribute(label) + '">' +
         '<span class="icon icon--book-open" aria-hidden="true"></span>' +
         '<span class="ai-citation__label">' + escapeText(label) + "</span></span>";
-    }).join("");
+    }).filter(Boolean);
+    var citationCount = citationRows.length + omittedCitationCount;
+    var citationLabel = citationCount === 1 ? "1 fonte verificata" : citationCount + " fonti verificate";
+    var citationHtml = citationRows.join("");
+    var sourceDisclosure = citationCount ? '<details class="ai-answer__source-disclosure"><summary>' +
+      '<span class="icon icon--book-open" aria-hidden="true"></span><span>' + escapeText(citationLabel) +
+      '</span><span class="ai-disclosure-caret" aria-hidden="true"></span></summary>' +
+      (citationHtml ? '<footer class="ai-answer__sources" aria-label="Fonti">' + citationHtml + "</footer>" : "") +
+      "</details>" : "";
     var followHtml = followUps.map(function (followUp) {
       var label = bounded(read(followUp, ["label", "title", "text"], followUp), "Continua");
       var prompt = bounded(read(followUp, ["prompt", "value", "text"], label), label);
@@ -233,7 +247,7 @@
     var reveal = config.reveal === true ? ' data-ai-reveal="true"' : "";
     return '<article class="ai-answer"><div class="ai-answer__header"><p class="ai-eyebrow">risposta</p>' + statusPill(config.status, config.statusLabel) +
       '</div><div class="ai-answer__body">' + (answer ? '<div class="ai-answer__markdown"' + reveal + '>' + renderMarkdown(answer) + "</div>" : '<p class="ai-empty">Nessuna risposta disponibile.</p>') +
-      '</div>' + (citationHtml ? '<footer class="ai-answer__sources" aria-label="Fonti">' + citationHtml + "</footer>" : "") +
+      "</div>" + sourceDisclosure +
       (followHtml ? '<div class="ai-answer__follow-ups" aria-label="Continua lo studio">' + followHtml + "</div>" : "") + "</article>";
   }
 

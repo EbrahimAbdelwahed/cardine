@@ -243,7 +243,25 @@
   .ai-answer__markdown hr { height: 1px; background: var(--line); border: 0; }
   /* A fade, not a wipe: text should not be revealed by a moving edge. */
   .ai-answer__markdown.is-revealing { animation: ai-reveal var(--duration-slow) var(--ease-out) both; }
+  .ai-answer__source-disclosure { width: 100%; max-width: 100%; justify-self: start; }
+  .ai-answer__source-disclosure > summary {
+    display: inline-flex;
+    min-height: 32px;
+    align-items: center;
+    gap: var(--space-2);
+    padding-inline: var(--space-3);
+    color: var(--ink-soft);
+    background: var(--paper-deep);
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    font-size: var(--text-sm);
+    list-style: none;
+  }
+  .ai-answer__source-disclosure > summary:hover { color: var(--ink); background: var(--surface-hover); }
+  .ai-answer__source-disclosure > summary .icon { width: var(--icon-size-sm); height: var(--icon-size-sm); }
+  .ai-answer__source-disclosure[open] .ai-disclosure-caret { transform: rotate(45deg); }
   .ai-answer__sources { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .ai-answer__source-disclosure[open] .ai-answer__sources { margin-top: var(--space-3); }
   .ai-citation {
     display: inline-flex;
     max-width: min(100%, 24rem);

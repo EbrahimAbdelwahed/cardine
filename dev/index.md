@@ -1,6 +1,6 @@
 # Cardine development memory
 
-Updated: 2026-08-13 15:16 CEST
+Updated: 2026-08-13 15:31 CEST
 
 This file is the authoritative entrypoint for Cardine development memory.
 Cardine-specific plans, logs, notes, and handoffs belong in this repository's
@@ -9,7 +9,8 @@ archive and must not be treated as Cardine's current state.
 
 ## Start here
 
-- [Current chat-presentation handoff](handoffs/2026-08-13-1516--cardine--markdown-chat-presentation--handoff.md) — current branch, live runtime, Markdown answers, source chips, and remaining work.
+- [Current collapsed-sources handoff](handoffs/2026-08-13-1531--cardine--collapsed-sources--handoff.md) — current branch, live runtime, default source disclosure, and remaining work.
+- [Markdown chat-presentation handoff](handoffs/2026-08-13-1516--cardine--markdown-chat-presentation--handoff.md) — safe Markdown answers and source-chip renderer boundary.
 - [Pinned-lesson live-fix handoff](handoffs/2026-08-13-1458--cardine--pinned-lesson-live-fix--handoff.md) — completed publication fix and its verification boundary.
 - [Wave A usable-recovery handoff](handoffs/2026-08-13-1410--cardine--wave-a-usable-recovery--handoff.md) — shipped fixes 1–4 and their verification boundary.
 - [Wave A product contract](plans/2026-08-11-2345--cardine--wave-a-studyable-product--plan.md) — original product invariants and release definition.
@@ -20,6 +21,7 @@ archive and must not be treated as Cardine's current state.
 - [Lesson routing usability fix](logs/2026-08-13-1404--cardine--lesson-routing-usability--log.md) — targeted structural aliases, canonical evidence, and one-turn natural lesson study.
 - [Pinned lesson answer publication](logs/2026-08-13-1458--cardine--pinned-lesson-answer-publication--log.md) — live diagnosis and targeted repair for completed explanations discarded by citation expansion.
 - [Markdown answers and source chips](logs/2026-08-13-1516--cardine--markdown-answers-source-chips--log.md) — safe Markdown rendering, compact sources, and cleanup of historical verbatim citation blocks.
+- [Collapsed source disclosure](logs/2026-08-13-1531--cardine--collapsed-source-disclosure--log.md) — closed-by-default source count with expandable locator chips.
 - [Chat-attached lesson pin handoff](handoffs/2026-08-13-1404--cardine--chat-attached-lesson-pin--handoff.md) and [log](logs/2026-08-13-1404--cardine--chat-attached-lesson-pin--log.md) — the lesson picker is now a composer attachment and the pin travels with the chat turn; uncommitted working-tree state.
 - [Dead browser-asset gates note](notes/2026-08-13-1404--tests--demo-asset-gates-pointed-at-pre-rename-path--note.md) — the `tests/unit/demo` UI gate resolved a pre-rename path and never ran; repointed and green again.
 - [Memory consolidation log](logs/2026-08-13-1420--cardine--dev-memory-consolidation--log.md) — why this repository-local index is now the sole current entrypoint.

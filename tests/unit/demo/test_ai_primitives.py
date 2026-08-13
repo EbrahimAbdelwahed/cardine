@@ -129,7 +129,8 @@ La pompa ha una **subunità alfa** e usa \\`ATP\\`.
 
 Fonti verificate:
 - Biochimica · Lezione 1
-- <script>alert('fonte')</script>`;
+- <script>alert('fonte')</script>
+- Altre 6 citazioni verificate.`;
 console.log(JSON.stringify(CardineAI.answer({{answer}})));
 """
 
@@ -143,9 +144,13 @@ console.log(JSON.stringify(CardineAI.answer({{answer}})));
     assert '<ul><li>Primo passaggio</li><li>Secondo passaggio</li></ul>' in rendered
     assert '<blockquote><p>Punto da ricordare.</p></blockquote>' in rendered
     assert "Fonti verificate:" not in rendered
+    assert '<details class="ai-answer__source-disclosure">' in rendered
+    assert '<details class="ai-answer__source-disclosure" open>' not in rendered
+    assert "8 fonti verificate" in rendered
     assert rendered.count('class="ai-citation"') == 2
     assert 'class="icon icon--book-open"' in rendered
     assert "Biochimica · Lezione 1" in rendered
+    assert "Altre 6 citazioni verificate." not in rendered
     assert "&lt;script&gt;alert(&#39;fonte&#39;)&lt;/script&gt;" in rendered
     assert "<script>alert('fonte')</script>" not in rendered
 
