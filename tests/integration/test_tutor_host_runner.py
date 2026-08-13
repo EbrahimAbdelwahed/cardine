@@ -572,6 +572,44 @@ def test_completion_handoff_codec_is_canonical_and_closed() -> None:
     record = TutorCompletionHandoff.from_bytes(payload)
     assert record.state is TutorCompletionHandoffState.COMPLETED
     assert TutorCompletionHandoff.from_bytes(record.to_bytes()) == record
+    legacy = replace(
+        record,
+        record_fingerprint=None,
+        agent_observations=(),
+        serialized_schema_version=1,
+    )
+    assert TutorCompletionHandoff.from_bytes(legacy.to_bytes()).to_bytes() == legacy.to_bytes()
+    with pytest.raises(ValueError, match="bounded projection"):
+        replace(
+            record,
+            record_fingerprint=None,
+            agent_observations=(
+                {
+                    "tool_name": "context.get",
+                    "action_fingerprint": "a" * 64,
+                    "status": "succeeded",
+                    "result": {
+                        "nested": {
+                            "raw_prompt_text": "do not persist",
+                            "vendor_name": "do not persist",
+                        }
+                    },
+                },
+            ),
+        )
+    with pytest.raises(ValueError, match="result must be an object"):
+        replace(
+            record,
+            record_fingerprint=None,
+            agent_observations=(
+                {
+                    "tool_name": "context.get",
+                    "action_fingerprint": "a" * 64,
+                    "status": "succeeded",
+                    "result": ("invalid",),
+                },
+            ),
+        )
     with pytest.raises(ValueError):
         TutorCompletionHandoff.from_bytes(payload[:-1] + b"0")
 

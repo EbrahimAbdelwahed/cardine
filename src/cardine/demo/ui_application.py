@@ -7,10 +7,12 @@ owned by the canonical repository services or by their shared harness surface.
 from __future__ import annotations
 
 import asyncio
+import re
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
+from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 from threading import Lock, Thread
@@ -107,6 +109,7 @@ from study_agent.domain import (
     GradeLifecycle,
     PresentationId,
     PrincipalKind,
+    RevisionId,
     SessionId,
     SourceId,
     StatementId,
@@ -139,7 +142,7 @@ from study_agent.recall import (
     RetryableRecallConflictError,
 )
 from study_agent.recall.events import REVIEW_RECORDED, SCHEDULE_APPLIED
-from study_agent.retrieval import SourceContentError
+from study_agent.retrieval import SourceContentError, SourceRevisionRecord
 from study_agent.sessions import ProjectionTutorPresentationView
 from study_agent.sessions.events import grounded_answer_manifest
 from study_agent.state import PayloadValidationError, Projection
@@ -173,6 +176,31 @@ MAX_SOURCE_TITLE_CHARS = 240
 
 _REPOSITORY_LOCKS_GUARD = Lock()
 _REPOSITORY_MUTATION_LOCKS: dict[Path, Lock] = {}
+
+
+@dataclass(frozen=True, slots=True)
+class SourceDocumentView:
+    """Verified bytes and bounded display metadata for one source revision."""
+
+    title: str
+    viewer_kind: str
+    media_type: str
+    content: bytes
+    page_count: int | None = None
+
+    def __post_init__(self) -> None:
+        if not self.title or self.title != self.title.strip():
+            raise ValueError("source document title is invalid")
+        if self.viewer_kind not in {"pdf", "markdown", "text"}:
+            raise ValueError("source document viewer kind is invalid")
+        if not self.media_type or self.media_type != self.media_type.strip():
+            raise ValueError("source document media type is invalid")
+        if not isinstance(self.content, bytes) or not self.content:
+            raise ValueError("source document content is invalid")
+        if self.page_count is not None and (
+            type(self.page_count) is not int or self.page_count < 1
+        ):
+            raise ValueError("source document page count is invalid")
 
 
 class UiApplicationPort(Protocol):
@@ -223,7 +251,10 @@ class UiRequestError(ValueError):
 
 
 def _source_grounding_status(
-    repository: LocalRepository, course_id: CourseId, snapshot: TutorSnapshotV1
+    repository: LocalRepository,
+    course_id: CourseId,
+    snapshot: TutorSnapshotV1,
+    records: Sequence[SourceRevisionRecord] | None = None,
 ) -> JsonObject:
     """Expose grounding only when every displayed source has readable text."""
 
@@ -233,16 +264,21 @@ def _source_grounding_status(
     if expected_chunks == 0:
         return {"status": "empty", "indexed_chunks": 0}
     try:
-        documents = tuple(
-            item
-            for item in repository.for_course(course_id).content.documents()
-            if item.source_id not in retired
+        catalog = (
+            tuple(records)
+            if records is not None
+            else repository.for_course(course_id).content.catalog()
+        )
+        indexed_chunks = sum(
+            len(item.chunks)
+            for item in catalog
+            if item.is_current_revision and item.source.source_id not in retired
         )
     except (SourceContentError, OSError, ValueError):
         return {"status": "unavailable", "indexed_chunks": 0}
-    if len(documents) != expected_chunks:
-        return {"status": "unavailable", "indexed_chunks": len(documents)}
-    return {"status": "available", "indexed_chunks": len(documents)}
+    if indexed_chunks != expected_chunks:
+        return {"status": "unavailable", "indexed_chunks": indexed_chunks}
+    return {"status": "available", "indexed_chunks": indexed_chunks}
 
 
 def _flashcard_capability_available(
@@ -412,8 +448,9 @@ class RepositoryUiApplication(UiApplicationPort):
         if route is None:
             raise UiRequestError("route not found", status_code=404)
         try:
-            with self._lock, self._open() as repository:
+            with self._open() as repository:
                 readiness_projection, snapshot = self._captured_state(repository)
+                source_records = repository.for_course(self._course_id).content.catalog()
 
                 def captured(_course_id: CourseId) -> Projection:
                     return readiness_projection
@@ -460,7 +497,12 @@ class RepositoryUiApplication(UiApplicationPort):
                         "context": context,
                         "presentations": presentations,
                         "source_grounding": _source_grounding_status(
-                            repository, self._course_id, snapshot
+                            repository, self._course_id, snapshot, source_records
+                        ),
+                        "source_records": (
+                            source_records
+                            if path in {"/api/v1/materials", "/api/v1/session"}
+                            else ()
                         ),
                         "pageindex": repository.pageindex_summary(self._course_id),
                         "indexing": self._indexing_record_payload(
@@ -509,6 +551,69 @@ class RepositoryUiApplication(UiApplicationPort):
                 "selected course or session was not found", status_code=404
             ) from error
         except (LocalRepositoryError, OSError, ValueError, RuntimeError) as error:
+            raise UiRequestError("repository runtime is unavailable", status_code=503) from error
+
+    def read_source_document(
+        self, source_id: str, revision_id: str
+    ) -> SourceDocumentView:
+        """Resolve one course-owned immutable revision to verified display bytes."""
+
+        try:
+            selected_source = SourceId(source_id)
+            selected_revision = RevisionId(revision_id)
+        except (TypeError, ValueError):
+            raise UiRequestError("source revision was not found", status_code=404) from None
+        try:
+            with self._open() as repository:
+                if selected_source in repository.source_lifetime.retired_source_ids(
+                    self._course_id
+                ):
+                    raise UiRequestError("source revision was not found", status_code=404)
+                record = next(
+                    (
+                        item
+                        for item in repository.for_course(self._course_id).content.catalog()
+                        if item.source.source_id == selected_source
+                        and item.source.revision_id == selected_revision
+                    ),
+                    None,
+                )
+                if record is None:
+                    raise UiRequestError("source revision was not found", status_code=404)
+                provenance = record.source.conversion_provenance
+                if provenance is not None:
+                    return SourceDocumentView(
+                        title=record.source.title,
+                        viewer_kind="pdf",
+                        media_type="application/pdf",
+                        content=repository.blobs.get(record.source.blob),
+                        page_count=provenance.page_count,
+                    )
+                viewer_kind = "markdown" if record.source.kind.value == "markdown" else "text"
+                media_type = (
+                    "text/markdown; charset=utf-8"
+                    if viewer_kind == "markdown"
+                    else "text/plain; charset=utf-8"
+                )
+                return SourceDocumentView(
+                    title=record.source.title,
+                    viewer_kind=viewer_kind,
+                    media_type=media_type,
+                    content=record.text.encode("utf-8"),
+                )
+        except UiRequestError:
+            raise
+        except SourceContentError:
+            raise UiRequestError(
+                "source content is unavailable", status_code=503,
+                diagnostic_code="source_content_unavailable",
+            ) from None
+        except (LookupError, OSError, UnicodeError, ValueError):
+            raise UiRequestError(
+                "source content is unavailable", status_code=503,
+                diagnostic_code="source_content_unavailable",
+            ) from None
+        except (LocalRepositoryError, RuntimeError) as error:
             raise UiRequestError("repository runtime is unavailable", status_code=503) from error
 
     def post(self, path: str, command: Mapping[str, object]) -> JsonObject:
@@ -2193,11 +2298,14 @@ class RepositoryUiApplication(UiApplicationPort):
     @staticmethod
     def _session(snapshot: TutorSnapshotV1, metadata: Mapping[str, object]) -> JsonObject:
         presentations = metadata.get("presentations", ())
+        source_records = cast(
+            tuple[SourceRevisionRecord, ...], metadata.get("source_records", ())
+        )
         readiness = metadata.get("readiness")
         canonical_timeline = [_timeline_item(item) for item in snapshot.timeline]
         if isinstance(presentations, Sequence):
             canonical_timeline.extend(
-                _presentation_timeline_item(item)
+                _presentation_timeline_item(item, source_records)
                 for item in presentations
                 if hasattr(item, "course_sequence")
             )
@@ -2227,6 +2335,10 @@ class RepositoryUiApplication(UiApplicationPort):
     def _materials(snapshot: TutorSnapshotV1, metadata: Mapping[str, object]) -> JsonObject:
         grounding = cast(Mapping[str, object], metadata["source_grounding"])
         groundable = grounding["status"] == "available"
+        records = {
+            (str(item.source.source_id), str(item.source.revision_id)): item
+            for item in cast(tuple[SourceRevisionRecord, ...], metadata.get("source_records", ()))
+        }
         retired = {
             str(item) for item in cast(tuple[object, ...], metadata.get("retired_source_ids", ()))
         }
@@ -2243,6 +2355,9 @@ class RepositoryUiApplication(UiApplicationPort):
                     "trust_level": item.trust_level,
                     "chunk_count": item.chunk_count,
                     "groundable": groundable,
+                    "viewer": _source_viewer_payload(
+                        records.get((str(item.source_id), str(item.current_revision_id)))
+                    ),
                     "provenance": {
                         "source_role": item.source_role,
                         "trust_level": item.trust_level,
@@ -3260,22 +3375,87 @@ def _timeline_item(item: object) -> JsonObject:
     }
 
 
-def _presentation_timeline_item(item: object) -> JsonObject:
+def _presentation_timeline_item(
+    item: object, source_records: Sequence[SourceRevisionRecord] = ()
+) -> JsonObject:
     kind = str(getattr(getattr(item, "kind", None), "value", "assistant_message"))
     occurred_at = getattr(item, "occurred_at", None)
     reply_id = getattr(item, "in_reply_to_interaction_id", None)
+    content = str(getattr(item, "content", ""))
     return {
         "role": "assistant",
         "kind": kind,
         "interaction_id": str(getattr(item, "id", "")),
         "occurred_at": None if occurred_at is None else occurred_at.isoformat(),
-        "content": str(getattr(item, "content", "")),
+        "content": content,
+        "citations": _source_viewer_citations(content, source_records),
         "event_id": str(getattr(item, "event_id", "")),
         "course_sequence": getattr(item, "course_sequence", 0),
         "run_id": None,
         "status": "pending" if kind == "continuation_request" else "completed",
         "in_reply_to_interaction_id": None if reply_id is None else str(reply_id),
     }
+
+
+def _source_viewer_payload(record: SourceRevisionRecord | None) -> JsonObject:
+    if record is None:
+        return {"kind": "unavailable", "page_count": None}
+    provenance = record.source.conversion_provenance
+    return {
+        "kind": (
+            "pdf"
+            if provenance is not None
+            else "markdown"
+            if record.source.kind.value == "markdown"
+            else "text"
+        ),
+        "page_count": None if provenance is None else provenance.page_count,
+    }
+
+
+def _source_viewer_citations(
+    content: str, source_records: Sequence[SourceRevisionRecord]
+) -> tuple[JsonObject, ...]:
+    marker = "\n\nFonti verificate:\n"
+    if marker not in content:
+        return ()
+    raw_sources = content.rsplit(marker, 1)[1]
+    citations: list[JsonObject] = []
+    seen: set[tuple[str, str, str]] = set()
+    for raw_line in raw_sources.splitlines():
+        locator = raw_line.removeprefix("- ").strip() if raw_line.startswith("- ") else ""
+        if not locator or locator.startswith("Altre "):
+            continue
+        matches = tuple(
+            record
+            for record in source_records
+            if locator == record.source.title
+            or locator.startswith(record.source.title + " ·")
+        )
+        if len(matches) != 1:
+            continue
+        record = matches[0]
+        identity = (
+            str(record.source.source_id),
+            str(record.source.revision_id),
+            locator,
+        )
+        if identity in seen:
+            continue
+        seen.add(identity)
+        page_match = re.search(r" · pages? (\d+)(?:-| ·|$)", locator)
+        viewer = _source_viewer_payload(record)
+        citations.append(
+            {
+                "label": locator,
+                "title": record.source.title,
+                "source_id": identity[0],
+                "revision_id": identity[1],
+                "viewer_kind": viewer["kind"],
+                "page": None if page_match is None else int(page_match.group(1)),
+            }
+        )
+    return tuple(citations)
 
 
 def _active_continuation(

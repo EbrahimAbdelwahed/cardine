@@ -118,3 +118,32 @@ def test_repository_activity_get_is_independent_of_mutation_lock(tmp_path) -> No
         "records": [],
         "omitted": 0,
     }
+
+
+def test_repository_session_read_is_independent_of_long_tutor_mutation_lock(
+    tmp_path,
+) -> None:
+    from cardine.demo.ui_application import RepositoryUiApplication
+    from tests.integration.demo.TUT08.test_repository_backed_chat import _repository
+
+    root, adapters, _model = _repository(tmp_path)
+    application = RepositoryUiApplication(
+        root, "cardine-course", "cardine-session", model_adapters=adapters
+    )
+    application._lock.acquire()  # type: ignore[attr-defined]
+    result: list[object] = []
+
+    def read_session() -> None:
+        try:
+            result.append(application.get("/api/v1/session"))
+        except Exception as error:  # pragma: no cover - assertion below reports it
+            result.append(error)
+
+    worker = Thread(target=read_session, daemon=True)
+    worker.start()
+    worker.join(timeout=0.5)
+    application._lock.release()  # type: ignore[attr-defined]
+
+    assert not worker.is_alive(), "session reads must not wait for the model call lock"
+    assert result and not isinstance(result[0], Exception)
+    assert result[0]["session_id"] == "cardine-session"  # type: ignore[index]

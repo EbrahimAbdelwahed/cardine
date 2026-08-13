@@ -62,7 +62,7 @@ class TutorSnapshotReader:
 
     def get(self, course_id: CourseId, session_id: SessionId) -> TutorSnapshotV1:
         captured = tuple(self._events.read(course_id))
-        projection = replay(course_id, captured, self._registry)
+        projection = self._coherent_projection(course_id, captured)
         load = _captured_loader(course_id, projection)
 
         course = ProjectionCourseView(load).get(course_id)
@@ -112,6 +112,23 @@ class TutorSnapshotReader:
             ),
             materials=_materials(projection),
         )
+
+    def _coherent_projection(
+        self, course_id: CourseId, captured: tuple[DomainEvent, ...]
+    ) -> Projection:
+        """Reuse a persisted projection only when it matches this exact capture."""
+
+        load_projection = getattr(self._events, "projection", None)
+        if callable(load_projection):
+            candidate = load_projection(course_id)
+            captured_sequence = captured[-1].course_sequence if captured else 0
+            if (
+                isinstance(candidate, Projection)
+                and candidate.course_id == course_id
+                and candidate.sequence == captured_sequence
+            ):
+                return candidate
+        return replay(course_id, captured, self._registry)
 
 
 def _captured_loader(

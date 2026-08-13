@@ -227,9 +227,24 @@
       }
       if (seenCitations[label]) return "";
       seenCitations[label] = true;
-      return '<span class="ai-citation" data-tooltip="' + escapeAttribute(label) + '">' +
+      var sourceId = read(item, ["source_id"], "");
+      var revisionId = read(item, ["revision_id"], "");
+      var viewerKind = value(read(item, ["viewer_kind"], ""), "");
+      var page = read(item, ["page"], null);
+      var viewerReference = sourceId && revisionId ? {
+        title: read(item, ["title", "label"], label),
+        source_id: sourceId,
+        revision_id: revisionId,
+        viewer_kind: viewerKind,
+        page: typeof page === "number" && page > 0 ? page : null
+      } : null;
+      var opening = viewerReference
+        ? '<button type="button" class="ai-citation" data-source-viewer="' + escapeAttribute(JSON.stringify(viewerReference)) + '" data-tooltip="' + escapeAttribute(label) + '">'
+        : '<span class="ai-citation" data-tooltip="' + escapeAttribute(label) + '">';
+      var closing = viewerReference ? "</button>" : "</span>";
+      return opening +
         '<span class="icon icon--book-open" aria-hidden="true"></span>' +
-        '<span class="ai-citation__label">' + escapeText(label) + "</span></span>";
+        '<span class="ai-citation__label">' + escapeText(label) + "</span>" + closing;
     }).filter(Boolean);
     var citationCount = citationRows.length + omittedCitationCount;
     var citationLabel = citationCount === 1 ? "1 fonte verificata" : citationCount + " fonti verificate";
@@ -758,6 +773,7 @@
   global.CardineAI = Object.freeze({
     escape: escapeText,
     escapeAttribute: escapeAttribute,
+    markdown: renderMarkdown,
     render: render,
     loading: renderLoading,
     thinking: renderThinking,

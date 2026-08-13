@@ -37,4 +37,15 @@ def test_legacy_session_activity_block_is_removed_without_removing_tutor_trace()
     assert "data-open-turn-trace" in browser
     assert "toolChips" in primitives
     assert 'title="' not in primitives
-    assert 'title="' not in browser
+    assert 'data-tooltip="' in browser
+
+
+def test_settled_tutor_receipt_renders_before_advisory_count_refresh() -> None:
+    source = (DEMO_DIR / "browser.js").read_text(encoding="utf-8")
+    command = source[source.index("async function executeCommand") :]
+
+    receipt = command.index("const receipt = await fetchJson")
+    render = command.index("state.viewData = object(receipt.result)", receipt)
+    refresh = command.index("refreshBootstrapCounts()", receipt)
+
+    assert render < refresh

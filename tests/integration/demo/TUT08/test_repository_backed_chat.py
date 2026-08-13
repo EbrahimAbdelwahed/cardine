@@ -407,11 +407,13 @@ def test_tutor_invokes_the_same_harness_source_adapter_and_records_timeline(tmp_
                     "learning_goals": ("Impostare il percorso",),
                 },
             },
+            {"kind": "assistant_message", "message": "Corso creato."},
             {
                 "kind": "invoke_tool",
                 "tool_name": "session.start",
                 "arguments": {"session_id": str(SESSION)},
             },
+            {"kind": "assistant_message", "message": "Sessione avviata."},
             {
                 "kind": "invoke_tool",
                 "tool_name": "source.ingest",
@@ -421,11 +423,13 @@ def test_tutor_invokes_the_same_harness_source_adapter_and_records_timeline(tmp_
                     "content": "Il ventricolo sinistro genera pressione sistemica.",
                 },
             },
+            {"kind": "assistant_message", "message": "Fonte registrata."},
             {"kind": "invoke_tool", "tool_name": "evidence.get", "arguments": {}},
             {
                 "kind": "assistant_message",
                 "message": "Connessione verificata.",
             },
+            {"kind": "assistant_message", "message": "Modello pronto."},
         ),
     )
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
@@ -565,6 +569,27 @@ def test_repository_source_upload_ingests_text_and_reconciles_retry(tmp_path: Pa
     assert repeated["high_water_sequence"] == receipt["high_water_sequence"]
     materials = cast(tuple[dict[str, object], ...], app.get("/api/v1/materials")["items"])
     assert {item["title"] for item in materials} == {"Valve notes", "Lezione uno"}
+
+
+def test_repository_source_viewer_returns_the_bound_markdown_revision(tmp_path: Path) -> None:
+    root, adapters, _model = _repository(tmp_path)
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    materials = cast(tuple[dict[str, object], ...], app.get("/api/v1/materials")["items"])
+    material = next(item for item in materials if item["title"] == "Valve notes")
+    assert material["viewer"] == {"kind": "markdown", "page_count": None}
+
+    document = app.read_source_document(
+        cast(str, material["source_id"]),
+        cast(str, material["revision_id"]),
+    )
+
+    assert document.title == "Valve notes"
+    assert document.viewer_kind == "markdown"
+    assert document.media_type == "text/markdown; charset=utf-8"
+    assert document.content == b"The aortic valve has three cusps."
+
+    with pytest.raises(UiRequestError, match="source revision"):
+        app.read_source_document(cast(str, material["source_id"]), "revision-mismatch")
 
 
 def test_repository_source_upload_rejects_unsupported_files(tmp_path: Path) -> None:
@@ -923,6 +948,13 @@ def test_source_directed_question_cannot_end_without_grounded_content(
     assert "three cusps" in answer
     assert "Valve notes" in answer
     assert "chars " in answer
+    citations = cast(tuple[dict[str, object], ...], timeline[-1]["citations"])
+    assert len(citations) == 1
+    assert citations[0]["label"] in answer
+    assert citations[0]["source_id"]
+    assert citations[0]["revision_id"]
+    assert citations[0]["viewer_kind"] == "markdown"
+    assert citations[0]["page"] is None
     assert [request.metadata.get("prompt_id") for request in model.requests] == [
         "tutor_decision.v1",
         "explain_concept.v1",
@@ -1310,6 +1342,30 @@ def test_second_tutor_decision_receives_redacted_canonical_presentation_history(
     ]
     assert presentations[0]["in_reply_to_interaction_id"]
     assert "idempotency_key" not in json.dumps(second_context)
+
+
+def test_tutor_decision_receives_only_the_bounded_recent_conversation(
+    tmp_path: Path,
+) -> None:
+    root, adapters, model = _repository(tmp_path)
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+
+    for index in range(15):
+        receipt = app.post(
+            "/api/v1/session/turns",
+            _command(f"bounded-history-{index}", sequence, f"topic-{index}"),
+        )
+        sequence = cast(int, receipt["high_water_sequence"])
+
+    context = json.loads(model.requests[-1].messages[-1].content)["tutor_snapshot"]
+    timeline = context["timeline"]
+    presentations = context["tutor_presentations"]
+
+    assert len(timeline) + len(presentations) <= 24
+    assert timeline[-1]["content"] == "topic-14"
+    assert presentations[-1]["kind"] == "assistant_message"
+    assert presentations[-1]["course_sequence"] < timeline[-1]["course_sequence"]
 
 
 def test_repository_continuation_is_restored_resolved_and_exactly_retryable(

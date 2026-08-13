@@ -160,6 +160,24 @@ def test_private_chat_can_open_and_confirm_course_creation() -> None:
         assert marker in javascript
 
 
+def test_sources_and_chat_share_one_canonical_document_viewer() -> None:
+    page = (DEMO_DIR / "browser.html").read_text(encoding="utf-8")
+    css = (DEMO_DIR / "browser.css").read_text(encoding="utf-8")
+    javascript = (DEMO_DIR / "browser.js").read_text(encoding="utf-8")
+    primitives = (DEMO_DIR / "ai-primitives.js").read_text(encoding="utf-8")
+
+    assert 'id="source-viewer"' in page
+    assert 'id="source-viewer-content"' in page
+    assert 'id="materials-viewer"' in javascript
+    assert 'data-source-viewer-mode="page"' in javascript
+    assert "data-source-viewer" in javascript + primitives
+    assert "openSourceViewer" in javascript
+    assert 'viewer_kind === "pdf"' in javascript
+    assert "CardineAI.markdown" in javascript
+    assert "markdown: renderMarkdown" in primitives
+    assert ".source-viewer" in css
+
+
 def test_collapsed_sidebar_keeps_search_and_account_controls_on_same_grid() -> None:
     css = (DEMO_DIR / "browser.css").read_text(encoding="utf-8")
 

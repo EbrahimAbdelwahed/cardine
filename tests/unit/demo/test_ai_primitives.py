@@ -155,6 +155,35 @@ console.log(JSON.stringify(CardineAI.answer({{answer}})));
     assert "<script>alert('fonte')</script>" not in rendered
 
 
+def test_verified_source_with_canonical_reference_is_an_openable_viewer_control() -> None:
+    source = json.dumps(str(PRIMITIVES))
+    script = f"""
+const path = {source};
+require(path);
+const rendered = CardineAI.answer({{
+  answer: 'La pompa mantiene il gradiente.',
+  citations: [{{
+    label: 'Biochimica · Trasporti · page 451',
+    source_id: 'source-pdf-sha256:abc',
+    revision_id: 'revision-sha256:def',
+    viewer_kind: 'pdf',
+    page: 451,
+  }}],
+}});
+console.log(JSON.stringify(rendered));
+"""
+
+    rendered = _run_node(script)
+
+    assert isinstance(rendered, str)
+    assert '<button type="button" class="ai-citation"' in rendered
+    assert 'data-source-viewer=' in rendered
+    assert '&quot;source_id&quot;:&quot;source-pdf-sha256:abc&quot;' in rendered
+    assert '&quot;revision_id&quot;:&quot;revision-sha256:def&quot;' in rendered
+    assert '&quot;page&quot;:451' in rendered
+    assert 'Biochimica · Trasporti · page 451' in rendered
+
+
 def test_answer_hides_legacy_verbatim_chunks_and_keeps_their_source_chips() -> None:
     source = json.dumps(str(PRIMITIVES))
     script = f"""

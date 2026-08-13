@@ -1,6 +1,6 @@
 # Cardine development memory
 
-Updated: 2026-08-13 19:55 CEST
+Updated: 2026-08-13 23:44 CEST
 
 This file is the authoritative entrypoint for Cardine development memory.
 Cardine-specific plans, logs, notes, and handoffs belong in this repository's
@@ -9,6 +9,9 @@ archive and must not be treated as Cardine's current state.
 
 ## Start here
 
+- [Canonical source viewer handoff](handoffs/2026-08-13-2344--cardine--canonical-source-viewer--handoff.md) and [implementation log](logs/2026-08-13-2344--cardine--canonical-source-viewer--log.md) — inline Sources-page PDF/Markdown viewing and floating citation viewer over authenticated canonical revisions; awaiting shared-worktree integration and live restart.
+- [Bounded agent-loop handoff](handoffs/2026-08-13-2145--cardine--bounded-agent-loop--handoff.md) and [implementation log](logs/2026-08-13-2145--cardine--bounded-agent-loop--log.md) — same-turn tool observations, exact duplicate suppression, four-decision budget, and restart-safe tool-informed capability handoffs.
+- [Targeted latency-reduction handoff](handoffs/2026-08-13-2036--cardine--latency-reduction--handoff.md) and [measurement log](logs/2026-08-13-2036--cardine--targeted-latency-reduction--log.md) — coherent snapshot fast path, bounded Luna context, faster FTS result resolution, immediate receipt rendering, and responsive reads.
 - [Current live Tool Chips handoff](handoffs/2026-08-13-1647--cardine--live-tool-chips--handoff.md) — truthful process-local tutor activity, polling boundary, verification, and deferred reload work.
 - [Live Tool Chips ADR](decisions/2026-08-13--ADR-0001--process-local-turn-activity.md) and [implementation log](logs/2026-08-13-1647--cardine--live-tool-chips--log.md) — privacy contract and shipped first delivery.
 - [Tool Chips empty-dialogue diagnosis](logs/2026-08-13-1805--cardine--tool-chips-empty-dialogue--log.md) — live evidence and the targeted model-activity correction.

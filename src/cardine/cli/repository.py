@@ -33,12 +33,14 @@ from cardine.diagnostics import add_settled, begin_activity, finish_activity
 from cardine.hosts import (
     ClarificationRecoveryTutorDecisionPort,
     HostActionIdentity,
+    InvokeToolDecision,
     SourceGroundedTutorDecisionPort,
     TutorCapabilityCompletionReference,
     TutorHostContextAssembler,
     TutorHostLimits,
     TutorHostRunner,
     TutorHostRunStatus,
+    decision_fingerprint,
 )
 from cardine.hosts.flashcard_routing import FlashcardProfileRoutingTutorDecisionPort
 from cardine.integrations.study_agent.course_policy import (
@@ -889,6 +891,7 @@ class _RepositoryTutorToolGateway:
         host_turn_id: str,
     ) -> object:
         surface = self._repository.harness_tools()
+        invocation_fingerprint = decision_fingerprint(InvokeToolDecision(name, arguments))
         manifest = next((item for item in surface.manifests if item.name == name), None)
         if manifest is None:
             raise ValueError("tutor named an unknown harness tool")
@@ -919,7 +922,7 @@ class _RepositoryTutorToolGateway:
                     CorrelationId(f"cardine-tutor-tool-{host_turn_id}"),
                     frozenset(manifest.required_capabilities),
                     target_session,
-                    idempotency_key=f"{host_turn_id}:{name}",
+                    idempotency_key=f"{host_turn_id}:{invocation_fingerprint}",
                 ),
             )
             finish_activity(
@@ -1212,6 +1215,7 @@ class _RepositorySourceCatalog:
         self._events = events
         self._blobs = blobs
         self._source_lifetime = source_lifetime
+        self._verified_documents_by_chunk: dict[ChunkId, RetrievalDocument] = {}
 
     def _contents(self) -> tuple[CourseSourceContent, ...]:
         return tuple(
@@ -1225,7 +1229,7 @@ class _RepositorySourceCatalog:
             course_id: self._source_lifetime.retired_source_ids(course_id)
             for course_id in course_ids
         }
-        return tuple(
+        documents = tuple(
             document
             for course_id in course_ids
             for document in CourseSourceContent(
@@ -1233,15 +1237,28 @@ class _RepositorySourceCatalog:
             ).documents(include_superseded=include_superseded)
             if document.source_id not in retired_by_course[document.course_id]
         )
+        if include_superseded:
+            self._verified_documents_by_chunk = {
+                document.chunk.chunk_id: document for document in documents
+            }
+        return documents
 
     def all_documents(self, *, include_superseded: bool = False) -> tuple[RetrievalDocument, ...]:
-        return tuple(
+        documents = tuple(
             document
             for content in self._contents()
             for document in content.documents(include_superseded=include_superseded)
         )
+        if include_superseded:
+            self._verified_documents_by_chunk = {
+                document.chunk.chunk_id: document for document in documents
+            }
+        return documents
 
     def canonical_document(self, chunk_id: ChunkId) -> RetrievalDocument:
+        verified = self._verified_documents_by_chunk.get(chunk_id)
+        if verified is not None:
+            return verified
         matches = tuple(
             document
             for document in self.all_documents(include_superseded=True)

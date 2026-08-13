@@ -14,6 +14,7 @@ from cardine.demo.browser import (
     create_server,
 )
 from cardine.demo.product_settings import RuntimeCredentialStore
+from cardine.demo.ui_application import SourceDocumentView, UiRequestError
 from study_agent.domain._validation import JsonObject
 
 
@@ -29,6 +30,17 @@ class _RepositoryApplication:
         assert path == "/api/v1/session/turns"
         assert isinstance(command, dict)
         return {"schema_version": 1, "status": "committed"}
+
+    def read_source_document(
+        self, source_id: str, revision_id: str
+    ) -> SourceDocumentView:
+        assert (source_id, revision_id) == ("source-one", "revision-one")
+        return SourceDocumentView(
+            title="Lezione uno",
+            viewer_kind="markdown",
+            media_type="text/markdown; charset=utf-8",
+            content=b"# Lezione uno",
+        )
 
 
 def test_browser_requires_a_repository_application_and_never_constructs_demo_state() -> None:
@@ -87,6 +99,16 @@ def test_browser_surface_exposes_only_versioned_repository_api() -> None:
     assert surface.api_post("/api/v1/session/turns", {})["status"] == "committed"
 
 
+def test_browser_surface_reads_a_canonical_document_through_the_application() -> None:
+    document = BrowserSurface(_RepositoryApplication()).api_source_document(
+        "source-one", "revision-one"
+    )
+
+    assert document.title == "Lezione uno"
+    assert document.viewer_kind == "markdown"
+    assert document.content == b"# Lezione uno"
+
+
 def test_loopback_owner_setup_activates_private_settings_without_exposing_a_secret() -> None:
     credentials = RuntimeCredentialStore(base={})
     surface = BrowserSurface(_RepositoryApplication(), runtime_credentials=credentials)
@@ -107,6 +129,11 @@ def test_loopback_owner_setup_activates_private_settings_without_exposing_a_secr
 
     session = surface.configure_local_owner("correct horse battery staple", client_id="test")
     assert surface.mode == "private"
+    with pytest.raises(UiRequestError, match="authentication"):
+        surface.api_source_document("source-one", "revision-one")
+    assert surface.api_source_document(
+        "source-one", "revision-one", session_token=session.session_token
+    ).viewer_kind == "markdown"
     assert surface.api_get("/api/v1/auth/session", session_token=session.session_token) == {
         "schema_version": 1,
         "mode": "private",

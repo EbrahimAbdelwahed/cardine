@@ -263,6 +263,9 @@
   .ai-answer__sources { display: flex; flex-wrap: wrap; gap: var(--space-2); }
   .ai-answer__source-disclosure[open] .ai-answer__sources { margin-top: var(--space-3); }
   .ai-citation {
+    appearance: none;
+    border: 0;
+    font: inherit;
     display: inline-flex;
     max-width: min(100%, 24rem);
     align-items: center;
@@ -275,6 +278,7 @@
     font-size: var(--text-xs);
     white-space: nowrap;
   }
+  button.ai-citation { cursor: pointer; }
   .ai-citation .icon { width: var(--icon-size-sm); height: var(--icon-size-sm); }
   .ai-citation__label { overflow: hidden; text-overflow: ellipsis; }
   .ai-answer__follow-ups { display: flex; flex-wrap: wrap; gap: var(--space-2); }

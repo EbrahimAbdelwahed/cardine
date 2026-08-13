@@ -35,7 +35,7 @@ from .private_access import (
     hash_password,
 )
 from .product_settings import PrivateSettingsApplication, RuntimeCredentialStore
-from .ui_application import UiApplicationPort, UiRequestError
+from .ui_application import SourceDocumentView, UiApplicationPort, UiRequestError
 
 
 class _DocumentUiApplication(Protocol):
@@ -51,6 +51,10 @@ class _DocumentUiApplication(Protocol):
         title: str,
         request_id: str,
     ) -> JsonObject: ...
+
+    def read_source_document(
+        self, source_id: str, revision_id: str
+    ) -> SourceDocumentView: ...
 
 
 DEFAULT_BROWSER_HOST = "127.0.0.1"
@@ -360,6 +364,23 @@ class BrowserSurface:
             request_id=request_id,
         )
 
+    def api_source_document(
+        self,
+        source_id: str,
+        revision_id: str,
+        *,
+        session_token: str | None = None,
+    ) -> SourceDocumentView:
+        """Return one authenticated canonical document without path authority."""
+
+        if self._private_access is not None and not self._private_access.authenticate(
+            session_token
+        ):
+            raise UiRequestError("authentication required", status_code=401)
+        return cast(_DocumentUiApplication, self._ui).read_source_document(
+            source_id, revision_id
+        )
+
 
 class _BrowserServer(ThreadingHTTPServer):
     allow_reuse_address = True
@@ -472,6 +493,24 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
             self._send_json(
                 HTTPStatus.OK,
                 {"status": "ok", "mode": mode, "runtime_id": PREVIEW_RUNTIME_ID},
+            )
+            return
+        source_document = _source_document_route(path)
+        if source_document is not None:
+            try:
+                document = self.server.surface.api_source_document(
+                    *source_document,
+                    session_token=self._session_token(),
+                )
+            except UiRequestError as error:
+                self.server.surface.diagnostic(path, error.status_code, _diagnostic_category(error))
+                self._send_json(HTTPStatus(error.status_code), _ui_error_payload(error))
+                return
+            self._send(
+                HTTPStatus.OK,
+                document.media_type,
+                document.content,
+                frame_options="SAMEORIGIN",
             )
             return
         if path.startswith(API_PREFIX):
@@ -723,7 +762,14 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
             body = b'{"error":"response unavailable"}'
         self._send(status, "application/json; charset=utf-8", body)
 
-    def _send(self, status: HTTPStatus, content_type: str, body: bytes) -> None:
+    def _send(
+        self,
+        status: HTTPStatus,
+        content_type: str,
+        body: bytes,
+        *,
+        frame_options: str = "DENY",
+    ) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
@@ -734,17 +780,18 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("X-Frame-Options", frame_options)
         access = self.server.surface.private_access
         if access is not None and access.production:
             self.send_header(
                 "Strict-Transport-Security",
                 "max-age=31536000; includeSubDomains",
             )
+        frame_ancestors = "'self'" if frame_options == "SAMEORIGIN" else "'none'"
         self.send_header(
             "Content-Security-Policy",
             "default-src 'self'; base-uri 'none'; form-action 'self'; "
-            "frame-ancestors 'none'; object-src 'none'",
+            f"frame-ancestors {frame_ancestors}; object-src 'none'",
         )
         self.send_header(
             "Permissions-Policy",
@@ -971,6 +1018,22 @@ def _is_json_content_type(value: str | None) -> bool:
         return False
     media_type, _, _parameters = value.partition(";")
     return media_type.strip().lower() == "application/json"
+
+
+def _source_document_route(path: str) -> tuple[str, str] | None:
+    prefix = "/api/v1/materials/"
+    if not path.startswith(prefix):
+        return None
+    parts = path.removeprefix(prefix).split("/")
+    if (
+        len(parts) != 4
+        or not parts[0]
+        or parts[1] != "revisions"
+        or not parts[2]
+        or parts[3] != "content"
+    ):
+        return None
+    return parts[0], parts[2]
 
 
 def _is_private_endpoint(path: str) -> bool:

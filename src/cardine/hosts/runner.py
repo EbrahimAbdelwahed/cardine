@@ -84,6 +84,39 @@ if TYPE_CHECKING:
 
 MAX_HOST_RETRY_ATTEMPTS = 1_024
 MAX_HOST_TEXT = 4_000
+_MAX_AGENT_OBSERVATIONS = 4
+_MAX_OBSERVATION_ITEMS = 12
+_MAX_OBSERVATION_KEYS = 24
+_MAX_OBSERVATION_TEXT = 500
+_OBSERVATION_SENSITIVE_KEYS = frozenset(
+    {
+        "api_key",
+        "authority",
+        "correlation_id",
+        "content",
+        "correlation",
+        "credential",
+        "endpoint",
+        "expected_response",
+        "grant",
+        "idempotency_key",
+        "idempotency",
+        "model",
+        "password",
+        "path",
+        "principal_id",
+        "principal",
+        "provider",
+        "raw_prompt",
+        "retry",
+        "rubric",
+        "secret",
+        "summary_json",
+        "text",
+        "trace",
+        "vendor",
+    }
+)
 
 
 class TutorHostRunStatus(StrEnum):
@@ -250,6 +283,87 @@ class TutorHostRunResult:
     def pending(self) -> PendingContinuationDescriptor | None:
         return self.pending_continuation
 
+def _tool_observation(
+    decision: InvokeToolDecision,
+    *,
+    status: str,
+    result: object | None = None,
+    error_code: str | None = None,
+    retryable: bool = False,
+) -> JsonObject:
+    """Build one bounded, provider-safe observation for the next decision."""
+
+    observation: dict[str, JsonValue] = {
+        "tool_name": decision.tool_name,
+        "action_fingerprint": decision_fingerprint(decision),
+        "status": status,
+    }
+    if isinstance(result, Mapping):
+        observation["result"] = _bounded_observation_value(result)
+    if error_code is not None:
+        observation["error_code"] = error_code
+        observation["retryable"] = retryable
+    return freeze_object(observation)
+
+
+def _bounded_observation_value(value: object, *, depth: int = 0) -> JsonValue:
+    if depth >= 5:
+        return "[bounded]"
+    if isinstance(value, Mapping):
+        selected: dict[str, JsonValue] = {}
+        for raw_key in sorted(value, key=str)[:_MAX_OBSERVATION_KEYS]:
+            key = str(raw_key)
+            normalized = re.sub(r"[^a-z0-9]+", "_", key.casefold()).strip("_")
+            if normalized in _OBSERVATION_SENSITIVE_KEYS or any(
+                normalized.endswith(f"_{token}")
+                for token in _OBSERVATION_SENSITIVE_KEYS
+            ):
+                continue
+            selected[key] = _bounded_observation_value(value[raw_key], depth=depth + 1)
+        return freeze_object(selected)
+    if isinstance(value, tuple | list):
+        return tuple(
+            _bounded_observation_value(item, depth=depth + 1)
+            for item in value[:_MAX_OBSERVATION_ITEMS]
+        )
+    if isinstance(value, str):
+        return value[:_MAX_OBSERVATION_TEXT]
+    if value is None or isinstance(value, bool | int | float):
+        return value
+    return str(value)[:_MAX_OBSERVATION_TEXT]
+
+
+def _validate_agent_observation(observation: JsonObject) -> None:
+    required = {"tool_name", "action_fingerprint", "status"}
+    allowed = required | {"result", "error_code", "retryable"}
+    if not required <= set(observation) <= allowed:
+        raise ValueError("agent observation fields are invalid")
+    _require_text(_string(observation, "tool_name"), "observation tool name", 128)
+    _require_sha256(_string(observation, "action_fingerprint"), "observation action fingerprint")
+    status = observation["status"]
+    if status not in {"succeeded", "failed", "duplicate_skipped"}:
+        raise ValueError("agent observation status is invalid")
+    result = observation.get("result")
+    error_code = observation.get("error_code")
+    retryable = observation.get("retryable")
+    if result is not None and not isinstance(result, Mapping):
+        raise ValueError("agent observation result must be an object")
+    if error_code is not None and not isinstance(error_code, str):
+        raise ValueError("agent observation error code must be text")
+    if retryable is not None and not isinstance(retryable, bool):
+        raise ValueError("agent observation retryable must be boolean")
+    if status == "succeeded" and (
+        result is None or error_code is not None or retryable is not None
+    ):
+        raise ValueError("successful agent observation fields are invalid")
+    if status != "succeeded" and (
+        result is not None or error_code is None or retryable is None
+    ):
+        raise ValueError("failed agent observation fields are invalid")
+    if _bounded_observation_value(observation) != observation:
+        raise ValueError("agent observation exceeds the bounded projection")
+
+
 @dataclass(frozen=True, slots=True)
 class TutorContinuationRecord:
     """The exact host-only material required to resume a suspended action."""
@@ -279,7 +393,7 @@ class TutorContinuationRecord:
     def to_bytes(self) -> bytes:
         """Encode one strict operational record at the continuation boundary."""
 
-        payload: JsonObject = {
+        payload: dict[str, JsonValue] = {
             "schema_version": 1,
             "continuation": self.continuation.to_json(),
             "execution_context": {
@@ -440,8 +554,10 @@ class TutorCompletionHandoff:
     execution_context: ExecutionContext
     completion_reference: TutorCapabilityCompletionReference | None = None
     record_fingerprint: str | None = None
+    agent_observations: tuple[JsonObject, ...] = ()
+    serialized_schema_version: int = 2
 
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
 
     def __post_init__(self) -> None:
         if not isinstance(self.state, TutorCompletionHandoffState):
@@ -471,6 +587,16 @@ class TutorCompletionHandoff:
         action = freeze_object(self.action)
         _validate_handoff_action(action, self.capability_id)
         object.__setattr__(self, "action", action)
+        if self.serialized_schema_version not in {1, 2}:
+            raise ValueError("unsupported tutor completion handoff schema version")
+        observations = tuple(freeze_object(item) for item in self.agent_observations)
+        if self.serialized_schema_version == 1 and observations:
+            raise ValueError("v1 completion handoffs cannot carry agent observations")
+        if len(observations) > _MAX_AGENT_OBSERVATIONS:
+            raise ValueError("too many handoff agent observations")
+        for item in observations:
+            _validate_agent_observation(item)
+        object.__setattr__(self, "agent_observations", observations)
         if not isinstance(self.execution_context, ExecutionContext):
             raise TypeError("handoff execution context is invalid")
         if (
@@ -522,8 +648,8 @@ class TutorCompletionHandoff:
         return decision
 
     def to_json(self) -> JsonObject:
-        payload = {
-            "schema_version": self.SCHEMA_VERSION,
+        payload: dict[str, JsonValue] = {
+            "schema_version": self.serialized_schema_version,
             "state": self.state.value,
             "course_id": str(self.course_id),
             "session_id": str(self.session_id),
@@ -543,12 +669,14 @@ class TutorCompletionHandoff:
                 else self.completion_reference.to_json()
             ),
         }
+        if self.serialized_schema_version == 2:
+            payload["agent_observations"] = self.agent_observations
         payload["record_fingerprint"] = self._computed_record_fingerprint()
-        return payload
+        return freeze_object(payload)
 
     def _payload_json(self) -> JsonObject:
         return {
-            "schema_version": self.SCHEMA_VERSION,
+            "schema_version": self.serialized_schema_version,
             "state": self.state.value,
             "course_id": str(self.course_id),
             "session_id": str(self.session_id),
@@ -566,12 +694,17 @@ class TutorCompletionHandoff:
                 None
                 if self.completion_reference is None
                 else self.completion_reference.to_json()
+            ),
+            **(
+                {"agent_observations": self.agent_observations}
+                if self.serialized_schema_version == 2
+                else {}
             ),
         }
 
     def _computed_record_fingerprint(self) -> str:
         return sha256(
-            b"study-agent-tutor-completion-handoff-integrity-v1\0"
+            f"study-agent-tutor-completion-handoff-integrity-v{self.serialized_schema_version}\0".encode()
             + _canonical_bytes(self._payload_json())
         ).hexdigest()
 
@@ -581,29 +714,22 @@ class TutorCompletionHandoff:
     @classmethod
     def from_bytes(cls, data: bytes) -> TutorCompletionHandoff:
         raw = _canonical_object(data, "tutor completion handoff")
+        schema_version = _integer(raw, "schema_version")
+        expected = {
+            "schema_version", "state", "course_id", "session_id", "host_turn_id",
+            "generation", "observed_host_context_sequence", "context_fingerprint",
+            "retry_receipt", "capability_id", "capability_identity",
+            "manifest_fingerprint", "action", "execution_context",
+            "completion_reference", "record_fingerprint",
+        }
+        if schema_version == 2:
+            expected.add("agent_observations")
         _exact(
             raw,
-            {
-                "schema_version",
-                "state",
-                "course_id",
-                "session_id",
-                "host_turn_id",
-                "generation",
-                "observed_host_context_sequence",
-                "context_fingerprint",
-                "retry_receipt",
-                "capability_id",
-                "capability_identity",
-                "manifest_fingerprint",
-                "action",
-                "execution_context",
-                "completion_reference",
-                "record_fingerprint",
-            },
+            expected,
             "tutor completion handoff",
         )
-        if _integer(raw, "schema_version") != cls.SCHEMA_VERSION:
+        if schema_version not in {1, 2}:
             raise ValueError("unsupported tutor completion handoff schema version")
         receipt = HostRetryReceipt.from_bytes(
             _canonical_bytes(_object(raw["retry_receipt"], "retry_receipt"))
@@ -633,6 +759,11 @@ class TutorCompletionHandoff:
             context,
             reference,
             _string(raw, "record_fingerprint"),
+            tuple(
+                _object(item, "agent observation")
+                for item in _array(raw["agent_observations"], "agent_observations")
+            ) if schema_version == 2 else (),
+            schema_version,
         )
         if record.to_bytes() != data:
             raise ValueError("tutor completion handoff is not semantically canonical")
@@ -899,6 +1030,10 @@ class TutorHostRunner:
 
         decisions = 0
         stale_refreshes = 0
+        agent_observations = list(handoff.agent_observations) if handoff is not None else []
+        invoked_tool_actions = {
+            str(item["action_fingerprint"]) for item in agent_observations
+        }
         while True:
             if _interrupted(interruption):
                 return _interrupted_result(selected, retry_receipt)
@@ -917,6 +1052,18 @@ class TutorHostRunner:
                 )
             if context is None:
                 return _interrupted_result(selected, retry_receipt)
+            if agent_observations:
+                if "agent_observations" in context.tutor_snapshot:
+                    return _failed()
+                context = replace(
+                    context,
+                    tutor_snapshot={
+                        **context.tutor_snapshot,
+                        "agent_observations": tuple(
+                            agent_observations[-_MAX_AGENT_OBSERVATIONS:]
+                        ),
+                    },
+                )
 
             retry_action: HostRetryReceipt | None = None
             if handoff is not None:
@@ -1013,6 +1160,17 @@ class TutorHostRunner:
                 gateway = getattr(self, "_tool_gateway", None)
                 if gateway is None:
                     return _failed()
+                action_fingerprint = decision_fingerprint(decision)
+                if action_fingerprint in invoked_tool_actions:
+                    agent_observations.append(
+                        _tool_observation(
+                            decision,
+                            status="duplicate_skipped",
+                            error_code="duplicate_action",
+                        )
+                    )
+                    continue
+                invoked_tool_actions.add(action_fingerprint)
                 try:
                     result = await gateway.invoke(
                         decision.tool_name,
@@ -1022,25 +1180,34 @@ class TutorHostRunner:
                         host_turn_id,
                     )
                 except Exception:
-                    return _failed()
-                if getattr(result, "error", None) is not None:
-                    return _failed()
-                receipt = self._presentation_receipt(
-                    host_turn_id,
-                    context,
-                    TutorPresentationKind.ASSISTANT_MESSAGE,
-                    "Operazione di studio registrata nel repository.",
-                    decision,
+                    agent_observations.append(
+                        _tool_observation(
+                            decision,
+                            status="failed",
+                            error_code="execution_failed",
+                        )
+                    )
+                    continue
+                tool_error = getattr(result, "error", None)
+                if tool_error is not None:
+                    code = getattr(getattr(tool_error, "code", None), "value", None)
+                    agent_observations.append(
+                        _tool_observation(
+                            decision,
+                            status="failed",
+                            error_code=code if isinstance(code, str) else "tool_failed",
+                            retryable=bool(getattr(tool_error, "retryable", False)),
+                        )
+                    )
+                    continue
+                agent_observations.append(
+                    _tool_observation(
+                        decision,
+                        status="succeeded",
+                        result=getattr(result, "value", None),
+                    )
                 )
-                value = getattr(result, "value", None)
-                observed = value.get("high_water_sequence") if isinstance(value, Mapping) else None
-                if type(observed) is int and observed >= receipt.observed_host_context_sequence:
-                    receipt = replace(receipt, observed_host_context_sequence=observed)
-                return TutorHostRunResult(
-                    TutorHostRunStatus.ASSISTANT_MESSAGE,
-                    learner_text="Operazione di studio registrata nel repository.",
-                    presentation_receipt=receipt,
-                )
+                continue
 
             retry_action = None
             capability_identity: str | None = None
@@ -1108,6 +1275,7 @@ class TutorHostRunner:
                         capability_manifest_fingerprint,
                         trusted_context,
                         generation,
+                        tuple(agent_observations[-_MAX_AGENT_OBSERVATIONS:]),
                         interruption,
                     ):
                         return (
@@ -1180,6 +1348,7 @@ class TutorHostRunner:
                         capability_manifest_fingerprint,
                         selected.execution_context,
                         generation,
+                        tuple(agent_observations[-_MAX_AGENT_OBSERVATIONS:]),
                         interruption,
                     ):
                         return (
@@ -1380,6 +1549,7 @@ class TutorHostRunner:
         manifest_fingerprint: str,
         execution_context: ExecutionContext,
         generation: int,
+        agent_observations: tuple[JsonObject, ...],
         interruption: TutorInterruptionToken,
     ) -> bool:
         if _interrupted(interruption):
@@ -1398,6 +1568,7 @@ class TutorHostRunner:
             manifest_fingerprint,
             _handoff_action(decision),
             execution_context,
+            agent_observations=agent_observations,
         )
         if execution_context.idempotency_key is None:
             return False

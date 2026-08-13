@@ -147,6 +147,7 @@
     indexingPollToken: 0,
     activityPollToken: 0,
     diagnosticTraceId: "",
+    sourceViewerVersion: 0,
     lesson: { query: "", candidates: [], pin: null, answer: null },
   };
 
@@ -1576,7 +1577,8 @@
     if (learner) {
       return `<article class="thread-message thread-message--learner"><p class="thread-message__role">tu</p><p class="thread-message__text">${esc(text(content, "Messaggio senza testo visualizzabile."))}</p></article>`;
     }
-    const citations = Object.keys(citation).length ? [citation] : [];
+    const citations = array(first(item, ["citations", "sources"], []));
+    if (Object.keys(citation).length) citations.unshift(citation);
     const followUps = array(first(item, ["follow_ups", "followUps", "suggestions", "actions"], []));
     const thinking = array(first(item, ["thinking", "trace", "steps", "activity"], []));
     const tools = array(first(item, ["activity_records", "tools", "tool_activity", "capabilities", "retrieval"], []));
@@ -1631,7 +1633,7 @@
       records: recordRows,
     });
     const searchView = aiSidebarSearch({ placeholder: "Cerca in Cardine", shortcut: "/" });
-    setView("fonti", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="material-heading"><p class="section-kicker">libreria del corso</p><h1 class="section-title" id="material-heading">Fonti del corso</h1><p class="section-copy">Di ogni fonte vedi titolo, revisione e un estratto. Il testo completo resta nel repository del corso.</p><div class="ai-fonts-search">${searchView}</div><ul class="source-list">${rows}</ul><div class="ai-fonts-context">${contextView}</div><details class="ai-fonts-records"><summary>Registro delle revisioni</summary>${registerView}</details></section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">da sapere</p><h2 class="side-card__title">Le fonti arrivano dal repository</h2><p class="side-card__copy">Aggiungi il file al repository del corso e ricarica: Cardine non modifica i materiali canonici dal browser.</p></div></aside></section>`);
+    setView("fonti", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="material-heading"><p class="section-kicker">libreria del corso</p><h1 class="section-title" id="material-heading">Fonti del corso</h1><p class="section-copy">Apri una fonte per leggere la revisione salvata nel repository del corso.</p><div class="ai-fonts-search">${searchView}</div><ul class="source-list">${rows}</ul><section class="materials-viewer" id="materials-viewer" aria-labelledby="materials-viewer-title" hidden><header class="materials-viewer__header"><div><p class="eyebrow" id="materials-viewer-kind">fonte del corso</p><h2 id="materials-viewer-title">Documento</h2></div></header><div class="source-viewer__content" id="materials-viewer-content"><p class="empty-state">Scegli una fonte da aprire.</p></div></section><div class="ai-fonts-context">${contextView}</div><details class="ai-fonts-records"><summary>Registro delle revisioni</summary>${registerView}</details></section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">da sapere</p><h2 class="side-card__title">Le fonti arrivano dal repository</h2><p class="side-card__copy">Il viewer è in sola lettura e apre soltanto revisioni canoniche appartenenti a questo corso.</p></div></aside></section>`);
   }
 
   function renderSource(item) {
@@ -1641,10 +1643,23 @@
     const checksum = first(source, ["checksum_sha256", "checksum", "sha256"], "checksum non dichiarato");
     const type = first(source, ["type", "kind", "role"], "materiale");
     const chunks = first(source, ["chunk_count", "chunks", "fragment_count"], "—");
+    const viewer = object(source.viewer);
+    const viewerKind = text(viewer.kind);
+    const viewerReference = viewerKind && viewerKind !== "unavailable"
+      ? {
+        source_id: text(source.source_id),
+        revision_id: text(first(source, ["revision_id", "revision"])),
+        viewer_kind: viewerKind,
+        page: null,
+      }
+      : null;
     // Opaque identifiers belong in the provenance sheet, not as the loudest
     // thing in the row: 64 monospaced characters wrapping mid-token used to
     // outrank the title of the source itself.
-    return `<li class="source-row"><div><h3 class="source-row__title">${esc(title)}</h3><p class="source-row__meta"><span>Revisione <span class="checksum">${esc(shortId(revision))}</span></span><span>Checksum <span class="checksum">${esc(shortId(checksum))}</span></span></p></div><div class="source-row__value source-row__type">Tipo <b>${esc(type)}</b></div><div class="source-row__value">Frammenti <b>${esc(chunks)}</b></div><div class="source-row__button"><button class="button button--quiet" type="button" data-provenance='${esc(JSON.stringify({ title, revision, checksum, type, excerpt: first(source, ["excerpt", "quote"], "") }))}'>Provenienza</button></div></li>`;
+    const sourceAction = viewerReference
+      ? `<button class="button button--quiet" type="button" data-source-viewer-mode="page" data-source-viewer='${esc(JSON.stringify({ ...viewerReference, title }))}'>Apri fonte</button>`
+      : `<button class="button button--quiet" type="button" data-provenance='${esc(JSON.stringify({ title, revision, checksum, type, excerpt: first(source, ["excerpt", "quote"], "") }))}'>Provenienza</button>`;
+    return `<li class="source-row"><div><h3 class="source-row__title">${esc(title)}</h3><p class="source-row__meta"><span>Revisione <span class="checksum">${esc(shortId(revision))}</span></span><span>Checksum <span class="checksum">${esc(shortId(checksum))}</span></span></p></div><div class="source-row__value source-row__type">Tipo <b>${esc(type)}</b></div><div class="source-row__value">Frammenti <b>${esc(chunks)}</b></div><div class="source-row__button">${sourceAction}</div></li>`;
   }
 
   function renderProposte(payload) {
@@ -1957,7 +1972,6 @@
       if (endpoint === "/api/v1/session/turns" || endpoint.includes("/session/continuations/")) {
         state.continuationDraft = "";
       }
-      await refreshBootstrapCounts();
       const originIsStillActive = commandNavigationVersion === state.navigationVersion;
       if (originIsStillActive && status === "demo_completed" && refreshRoute === "sessione") {
         state.route = "sessione";
@@ -1978,6 +1992,11 @@
         renderSessione(state.viewData);
       } else if (originIsStillActive) {
         await loadRoute((isFlashcardCommand || flashcardCompleted) && status === "completed" ? "proposte" : refreshRoute);
+      }
+      if (isTutorTurn) {
+        void refreshBootstrapCounts();
+      } else {
+        await refreshBootstrapCounts();
       }
       if (isTutorTurn && originIsStillActive && receipt.result) {
         const assistant = $$(".thread-message--assistant", root).at(-1);
@@ -2313,6 +2332,7 @@
     }));
     $$('[data-command]').forEach((control) => control.addEventListener("click", () => commandFromControl(control)));
     $$('[data-provenance]').forEach((control) => control.addEventListener("click", () => openProvenance(control.dataset.provenance)));
+    $$('[data-source-viewer]').forEach((control) => control.addEventListener("click", () => openSourceViewer(control.dataset.sourceViewer, control.dataset.sourceViewerMode)));
     $$('[data-retry-route]').forEach((control) => control.addEventListener("click", () => loadRoute(control.dataset.retryRoute)));
     $$('[data-open-turn-trace]').forEach((control) => control.addEventListener("click", () => {
       state.diagnosticTraceId = text(control.dataset.openTurnTrace, state.diagnosticTraceId);
@@ -2466,6 +2486,51 @@
       : `<p class="empty-state">Nessun estratto disponibile.</p>`;
     patch($("#drawer-content"), `<div class="sheet__body"><h3 class="state-title">${esc(title)}</h3>${excerpt}<div class="provenance-meta">${fields.map(([key, value]) => `<div class="provenance-meta__row"><span class="provenance-meta__key">${esc(key)}</span><span class="provenance-meta__value">${esc(value)}</span></div>`).join("")}</div></div>`);
     $("#provenance-drawer").showModal();
+  }
+
+  async function openSourceViewer(serialized, mode = "sheet") {
+    let source = {};
+    try { source = object(JSON.parse(serialized)); } catch (_) { source = {}; }
+    const sourceId = text(source.source_id);
+    const revisionId = text(source.revision_id);
+    const viewer_kind = text(source.viewer_kind);
+    if (!sourceId || !revisionId || !["pdf", "markdown", "text"].includes(viewer_kind)) return;
+    const title = text(source.title, "Fonte del corso");
+    const page = Number.isInteger(source.page) && source.page > 0 ? source.page : null;
+    const endpoint = `/api/v1/materials/${encodeURIComponent(sourceId)}/revisions/${encodeURIComponent(revisionId)}/content`;
+    const inline = mode === "page" && $("#materials-viewer");
+    const dialog = inline ? null : $("#source-viewer");
+    const content = inline ? $("#materials-viewer-content") : $("#source-viewer-content");
+    const requestVersion = ++state.sourceViewerVersion;
+    const kindLabel = viewer_kind === "pdf" ? page ? `PDF · pagina ${page}` : "PDF" : viewer_kind === "markdown" ? "Markdown" : "testo";
+    $(inline ? "#materials-viewer-title" : "#source-viewer-title").textContent = title;
+    $(inline ? "#materials-viewer-kind" : "#source-viewer-kind").textContent = kindLabel;
+    patch(content, '<p class="source-viewer__loading">Apro la fonte…</p>');
+    if (inline) {
+      inline.hidden = false;
+      inline.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+    } else if (!dialog.open) {
+      dialog.showModal();
+    }
+    if (viewer_kind === "pdf") {
+      const target = `${endpoint}${page ? `#page=${page}` : ""}`;
+      patch(content, `<iframe class="source-viewer__frame" src="${esc(target)}" title="${esc(`Documento: ${title}`)}"></iframe>`);
+      return;
+    }
+    try {
+      const response = await fetch(endpoint, {
+        credentials: "same-origin",
+        headers: { Accept: viewer_kind === "markdown" ? "text/markdown" : "text/plain" },
+      });
+      if (!response.ok) throw new Error("source viewer request failed");
+      const documentText = await response.text();
+      if (requestVersion !== state.sourceViewerVersion) return;
+      const rendered = viewer_kind === "markdown" ? CardineAI.markdown(documentText) : `<pre>${esc(documentText)}</pre>`;
+      patch(content, `<article class="source-viewer__markdown ai-answer__markdown">${rendered}</article>`);
+    } catch (_) {
+      if (requestVersion !== state.sourceViewerVersion) return;
+      patch(content, '<p class="source-viewer__error">Non riesco ad aprire questa fonte. Riprova o verifica che la revisione sia ancora disponibile.</p>');
+    }
   }
 
   function commandSearchEntries() {

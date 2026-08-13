@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Protocol
 
 from study_agent.domain import CourseId, SessionId, TutorSnapshotV1
@@ -19,6 +20,9 @@ from .contracts import (
 
 if TYPE_CHECKING:
     from study_agent.assessments.evidence import LearnerEvidenceSnapshot
+
+
+_MAX_RECENT_CONVERSATION_ENTRIES = 24
 
 
 class CapabilityIdView(Protocol):
@@ -116,22 +120,20 @@ class TutorHostContextAssembler:
                 ),
             }
         if self._presentations is not None:
-            tutor_snapshot = {
-                **tutor_snapshot,
-                "tutor_presentations": tuple(
-                    {
-                        "kind": item.kind.value,
-                        "content": item.content,
-                        "course_sequence": item.course_sequence,
-                        "in_reply_to_interaction_id": (
-                            None
-                            if item.in_reply_to_interaction_id is None
-                            else str(item.in_reply_to_interaction_id)
-                        ),
-                    }
-                    for item in self._presentations.presentations(course_id, session_id)
-                ),
-            }
+            presentations = tuple(
+                {
+                    "kind": item.kind.value,
+                    "content": item.content,
+                    "course_sequence": item.course_sequence,
+                    "in_reply_to_interaction_id": (
+                        None
+                        if item.in_reply_to_interaction_id is None
+                        else str(item.in_reply_to_interaction_id)
+                    ),
+                }
+                for item in self._presentations.presentations(course_id, session_id)
+            )
+            tutor_snapshot = _bounded_decision_history(tutor_snapshot, presentations)
         return TutorHostContext(
             course_id=str(course_id),
             session_id=str(session_id),
@@ -143,6 +145,32 @@ class TutorHostContextAssembler:
             pending_continuation=pending_continuation,
             host_files=tuple(sorted(host_files, key=lambda item: (item.id, item.checksum_sha256))),
         )
+
+
+def _bounded_decision_history(
+    tutor_snapshot: JsonObject, presentations: tuple[JsonObject, ...]
+) -> JsonObject:
+    timeline_value = tutor_snapshot.get("timeline", ())
+    timeline = (
+        tuple(item for item in timeline_value if isinstance(item, Mapping))
+        if isinstance(timeline_value, tuple)
+        else ()
+    )
+    sequences = sorted(
+        sequence
+        for item in (*timeline, *presentations)
+        if type(sequence := item.get("course_sequence")) is int
+    )
+    retained = frozenset(sequences[-_MAX_RECENT_CONVERSATION_ENTRIES:])
+    return {
+        **tutor_snapshot,
+        "timeline": tuple(
+            item for item in timeline if item.get("course_sequence") in retained
+        ),
+        "tutor_presentations": tuple(
+            item for item in presentations if item.get("course_sequence") in retained
+        ),
+    }
 
 
 def _require_owners(
