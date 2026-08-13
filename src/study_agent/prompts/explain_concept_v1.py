@@ -7,7 +7,7 @@ from study_agent.skills import (
     SemanticVersion,
 )
 
-VERSION = SemanticVersion.parse("1.0.0")
+VERSION = SemanticVersion.parse("1.1.0")
 EXPLAIN_CONCEPT_PROMPT = ArtifactReference("explain_concept.v1", VERSION)
 
 EXPLAIN_CONCEPT_LAYERS = (
@@ -31,7 +31,12 @@ EXPLAIN_CONCEPT_LAYERS = (
         VERSION,
         PromptLayerKind.TASK_INSTRUCTION,
         "Explain the bounded concept in a teaching sequence. Use the clarification only when "
-        "provided. Every domain claim must cite supplied evidence_ids.",
+        "provided. Return status answered when the evidence supports an answer. Classify every "
+        "factual domain statement as supported_claim, or as synthesis when it combines multiple "
+        "supported facts; both kinds require supplied evidence_ids. Use study_guidance only for "
+        "uncited learning actions or study technique, and it must have no evidence_ids. Use "
+        "uncertainty only for explicitly bounded omissions, with no evidence_ids. Never attach "
+        "evidence_ids to study_guidance or uncertainty.",
         ("query", "target", "clarification"),
     ),
     PromptLayer(

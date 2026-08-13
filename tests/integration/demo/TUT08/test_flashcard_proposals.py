@@ -205,9 +205,16 @@ def test_repository_chat_publishes_verified_pending_flashcard_proposal(tmp_path:
     )
 
     assert receipt["status"] == "completed", receipt
+    activity = cast(dict[str, object], receipt["activity"])
+    assert activity["kind"] == "flashcard_generation"
+    assert activity["status"] == "completed"
+    assert activity["request_id"] == "create-flashcards"
+    assert activity["proposal_count"] == 1
+    assert activity["destination"] == "proposte"
     artifacts = app.get("/api/v1/artifacts")
     items = cast(tuple[dict[str, object], ...], artifacts["items"])
     assert len(items) == 1
+    assert activity["proposal_revision_ids"] == (items[0]["revision_id"],)
     assert items[0]["status"] == "proposed"
     assert artifacts["message"] == (
         "Generated artifacts remain proposals until an explicit decision."

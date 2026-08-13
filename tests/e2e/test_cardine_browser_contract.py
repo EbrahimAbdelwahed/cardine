@@ -289,6 +289,9 @@ def test_chat_home_and_session_markers_preserve_learner_tutor_boundary() -> None
     assert "thread-message--assistant" in css
     assert '<p class="thread-message__role">tu</p>' in javascript
     assert 'role === "system" ? "sistema" : "tutor"' in javascript
+    assert "/api/v1/indexing/status" in javascript
+    assert "Indicizzazione della fonte in corso" in javascript
+    assert "Strutturo le lezioni" in javascript
 
 
 def test_selected_lesson_flashcards_and_bulk_decisions_are_reachable() -> None:
@@ -303,6 +306,8 @@ def test_selected_lesson_flashcards_and_bulk_decisions_are_reachable() -> None:
         "un'unica operazione atomica",
         "/api/v1/lessons/flashcards",
         "/api/v1/artifacts/decisions",
+        "Sto generando e verificando le proposte flashcard",
+        "flashcard_generation",
     ):
         assert marker in javascript
     assert "$$('[data-bulk-revision]:checked', root)" in javascript

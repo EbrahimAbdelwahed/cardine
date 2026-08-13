@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from hashlib import sha256
@@ -12,6 +13,12 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 from cardine.adapters.pageindex import PageIndexCoordinator, PageIndexRevision
 from cardine.application.flashcard_proposals import FlashcardProposalComposition
+from cardine.application.indexing import (
+    IndexingCoordinator,
+    IndexingPhase,
+    IndexingRecord,
+    IndexingStatus,
+)
 from cardine.courses import (
     CourseService,
     ProjectionCourseCatalog,
@@ -43,6 +50,7 @@ from cardine.knowledge import (
     LessonChunk,
     LessonEvidencePort,
     LessonSearchResult,
+    LessonSelectionError,
     LessonSelectionService,
     LessonSource,
     PageIndexProjection,
@@ -160,6 +168,7 @@ from study_agent.ports import IndexReceipt, ModelCapabilities, ModelPort
 from study_agent.ports.retrieval import (
     EvidenceStatus,
     RetrievalDocument,
+    RetrievalEvidence,
     RetrievalEvidenceSet,
     RetrievalPort,
     RetrievalQuery,
@@ -261,6 +270,78 @@ class _PinnedRetrieval:
             evidence.strategy_version,
             evidence.index_version,
             retrieval_read_set_fingerprint(selected),
+        )
+
+
+class _StructuralRangeRetrieval:
+    """Return all complete canonical chunks inside one validated structural pin."""
+
+    def __init__(
+        self,
+        catalog: CourseSourceContent,
+        pin: SourcePin,
+        index_receipt: IndexReceipt,
+    ) -> None:
+        self._catalog = catalog
+        self._pin = pin
+        self._index_receipt = index_receipt
+
+    def index(self, documents: Sequence[RetrievalDocument]) -> IndexReceipt:
+        del documents
+        raise PermissionError("structural range retrieval is read-only")
+
+    def search(self, query: RetrievalQuery) -> RetrievalEvidenceSet:
+        documents = tuple(
+            document
+            for document in self._catalog.documents()
+            if str(document.source_id) == self._pin.source_id
+            and str(document.revision_id) == self._pin.revision_id
+            and document.chunk.start_offset >= self._pin.start_offset
+            and document.chunk.end_offset <= self._pin.end_offset
+            and document.trust_level >= query.minimum_trust_level
+            and (not query.source_kinds or document.source_kind in query.source_kinds)
+            and (not query.source_roles or document.source_role in query.source_roles)
+        )
+        if len(documents) > 100:
+            raise ValueError("lesson scope exceeds the canonical evidence bound")
+        evidence = tuple(
+            RetrievalEvidence(
+                document.chunk,
+                Citation(
+                    document.source_id,
+                    document.revision_id,
+                    document.chunk.chunk_id,
+                    document.chunk.start_offset,
+                    document.chunk.end_offset,
+                    document.text,
+                ),
+                document.text,
+                1.0,
+            )
+            for document in sorted(documents, key=lambda item: item.chunk.ordinal)
+        )
+        fingerprint = sha256(
+            b"cardine-structural-query@1\0" + canonical_json_bytes(
+                {
+                    "course_id": str(query.course_id),
+                    "text": query.text,
+                    "pin": {
+                        "source_id": self._pin.source_id,
+                        "revision_id": self._pin.revision_id,
+                        "start_offset": self._pin.start_offset,
+                        "end_offset": self._pin.end_offset,
+                    },
+                }
+            )
+        ).hexdigest()
+        return RetrievalEvidenceSet(
+            EvidenceStatus.SUFFICIENT if evidence else EvidenceStatus.INSUFFICIENT,
+            evidence,
+            fingerprint,
+            "cardine-structural-range",
+            "1.0.0",
+            self._index_receipt.index_version,
+            retrieval_read_set_fingerprint(evidence),
         )
 
 
@@ -376,8 +457,19 @@ class _RepositoryTutorGateway:
         repository = self._repository
         course = repository.for_course(self._course_id)
         profile = course_profile_manifest(repository.courses.get(self._course_id))
-        receipt = repository.rebuild_retrieval()
+        current_target = retrieval_catalog_fingerprint(
+            tuple(repository._source_catalog.documents(include_superseded=True))
+        )
+        indexing = repository.indexing_status()
+        if indexing is None or indexing.target_fingerprint != current_target:
+            # One-time compatibility migration for repositories created before
+            # durable derived-index status existed, and direct non-UI source
+            # mutations. New browser admissions queue explicitly and reconcile
+            # outside the upload request.
+            repository.reconcile_indexing()
+        receipt = course.retrieval.audit()
         course_receipt = repository.course_index_receipt(self._course_id, receipt)
+        lesson_pin = repository.resolve_lesson_scope(self._course_id, query)
         if context.session_id is None:
             raise ValueError("explain capability requires a session")
         profile_fingerprint = sha256(canonical_json_bytes(profile)).hexdigest()
@@ -416,13 +508,19 @@ class _RepositoryTutorGateway:
             model_adapter=self._model_adapter,
             state_contract=ArtifactReference("event_state", _V1),
         )
+        retrieval: RetrievalPort = course.retrieval
+        retrieval_limit = 8
+        if lesson_pin is not None:
+            repository.validate_lesson_pin(lesson_pin)
+            retrieval = _StructuralRangeRetrieval(course.content, lesson_pin, course_receipt)
+            retrieval_limit = 100
         search = BoundSourceSearchExecutor(
             context=context,
             question=query,
-            retrieval=course.retrieval,
+            retrieval=retrieval,
             course_profile=profile,
             index_receipt=course_receipt,
-            limit=8,
+            limit=retrieval_limit,
         )
         engine = PlaybookEngine(
             engine_version=_V1,
@@ -812,6 +910,7 @@ class _RepositoryLessonEvidence(LessonEvidencePort):
                 item.chunk.start_offset,
                 item.chunk.end_offset,
                 item.text,
+                item.chunk.section_path,
             )
             for item in result.evidence
             if str(item.chunk.source_id) == source.source_id
@@ -841,12 +940,18 @@ class _RepositorySourceCatalog:
         )
 
     def documents(self, *, include_superseded: bool = False) -> tuple[RetrievalDocument, ...]:
+        course_ids = self._course_ids()
+        retired_by_course = {
+            course_id: self._source_lifetime.retired_source_ids(course_id)
+            for course_id in course_ids
+        }
         return tuple(
             document
-            for content in self._contents()
-            for document in content.documents(include_superseded=include_superseded)
-            if document.source_id
-            not in self._source_lifetime.retired_source_ids(document.course_id)
+            for course_id in course_ids
+            for document in CourseSourceContent(
+                course_id, self._events, self._blobs
+            ).documents(include_superseded=include_superseded)
+            if document.source_id not in retired_by_course[document.course_id]
         )
 
     def all_documents(self, *, include_superseded: bool = False) -> tuple[RetrievalDocument, ...]:
@@ -991,6 +1096,9 @@ class LocalRepository:
         )
         self.runs = SQLiteRunStore(runs_database, connection_identity_guard=runs_guard)
         self.pageindex = PageIndexCoordinator(self.runs)
+        self.indexing = IndexingCoordinator(
+            NamespacedSQLiteRunStore(self.runs, "cardine-indexing")
+        )
         self.provider_consent = ProjectionConsentView(self.events.projection)
         self.source_lifetime = ProjectionSourceLifetimeView(self.events.projection)
         self._source_catalog = _RepositorySourceCatalog(
@@ -1470,6 +1578,7 @@ class LocalRepository:
                         chunk.start_offset,
                         chunk.end_offset,
                         record.text[chunk.start_offset : chunk.end_offset],
+                        chunk.section_path,
                     )
                     for chunk in record.chunks
                 ),
@@ -1550,6 +1659,37 @@ class LocalRepository:
         )
         return service.select(candidate_id, result)
 
+    def resolve_lesson_scope(self, course_id: CourseId, query: str) -> SourcePin | None:
+        """Resolve one explicit lesson reference without silently choosing ambiguity."""
+
+        if not isinstance(course_id, CourseId):
+            raise TypeError("lesson scope requires a CourseId")
+        if not isinstance(query, str) or not query.strip():
+            raise ValueError("lesson scope query is invalid")
+        normalized = query.casefold()
+        references = tuple(
+            dict.fromkeys(
+                match.group(0).strip()
+                for match in re.finditer(
+                    r"\blezione\s+(?:numero\s+)?[\w.-]+\b", normalized
+                )
+            )
+        )
+        if not references:
+            return None
+        candidates: list[LessonCandidate] = []
+        for reference in references:
+            candidates.extend(self.search_lessons(course_id, reference).candidates)
+        unique = {item.candidate_id: item for item in candidates}
+        if not unique:
+            return None
+        if len(unique) != 1:
+            raise LessonSelectionError("lesson scope is ambiguous")
+        candidate = next(iter(unique.values()))
+        pin = self.select_lesson(course_id, candidate.section_title, candidate.candidate_id)
+        self.validate_lesson_pin(pin)
+        return pin
+
     def validate_lesson_pin(self, pin: SourcePin) -> LessonSource:
         sources = self._lesson_sources(CourseId(pin.course_id))
         source = LessonSelectionService(
@@ -1615,6 +1755,83 @@ class LocalRepository:
         receipt = retrieval.rebuild(documents)
         self._queue_pageindex_backfill()
         return receipt
+
+    def queue_indexing(self) -> IndexingRecord:
+        """Queue the current canonical catalog without performing derived work."""
+
+        documents = tuple(self._source_catalog.documents(include_superseded=True))
+        return self.indexing.queue(retrieval_catalog_fingerprint(documents))
+
+    def indexing_status(self) -> IndexingRecord | None:
+        """Read durable derived-index progress without rebuilding either index."""
+
+        return self.indexing.get()
+
+    def reconcile_indexing(self) -> IndexingRecord:
+        """Run one queued target through atomic FTS and bounded structure work."""
+
+        queued = self.queue_indexing()
+        if queued.status in {IndexingStatus.READY, IndexingStatus.DEGRADED}:
+            return queued
+        if queued.status is IndexingStatus.INDEXING:
+            recovered = self.indexing.transition(
+                queued,
+                status=IndexingStatus.QUEUED,
+                phase=IndexingPhase.QUEUED,
+                error_code=None,
+            )
+            queued = recovered or self.indexing.get() or queued
+            if queued.status is IndexingStatus.INDEXING:
+                return queued
+        active = self.indexing.transition(
+            queued, status=IndexingStatus.INDEXING, phase=IndexingPhase.LEXICAL
+        )
+        if active is None:
+            return self.indexing.get() or queued
+        try:
+            receipt = self.rebuild_retrieval()
+        except (OSError, RuntimeError, ValueError):
+            failed = self.indexing.transition(
+                active,
+                status=IndexingStatus.FAILED,
+                phase=IndexingPhase.COMPLETE,
+                error_code="lexical_index_failed",
+            )
+            return failed or self.indexing.get() or active
+        structural = self.indexing.transition(
+            active,
+            status=IndexingStatus.INDEXING,
+            phase=IndexingPhase.STRUCTURE,
+            indexed_chunks=receipt.indexed_chunks,
+        )
+        if structural is None:
+            return self.indexing.get() or active
+        try:
+            for course_id in self.events.list_course_ids():
+                self.reconcile_pageindex(course_id)
+            pageindex = tuple(
+                item
+                for course_id in self.events.list_course_ids()
+                for item in self.pageindex_status(course_id)
+            )
+        except (SourceContentError, OSError, RuntimeError, ValueError):
+            failed = self.indexing.transition(
+                structural,
+                status=IndexingStatus.FAILED,
+                phase=IndexingPhase.COMPLETE,
+                indexed_chunks=receipt.indexed_chunks,
+                error_code="structural_index_failed",
+            )
+            return failed or self.indexing.get() or structural
+        degraded = any(item.status is not PageIndexStatus.READY for item in pageindex)
+        terminal = self.indexing.transition(
+            structural,
+            status=IndexingStatus.DEGRADED if degraded else IndexingStatus.READY,
+            phase=IndexingPhase.COMPLETE,
+            indexed_chunks=receipt.indexed_chunks,
+            error_code="structural_index_degraded" if degraded else None,
+        )
+        return terminal or self.indexing.get() or structural
 
     def course_index_receipt(
         self, course_id: CourseId, repository_receipt: IndexReceipt

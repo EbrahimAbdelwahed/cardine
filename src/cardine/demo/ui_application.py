@@ -7,17 +7,21 @@ owned by the canonical repository services or by their shared harness surface.
 from __future__ import annotations
 
 import asyncio
+import subprocess
+import sys
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from hashlib import sha256
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Thread
+from time import sleep
 from typing import Protocol, cast
 
 from cardine.application.artifact_decisions import (
     artifact_bulk_receipt_payload,
     decide_artifacts,
 )
+from cardine.application.indexing import IndexingRecord
 from cardine.cli.repository import (
     LocalRepository,
     LocalRepositoryError,
@@ -36,6 +40,7 @@ from cardine.documents import (
 )
 from cardine.hosts import PendingContinuationDescriptor, TutorContinuationRecord
 from cardine.integrations.study_agent import (
+    CardineInternalError,
     CardineRuntimeConfig,
     CardineSourceContentUnavailableError,
     StudyRuntimeAdapter,
@@ -297,8 +302,31 @@ class RepositoryUiApplication(UiApplicationPort):
             CardineRuntimeConfig(opener=open_repository)
         )
         self._lock = _repository_mutation_lock(self._repository)
+        self._indexing_worker_lock = Lock()
         self._turn_traces = turn_traces if turn_traces is not None else TurnTraceStore()
         self._document_policy = document_policy or document_import_policy()
+        self._indexing_view: JsonObject = {
+            "status": "empty",
+            "phase": "idle",
+            "target_fingerprint": None,
+            "indexed_chunks": 0,
+            "pageindex": {
+                "status": "empty",
+                "ready_revisions": 0,
+                "total_revisions": 0,
+            },
+            "error_code": None,
+        }
+        try:
+            with self._lock, self._open() as repository:
+                self._indexing_view = self._indexing_record_payload(
+                    repository, repository.indexing_status()
+                )
+        except CardineSourceContentUnavailableError:
+            # A missing canonical blob is surfaced by the existing materials
+            # readiness flow; it must not prevent the UI from starting.
+            return
+        self._start_indexing_worker_if_queued()
 
     @property
     def repository(self) -> Path:
@@ -354,6 +382,8 @@ class RepositoryUiApplication(UiApplicationPort):
     def get(self, path: str) -> JsonObject:
         if path == "/api/v1/workspace":
             return self._workspace()
+        if path == "/api/v1/indexing/status":
+            return self._indexing_payload()
         routes: dict[str, Callable[[TutorSnapshotV1, Mapping[str, object]], JsonObject]] = {
             "/api/v1/bootstrap": self._bootstrap,
             "/api/v1/session": self._session,
@@ -421,6 +451,9 @@ class RepositoryUiApplication(UiApplicationPort):
                             repository, self._course_id, snapshot
                         ),
                         "pageindex": repository.pageindex_summary(self._course_id),
+                        "indexing": self._indexing_record_payload(
+                            repository, repository.indexing_status()
+                        ),
                         "provider_consent": repository.provider_consent.get(self._course_id),
                         "retired_source_ids": repository.source_lifetime.retired_source_ids(
                             self._course_id
@@ -477,6 +510,8 @@ class RepositoryUiApplication(UiApplicationPort):
             return self._create_chat_course(command)
         if path == "/api/v1/sources/upload":
             return self._upload_source(command)
+        if path == "/api/v1/indexing/reconcile":
+            return self._reconcile_indexing(command)
         if path in {"/api/v1/consent/grant", "/api/v1/consent/revoke"}:
             return self._consent_mutation(path.rsplit("/", 1)[-1], command)
         if path in {"/api/v1/sources/retire", "/api/v1/sources/restore"}:
@@ -537,6 +572,8 @@ class RepositoryUiApplication(UiApplicationPort):
         with self._turn_traces.capture(request_id, expected_sequence) as trace_id, self._lock:
             try:
                 with self._open() as repository:
+                    before_artifacts = repository.artifacts.get(self._course_id)
+                    before_revision_ids = {str(item.id) for item in before_artifacts.revisions}
                     application = repository.tutor_conversation(
                         self._course_id, session_id=self._session_id
                     )
@@ -567,6 +604,14 @@ class RepositoryUiApplication(UiApplicationPort):
                             "continuation": result.pending_continuation,
                         },
                     )
+                    settled_artifacts = ProjectionArtifactView(captured).get(self._course_id)
+                    proposal_revision_ids = tuple(
+                        str(item.id)
+                        for item in settled_artifacts.revisions
+                        if str(item.id) not in before_revision_ids
+                        and item.status is ArtifactRevisionStatus.PROPOSED
+                        and item.kind is StudyArtifactKind.FLASHCARD
+                    )
                     return {
                         "schema_version": 1,
                         "request_id": request_id,
@@ -576,6 +621,18 @@ class RepositoryUiApplication(UiApplicationPort):
                         "result": session,
                         "presentation_id": (
                             None if result.presentation is None else str(result.presentation.id)
+                        ),
+                        "activity": (
+                            None
+                            if not proposal_revision_ids
+                            else {
+                                "kind": "flashcard_generation",
+                                "status": "completed",
+                                "request_id": request_id,
+                                "proposal_count": len(proposal_revision_ids),
+                                "proposal_revision_ids": proposal_revision_ids,
+                                "destination": "proposte",
+                            }
                         ),
                     }
             except UiRequestError:
@@ -1018,8 +1075,9 @@ class RepositoryUiApplication(UiApplicationPort):
                         )
                     )
                     result = _surface_value(surface_result)
-                    repository.rebuild_retrieval()
-                    repository.reconcile_pageindex(self._course_id)
+                    indexing = repository.queue_indexing()
+                    self._indexing_view = self._indexing_record_payload(repository, indexing)
+                    self._start_indexing_worker()
                     return {
                         "schema_version": 1,
                         "request_id": request_id,
@@ -1032,6 +1090,7 @@ class RepositoryUiApplication(UiApplicationPort):
                             "kind": "text",
                             "chunk_count": result["chunk_count"],
                         },
+                        "indexing": self._indexing_record_payload(repository, indexing),
                     }
             except UiRequestError:
                 raise
@@ -1091,7 +1150,9 @@ class RepositoryUiApplication(UiApplicationPort):
                         ingestion=repository.for_course(self._course_id).ingestion,
                         policy=self._document_policy,
                     )
-                    repository.rebuild_retrieval()
+                    indexing = repository.queue_indexing()
+                    self._indexing_view = self._indexing_record_payload(repository, indexing)
+                    self._start_indexing_worker()
                     result = admission.result
                     conversion = admission.conversion
                     return {
@@ -1115,6 +1176,7 @@ class RepositoryUiApplication(UiApplicationPort):
                             "markdown_sha256": conversion.markdown_sha256,
                             "limitations": conversion.limitations,
                         },
+                        "indexing": self._indexing_record_payload(repository, indexing),
                     }
             except AnyDocWorkerError as error:
                 status = {
@@ -1136,6 +1198,107 @@ class RepositoryUiApplication(UiApplicationPort):
                     "converted PDF could not be admitted canonically",
                     status_code=409 if error.retryable else 422,
                 ) from error
+
+    def _reconcile_indexing(self, command: Mapping[str, object]) -> JsonObject:
+        request_id, _expected_sequence, _payload = _workspace_command(
+            command, required_keys=set()
+        )
+        try:
+            with self._open() as repository:
+                record = repository.queue_indexing()
+                self._indexing_view = self._indexing_record_payload(repository, record)
+                self._start_indexing_worker()
+                return {
+                    "schema_version": 1,
+                    "request_id": request_id,
+                    "indexing": self._indexing_record_payload(repository, record),
+                }
+        except (LocalRepositoryError, OSError, RuntimeError, ValueError) as error:
+            raise UiRequestError(
+                "indexing reconciliation is unavailable", status_code=503
+            ) from error
+
+    def _start_indexing_worker_if_queued(self) -> None:
+        try:
+            with self._lock, self._open() as repository:
+                record = repository.indexing_status()
+            if record is not None and record.status.value in {"queued", "indexing"}:
+                self._start_indexing_worker()
+        except (LocalRepositoryError, OSError, RuntimeError, ValueError):
+            return
+
+    def _start_indexing_worker(self) -> None:
+        if not self._indexing_worker_lock.acquire(blocking=False):
+            return
+
+        def run() -> None:
+            try:
+                queued = dict(self._indexing_view)
+                queued["status"] = "indexing"
+                queued["phase"] = "lexical"
+                self._indexing_view = cast(JsonObject, queued)
+                completed = subprocess.run(
+                    (
+                        sys.executable,
+                        "-m",
+                        "cardine.application.indexing_worker",
+                        str(self._repository),
+                    ),
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                with self._lock, self._open() as repository:
+                    record = repository.indexing_status()
+                    if completed.returncode != 0 or record is None:
+                        raise RuntimeError("indexing worker did not settle durably")
+                    self._indexing_view = self._indexing_record_payload(repository, record)
+            except (LocalRepositoryError, OSError, RuntimeError, ValueError):
+                # The repository coordinator persists a safe failure whenever
+                # it owns the active target. Polling remains truthful.
+                failed = dict(self._indexing_view)
+                failed.update(
+                    status="failed",
+                    phase="complete",
+                    error_code="indexing_worker_failed",
+                )
+                self._indexing_view = cast(JsonObject, failed)
+            finally:
+                self._indexing_worker_lock.release()
+
+        Thread(target=run, name="cardine-indexing", daemon=True).start()
+
+    def _indexing_payload(self) -> JsonObject:
+        return {
+            "schema_version": 1,
+            "course_id": str(self._course_id),
+            "indexing": cast(JsonObject, self._indexing_view),
+        }
+
+    def _indexing_record_payload(
+        self, repository: LocalRepository, record: IndexingRecord | None
+    ) -> JsonObject:
+        pageindex = repository.pageindex_summary(self._course_id)
+        raw_rows = pageindex.get("items", ())
+        rows = tuple(
+            item
+            for item in (raw_rows if isinstance(raw_rows, (tuple, list)) else ())
+            if isinstance(item, Mapping)
+        )
+        return {
+            "status": "empty" if record is None else record.status.value,
+            "phase": "idle" if record is None else record.phase.value,
+            "target_fingerprint": None if record is None else record.target_fingerprint,
+            "indexed_chunks": 0 if record is None else record.indexed_chunks,
+            "pageindex": {
+                "status": str(pageindex.get("status", "empty")),
+                "ready_revisions": sum(
+                    1 for item in rows if item.get("status") == "ready"
+                ),
+                "total_revisions": len(rows),
+            },
+            "error_code": None if record is None else record.error_code,
+        }
 
     def _check_model(self, command: Mapping[str, object]) -> JsonObject:
         request_id, _expected_sequence, payload = _workspace_command(command, required_keys=set())
@@ -1776,7 +1939,16 @@ class RepositoryUiApplication(UiApplicationPort):
                 ) from error
 
     def _open(self) -> AbstractContextManager[LocalRepository]:
-        return self._runtime.open_repository()
+        # An atomic derived-index swap can briefly overlap repository layout
+        # inspection. Retry that narrow race without delaying ordinary errors.
+        for attempt in range(3):
+            try:
+                return self._runtime.open_repository()
+            except CardineInternalError:
+                if attempt == 2:
+                    raise
+                sleep(0.01)
+        raise AssertionError("repository open retry is unreachable")
 
     def _snapshot(self, repository: LocalRepository) -> TutorSnapshotV1:
         repository.courses.get(self._course_id)
@@ -1869,6 +2041,7 @@ class RepositoryUiApplication(UiApplicationPort):
         readiness = cast(StudyReadinessSnapshot, metadata["readiness"])
         source_grounding = cast(Mapping[str, object], metadata["source_grounding"])
         pageindex = cast(Mapping[str, object], metadata.get("pageindex", {}))
+        indexing = cast(Mapping[str, object], metadata.get("indexing", {}))
         grounding_status = str(source_grounding.get("status", "unavailable"))
         artifact_counts = tuple(getattr(readiness, "artifact_counts", ()))
         recall = getattr(readiness, "recall", None)
@@ -1950,6 +2123,7 @@ class RepositoryUiApplication(UiApplicationPort):
                 "active_revisions": active_revisions,
                 "items": pageindex_items,
             },
+            "indexing": cast(JsonObject, indexing),
             "onboarding": {
                 "needs_study_intent": bool(active_materials)
                 and grounding_status == "available"

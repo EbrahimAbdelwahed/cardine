@@ -20,11 +20,30 @@ from .contracts import (
 )
 
 _PROPOSE_FLASHCARDS = "propose_flashcards"
+_FLASHCARD_ACTION = (
+    r"(?:crea(?:re|mi|te|ta)?|genera(?:re|mi|te|ta|i|no)?|"
+    r"prepara(?:re|mi|te|ta)?|produci|costruisci|proponi|fammi|dammi|"
+    r"create|creating|created|generate|generating|generated|make|making|"
+    r"prepare|preparing|produce|producing|build|building|draft|drafting|"
+    r"give\s+me)"
+)
+_FLASHCARD_KIND = (
+    r"(?:flash\s*cards?|cards?|schede(?:\s+(?:di|per)\s+studio)?|"
+    r"carte\s+di\s+studio)"
+)
 _FLASHCARD_REQUEST = re.compile(
-    r"\b(?:flashcard|flashcards|flashcard[s]?|schede|carte\s+di\s+studio|"
-    r"crea\s+(?:delle\s+)?(?:flashcard|schede)|create\s+(?:some\s+)?flashcards?)\b",
+    rf"(?<![\w-]){_FLASHCARD_ACTION}(?:\s+[\w'-]+){{0,8}}\s+{_FLASHCARD_KIND}(?![\w-])",
     re.IGNORECASE,
 )
+_FLASHCARD_META_PREFIX = re.compile(
+    r"(?:\b(?:cosa\s+sono|cos(?:'|\u2019)e|what\s+are|tell\s+me\s+about)|"
+    r"\b(?:quando|perch[eé]|why|when|whether)\b|"
+    r"\b(?:[eè]\s+utile|conviene|is\s+it\s+useful|should\s+i)\b|"
+    r"\b(?:come|how)\b.{0,24}\b(?:posso|si\s+pu[oò]|can|do\s+i|to)\b|"
+    r"\b(?:spiegami|spiegare|explain|describe)\b)",
+    re.IGNORECASE,
+)
+_FLASHCARD_NEGATION = re.compile(r"\b(?:non|don't|do\s+not|never)\b", re.IGNORECASE)
 _ITALIAN = re.compile(
     r"\b(?:crea|delle|schede|fonti|anatomia|morfologia|ricostruzione|rapporti)\b",
     re.IGNORECASE,
@@ -46,7 +65,7 @@ class FlashcardProfileRoutingTutorDecisionPort(TutorDecisionPort):
         if context.pending_continuation is not None:
             return decision
         learner_text = _latest_learner_text(context)
-        if learner_text is None or not _FLASHCARD_REQUEST.search(learner_text):
+        if learner_text is None or not _is_flashcard_generation_request(learner_text):
             return decision
         if not any(item.id == _PROPOSE_FLASHCARDS for item in context.advertised_capabilities):
             return decision
@@ -57,6 +76,19 @@ class FlashcardProfileRoutingTutorDecisionPort(TutorDecisionPort):
             _PROPOSE_FLASHCARDS,
             _flashcard_inputs(learner_text),
         )
+
+
+def _is_flashcard_generation_request(learner_text: str) -> bool:
+    """Recognize an explicit card-generation action, not a card-related question."""
+
+    match = _FLASHCARD_REQUEST.search(learner_text)
+    if match is None:
+        return False
+    prefix = learner_text[: match.start()]
+    if _FLASHCARD_META_PREFIX.search(prefix):
+        return False
+    action_start = max(0, match.start() - 32)
+    return not _FLASHCARD_NEGATION.search(learner_text[action_start : match.start()])
 
 
 def _latest_learner_text(context: TutorHostContext) -> str | None:

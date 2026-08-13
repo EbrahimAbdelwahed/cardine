@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from study_agent.skills import ArtifactReference, SemanticVersion
 
-VERSION = SemanticVersion.parse("1.2.0")
+VERSION = SemanticVersion.parse("1.3.0")
 TUTOR_DECISION_PROMPT = ArtifactReference("tutor_decision.v1", VERSION)
 
 _BASE_INSTRUCTION = (
@@ -28,7 +28,12 @@ _BASE_INSTRUCTION = (
     "5. Use start_capability only for a substantive advertised study workflow. It is not "
     "a conversational response: it can terminate without generation when grounded evidence "
     "is unavailable. A request to explain, summarize, assess, grade, analyze, or generate "
-    "study material from course content belongs here.\n\n"
+    "study material from course content belongs here. Never promise to start a study workflow "
+    "later in an assistant_message: select start_capability in the current decision.\n\n"
+    "CAPABILITY EXECUTION RULE: when an advertised capability matches the learner's explicit "
+    "action, select it now and let the host report its result. Do not answer with a promise, "
+    "plan, or future-tense acknowledgement such as 'I will generate those cards'. A capability "
+    "request must produce start_capability or a concise ask_learner clarification.\n\n"
     "RETRIEVAL QUERY POLICY for capability input fields named query:\n"
     "- Generate 1 to 6 informative lexical terms, not a copy of the learner message.\n"
     "- Keep domain concepts, anatomical/scientific terms, and an explicitly named source "
@@ -48,26 +53,75 @@ _BASE_INSTRUCTION = (
 )
 
 _CAPABILITY_GUIDANCE = {
-    "explain_concept": "retrieve canonical course evidence and teach one bounded concept; "
-    "never use for greetings, product help, source listing, or generic planning",
-    "assess_understanding": "create learner questions grounded in course evidence; never "
-    "use for a direct explanation or casual question",
-    "propose_flashcards": "propose grounded study cards for later review; never claim cards "
-    "were persisted unless a repository tool records them",
-    "analyze_exam_sample": "analyze an exam artifact only when such input is actually present",
-    "grade_response": "grade a supplied learner response against grounded criteria",
+    "explain_concept": (
+        "Output: a bounded explanation grounded in canonical course evidence. Positive: "
+        "'Spiegami il legame peptidico'. Negative: greetings, product help, source listing, "
+        "or generic planning. Never promise an explanation later; select this capability now."
+    ),
+    "assess_understanding": (
+        "Output: learner questions grounded in course evidence. Positive: 'Fammi una verifica "
+        "sulla lezione 1'. Negative: a direct explanation or casual question. Never promise to "
+        "assess later; select this capability now."
+    ),
+    "propose_flashcards": (
+        "Output: grounded flashcard proposals in reviewable pending state. Positive: 'Genera 3 "
+        "cards sul legame peptidico'. Negative: 'Cosa sono le flashcards?' or an explanation "
+        "of how to make them. Never claim cards were persisted or promise generation later; "
+        "select this capability now, and let the host report the result."
+    ),
+    "analyze_exam_sample": (
+        "Output: grounded analysis of a supplied exam artifact. Positive: 'Analizza questo "
+        "PDF d'esame' when that artifact is present. Negative: a general topic question or "
+        "missing artifact. Never promise analysis later; select this capability now."
+    ),
+    "grade_response": (
+        "Output: a grounded grade and feedback for a supplied learner response. Positive: "
+        "'Valuta la mia risposta: ...'. Negative: a request to teach the topic first. Never "
+        "promise grading later; select this capability now."
+    ),
 }
 
 _TOOL_GUIDANCE = {
-    "course.create": "create a new course",
-    "course.list": "list courses",
-    "session.start": "start the host-selected session",
-    "source.ingest": "record supplied source content; never use merely to inspect sources",
-    "context.get": "read study-context counts",
-    "recall.get": "read recall availability and counts",
-    "artifact.get": "read artifact revision state",
-    "assessment.get": "read assessment state",
-    "evidence.get": "read learner-evidence estimates",
+    "course.create": (
+        "Output: the host-created course identity. Positive: the learner explicitly asks to "
+        "create a course. Negative: asking what courses exist. Never promise creation; invoke "
+        "the tool now and only report its result."
+    ),
+    "course.list": (
+        "Output: the host's current course list. Positive: 'Quali corsi ho?'. Negative: a "
+        "request to create or edit a course. Never promise a list later; invoke the tool now."
+    ),
+    "session.start": (
+        "Output: the host-selected session receipt. Positive: an explicit request to begin "
+        "study. Negative: a greeting or planning discussion. Never promise a session later; "
+        "invoke the tool now."
+    ),
+    "source.ingest": (
+        "Output: an ingestion receipt for supplied source content. Positive: a source file or "
+        "text is actually supplied. Negative: inspecting or listing existing sources. Never "
+        "promise ingestion; invoke only with supplied content and report the result."
+    ),
+    "context.get": (
+        "Output: current study-context counts. Positive: 'Quanto materiale ho?'. Negative: "
+        "a request to change study state. Never promise context data later; invoke the tool now."
+    ),
+    "recall.get": (
+        "Output: recall availability and counts. Positive: 'Cosa devo ripassare?'. Negative: "
+        "a request to generate or accept cards. Never promise recall data later; invoke now."
+    ),
+    "artifact.get": (
+        "Output: artifact revision state. Positive: checking generated proposal status. Negative: "
+        "creating or deciding an artifact. Never promise status later; invoke the tool now."
+    ),
+    "assessment.get": (
+        "Output: current assessment state. Positive: asking for recorded assessment status. "
+        "Negative: generating new questions. Never promise assessment data later; invoke now."
+    ),
+    "evidence.get": (
+        "Output: learner-evidence estimates. Positive: asking what evidence is recorded. "
+        "Negative: making unsupported claims about mastery. Never promise evidence later; "
+        "invoke the tool now."
+    ),
 }
 
 

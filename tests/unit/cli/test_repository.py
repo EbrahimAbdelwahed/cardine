@@ -437,6 +437,49 @@ def test_single_retrieval_database_is_composed_over_all_courses(tmp_path: Path) 
             repository.course_index_receipt(first_id, bool_count)
 
 
+def test_rebuild_checks_source_lifetime_once_per_catalog_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "repository"
+    initialize_local_repository(root, EMPTY_CONFIG)
+    course_id = CourseId("course-large-catalog")
+
+    with LocalRepository.open(root) as repository:
+        create_canonical_course(repository.events, course_id)
+        repository.for_course(course_id).ingestion.ingest(
+            filename="large-notes.txt",
+            content=(b"A canonical biochemistry sentence. " * 1000),
+            source_id=SourceId("source-large-catalog"),
+            title="Large notes",
+            trust_level=100,
+            source_role="reference",
+            context=ExecutionContext(
+                PrincipalKind.SERVICE,
+                "composition-test",
+                course_id,
+                CorrelationId("ingest-large-catalog"),
+            ),
+        )
+        calls = 0
+        original = repository.source_lifetime.retired_source_ids
+
+        def tracked_retired_source_ids(selected_course: CourseId) -> frozenset[SourceId]:
+            nonlocal calls
+            calls += 1
+            return original(selected_course)
+
+        monkeypatch.setattr(
+            repository.source_lifetime,
+            "retired_source_ids",
+            tracked_retired_source_ids,
+        )
+
+        receipt = repository.rebuild_retrieval()
+
+        assert receipt.indexed_chunks > 1
+        assert calls <= 4
+
+
 def test_stale_repository_receipt_fails_after_canonical_catalog_changes(
     tmp_path: Path,
 ) -> None:

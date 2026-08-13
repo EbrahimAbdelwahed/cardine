@@ -143,6 +143,7 @@
     studySetup: null,
     lastTurn: null,
     authProbeUnavailable: false,
+    indexingPollToken: 0,
     diagnosticTraceId: "",
     lesson: { query: "", candidates: [], pin: null, answer: null },
   };
@@ -904,6 +905,10 @@
     try {
       const payload = await fetchJson("/api/v1/bootstrap");
       state.bootstrap = object(payload);
+      const indexing = object(payload.indexing);
+      if (["queued", "indexing"].includes(text(indexing.status))) {
+        pollIndexing(null).catch(() => {});
+      }
       updateSequence(first(payload, ["high_water_sequence", "sequence"], state.highWaterSequence));
       renderCourse(payload);
       updateCounts(payload);
@@ -1191,6 +1196,9 @@
     try {
       const payload = await fetchJson("/api/v1/bootstrap");
       state.bootstrap = object(payload);
+      if (["queued", "indexing"].includes(text(object(payload.indexing).status))) {
+        pollIndexing(null).catch(() => {});
+      }
       updateSequence(first(payload, ["high_water_sequence", "sequence"], 0));
       renderCourse(payload);
       updateCounts(payload);
@@ -1860,6 +1868,8 @@
   async function executeCommand(endpoint, payload, form, refreshRoute, requestOverride = null) {
     const commandNavigationVersion = state.navigationVersion;
     const isTutorTurn = endpoint === "/api/v1/session/turns" || endpoint.includes("/session/continuations/");
+    const isFlashcardCommand = endpoint === "/api/v1/lessons/flashcards"
+      || (isTutorTurn && /\b(?:genera|crea|generate|create)\b[\s\S]{0,80}\b(?:cards?|flashcards?|schede|carte\s+di\s+studio)\b/i.test(text(payload.content || payload.response)));
     const forcedRequest = text(requestOverride, "");
     const retryingCommand = Boolean(
       forcedRequest
@@ -1882,10 +1892,13 @@
     setBusy(true);
     setStatus(
       "working",
-      "Salvataggio nel registro canonico…"
+      isFlashcardCommand ? "Genero e verifico le proposte flashcard…" : "Salvataggio nel registro canonico…"
     );
     try {
       const receipt = await fetchJson(endpoint, { method: "POST", body: JSON.stringify(commandPayload(payload, request)) });
+      const activity = object(receipt.activity);
+      const flashcardCompleted = text(activity.kind) === "flashcard_generation"
+        && text(activity.status) === "completed";
       const traceId = text(receipt.trace_id, "");
       if (traceId) state.diagnosticTraceId = traceId;
       updateSequence(first(receipt, ["high_water_sequence", "sequence"], state.highWaterSequence));
@@ -1914,7 +1927,7 @@
         renderSessione(state.viewData);
         dismissAlert();
       } else if (originIsStillActive) {
-        await loadRoute(refreshRoute);
+        await loadRoute((isFlashcardCommand || flashcardCompleted) && status === "completed" ? "proposte" : refreshRoute);
       }
       const nextComposer = originIsStillActive ? $("#session-entry-text") : null;
       if (nextComposer) nextComposer.focus({ preventScroll: true });
@@ -1958,7 +1971,11 @@
   function renderOptimisticTurn(content) {
     const safeContent = esc(content);
     const outgoing = `<article class="thread-message thread-message--learner" data-optimistic-turn><p class="thread-message__role">tu</p><p class="thread-message__text">${safeContent}</p></article>`;
-    const pending = `<article class="thread-message thread-message--assistant thread-message--pending" data-optimistic-turn><p class="thread-message__role">tutor</p><p class="thread-message__text">Sto preparando una risposta basata sulle fonti del corso…</p></article>`;
+    const flashcards = /\b(?:genera|crea|generate|create)\b[\s\S]{0,80}\b(?:cards?|flashcards?|schede|carte\s+di\s+studio)\b/i.test(content);
+    const pendingCopy = flashcards
+      ? "Sto generando e verificando le proposte flashcard…"
+      : "Sto preparando una risposta basata sulle fonti del corso…";
+    const pending = `<article class="thread-message thread-message--assistant thread-message--pending" data-optimistic-turn><p class="thread-message__role">tutor</p><p class="thread-message__text">${pendingCopy}</p></article>`;
     const thread = $(".session-thread", root);
     if (thread) {
       thread.insertAdjacentHTML("beforeend", outgoing + pending);
@@ -2037,13 +2054,49 @@
             body: JSON.stringify(commandPayload({ filename, title, content })),
           });
       updateSequence(first(receipt, ["high_water_sequence"], state.highWaterSequence));
+      const indexing = object(receipt.indexing);
+      const indexingContinues = ["queued", "indexing"].includes(text(indexing.status));
+      if (indexingContinues) {
+        if (status) status.textContent = "Fonte salvata. Indicizzazione in background…";
+        pollIndexing(status).catch(() => {});
+      }
       state.studySetup = null;
-      await refreshBootstrapCounts();
-      await loadRoute("oggi");
+      if (!indexingContinues) {
+        await refreshBootstrapCounts();
+        await loadRoute("oggi");
+      }
     } catch (error) {
       if (status) status.textContent = error.message;
     } finally {
       if (submit) submit.disabled = false;
+    }
+  }
+
+  async function pollIndexing(localStatus) {
+    const token = ++state.indexingPollToken;
+    for (let attempt = 0; attempt < 240 && token === state.indexingPollToken; attempt += 1) {
+      const receipt = await fetchJson("/api/v1/indexing/status");
+      const indexing = object(receipt.indexing);
+      const status = text(indexing.status, "empty");
+      const phase = text(indexing.phase, "idle");
+      if (localStatus && localStatus.isConnected) {
+        localStatus.textContent = status === "indexing"
+          ? (phase === "structure" ? "FTS pronto. Strutturo le lezioni…" : "Indicizzo il testo per la ricerca…")
+          : status === "queued" ? "Indicizzazione in coda…" : `Indicizzazione ${statusLabel(status)}.`;
+      }
+      setStatus(status, status === "ready"
+        ? "Fonte pronta per ricerca e lezioni"
+        : status === "degraded"
+          ? "Fonte ricercabile; struttura delle lezioni ridotta"
+          : status === "failed"
+            ? "Fonte salvata, ma indicizzazione non riuscita"
+            : "Indicizzazione della fonte in corso…", { alert: status === "failed" || status === "degraded" });
+      if (!["queued", "indexing"].includes(status)) {
+        await refreshBootstrapCounts();
+        if (state.route === "oggi") await loadRoute("oggi");
+        return;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 750));
     }
   }
 

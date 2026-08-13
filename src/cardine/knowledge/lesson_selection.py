@@ -43,12 +43,14 @@ class LessonChunk:
     start_offset: int
     end_offset: int
     text: str
+    section_path: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.start_offset < 0 or self.end_offset <= self.start_offset:
             raise ValueError("chunk offsets are invalid")
         if not self.text:
             raise ValueError("chunk text must not be empty")
+        object.__setattr__(self, "section_path", tuple(self.section_path))
 
 
 @dataclass(frozen=True, slots=True)

@@ -536,6 +536,12 @@ def test_repository_source_upload_ingests_text_and_reconciles_retry(tmp_path: Pa
     assert receipt["status"] == "emitted"
     assert cast(dict[str, object], receipt["source"])["title"] == "Lezione uno"
     assert cast(int, cast(dict[str, object], receipt["source"])["chunk_count"]) >= 1
+    queued = cast(dict[str, object], receipt["indexing"])
+    assert queued["status"] == "queued"
+    assert queued["phase"] == "queued"
+    assert isinstance(queued["target_fingerprint"], str)
+    visible = cast(dict[str, object], app.get("/api/v1/indexing/status")["indexing"])
+    assert visible["status"] in {"queued", "indexing", "ready", "degraded"}
     repeated = app.post("/api/v1/sources/upload", command)
     assert repeated["status"] == "idempotent"
     assert repeated["high_water_sequence"] == receipt["high_water_sequence"]

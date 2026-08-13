@@ -185,29 +185,50 @@ class SQLiteFtsRetrieval:
         )
 
     def _validate_batch(
-        self, batch: tuple[RetrievalDocument, ...]
+        self,
+        batch: tuple[RetrievalDocument, ...],
+        *,
+        canonical: tuple[RetrievalDocument, ...] | None = None,
     ) -> dict[tuple[str, str], str]:
         chunk_ids = tuple(document.chunk.chunk_id for document in batch)
         if len(set(chunk_ids)) != len(chunk_ids):
             raise ValueError("index batch must not contain duplicate chunk ids")
+        validate_resolution_with_catalog = canonical is None
+        if canonical is None:
+            canonical_documents = tuple(
+                self._content.documents(include_superseded=True)
+            )
+        else:
+            canonical_documents = canonical
+        canonical_by_chunk = {
+            document.chunk.chunk_id: document for document in canonical_documents
+        }
+        if len(canonical_by_chunk) != len(canonical_documents):
+            raise RetrievalIndexIntegrityError(
+                "canonical catalog contains duplicate chunks"
+            )
         canonical_by_revision: dict[
             tuple[CourseId, SourceId, RevisionId], set[ChunkId]
         ] = {}
-        for canonical in self._content.documents(include_superseded=True):
+        for canonical_document in canonical_documents:
             revision_key = (
-                canonical.course_id,
-                canonical.source_id,
-                canonical.revision_id,
+                canonical_document.course_id,
+                canonical_document.source_id,
+                canonical_document.revision_id,
             )
             canonical_by_revision.setdefault(revision_key, set()).add(
-                canonical.chunk.chunk_id
+                canonical_document.chunk.chunk_id
             )
         batch_by_revision: dict[
             tuple[CourseId, SourceId, RevisionId], set[ChunkId]
         ] = {}
         current: dict[tuple[str, str], str] = {}
         for document in batch:
-            self._validate_document(document)
+            self._validate_document(
+                document,
+                canonical_by_chunk,
+                validate_resolution_with_catalog=validate_resolution_with_catalog,
+            )
             revision_key = (
                 document.course_id,
                 document.source_id,
@@ -243,10 +264,16 @@ class SQLiteFtsRetrieval:
         for document in batch:
             self._upsert(connection, document)
 
-    def _validate_document(self, document: RetrievalDocument) -> None:
+    def _validate_document(
+        self,
+        document: RetrievalDocument,
+        canonical_by_chunk: dict[ChunkId, RetrievalDocument],
+        *,
+        validate_resolution_with_catalog: bool,
+    ) -> None:
         try:
-            canonical = self._content.canonical_document(document.chunk.chunk_id)
-        except Exception as error:
+            canonical = canonical_by_chunk[document.chunk.chunk_id]
+        except KeyError as error:
             raise RetrievalIndexIntegrityError(
                 "document chunk is absent from the canonical catalog"
             ) from error
@@ -266,13 +293,26 @@ class SQLiteFtsRetrieval:
             "index-validation",
             document.text,
         )
-        try:
-            resolved = self._content.resolve(citation)
-        except Exception as error:
-            raise RetrievalIndexIntegrityError(
-                "document does not resolve to canonical source content"
-            ) from error
-        if resolved.text != document.text:
+        if validate_resolution_with_catalog:
+            try:
+                resolved = self._content.resolve(citation)
+            except Exception as error:
+                raise RetrievalIndexIntegrityError(
+                    "document does not resolve to canonical source content"
+                ) from error
+            if resolved.text != document.text:
+                raise RetrievalIndexIntegrityError(
+                    "document differs from canonical source content"
+                )
+            return
+        if (
+            citation.source_id != canonical.source_id
+            or citation.revision_id != canonical.revision_id
+            or citation.chunk_id != canonical.chunk.chunk_id
+            or citation.start_offset != canonical.chunk.start_offset
+            or citation.end_offset != canonical.chunk.end_offset
+            or citation.quoted_snippet != canonical.text
+        ):
             raise RetrievalIndexIntegrityError("document differs from canonical source content")
 
     @staticmethod
@@ -458,7 +498,7 @@ class SQLiteFtsRetrieval:
             item.chunk.chunk_id: item for item in canonical
         }:
             raise ValueError("rebuild requires the complete canonical catalog")
-        current = self._validate_batch(batch)
+        current = self._validate_batch(batch, canonical=canonical)
         with closing(self._connect()) as connection, connection:
             connection.execute("DELETE FROM retrieval_fts")
             connection.execute("DELETE FROM retrieval_documents")

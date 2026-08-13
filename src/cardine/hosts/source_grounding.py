@@ -21,20 +21,23 @@ _SOURCE_REFERENCE = re.compile(
 )
 _SOURCE_EXPLANATION_REQUEST = re.compile(
     r"\b(?:read|explain|summari[sz]e|describe|tell|leggi|leggere|spiega|"
-    r"spiegami|spiegare|riassumi|riassunto|descrivi|cosa\s+dice)\b",
+    r"spiegami|spiegare|spiegazione|avvia|avviare|inizia|iniziare|parliamo|"
+    r"riassumi|riassunto|descrivi|cosa\s+dice)\b",
     re.IGNORECASE,
 )
 _ITALIAN_REQUEST = re.compile(
     r"\b(?:fonte|fonti|materiale|materiali|documento|documenti|leggi|leggere|"
-    r"spiega|spiegami|spiegare|riassumi|riassunto|descrivi|cosa)\b",
+    r"spiega|spiegami|spiegare|spiegazione|avvia|avviare|inizia|iniziare|"
+    r"parliamo|riassumi|riassunto|descrivi|cosa)\b",
     re.IGNORECASE,
 )
 _RETRIEVAL_STOP_WORDS = frozenset(
     {
-        "a", "about", "and", "che", "cosa", "dalla", "dalle", "del", "della",
+        "a", "about", "and", "avvia", "avviare", "che", "cosa", "dalla", "dalle", "del", "della",
         "delle", "di", "does", "e", "explain", "fonte", "from", "ha", "how", "i",
-        "il", "in", "it", "la", "le", "leggi", "materiale", "me", "many", "quante",
-        "read", "say", "source", "spiega", "spiegami", "the", "this", "to", "what", "with",
+        "il", "in", "inizia", "iniziare", "it", "la", "le", "leggi", "materiale", "me",
+        "many", "parliamo", "quante", "read", "say", "source", "spiega", "spiegami",
+        "spiegazione", "the", "this", "to", "una", "what", "with",
     }
 )
 
