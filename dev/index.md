@@ -12,6 +12,8 @@ archive and must not be treated as Cardine's current state.
 - [Current live Tool Chips handoff](handoffs/2026-08-13-1647--cardine--live-tool-chips--handoff.md) — truthful process-local tutor activity, polling boundary, verification, and deferred reload work.
 - [Live Tool Chips ADR](decisions/2026-08-13--ADR-0001--process-local-turn-activity.md) and [implementation log](logs/2026-08-13-1647--cardine--live-tool-chips--log.md) — privacy contract and shipped first delivery.
 - [Tool Chips empty-dialogue diagnosis](logs/2026-08-13-1805--cardine--tool-chips-empty-dialogue--log.md) — live evidence and the targeted model-activity correction.
+- [Circular clarification routing diagnosis](logs/2026-08-13-2000--cardine--circular-clarification-routing--log.md) — why answered tutor questions still produce another clarification, with the bounded repair direction.
+- [Bounded clarification recovery handoff](handoffs/2026-08-13-2030--cardine--bounded-clarification-recovery--handoff.md) and [implementation log](logs/2026-08-13-2030--cardine--bounded-clarification-recovery--log.md) — shipped prompt 1.3.2 and one semantic retry for answered tutor questions.
 - [Current collapsed-sources handoff](handoffs/2026-08-13-1531--cardine--collapsed-sources--handoff.md) — current branch, live runtime, default source disclosure, and remaining work.
 - [Markdown chat-presentation handoff](handoffs/2026-08-13-1516--cardine--markdown-chat-presentation--handoff.md) — safe Markdown answers and source-chip renderer boundary.
 - [Pinned-lesson live-fix handoff](handoffs/2026-08-13-1458--cardine--pinned-lesson-live-fix--handoff.md) — completed publication fix and its verification boundary.

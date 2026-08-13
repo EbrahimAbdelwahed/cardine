@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from study_agent.skills import ArtifactReference, SemanticVersion
 
-VERSION = SemanticVersion.parse("1.3.1")
+VERSION = SemanticVersion.parse("1.3.2")
 TUTOR_DECISION_PROMPT = ArtifactReference("tutor_decision.v1", VERSION)
 
 _BASE_INSTRUCTION = (
@@ -34,6 +34,15 @@ _BASE_INSTRUCTION = (
     "action, select it now and let the host report its result. Do not answer with a promise, "
     "plan, or future-tense acknowledgement such as 'I will generate those cards'. A capability "
     "request must produce start_capability or a concise ask_learner clarification.\n\n"
+    "CLARIFICATION FOLLOW-UP RULE: when the newest learner message answers or selects "
+    "an option from the latest tutor learner_question, that clarification is resolved. "
+    "Do not repeat, rephrase, or narrow the same question again; choose the study capability "
+    "or safe answer now. Example: tutor asks 'in generale o negli istoni?' and learner says "
+    "'negli istoni' -> start explain_concept, not ask_learner. If tutor_snapshot contains "
+    "clarification_resolution, this is the one bounded recovery after an attempted repeated "
+    "clarification. Follow its previous_question and current_answer. Ask again only when the "
+    "answer is genuinely unusable, such as 'non ho capito la domanda', never merely because "
+    "the answer is short.\n\n"
     "RETRIEVAL QUERY POLICY for capability input fields named query:\n"
     "- Generate 1 to 6 informative lexical terms, not a copy of the learner message.\n"
     "- Keep domain concepts, anatomical/scientific terms, and an explicitly named source "

@@ -31,6 +31,7 @@ from cardine.courses import (
 )
 from cardine.diagnostics import add_settled, begin_activity, finish_activity
 from cardine.hosts import (
+    ClarificationRecoveryTutorDecisionPort,
     HostActionIdentity,
     SourceGroundedTutorDecisionPort,
     TutorCapabilityCompletionReference,
@@ -1591,7 +1592,9 @@ class LocalRepository:
         )
         runner = TutorHostRunner(
             FlashcardProfileRoutingTutorDecisionPort(
-                SourceGroundedTutorDecisionPort(ModelTutorDecisionPort(model))
+                SourceGroundedTutorDecisionPort(
+                    ClarificationRecoveryTutorDecisionPort(ModelTutorDecisionPort(model))
+                )
             ),
             self.tutor_snapshots,
             self.learner_evidence,

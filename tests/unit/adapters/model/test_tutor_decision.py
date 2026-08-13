@@ -113,11 +113,14 @@ def test_decision_adapter_sends_canonical_context_and_returns_closed_decision() 
     assert request.structured_output is not None
     assert request.structured_output.schema["additionalProperties"] is False
     assert request.metadata["prompt_id"] == "tutor_decision.v1"
+    assert request.metadata["prompt_version"] == "1.3.2"
     system_prompt = request.messages[0].content
     assert "ROUTING ORDER" in system_prompt
     assert "Tutto bene?" in system_prompt
     assert "1 to 6 informative" in system_prompt
     assert "Never promise to start a study workflow later" in system_prompt
+    assert "CLARIFICATION FOLLOW-UP RULE" in system_prompt
+    assert "negli istoni" in system_prompt
     assert "explain_concept:" not in system_prompt
     assert "source.ingest:" not in system_prompt
     provider_payload = json.loads(request.messages[-1].content)
