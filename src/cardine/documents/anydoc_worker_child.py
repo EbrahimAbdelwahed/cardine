@@ -201,11 +201,30 @@ def main() -> int:
         page_spans: list[dict[str, int]] = []
         current_offset = 0
         current_bytes = 0
+        extracted_pages = 0
         for page_number in range(1, pages + 1):
             page_pdf = str(Path(output_name).with_name(f"page-{page_number}.pdf"))
             _single_page_pdf(input_name, page_number, page_pdf)
             try:
-                page_markdown = anydoc.to_markdown_bytes(Path(page_pdf).read_bytes(), "pdf")
+                try:
+                    page_markdown = anydoc.to_markdown_bytes(
+                        Path(page_pdf).read_bytes(), "pdf"
+                    )
+                except Exception as error:
+                    if type(error).__name__ != "UnsupportedError":
+                        raise
+                    page_markdown = (
+                        f"[Pagina {page_number} senza testo estraibile; "
+                        "OCR non disponibile.]"
+                    )
+                else:
+                    if page_markdown.strip():
+                        extracted_pages += 1
+                    else:
+                        page_markdown = (
+                            f"[Pagina {page_number} senza testo estraibile; "
+                            "OCR non disponibile.]"
+                        )
             finally:
                 Path(page_pdf).unlink(missing_ok=True)
             if not isinstance(page_markdown, str):
@@ -228,6 +247,8 @@ def main() -> int:
             )
             if current_bytes > output_bytes:
                 raise ValueError("pdf_output_limit")
+        if extracted_pages == 0:
+            raise ValueError("pdf_unsupported")
         output = b"".join(page_parts)
         descriptor = os.open(
             output_name,
