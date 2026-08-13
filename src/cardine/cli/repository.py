@@ -11,6 +11,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Protocol, cast
 
+from cardine.adapters.model.retrieval_query_recovery import RetrievalQueryRecovery
 from cardine.adapters.pageindex import PageIndexCoordinator, PageIndexRevision
 from cardine.application.flashcard_proposals import FlashcardProposalComposition
 from cardine.application.indexing import (
@@ -274,6 +275,26 @@ class _PinnedRetrieval:
         )
 
 
+class _QueryOverrideRetrieval:
+    """Use one recovered lexical query without changing capability input identity."""
+
+    def __init__(self, inner: RetrievalPort, original: str, recovered: str) -> None:
+        self._inner = inner
+        self._original = original
+        self._recovered = recovered
+
+    def index(self, documents: Sequence[RetrievalDocument]) -> IndexReceipt:
+        return self._inner.index(documents)
+
+    def search(self, query: RetrievalQuery) -> RetrievalEvidenceSet:
+        effective = (
+            replace(query, text=self._recovered)
+            if query.text == self._original
+            else query
+        )
+        return self._inner.search(effective)
+
+
 class _StructuralRangeRetrieval:
     """Return all complete canonical chunks inside one validated structural pin."""
 
@@ -367,6 +388,7 @@ class _RepositoryTutorGateway:
         model: ModelPort,
         model_adapter: ArtifactReference,
         flashcards: FlashcardProposalComposition | None = None,
+        lesson_pin: SourcePin | None = None,
     ) -> None:
         self._repository = repository
         self._course_id = course_id
@@ -374,6 +396,7 @@ class _RepositoryTutorGateway:
         self._model = model
         self._model_adapter = model_adapter
         self._flashcards = flashcards
+        self._lesson_pin = lesson_pin
 
     def recover(
         self,
@@ -427,7 +450,11 @@ class _RepositoryTutorGateway:
             if self._flashcards is None:
                 raise ValueError("flashcard capability is not executable")
             return await self._flashcards.start(inputs, context)
-        outcome = await self._gateway(inputs, context).start(capability_id, inputs, context)
+        gateway = self._gateway(inputs, context)
+        recovered_query = await self._recover_empty_retrieval_query(inputs)
+        if recovered_query is not None:
+            gateway = self._gateway(inputs, context, recovered_query=recovered_query)
+        outcome = await gateway.start(capability_id, inputs, context)
         return outcome
 
     async def resume(
@@ -450,8 +477,84 @@ class _RepositoryTutorGateway:
         if receipt is None or not receipt.granted:
             raise ProviderConsentRequiredError("provider consent is required")
 
+    async def _recover_empty_retrieval_query(
+        self, inputs: JsonObject
+    ) -> str | None:
+        """Recover one unpinned empty FTS query through a bounded Luna call."""
+
+        query = inputs.get("query")
+        if not isinstance(query, str) or not query.strip():
+            return None
+        if self._lesson_pin is not None:
+            return None
+        if self._repository.resolve_lesson_scope(self._course_id, query) is not None:
+            return None
+
+        course = self._repository.for_course(self._course_id)
+        profile = course_profile_manifest(self._repository.courses.get(self._course_id))
+        policy = profile.get("source_policy")
+        if not isinstance(policy, Mapping):
+            return None
+        minimum = policy.get("minimum_trust_level")
+        roles = policy.get("allowed_roles")
+        if not isinstance(minimum, int) or isinstance(minimum, bool):
+            return None
+        if not isinstance(roles, tuple) or any(not isinstance(item, str) for item in roles):
+            return None
+        retrieval_query = RetrievalQuery(
+            self._course_id,
+            query,
+            limit=8,
+            minimum_trust_level=minimum,
+            source_roles=tuple(cast(str, item) for item in roles),
+        )
+        if course.retrieval.search(retrieval_query).status is not EvidenceStatus.INSUFFICIENT:
+            return None
+
+        vocabulary: list[str] = []
+        seen: set[str] = set()
+        retired = self._repository.source_lifetime.retired_source_ids(self._course_id)
+        allowed_roles = frozenset(cast(str, item) for item in roles)
+        for document in course.content.documents():
+            if (
+                not document.is_current_revision
+                or document.source_id in retired
+                or document.trust_level < minimum
+                or (allowed_roles and document.source_role not in allowed_roles)
+            ):
+                continue
+            for value in (document.title, *document.chunk.section_path):
+                candidate = " ".join(value.split())[:160]
+                folded = candidate.casefold()
+                if candidate and folded not in seen:
+                    seen.add(folded)
+                    vocabulary.append(candidate)
+                if len(vocabulary) >= 64:
+                    break
+            if len(vocabulary) >= 64:
+                break
+        target = inputs.get("target")
+        learner_request = target if isinstance(target, str) and target.strip() else query
+        alternatives = await RetrievalQueryRecovery(self._model).alternatives(
+            learner_request=learner_request,
+            failed_query=query,
+            source_vocabulary=vocabulary,
+        )
+        for alternative in alternatives:
+            candidate_query = replace(retrieval_query, text=alternative)
+            if (
+                course.retrieval.search(candidate_query).status
+                is not EvidenceStatus.INSUFFICIENT
+            ):
+                return alternative
+        return None
+
     def _gateway(
-        self, inputs: Mapping[str, object], context: ExecutionContext
+        self,
+        inputs: Mapping[str, object],
+        context: ExecutionContext,
+        *,
+        recovered_query: str | None = None,
     ) -> StudyCapabilityGateway:
         query = inputs.get("query")
         if not isinstance(query, str) or not query.strip():
@@ -471,7 +574,11 @@ class _RepositoryTutorGateway:
             repository.reconcile_indexing()
         receipt = course.retrieval.audit()
         course_receipt = repository.course_index_receipt(self._course_id, receipt)
-        lesson_pin = repository.resolve_lesson_scope(self._course_id, query)
+        # A lesson the learner attached to the chat is an explicit decision and
+        # outranks any lesson reference inferred from the wording of the turn.
+        lesson_pin = self._lesson_pin
+        if lesson_pin is None:
+            lesson_pin = repository.resolve_lesson_scope(self._course_id, query)
         if context.session_id is None:
             raise ValueError("explain capability requires a session")
         profile_fingerprint = sha256(canonical_json_bytes(profile)).hexdigest()
@@ -516,6 +623,8 @@ class _RepositoryTutorGateway:
             repository.validate_lesson_pin(lesson_pin)
             retrieval = _StructuralRangeRetrieval(course.content, lesson_pin, course_receipt)
             retrieval_limit = 100
+        elif recovered_query is not None:
+            retrieval = _QueryOverrideRetrieval(retrieval, query, recovered_query)
         search = BoundSourceSearchExecutor(
             context=context,
             question=query,
@@ -1237,17 +1346,29 @@ class LocalRepository:
         )
 
     def tutor_conversation(
-        self, course_id: CourseId, *, session_id: SessionId | None = None
+        self,
+        course_id: CourseId,
+        *,
+        session_id: SessionId | None = None,
+        lesson_pin: SourcePin | None = None,
     ) -> ConversationTurnApplication:
         """Compose the private provider-backed tutor chat for one course.
 
         The provider adapter receives only the redacted host context.  The
         trusted gateway/authority/identity/store stay server-side and the
         application remains the sole conversation orchestrator.
+
+        ``lesson_pin`` attaches one validated lesson to the conversation.  Every
+        turn then retrieves evidence from that lesson only, instead of resolving
+        a lesson from the wording of the turn.
         """
         if not isinstance(course_id, CourseId):
             raise TypeError("tutor conversation requires a CourseId")
         self.courses.get(course_id)
+        if lesson_pin is not None:
+            if not isinstance(lesson_pin, SourcePin) or lesson_pin.course_id != str(course_id):
+                raise ValueError("lesson pin belongs to another course")
+            self.validate_lesson_pin(lesson_pin)
         if self.conversation is not None:
             return self.conversation
         if self.config.model is None:
@@ -1298,6 +1419,7 @@ class LocalRepository:
             model,
             self._model_adapters.artifact(self.config.model.adapter_id),
             flashcards,
+            lesson_pin,
         )
         runner = TutorHostRunner(
             FlashcardProfileRoutingTutorDecisionPort(

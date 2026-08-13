@@ -1,6 +1,6 @@
 from pathlib import Path
 
-DEMO_DIR = Path(__file__).parents[3] / "src" / "study_agent" / "demo"
+DEMO_DIR = Path(__file__).parents[3] / "src" / "cardine" / "demo"
 
 
 def test_cardine_assets_are_split_and_reference_each_other() -> None:

@@ -21,7 +21,7 @@ _SOURCE_REFERENCE = re.compile(
 )
 _SOURCE_EXPLANATION_REQUEST = re.compile(
     r"\b(?:read|explain|summari[sz]e|describe|tell|leggi|leggere|spiega|"
-    r"spiegami|spiegare|spiegazione|avvia|avviare|inizia|iniziare|parliamo|"
+    r"spiegami|spiegare|spiegazione|parliamo|"
     r"riassumi|riassunto|descrivi|cosa\s+dice)\b",
     re.IGNORECASE,
 )
@@ -37,7 +37,8 @@ _LESSON_STUDY_REQUEST = re.compile(
     re.IGNORECASE,
 )
 _DIRECT_LESSON_START = re.compile(
-    r"\bfacciamo\s+(?:la\s+)?(?:lezione\s+(?:numero\s+)?\d+|"
+    r"\b(?:facciamo|avvia|avviare|inizia|iniziare)\s+(?:la\s+)?"
+    r"(?:lezione\s+(?:numero\s+)?\d+|"
     r"l[\s_-]*0*\d+(?=$|[\s_./-]))",
     re.IGNORECASE,
 )

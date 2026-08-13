@@ -1320,20 +1320,42 @@
     const createCourse = state.auth.authenticated
       ? `<button class="chat-home__course-action" type="button" data-open-course-creation>Crea un corso</button>`
       : "";
-    setView("oggi", `<section class="chat-home" aria-labelledby="home-heading"><div class="chat-home__center"><p class="eyebrow">${esc(text(course.title, "corso locale"))}</p><h1 id="home-heading">${suspended ? "Riprendiamo da dove eravamo?" : "Come vuoi studiare oggi?"}</h1>${entryForm("hero-entry", "Scrivi al tutor", "Chiedi qualsiasi cosa sul corso…")}${renderLessonStudy()}${createCourse}${renderChatCourseCreation()}${suspended ? `<button class="resume-chat" type="button" data-route="sessione">Riprendi la sessione in corso</button>` : ""}${today}</div>${support}</section>`);
+    setView("oggi", `<section class="chat-home" aria-labelledby="home-heading"><div class="chat-home__center"><p class="eyebrow">${esc(text(course.title, "corso locale"))}</p><h1 id="home-heading">${suspended ? "Riprendiamo da dove eravamo?" : "Come vuoi studiare oggi?"}</h1>${lessonPinAttachment()}${entryForm("hero-entry", "Scrivi al tutor", "Chiedi qualsiasi cosa sul corso…")}${renderLessonStudy()}${createCourse}${renderChatCourseCreation()}${suspended ? `<button class="resume-chat" type="button" data-route="sessione">Riprendi la sessione in corso</button>` : ""}${today}</div>${support}</section>`);
   }
 
+  /* The lesson picker is a disclosure, not a second hero: the composer stays
+     the first thing on the page, and this only chooses which source the chat
+     is anchored to. Questions and flashcards are asked in the chat itself. */
   function renderLessonStudy() {
     const lesson = state.lesson || { query: "", candidates: [], pin: null, answer: null };
     const candidates = Array.isArray(lesson.candidates) ? lesson.candidates : [];
+    const pin = lessonPin();
+    const pinnedId = pin ? text(pin.revision_id) : "";
     const rows = candidates.length
-      ? `<ul class="lesson-search-results">${candidates.map((candidate) => `<li><button class="button button--quiet" type="button" data-lesson-select="${esc(text(candidate.candidate_id))}">${esc(text(candidate.section_title, "Lezione"))}</button><span class="field-note">${esc(shortId(candidate.source_id, 12))} · ${esc(text(candidate.revision_id))}</span></li>`).join("")}</ul>`
+      ? `<ul class="lesson-results">${candidates.map((candidate) => {
+        const item = object(candidate);
+        const selected = pinnedId && text(item.revision_id) === pinnedId;
+        return `<li class="lesson-results__item"><button class="lesson-results__pick" type="button" data-lesson-select="${esc(text(item.candidate_id))}"${selected ? ' aria-current="true"' : ""}><span class="lesson-results__title">${esc(text(item.section_title, "Lezione"))}</span><span class="lesson-results__meta">${esc(shortId(item.source_id, 12))} · ${esc(text(item.revision_id))}</span></button></li>`;
+      }).join("")}</ul>`
       : "";
-    const pin = lesson.pin && typeof lesson.pin === "object";
-    const answer = lesson.answer && typeof lesson.answer === "object"
-      ? `<article class="lesson-answer" aria-live="polite"><p class="section-kicker">risposta ancorata alla lezione</p><pre>${esc(JSON.stringify(lesson.answer, null, 2))}</pre></article>`
+    const empty = !candidates.length && text(lesson.query)
+      ? `<p class="field-note lesson-study__empty">Nessuna lezione trovata per «${esc(text(lesson.query))}». Prova con il titolo esatto o un argomento della lezione.</p>`
       : "";
-    return `<section class="lesson-study" aria-labelledby="lesson-study-heading"><p class="section-kicker">selezione esplicita · grounding</p><h2 id="lesson-study-heading">Cerca una lezione</h2><p class="field-note">La domanda e le flashcard usano solo il pin selezionato e falliscono se la fonte è cambiata.</p><form data-lesson-search novalidate><label for="lesson-query">Titolo o argomento</label><input id="lesson-query" name="query" value="${esc(text(lesson.query))}" required maxlength="512" placeholder="es. Lezione 1"><button class="button" type="submit">Cerca</button></form>${rows}${pin ? `<form data-lesson-ask novalidate><label for="lesson-question">Domanda sulla lezione selezionata</label><textarea id="lesson-question" name="question" required maxlength="4000" placeholder="Cosa spiega questa lezione?"></textarea><button class="button" type="submit">Chiedi sulla lezione selezionata</button></form><form data-lesson-flashcards novalidate><label for="lesson-flashcards-query">Richiesta flashcard</label><input id="lesson-flashcards-query" name="query" required maxlength="4000" value="Crea flashcard dalla lezione selezionata"><button class="button button--quiet" type="submit">Crea flashcard dalla lezione selezionata</button></form>` : ""}${answer}</section>`;
+    const open = Boolean(candidates.length || pin || text(lesson.query));
+    return `<details class="lesson-study"${open ? " open" : ""}><summary class="lesson-study__summary">Studia una lezione specifica</summary><div class="lesson-study__body"><div class="lesson-study__intro"><p class="section-kicker">selezione esplicita · grounding</p><p class="field-note">La lezione scelta resta allegata alla chat: le domande e le flashcard usano solo quella fonte e falliscono se è cambiata.</p></div><form class="lesson-study__form" data-lesson-search novalidate><div class="field"><label for="lesson-query">Titolo o argomento</label><div class="lesson-study__row"><input id="lesson-query" name="query" type="search" value="${esc(text(lesson.query))}" required maxlength="512" placeholder="es. Lezione 1"><button class="button" type="submit">Cerca</button></div></div></form>${rows}${empty}</div></details>`;
+  }
+
+  function lessonPin() {
+    const pin = state.lesson && state.lesson.pin;
+    return pin && typeof pin === "object" ? object(pin) : null;
+  }
+
+  /* A pinned lesson is an attachment on the composer, not a second form:
+     the learner asks and asks for flashcards in the chat, as usual. */
+  function lessonPinAttachment() {
+    const pin = lessonPin();
+    if (!pin) return "";
+    return `<div class="composer-attachment" aria-live="polite"><span class="composer-attachment__label">Fonte allegata</span><span class="composer-attachment__title">${esc(text(pin.section_title, "Lezione"))}</span><span class="composer-attachment__meta">${esc(shortId(pin.source_id, 12))} · ${esc(text(pin.revision_id))}</span><button class="composer-attachment__remove" type="button" data-lesson-unpin aria-label="Rimuovi la fonte allegata" data-tooltip="Rimuovi la fonte allegata">Rimuovi</button></div>`;
   }
 
   /* A three-step setup shows where you are and lets you go back. The frame
@@ -1534,7 +1556,7 @@
      session render the same markup, so they cannot drift apart or invent a
      subtitle that contradicts the real state. */
   function sessionShell({ title, subtitle, thread, extras = "", actions = "", placeholder }) {
-    return `<section class="chat-session" data-ai-chat-ready="true" aria-labelledby="conversation-heading"><header class="conversation-header"><div><h1 id="conversation-heading">${esc(title)}</h1><p>${esc(subtitle)}</p></div><div class="conversation-header__actions">${actions}</div></header><div class="conversation-scroll"><div class="conversation-column"><div class="session-thread">${thread}</div>${extras}</div></div><div class="conversation-composer-dock"><div class="conversation-column">${entryForm("session-entry", "Scrivi al tutor", placeholder)}</div></div></section>`;
+    return `<section class="chat-session" data-ai-chat-ready="true" aria-labelledby="conversation-heading"><header class="conversation-header"><div><h1 id="conversation-heading">${esc(title)}</h1><p>${esc(subtitle)}</p></div><div class="conversation-header__actions">${actions}</div></header><div class="conversation-scroll"><div class="conversation-column"><div class="session-thread">${thread}</div>${extras}</div></div><div class="conversation-composer-dock"><div class="conversation-column">${lessonPinAttachment()}${entryForm("session-entry", "Scrivi al tutor", placeholder)}</div></div></section>`;
   }
 
   function renderMessage(message, showFineTune = false) {
@@ -1856,7 +1878,13 @@
       return;
     }
     const endpoint = continuation ? `/api/v1/session/continuations/${encodeURIComponent(form.dataset.fingerprint || "opaque")}/responses` : "/api/v1/session/turns";
-    const payload = continuation ? { response: value } : { content: value };
+    // The attached lesson travels with the turn, so the answer and any
+    // flashcards asked for in the chat stay inside that one source.
+    const pin = lessonPin();
+    const payload = {
+      ...(continuation ? { response: value } : { content: value }),
+      ...(pin ? { lesson_pin: pin } : {}),
+    };
     if (textarea) {
       textarea.value = "";
       resizeComposer(textarea);
@@ -2204,17 +2232,8 @@
         selectLesson(control).catch((error) => showCommandError(error));
       });
     });
-    $$('[data-lesson-ask]').forEach((form) => {
-      form.addEventListener("submit", (event) => {
-        event.preventDefault();
-        askPinnedLesson(form).catch((error) => showCommandError(error));
-      });
-    });
-    $$('[data-lesson-flashcards]').forEach((form) => {
-      form.addEventListener("submit", (event) => {
-        event.preventDefault();
-        createPinnedFlashcards(form).catch((error) => showCommandError(error));
-      });
+    $$('[data-lesson-unpin]').forEach((control) => {
+      control.addEventListener("click", () => unpinLesson());
     });
     $$('[data-artifact-bulk]').forEach((form) => {
       form.addEventListener("submit", (event) => {
@@ -2287,38 +2306,22 @@
       state.lesson = { ...lesson, pin: object(receipt.pin), answer: null };
       updateSequence(first(receipt, ["high_water_sequence"], state.highWaterSequence));
       renderOggi(state.viewData || state.bootstrap || {});
-      setStatus("selected", "Lezione fissata per il grounding");
+      setStatus("selected", "Lezione allegata alla chat");
     } finally {
       setBusy(false);
     }
   }
 
-  async function askPinnedLesson(form) {
-    const question = text(form.elements.namedItem("question")?.value).trim();
-    const pin = state.lesson && state.lesson.pin;
-    if (!question || !pin) return;
-    const request = requestId();
-    setBusy(true);
-    try {
-      const receipt = await fetchJson("/api/v1/lessons/ask", {
-        method: "POST",
-        body: JSON.stringify(commandPayload({ question, pin }, request)),
-      });
-      state.lesson = { ...state.lesson, answer: object(receipt.answer) };
-      updateSequence(first(receipt, ["high_water_sequence"], state.highWaterSequence));
-      renderOggi(state.viewData || state.bootstrap || {});
-      setStatus(text(receipt.status, "completed"), "Risposta ancorata completata");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function createPinnedFlashcards(form) {
-    const query = text(form.elements.namedItem("query")?.value).trim();
-    const pin = state.lesson && state.lesson.pin;
-    if (!query || !pin) return;
-    await executeCommand("/api/v1/lessons/flashcards", { query, pin }, form, "proposte");
-    setStatus("completed", "Flashcard della lezione create");
+  /* Detaching a source is a local choice: nothing was committed by pinning,
+     so the browser only drops what it was carrying into the next question. */
+  function unpinLesson() {
+    if (!state.lesson) return;
+    state.lesson = { ...state.lesson, pin: null, answer: null };
+    // The attachment is shown both on the home screen and above the chat
+    // composer, so the detach has to repaint whichever one is on screen.
+    if (state.route === "sessione") renderSessione(state.viewData || {});
+    else renderOggi(state.viewData || state.bootstrap || {});
+    setStatus("ready", "Fonte allegata rimossa");
   }
 
   async function submitArtifactBulk(form) {

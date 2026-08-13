@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-DEMO_DIR = Path(__file__).parents[3] / "src" / "study_agent" / "demo"
+DEMO_DIR = Path(__file__).parents[3] / "src" / "cardine" / "demo"
 SHELL_CSS = (DEMO_DIR / "browser.css").read_text(encoding="utf-8")
 PRIMITIVES_CSS = (DEMO_DIR / "ai-primitives.css").read_text(encoding="utf-8")
 ALL_CSS = SHELL_CSS + "\n" + PRIMITIVES_CSS

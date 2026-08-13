@@ -567,16 +567,37 @@ class RepositoryUiApplication(UiApplicationPort):
         if context_kind is not None:
             return self._post_context_resolution(context_kind, command)
         payload_key = "content" if continuation_fingerprint is None else "response"
-        request_id, expected_sequence, payload = _command(command, payload_key=payload_key)
+        request_id, expected_sequence, payload = _command(
+            command, payload_key=payload_key, optional_payload_keys={"lesson_pin"}
+        )
         content = _bounded_content(payload.get(payload_key))
+        # An attached lesson is the learner's explicit source choice for this
+        # turn.  It is decoded before any provider work, and an invalid pin
+        # fails the turn instead of silently widening retrieval.
+        lesson_pin = (
+            _lesson_pin_payload_from_json(payload["lesson_pin"])
+            if payload.get("lesson_pin") is not None
+            else None
+        )
         with self._turn_traces.capture(request_id, expected_sequence) as trace_id, self._lock:
             try:
                 with self._open() as repository:
                     before_artifacts = repository.artifacts.get(self._course_id)
                     before_revision_ids = {str(item.id) for item in before_artifacts.revisions}
-                    application = repository.tutor_conversation(
-                        self._course_id, session_id=self._session_id
-                    )
+                    try:
+                        application = repository.tutor_conversation(
+                            self._course_id,
+                            session_id=self._session_id,
+                            lesson_pin=lesson_pin,
+                        )
+                    except ValueError as error:
+                        # A foreign or stale attachment is a request problem,
+                        # not a runtime outage, and must say so.
+                        if lesson_pin is None:
+                            raise
+                        raise UiRequestError(
+                            str(error), status_code=400, trace_id=trace_id
+                        ) from error
                     turn = ConversationTurnCommand(
                         content,
                         self._context(request_id, request_id),
@@ -3403,6 +3424,7 @@ def _command(
     *,
     payload_key: str | None = "content",
     allow_empty_payload: bool = False,
+    optional_payload_keys: set[str] | None = None,
 ) -> tuple[str, int, Mapping[str, object]]:
     if not isinstance(command, Mapping) or set(command) != {
         "schema_version",
@@ -3427,11 +3449,17 @@ def _command(
     if type(expected) is not int or expected < 0:
         raise UiRequestError("expected_sequence is invalid")
     expected_payload_keys = set() if payload_key is None else {payload_key}
+    allowed_payload_keys = expected_payload_keys | (optional_payload_keys or set())
     actual_payload_keys = set(payload) if isinstance(payload, Mapping) else None
     if allow_empty_payload:
         valid_payload = actual_payload_keys in (set(), {"supersedes_grade_id"})
     else:
-        valid_payload = actual_payload_keys == expected_payload_keys
+        # Required keys must all be present; declared optional keys may be, and
+        # nothing else is admitted.
+        valid_payload = actual_payload_keys is not None and (
+            expected_payload_keys <= actual_payload_keys
+            and not actual_payload_keys - allowed_payload_keys
+        )
     if not isinstance(payload, Mapping) or not valid_payload:
         raise UiRequestError("command payload is invalid")
     return request_id, expected, payload

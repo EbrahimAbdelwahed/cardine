@@ -721,7 +721,9 @@
   .field-optional { color: var(--muted); font-weight: var(--weight-regular); }
   .field-required { color: var(--accent-text); font-weight: var(--weight-regular); }
 
-  input[type="text"], input[type="search"], input[type="password"],
+  /* A field with no explicit type is still a text field: it must not fall
+     back to the browser's own box. */
+  input:not([type]), input[type="text"], input[type="search"], input[type="password"],
   input[type="date"], input[type="email"], textarea, select {
     width: 100%;
     min-height: var(--control-height-lg);
@@ -928,6 +930,93 @@
   .today-strip strong { font-family: var(--font-display); font-size: var(--text-2xl); font-weight: var(--weight-regular); line-height: 1; }
   .today-strip span { color: var(--muted); font-size: var(--text-md); }
   .today-clear { margin-top: var(--space-6); color: var(--muted); font-size: var(--text-md); text-align: center; }
+
+  /* ---- Lesson study ---------------------------------------------------- */
+  /* The picker sits under the composer as a quiet disclosure: closed it is a
+     single line, open it is one card with the same rhythm as the rest. */
+  .lesson-study { width: 100%; margin-top: var(--space-4); }
+  .lesson-study__summary {
+    display: flex;
+    width: fit-content;
+    align-items: center;
+    min-height: var(--control-height);
+    gap: var(--space-2);
+    margin-inline: auto;
+    padding-inline: var(--space-3);
+    color: var(--muted);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: var(--text-md);
+    list-style: none;
+  }
+  .lesson-study__summary::-webkit-details-marker { display: none; }
+  .lesson-study__summary:hover { color: var(--ink); background: var(--surface-hover); }
+  .lesson-study__body {
+    display: grid;
+    gap: var(--space-4);
+    margin-top: var(--space-3);
+    padding: var(--space-5);
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--elevation-1);
+  }
+  .lesson-study__intro { display: grid; gap: var(--space-2); }
+  .lesson-study__form { display: grid; gap: var(--space-3); }
+  .lesson-study__form .state-actions { margin-top: 0; }
+  .lesson-study__row { display: flex; align-items: stretch; gap: var(--space-2); }
+  .lesson-study__row input { flex: 1; min-width: 0; }
+  .lesson-study__row .button { flex: none; min-height: var(--control-height-lg); }
+  .lesson-study__empty { margin: 0; }
+
+  .lesson-results { display: grid; gap: var(--space-2); }
+  .lesson-results__pick {
+    display: grid;
+    width: 100%;
+    gap: var(--space-1);
+    padding: var(--space-3);
+    color: var(--ink);
+    text-align: left;
+    border-radius: var(--radius-sm);
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+    cursor: pointer;
+    transition: box-shadow var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out);
+  }
+  .lesson-results__pick:hover { background: var(--surface-hover); box-shadow: inset 0 0 0 1px var(--ink-soft); }
+  .lesson-results__pick[aria-current="true"] { box-shadow: inset 0 0 0 2px var(--ink); }
+  .lesson-results__title { font-size: var(--text-md); font-weight: var(--weight-semibold); }
+  .lesson-results__meta { color: var(--muted); font-family: var(--font-mono); font-size: var(--text-xs); }
+
+  /* The attached source rides on top of the composer, so the two read as one
+     control: same width, same surface, one shared corner. */
+  .composer-attachment {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-1) var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    background: var(--surface-hover);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    box-shadow: inset 0 0 0 1px var(--line);
+  }
+  .composer-attachment + .composer .composer__surface { border-start-start-radius: 0; border-start-end-radius: 0; }
+  .composer-attachment__label {
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-caps);
+    text-transform: uppercase;
+  }
+  .composer-attachment__title { min-width: 0; font-size: var(--text-md); font-weight: var(--weight-semibold); }
+  .composer-attachment__meta { color: var(--muted); font-family: var(--font-mono); font-size: var(--text-xs); }
+  .composer-attachment__remove {
+    margin-inline-start: auto;
+    padding-inline: var(--space-2);
+    color: var(--muted);
+    border-radius: var(--radius-xs);
+    cursor: pointer;
+    font-size: var(--text-md);
+  }
+  .composer-attachment__remove:hover { color: var(--ink); background: var(--surface); }
 
   /* ---- Chat session ---------------------------------------------------- */
   .chat-session {
@@ -1607,6 +1696,9 @@
     .chat-home { padding-block: var(--space-6); }
     .chat-home h1 { font-size: var(--text-3xl); }
     .today-strip { grid-template-columns: 1fr; }
+    .lesson-study__body { padding: var(--space-4); }
+    .lesson-study__row { flex-wrap: wrap; }
+    .lesson-study__row .button { width: 100%; }
     .conversation-header { min-height: 48px; }
     .conversation-header > div:first-child { min-width: 0; flex: 1 1 auto; }
     .conversation-header__actions { min-width: 0; max-width: 100%; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; }
