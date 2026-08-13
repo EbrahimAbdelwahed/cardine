@@ -73,6 +73,66 @@ def test_pinned_turn_receipt_exposes_only_sanitized_retrieval_activity(tmp_path)
         assert forbidden not in serialized
 
 
+def test_dialogue_turn_receipt_exposes_truthful_model_activity(tmp_path) -> None:
+    """Ordinary tutor dialogue must not leave the activity area permanently empty."""
+
+    root, adapters, _model = _repository(
+        tmp_path,
+        (
+            {
+                "kind": "assistant_message",
+                "message": "Continuiamo dalla tua risposta.",
+            },
+        ),
+    )
+    app = RepositoryUiApplication(
+        root, "cardine-course", "cardine-session", model_adapters=adapters
+    )
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+
+    receipt = app.post(
+        "/api/v1/session/turns",
+        _command("activity-dialogue-turn", sequence, "Abbiamo terminato il nucleo della lezione?"),
+    )
+
+    records = cast(tuple[dict[str, object], ...], receipt["activity_records"])
+    assert len(records) == 1
+    assert records[0]["kind"] == "model"
+    assert records[0]["ref"] == "model.assistant_message"
+    assert records[0]["label"] == "Elaboro la risposta"
+    assert records[0]["target"] == ""
+    assert records[0]["status"] == "done"
+
+
+def test_learner_question_receipt_exposes_truthful_model_activity(tmp_path) -> None:
+    root, adapters, _model = _repository(
+        tmp_path,
+        (
+            {
+                "kind": "ask_learner",
+                "question": "Quale modificazione post-traduzionale ricordi?",
+            },
+        ),
+    )
+    app = RepositoryUiApplication(
+        root, "cardine-course", "cardine-session", model_adapters=adapters
+    )
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+
+    receipt = app.post(
+        "/api/v1/session/turns",
+        _command("activity-question-turn", sequence, "Continua con una domanda."),
+    )
+
+    records = cast(tuple[dict[str, object], ...], receipt["activity_records"])
+    assert len(records) == 1
+    assert records[0]["kind"] == "model"
+    assert records[0]["ref"] == "model.ask_learner"
+    assert records[0]["label"] == "Preparo una domanda"
+    assert records[0]["target"] == ""
+    assert records[0]["status"] == "done"
+
+
 def test_failed_capability_settles_a_verification_activity(tmp_path) -> None:
     root, adapters, _model = _repository(
         tmp_path,

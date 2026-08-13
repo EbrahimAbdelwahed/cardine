@@ -1,6 +1,6 @@
 # Cardine development memory
 
-Updated: 2026-08-13 16:47 CEST
+Updated: 2026-08-13 18:05 CEST
 
 This file is the authoritative entrypoint for Cardine development memory.
 Cardine-specific plans, logs, notes, and handoffs belong in this repository's
@@ -11,6 +11,7 @@ archive and must not be treated as Cardine's current state.
 
 - [Current live Tool Chips handoff](handoffs/2026-08-13-1647--cardine--live-tool-chips--handoff.md) — truthful process-local tutor activity, polling boundary, verification, and deferred reload work.
 - [Live Tool Chips ADR](decisions/2026-08-13--ADR-0001--process-local-turn-activity.md) and [implementation log](logs/2026-08-13-1647--cardine--live-tool-chips--log.md) — privacy contract and shipped first delivery.
+- [Tool Chips empty-dialogue diagnosis](logs/2026-08-13-1805--cardine--tool-chips-empty-dialogue--log.md) — live evidence and the targeted model-activity correction.
 - [Current collapsed-sources handoff](handoffs/2026-08-13-1531--cardine--collapsed-sources--handoff.md) — current branch, live runtime, default source disclosure, and remaining work.
 - [Markdown chat-presentation handoff](handoffs/2026-08-13-1516--cardine--markdown-chat-presentation--handoff.md) — safe Markdown answers and source-chip renderer boundary.
 - [Pinned-lesson live-fix handoff](handoffs/2026-08-13-1458--cardine--pinned-lesson-live-fix--handoff.md) — completed publication fix and its verification boundary.

@@ -28,7 +28,9 @@ MAX_TARGET_CHARS = 80
 
 # The values are product copy, never provider/model/user supplied text.
 REF_LABELS: Mapping[str, str] = MappingProxyType({
-        "retrieval.lesson": "Leggo",
+    "model.assistant_message": "Elaboro la risposta",
+    "model.ask_learner": "Preparo una domanda",
+    "retrieval.lesson": "Leggo",
     "retrieval.search": "Cerco nelle fonti",
     "capability.explain_concept": "Preparo la spiegazione",
     "capability.propose_flashcards": "Preparo le flashcard",

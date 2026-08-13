@@ -162,6 +162,12 @@ def _observe_decision(decision: TutorDecision) -> None:
     """Expose only the closed, human-readable operation discriminator."""
 
     kind = getattr(getattr(decision, "kind", None), "value", None)
+    if kind == "assistant_message":
+        begin_activity(kind="model", ref="model.assistant_message")
+        return
+    if kind == "ask_learner":
+        begin_activity(kind="model", ref="model.ask_learner")
+        return
     if kind == "start_capability":
         capability_id = getattr(decision, "capability_id", None)
         if isinstance(capability_id, str):

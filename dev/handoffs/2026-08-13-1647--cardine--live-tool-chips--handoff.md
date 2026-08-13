@@ -7,6 +7,11 @@ Area: Cardine / tutor diagnostics / chat UI
 
 Cardine now shows a compact expandable activity column under the assistant message while a tutor turn runs and after it settles. Every row comes from an observed Cardine event; no prompt, query, tool argument, evidence text, or canonical source identifier is exposed.
 
+After live use exposed an empty-state gap, ordinary `assistant_message` and
+`ask_learner` decisions also produce one truthful model activity. A normal
+dialogue or assessment question therefore no longer hides the component merely
+because no retrieval or harness tool was necessary.
+
 ## Completed
 
 - Process-local bounded `TurnActivityStore` and accepted ADR.
@@ -16,6 +21,7 @@ Cardine now shows a compact expandable activity column under the assistant messa
 - Final record correlation by `presentation_id`, including flashcard chat turns.
 - Legacy session “Attività” section removed; “Stato tutor” preserved.
 - Pinned chat flashcard scope fix from the parallel Claude lane preserved and tested.
+- Safe model activity for direct tutor replies and learner questions.
 
 ## Remaining
 
@@ -34,6 +40,7 @@ Cardine now shows a compact expandable activity column under the assistant messa
 ## Verification
 
 - Unit demo/CLI/diagnostics: 186 passed.
+- Post-live-gap regression suite: 195 passed outside the socket sandbox.
 - Focused product slice: 59 passed.
 - Authenticated lock-independent HTTP route: 3 passed outside sandbox.
 - Ruff, Node syntax, design-system gates, diff check, visual critique, and semantic review: passed.
