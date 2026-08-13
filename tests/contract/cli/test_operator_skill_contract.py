@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from study_agent.cli.registry import agent_operations_manifest, registration_for
+from cardine.cli.registry import agent_operations_manifest, registration_for
 from study_agent.operator_skill import (
     EXTRACTION_COMMAND,
     SKILL_ID,

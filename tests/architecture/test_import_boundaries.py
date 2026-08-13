@@ -31,7 +31,7 @@ FORBIDDEN_TOP_LEVEL_IMPORTS = {
 }
 FORBIDDEN_INTERNAL_PREFIXES = {
     "study_agent.adapters",
-    "study_agent.cli",
+    "cardine.cli",
     "study_agent.retrieval",
 }
 CLI_INDEPENDENT_PACKAGES = tuple(
@@ -71,7 +71,7 @@ class ImportBoundaryTests(unittest.TestCase):
         for package in CLI_INDEPENDENT_PACKAGES:
             for path in sorted(package.rglob("*.py")):
                 for module in sorted(imported_modules(path)):
-                    if module == "study_agent.cli" or module.startswith("study_agent.cli."):
+                    if module == "cardine.cli" or module.startswith("cardine.cli."):
                         violations.append(f"{path.relative_to(PROJECT_ROOT)} imports {module}")
 
         message = "CLI reverse-import violations:\n" + "\n".join(violations)

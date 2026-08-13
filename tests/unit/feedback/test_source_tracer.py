@@ -5,8 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from study_agent.adapters.sqlite.capability_gap_store import SQLiteCapabilityGapStore
-from study_agent.feedback import (
+from cardine.feedback import (
     CapabilityGapService,
     CapabilityGapWriteContext,
     SafeTargetKind,
@@ -16,6 +15,7 @@ from study_agent.feedback import (
     UnsupportedSourceEvidence,
     trace_unsupported_source_format,
 )
+from study_agent.adapters.sqlite.capability_gap_store import SQLiteCapabilityGapStore
 
 
 def test_source_tracer_uses_metadata_only_and_preserves_original(tmp_path: Path) -> None:

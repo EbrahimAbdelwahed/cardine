@@ -24,8 +24,8 @@ MORPHOLOGY_FLASHCARDS_LAYERS = (
         "earned by a high-confusion distinction, exact landmark, relation or transition. Keep "
         "macros dominant. Use direct recall by default and contextual gaps only for compact "
         "relations or sequences. Ceilings are maxima, never quotas; zero candidates with grounded "
-        "omissions is valid.",
-        ("query", "requested_ceiling", "clarification"),
+        "omissions is valid. Write learner-facing content in the requested language.",
+        ("query", "requested_ceiling", "clarification", "language"),
     ),
     PromptLayer(
         "morphology_flashcards.context",

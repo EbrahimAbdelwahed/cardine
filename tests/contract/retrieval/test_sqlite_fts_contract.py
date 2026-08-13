@@ -98,6 +98,28 @@ class CanonicalContent:
         return ResolvedCitation(canonical, document.text)
 
 
+class TrackingCanonicalContent(CanonicalContent):
+    def __init__(self) -> None:
+        super().__init__()
+        self.documents_calls = 0
+        self.canonical_document_calls = 0
+        self.resolve_calls = 0
+
+    def documents(
+        self, *, include_superseded: bool = False
+    ) -> tuple[RetrievalDocument, ...]:
+        self.documents_calls += 1
+        return super().documents(include_superseded=include_superseded)
+
+    def canonical_document(self, chunk_id: ChunkId) -> RetrievalDocument:
+        self.canonical_document_calls += 1
+        return super().canonical_document(chunk_id)
+
+    def resolve(self, citation: Citation) -> ResolvedCitation:
+        self.resolve_calls += 1
+        return super().resolve(citation)
+
+
 def document(
     chunk_name: str,
     text: str,
@@ -199,6 +221,13 @@ def test_empty_and_matched_results_use_only_insufficient_or_sufficient(tmp_path:
     assert len(matched.read_set_fingerprint) == 64
     assert missing.index_version == matched.index_version
     assert missing.read_set_fingerprint != matched.read_set_fingerprint
+
+
+def test_retrieval_query_bounds_text_and_limit_before_adapter_work() -> None:
+    with pytest.raises(ValueError, match="query limit"):
+        RetrievalQuery(CourseId("course-1"), "x" * 513)
+    with pytest.raises(ValueError, match="between 1 and 100"):
+        RetrievalQuery(CourseId("course-1"), "valve", limit=101)
 
 
 def test_index_and_search_share_the_exact_content_version(tmp_path: Path) -> None:
@@ -377,6 +406,26 @@ def test_incomplete_rebuild_preserves_existing_index(tmp_path: Path) -> None:
         retrieval.rebuild((first,))
 
     assert retrieval.search(RetrievalQuery(CourseId("course-1"), "valve")) == before
+
+
+def test_rebuild_validates_large_catalog_from_one_materialized_snapshot(
+    tmp_path: Path,
+) -> None:
+    content = TrackingCanonicalContent()
+    documents = tuple(
+        document(f"chunk-{index:04d}", f"canonical text {index}")
+        for index in range(512)
+    )
+    for item in documents:
+        content.add(item)
+    retrieval = SQLiteFtsRetrieval(tmp_path / "large-rebuild.sqlite3", content)
+
+    receipt = retrieval.rebuild(documents)
+
+    assert receipt.indexed_chunks == 512
+    assert content.documents_calls <= 2
+    assert content.canonical_document_calls == 0
+    assert content.resolve_calls == 0
 
 
 def test_failed_rebuild_write_rolls_back_to_existing_index(

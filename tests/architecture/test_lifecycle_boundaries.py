@@ -7,6 +7,7 @@ from pathlib import Path
 from study_agent.tools.builtin import public_study_tool_manifests
 
 ROOT = Path(__file__).parents[2] / "src" / "study_agent"
+CARDINE_ROOT = Path(__file__).parents[2] / "src" / "cardine"
 
 
 def _imports(path: Path) -> set[str]:
@@ -24,8 +25,8 @@ def test_lifecycle_contracts_do_not_import_cli_adapters_providers_or_stateful_se
     forbidden = (
         "study_agent.adapters",
         "study_agent.application",
-        "study_agent.cli",
-        "study_agent.courses",
+        "cardine.cli",
+        "cardine.courses",
         "study_agent.ingestion",
         "study_agent.retrieval",
         "study_agent.sessions",
@@ -50,8 +51,8 @@ def test_lifecycle_planner_does_not_import_io_or_stateful_owners() -> None:
     forbidden = (
         "study_agent.adapters",
         "study_agent.application",
-        "study_agent.cli",
-        "study_agent.courses",
+        "cardine.cli",
+        "cardine.courses",
         "study_agent.ingestion",
         "study_agent.retrieval",
         "study_agent.sessions",
@@ -102,8 +103,8 @@ def test_repository_target_adapter_owns_the_boundary_without_forbidden_imports()
     adapter = ROOT / "adapters" / "filesystem" / "repository_target.py"
     forbidden = (
         "study_agent.application",
-        "study_agent.cli",
-        "study_agent.courses",
+        "cardine.cli",
+        "cardine.courses",
         "study_agent.domain",
         "study_agent.ingestion",
         "study_agent.lifecycle",
@@ -131,7 +132,7 @@ def test_repository_target_adapter_owns_the_boundary_without_forbidden_imports()
 
 
 def test_cli_repository_delegates_initialization_to_filesystem_adapter() -> None:
-    path = ROOT / "cli" / "repository.py"
+    path = CARDINE_ROOT / "cli" / "repository.py"
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     locally_defined = {
         node.name
@@ -182,7 +183,7 @@ def test_manifest_reader_does_not_own_source_snapshot_io() -> None:
 
 
 def test_cli_delegates_source_capture_to_the_single_filesystem_adapter() -> None:
-    path = ROOT / "cli" / "commands.py"
+    path = CARDINE_ROOT / "cli" / "commands.py"
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     locally_defined = {
         node.name

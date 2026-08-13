@@ -9,17 +9,17 @@ from typing import cast
 
 import pytest
 
+from cardine.cli.repository import LocalRepository
+from cardine.demo.ui_application import (
+    RepositoryUiApplication,
+    UiRequestError,
+)
 from study_agent.adapters.filesystem import initialize_local_repository
 from study_agent.artifacts import (
     AnswerBlock,
     HumanAuthoredArtifactProvenance,
     HybridFlashcardContent,
     StudyArtifactEnvelope,
-)
-from study_agent.cli.repository import LocalRepository
-from study_agent.demo.ui_application import (
-    RepositoryUiApplication,
-    UiRequestError,
 )
 from study_agent.domain import (
     Actor,
@@ -641,7 +641,7 @@ def test_exact_concurrent_enrollment_across_ui_instances_schedules_once(
 
 def test_browser_reveal_ratings_and_count_refresh_are_wired() -> None:
     javascript = (
-        Path(__file__).parents[4] / "src/study_agent/demo/browser.js"
+        Path(__file__).parents[4] / "src/cardine/demo/browser.js"
     ).read_text(encoding="utf-8")
 
     assert "state.revealedReviews[revisionId]" in javascript

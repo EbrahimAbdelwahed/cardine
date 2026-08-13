@@ -140,6 +140,10 @@ def test_private_workspace_and_model_check_surfaces_are_wired() -> None:
         "password_confirm",
     ):
         assert marker in javascript
+    # The local setup is entirely in-browser.  A stale reference to the
+    # removed bootstrap-token control aborts submission before the request.
+    assert "bootstrapToken" not in javascript
+    assert "bootstrap_token" not in javascript
 
 
 def test_private_chat_can_open_and_confirm_course_creation() -> None:
@@ -242,6 +246,6 @@ def test_primary_surface_is_a_chat_workspace_with_secondary_tools() -> None:
 def test_ai_primitive_assets_are_included_in_the_wheel_package_data() -> None:
     project = (DEMO_DIR.parents[2] / "pyproject.toml").read_text(encoding="utf-8")
 
-    assert '"study_agent.demo" = [' in project
+    assert '"cardine.demo" = [' in project
     for asset in ("ai-primitives.css", "ai-primitives.js", "icons/*.svg"):
         assert asset in project

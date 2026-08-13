@@ -27,7 +27,19 @@ from .event_store import SQLiteConnectionGuard, _writable_nofollow_uri
 
 INDEX_VERSION = "sqlite-fts5-unicode61-v1"
 RETRIEVAL_STRATEGY_ID = "sqlite_fts5_bm25"
-RETRIEVAL_STRATEGY_VERSION = "1.0.0"
+RETRIEVAL_STRATEGY_VERSION = "1.1.0"
+_MAX_RELEVANCE_QUERY_TERMS = 6
+_MAX_RELEVANCE_SOURCE_TERMS = 32
+_RELEVANCE_CANDIDATE_LIMIT = 64
+_QUERY_STOP_WORDS = frozenset(
+    {
+        "a", "about", "and", "briefly", "by", "can", "could", "di", "e", "explain",
+        "fonte", "fonti", "from", "il", "in", "instructions", "la", "le", "materiale",
+        "materiali", "of", "or", "please", "prompt", "source", "spiega", "spiegami",
+        "the", "to", "uploaded", "what", "with", "ignore", "previous", "developer",
+        "assistant", "drop", "table", "column", "value",
+    }
+)
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS retrieval_documents (
     chunk_id TEXT PRIMARY KEY,
@@ -74,6 +86,12 @@ def compile_literal_query(text: str) -> str | None:
 def _compile_literal_query(connection: sqlite3.Connection, text: str) -> str | None:
     """Tokenize with the same SQLite FTS5 unicode61 configuration as the index."""
 
+    return _quote_query_tokens(_literal_query_tokens(connection, text))
+
+
+def _literal_query_tokens(connection: sqlite3.Connection, text: str) -> tuple[str, ...]:
+    """Return inert unicode61 terms in learner order."""
+
     connection.execute(
         "CREATE VIRTUAL TABLE temp.retrieval_query_tokens "
         "USING fts5(text, tokenize='unicode61')"
@@ -83,12 +101,15 @@ def _compile_literal_query(connection: sqlite3.Connection, text: str) -> str | N
         "USING fts5vocab(retrieval_query_tokens, 'instance')"
     )
     connection.execute("INSERT INTO retrieval_query_tokens(text) VALUES (?)", (text,))
-    tokens = tuple(
+    return tuple(
         str(row[0])
         for row in connection.execute(
             "SELECT term FROM retrieval_query_vocab ORDER BY doc, offset"
         )
     )
+
+
+def _quote_query_tokens(tokens: tuple[str, ...]) -> str | None:
     if not tokens:
         return None
     return " AND ".join(f'"{token.replace(chr(34), chr(34) * 2)}"' for token in tokens)
@@ -164,29 +185,50 @@ class SQLiteFtsRetrieval:
         )
 
     def _validate_batch(
-        self, batch: tuple[RetrievalDocument, ...]
+        self,
+        batch: tuple[RetrievalDocument, ...],
+        *,
+        canonical: tuple[RetrievalDocument, ...] | None = None,
     ) -> dict[tuple[str, str], str]:
         chunk_ids = tuple(document.chunk.chunk_id for document in batch)
         if len(set(chunk_ids)) != len(chunk_ids):
             raise ValueError("index batch must not contain duplicate chunk ids")
+        validate_resolution_with_catalog = canonical is None
+        if canonical is None:
+            canonical_documents = tuple(
+                self._content.documents(include_superseded=True)
+            )
+        else:
+            canonical_documents = canonical
+        canonical_by_chunk = {
+            document.chunk.chunk_id: document for document in canonical_documents
+        }
+        if len(canonical_by_chunk) != len(canonical_documents):
+            raise RetrievalIndexIntegrityError(
+                "canonical catalog contains duplicate chunks"
+            )
         canonical_by_revision: dict[
             tuple[CourseId, SourceId, RevisionId], set[ChunkId]
         ] = {}
-        for canonical in self._content.documents(include_superseded=True):
+        for canonical_document in canonical_documents:
             revision_key = (
-                canonical.course_id,
-                canonical.source_id,
-                canonical.revision_id,
+                canonical_document.course_id,
+                canonical_document.source_id,
+                canonical_document.revision_id,
             )
             canonical_by_revision.setdefault(revision_key, set()).add(
-                canonical.chunk.chunk_id
+                canonical_document.chunk.chunk_id
             )
         batch_by_revision: dict[
             tuple[CourseId, SourceId, RevisionId], set[ChunkId]
         ] = {}
         current: dict[tuple[str, str], str] = {}
         for document in batch:
-            self._validate_document(document)
+            self._validate_document(
+                document,
+                canonical_by_chunk,
+                validate_resolution_with_catalog=validate_resolution_with_catalog,
+            )
             revision_key = (
                 document.course_id,
                 document.source_id,
@@ -222,10 +264,16 @@ class SQLiteFtsRetrieval:
         for document in batch:
             self._upsert(connection, document)
 
-    def _validate_document(self, document: RetrievalDocument) -> None:
+    def _validate_document(
+        self,
+        document: RetrievalDocument,
+        canonical_by_chunk: dict[ChunkId, RetrievalDocument],
+        *,
+        validate_resolution_with_catalog: bool,
+    ) -> None:
         try:
-            canonical = self._content.canonical_document(document.chunk.chunk_id)
-        except Exception as error:
+            canonical = canonical_by_chunk[document.chunk.chunk_id]
+        except KeyError as error:
             raise RetrievalIndexIntegrityError(
                 "document chunk is absent from the canonical catalog"
             ) from error
@@ -245,13 +293,26 @@ class SQLiteFtsRetrieval:
             "index-validation",
             document.text,
         )
-        try:
-            resolved = self._content.resolve(citation)
-        except Exception as error:
-            raise RetrievalIndexIntegrityError(
-                "document does not resolve to canonical source content"
-            ) from error
-        if resolved.text != document.text:
+        if validate_resolution_with_catalog:
+            try:
+                resolved = self._content.resolve(citation)
+            except Exception as error:
+                raise RetrievalIndexIntegrityError(
+                    "document does not resolve to canonical source content"
+                ) from error
+            if resolved.text != document.text:
+                raise RetrievalIndexIntegrityError(
+                    "document differs from canonical source content"
+                )
+            return
+        if (
+            citation.source_id != canonical.source_id
+            or citation.revision_id != canonical.revision_id
+            or citation.chunk_id != canonical.chunk.chunk_id
+            or citation.start_offset != canonical.chunk.start_offset
+            or citation.end_offset != canonical.chunk.end_offset
+            or citation.quoted_snippet != canonical.text
+        ):
             raise RetrievalIndexIntegrityError("document differs from canonical source content")
 
     @staticmethod
@@ -305,17 +366,76 @@ class SQLiteFtsRetrieval:
         canonical = self._audit_integrity()
         fingerprint = _query_fingerprint(query)
         index_version = _content_index_version(canonical)
+        title_evidence = self._exact_title_evidence(query, canonical)
+        if title_evidence:
+            return _evidence_set(
+                EvidenceStatus.SUFFICIENT, title_evidence, fingerprint, index_version
+            )
         with closing(self._connect()) as connection:
-            compiled = _compile_literal_query(connection, query.text)
-            if compiled is None:
+            tokens = _literal_query_tokens(connection, query.text)
+            informative_tokens = _informative_query_tokens(tokens)
+            if not informative_tokens:
                 return _evidence_set(
                     EvidenceStatus.INSUFFICIENT, (), fingerprint, index_version
                 )
-            sql, parameters = _search_sql(query, compiled)
-            rows = connection.execute(sql, parameters).fetchall()
-        evidence = tuple(self._resolve_row(row) for row in rows)
+            rows: tuple[tuple[object, ...], ...] = ()
+            if len(informative_tokens) <= _MAX_RELEVANCE_QUERY_TERMS:
+                compiled = _quote_query_tokens(informative_tokens)
+                if compiled is not None:
+                    sql, parameters = _search_sql(query, compiled)
+                    rows = tuple(connection.execute(sql, parameters).fetchall())
+            evidence = tuple(self._resolve_row(row) for row in rows)
+            if not evidence:
+                relevance_rows = _bounded_relevance_rows(
+                    connection, query, informative_tokens
+                )
+                evidence = tuple(self._resolve_row(row) for row in relevance_rows)
         status = EvidenceStatus.SUFFICIENT if evidence else EvidenceStatus.INSUFFICIENT
         return _evidence_set(status, evidence, fingerprint, index_version)
+
+    def _exact_title_evidence(
+        self, query: RetrievalQuery, canonical: tuple[RetrievalDocument, ...]
+    ) -> tuple[RetrievalEvidence, ...]:
+        requested_title = query.text.strip().casefold()
+        matches = tuple(
+            document
+            for document in canonical
+            if document.course_id == query.course_id
+            and document.title.strip().casefold() == requested_title
+            and (query.include_superseded or document.is_current_revision)
+            and (not query.revision_ids or document.revision_id in query.revision_ids)
+            and (not query.source_kinds or document.source_kind in query.source_kinds)
+            and (not query.source_roles or document.source_role in query.source_roles)
+            and document.trust_level >= query.minimum_trust_level
+        )
+        ordered = sorted(
+            matches,
+            key=lambda item: (
+                str(item.source_id),
+                str(item.revision_id),
+                item.chunk.ordinal,
+                str(item.chunk.chunk_id),
+            ),
+        )[: query.limit]
+        return tuple(self._resolve_document(document) for document in ordered)
+
+    def _resolve_document(self, document: RetrievalDocument) -> RetrievalEvidence:
+        chunk = document.chunk
+        resolved = self._content.resolve(
+            Citation(
+                chunk.source_id,
+                chunk.revision_id,
+                chunk.chunk_id,
+                chunk.start_offset,
+                chunk.end_offset,
+                "retrieval-title-match",
+            )
+        )
+        if resolved.text != document.text:
+            raise RetrievalIndexIntegrityError(
+                "title-matched candidate does not resolve to canonical source content"
+            )
+        return RetrievalEvidence(chunk, resolved.citation, resolved.text, 1.0)
 
     def _resolve_row(self, row: tuple[object, ...]) -> RetrievalEvidence:
         try:
@@ -378,7 +498,7 @@ class SQLiteFtsRetrieval:
             item.chunk.chunk_id: item for item in canonical
         }:
             raise ValueError("rebuild requires the complete canonical catalog")
-        current = self._validate_batch(batch)
+        current = self._validate_batch(batch, canonical=canonical)
         with closing(self._connect()) as connection, connection:
             connection.execute("DELETE FROM retrieval_fts")
             connection.execute("DELETE FROM retrieval_documents")
@@ -476,6 +596,68 @@ def _search_sql(query: RetrievalQuery, compiled: str) -> tuple[str, tuple[object
     """
     parameters.append(query.limit)
     return sql, tuple(parameters)
+
+
+def _bounded_relevance_rows(
+    connection: sqlite3.Connection,
+    query: RetrievalQuery,
+    tokens: tuple[str, ...],
+) -> tuple[tuple[object, ...], ...]:
+    """Recover concise agent queries without broadening arbitrary learner text."""
+
+    unique_tokens = tuple(dict.fromkeys(tokens))[:_MAX_RELEVANCE_SOURCE_TERMS]
+    if len(unique_tokens) < 2:
+        return ()
+    candidate_query = RetrievalQuery(
+        query.course_id,
+        query.text,
+        limit=max(query.limit, _RELEVANCE_CANDIDATE_LIMIT),
+        revision_ids=query.revision_ids,
+        minimum_trust_level=query.minimum_trust_level,
+        source_kinds=query.source_kinds,
+        source_roles=query.source_roles,
+        include_superseded=query.include_superseded,
+    )
+    token_rows: list[tuple[int, str, tuple[tuple[object, ...], ...]]] = []
+    for position, token in enumerate(unique_tokens):
+        compiled = _quote_query_tokens((token,))
+        if compiled is None:  # pragma: no cover - non-empty token contract
+            continue
+        sql, parameters = _search_sql(candidate_query, compiled)
+        rows = tuple(connection.execute(sql, parameters).fetchall())
+        if rows:
+            token_rows.append((position, token, rows))
+    selected = tuple(
+        sorted(token_rows, key=lambda item: (len(item[2]), item[0], item[1]))[
+            :_MAX_RELEVANCE_QUERY_TERMS
+        ]
+    )
+    if len(selected) < 2:
+        return ()
+    matches: dict[str, list[tuple[object, ...]]] = {}
+    for _position, _token, rows in selected:
+        for row in rows:
+            matches.setdefault(str(row[2]), []).append(row)
+    minimum_coverage = 2
+    ranked = tuple(
+        sorted(
+            (
+                (len(rows), sum(float(str(row[1])) for row in rows), rows[0])
+                for rows in matches.values()
+                if len(rows) >= minimum_coverage
+            ),
+            key=lambda item: (-item[0], item[1], str(item[2][2])),
+        )
+    )
+    return tuple(item[2] for item in ranked[: query.limit])
+
+
+def _informative_query_tokens(tokens: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(
+        token
+        for token in dict.fromkeys(tokens)
+        if token not in _QUERY_STOP_WORDS
+    )
 
 
 def _metadata_tuple(document: RetrievalDocument) -> tuple[object, ...]:

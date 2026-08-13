@@ -9,7 +9,7 @@ from typing import Any, cast
 
 import pytest
 
-from study_agent.cli.main import main
+from cardine.cli.main import main
 
 
 class _UnreadableEnvironment(Mapping[str, str]):
@@ -120,7 +120,7 @@ def test_reopen_replan_apply_converges_without_duplicate_events(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    import study_agent.cli.repository as repository_module
+    import cardine.cli.repository as repository_module
 
     def forbidden_model(*args: object, **kwargs: object) -> None:
         del args, kwargs

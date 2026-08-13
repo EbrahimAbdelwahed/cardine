@@ -3,7 +3,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-ROOT = Path(__file__).parents[2] / "src" / "study_agent"
+ROOT = Path(__file__).parents[2] / "src" / "cardine"
 FEEDBACK = ROOT / "feedback"
 
 
@@ -25,10 +25,10 @@ def test_gap_plane_does_not_import_model_network_devkit_or_course_owners() -> No
         "study_agent.playbooks",
         "study_agent.skills",
         "study_agent.capabilities",
-        "study_agent.courses",
+        "cardine.courses",
         "study_agent.sessions",
         "study_agent.events",
-        "study_agent.cli",
+        "cardine.cli",
         "httpx",
         "openai",
         "flywheel",

@@ -8,8 +8,8 @@ import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
 
-from study_agent.cli.main import main
-from study_agent.cli.repository import ModelAdapterRegistry
+from cardine.cli.main import main
+from cardine.cli.repository import ModelAdapterRegistry
 from study_agent.ports import (
     CancellationToken,
     ModelCapabilities,

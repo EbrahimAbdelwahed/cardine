@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from cardine.hosts.contracts import TutorPresentationReceipt
 from study_agent.domain import (
     Actor,
     CorrelationId,
@@ -19,7 +20,6 @@ from study_agent.domain import (
     session_turn_event_id_for,
     tutor_presentation_id_for,
 )
-from study_agent.hosts.contracts import TutorPresentationReceipt
 from study_agent.sessions import (
     SESSION_STARTED,
     SESSION_TUTOR_PRESENTATION_RECORDED,

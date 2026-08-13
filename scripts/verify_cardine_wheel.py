@@ -4,30 +4,31 @@ from __future__ import annotations
 
 import sys
 import tarfile
+import tomllib
 import zipfile
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 REQUIRED_FILES = {
     "study_agent/py.typed",
-    "study_agent/demo/browser.html",
-    "study_agent/demo/browser.css",
-    "study_agent/demo/browser.js",
-    "study_agent/demo/ai-primitives.css",
-    "study_agent/demo/ai-primitives.js",
-    "study_agent/demo/fixtures/heart-valves.md",
-    "study_agent/demo/icons/favicon.svg",
-    "study_agent/demo/icons/LICENSE.phosphor.txt",
-    "study_agent/demo/fonts/ibm-plex-mono-400.woff2",
-    "study_agent/demo/fonts/LICENSE.txt",
+    "cardine/demo/browser.html",
+    "cardine/demo/browser.css",
+    "cardine/demo/browser.js",
+    "cardine/demo/ai-primitives.css",
+    "cardine/demo/ai-primitives.js",
+    "cardine/demo/fixtures/heart-valves.md",
+    "cardine/demo/icons/favicon.svg",
+    "cardine/demo/icons/LICENSE.phosphor.txt",
+    "cardine/demo/fonts/ibm-plex-mono-400.woff2",
+    "cardine/demo/fonts/LICENSE.txt",
     "study_agent/operator_skill/SKILL.md",
 }
-REQUIRED_ENTRY_POINTS = {
-    "cardine = study_agent.cli.main:main",
-    "cardine-demo = study_agent.demo.anatomy:main",
-    "cardine-shell = study_agent.demo.product_shell:main",
-    "cardine-shell-web = study_agent.demo.browser:main",
-    "cardine-private-password-hash = study_agent.demo.private_access:main",
+EXPECTED_ENTRY_POINTS = {
+    "cardine": "cardine.cli.main:main",
+    "cardine-demo": "cardine.demo.anatomy:main",
+    "cardine-shell": "cardine.demo.product_shell:main",
+    "cardine-shell-web": "cardine.demo.browser:main",
+    "cardine-private-password-hash": "cardine.demo.private_access:main",
 }
 
 # These are checkout/runtime artifacts, not product source.  Keep the check
@@ -73,13 +74,7 @@ def _verify_wheel(wheel_path: Path) -> None:
 
         entry_points_path = _single(names, ".dist-info/entry_points.txt")
         entry_points = wheel.read(entry_points_path).decode("utf-8")
-        missing_entry_points = {
-            marker for marker in REQUIRED_ENTRY_POINTS if marker not in entry_points
-        }
-        if missing_entry_points:
-            raise SystemExit(
-                f"wheel is missing product entrypoints: {sorted(missing_entry_points)}"
-            )
+        _verify_entry_points(entry_points, "wheel")
 
         license_names = {
             name.rsplit("/", 1)[-1] for name in names if ".dist-info/licenses/" in name
@@ -127,7 +122,9 @@ def _verify_sdist(sdist_path: Path) -> None:
         pyproject = sdist.extractfile(f"{root}/pyproject.toml")
         if pyproject is None:
             raise SystemExit("sdist is missing pyproject.toml")
-        _verify_metadata(pyproject.read().decode("utf-8"), "sdist")
+        pyproject_text = pyproject.read().decode("utf-8")
+        _verify_metadata(pyproject_text, "sdist")
+        _verify_pyproject_manifest(pyproject_text)
 
 
 def _verify_metadata(metadata: str, artifact_kind: str) -> None:
@@ -143,6 +140,40 @@ def _verify_metadata(metadata: str, artifact_kind: str) -> None:
     for marker in markers:
         if marker not in metadata:
             raise SystemExit(f"{artifact_kind} metadata is missing {marker!r}")
+
+
+def _verify_entry_points(raw: str, artifact_kind: str) -> None:
+    """Require the exact five Cardine commands and no compatibility aliases."""
+
+    in_console_scripts = False
+    actual: dict[str, str] = {}
+    for raw_line in raw.splitlines():
+        line = raw_line.strip()
+        if line.startswith("[") and line.endswith("]"):
+            in_console_scripts = line == "[console_scripts]"
+            continue
+        if not in_console_scripts or not line or line.startswith("#"):
+            continue
+        name, separator, target = line.partition("=")
+        if not separator or not name.strip() or not target.strip():
+            raise SystemExit(f"{artifact_kind} has malformed console entry point: {raw_line!r}")
+        actual[name.strip()] = target.strip()
+    if actual != EXPECTED_ENTRY_POINTS:
+        raise SystemExit(
+            f"{artifact_kind} must publish exactly the five Cardine entrypoints: "
+            f"{actual!r}"
+        )
+
+
+def _verify_pyproject_manifest(raw: str) -> None:
+    try:
+        configuration = tomllib.loads(raw)
+    except tomllib.TOMLDecodeError as error:
+        raise SystemExit(f"sdist pyproject is invalid TOML: {error}") from error
+    project = configuration.get("project")
+    scripts = project.get("scripts") if isinstance(project, Mapping) else None
+    if scripts != EXPECTED_ENTRY_POINTS:
+        raise SystemExit(f"sdist pyproject has unexpected project scripts: {scripts!r}")
 
 
 def _verify_forbidden_paths(names: Iterable[str], artifact_kind: str) -> None:

@@ -6,6 +6,12 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from enum import StrEnum
 
+from cardine.domain.study_context import (
+    StudyStatementInput,
+    StudyStatementKind,
+    StudyStatementValue,
+)
+
 from ._validation import JsonObject, JsonValue, require_aware, require_text
 from .identifiers import (
     CourseId,
@@ -19,7 +25,6 @@ from .identifiers import (
 )
 from .session import ContinuationSummaryV1, SessionStatus
 from .source import SourceKind
-from .study_context import StudyStatementInput, StudyStatementKind, StudyStatementValue
 
 TUTOR_SNAPSHOT_SCHEMA_VERSION = 1
 

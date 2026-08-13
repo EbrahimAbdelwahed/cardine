@@ -1,20 +1,19 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from typing import cast
 
 import pytest
 
-from study_agent.demo.browser import (
+from cardine.demo.browser import (
     MIN_LOCAL_OWNER_PASSWORD_CHARS,
     PREVIEW_RUNTIME_ID,
     BrowserSurface,
     _require_bind_host,
     create_server,
 )
-from study_agent.demo.product_settings import RuntimeCredentialStore
-from study_agent.demo.ui_application import UiRequestError
+from cardine.demo.product_settings import RuntimeCredentialStore
 from study_agent.domain._validation import JsonObject
 
 
@@ -72,7 +71,7 @@ def test_browser_page_bytes_are_static_and_accessible() -> None:
     assert 'id="global-alert"' in decoded
     assert b":root" in BrowserSurface(_RepositoryApplication()).asset("browser.css")
     assert b'"use strict";' in BrowserSurface(_RepositoryApplication()).asset("browser.js")
-    assert b'name="bootstrap_token"' in BrowserSurface(_RepositoryApplication()).asset("browser.js")
+    assert b'data-auth-setup' in BrowserSurface(_RepositoryApplication()).asset("browser.js")
     assert b".ai-loading" in BrowserSurface(_RepositoryApplication()).asset("ai-primitives.css")
     assert b"CardineAI" in BrowserSurface(_RepositoryApplication()).asset("ai-primitives.js")
     assert BrowserSurface(_RepositoryApplication()).asset("icons/plus.svg").startswith(b"<svg")
@@ -103,29 +102,10 @@ def test_loopback_owner_setup_activates_private_settings_without_exposing_a_secr
     with pytest.raises(ValueError, match="at least"):
         surface.configure_local_owner(
             "x" * (MIN_LOCAL_OWNER_PASSWORD_CHARS - 1),
-            bootstrap_token=cast(str, surface.local_owner_setup_token),
             client_id="test",
         )
 
-    token = surface.local_owner_setup_token
-    assert isinstance(token, str) and len(token) >= 32
-    assert token not in surface.page().decode("utf-8")
-    with pytest.raises(UiRequestError, match="token is invalid"):
-        surface.configure_local_owner(
-            "correct horse battery staple",
-            bootstrap_token=cast(str, None),
-            client_id="test",
-        )
-    with pytest.raises(UiRequestError, match="token is invalid"):
-        surface.configure_local_owner(
-            "correct horse battery staple",
-            bootstrap_token="wrong",
-            client_id="test",
-        )
-
-    session = surface.configure_local_owner(
-        "correct horse battery staple", bootstrap_token=token, client_id="test"
-    )
+    session = surface.configure_local_owner("correct horse battery staple", client_id="test")
     assert surface.mode == "private"
     assert surface.api_get("/api/v1/auth/session", session_token=session.session_token) == {
         "schema_version": 1,
@@ -145,20 +125,16 @@ def test_loopback_owner_setup_activates_private_settings_without_exposing_a_secr
     assert credentials.configured is True
     assert credentials.get("OPENAI_API_KEY") == "test-runtime-key"
     assert "password" not in repr(surface.private_access).lower()
-    assert surface.local_owner_setup_token is None
 
 
-def test_local_owner_setup_token_is_atomic_and_one_time() -> None:
+def test_local_owner_setup_is_atomic_and_one_time() -> None:
     surface = BrowserSurface(_RepositoryApplication())
     surface.enable_local_owner_setup("http://127.0.0.1:8765")
-    token = surface.local_owner_setup_token
-    assert isinstance(token, str)
 
     def configure() -> bool:
         try:
             surface.configure_local_owner(
                 "correct horse battery staple",
-                bootstrap_token=token,
                 client_id="race",
             )
         except Exception:
@@ -181,16 +157,22 @@ def test_preview_runtime_marker_is_safe_and_versioned() -> None:
     assert "secret" not in PREVIEW_RUNTIME_ID.lower()
 
 
-def test_preview_diagnostics_are_bounded_and_redacted(capsys: pytest.CaptureFixture[str]) -> None:
+def test_preview_diagnostics_expose_only_tutor_decisions(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     surface = BrowserSurface(_RepositoryApplication())
 
     surface.diagnostic("/api/v1/session/turns", 503, "tutor_execution_failed")
     surface.diagnostic("/api/v1/session/turns", 503, "unsafe provider response")
 
-    entries = cast(Sequence[Mapping[str, object]], surface.diagnostics()["entries"])
-    assert len(entries) == 2
-    assert entries[0]["category"] == "tutor_execution_failed"
-    assert entries[1]["category"] == "invalid_request"
+    diagnostics = surface.diagnostics()
+    assert set(diagnostics) == {
+        "schema_version",
+        "latest_trace_id",
+        "turn_traces",
+        "retention",
+    }
+    assert diagnostics["turn_traces"] == ()
     output = capsys.readouterr().err
     assert "tutor_execution_failed" in output
     assert "unsafe provider response" not in output
@@ -203,6 +185,5 @@ def test_preview_diagnostics_keep_a_safe_model_failure_category(
 
     surface.diagnostic("/api/v1/session/turns", 502, "tutor_endpoint_incompatible")
 
-    entries = cast(Sequence[Mapping[str, object]], surface.diagnostics()["entries"])
-    assert entries[0]["category"] == "tutor_endpoint_incompatible"
+    assert "entries" not in surface.diagnostics()
     assert "tutor_endpoint_incompatible" in capsys.readouterr().err

@@ -5,8 +5,8 @@ import json
 import os
 import signal
 
-from study_agent.cli.main import build_parser, color_enabled, main
-from study_agent.cli.output import CommandOutcome
+from cardine.cli.main import build_parser, color_enabled, main
+from cardine.cli.output import CommandOutcome
 from study_agent.sessions import RetryableSessionConflictError
 
 
@@ -14,7 +14,7 @@ def test_parser_exposes_only_approved_top_level_commands() -> None:
     help_text = build_parser().format_help()
     assert help_text.startswith("usage: cardine ")
     assert (
-        "{init,course,source,ask,session,export,doctor,operator,manifest,describe,tool}"
+        "{init,course,source,consent,pageindex,lesson,artifact,ask,session,export,doctor,operator,manifest,describe,tool}"
         in help_text
     )
 
@@ -50,7 +50,7 @@ def test_json_subcommand_help_is_one_success_document_with_flag_anywhere(
 def test_auto_session_sigint_after_execute_still_emits_one_success(
     capsys: object, monkeypatch: object
 ) -> None:
-    module = importlib.import_module("study_agent.cli.main")
+    module = importlib.import_module("cardine.cli.main")
 
     async def committed(_request: object) -> CommandOutcome:
         os.kill(os.getpid(), signal.SIGINT)
@@ -67,7 +67,7 @@ def test_auto_session_sigint_after_execute_still_emits_one_success(
 def test_auto_session_sigint_during_emit_still_emits_one_success(
     capsys: object, monkeypatch: object
 ) -> None:
-    module = importlib.import_module("study_agent.cli.main")
+    module = importlib.import_module("cardine.cli.main")
     real_emit = module.emit_success
 
     async def committed(_request: object) -> CommandOutcome:
@@ -89,7 +89,7 @@ def test_auto_session_sigint_during_emit_still_emits_one_success(
 def test_retryable_session_conflict_has_machine_clean_cli_error(
     capsys: object, monkeypatch: object
 ) -> None:
-    module = importlib.import_module("study_agent.cli.main")
+    module = importlib.import_module("cardine.cli.main")
 
     async def raced(_request: object) -> CommandOutcome:
         raise RetryableSessionConflictError("sensitive internal conflict detail")

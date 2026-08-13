@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 
-from study_agent.feedback.workarounds import (
+from cardine.feedback.workarounds import (
     WorkaroundApprovalReceipt,
     WorkaroundExecutionReceipt,
     WorkaroundReceiptStatus,

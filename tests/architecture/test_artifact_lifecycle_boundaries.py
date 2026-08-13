@@ -54,7 +54,7 @@ def test_lifecycle_modules_keep_inward_provider_neutral_boundaries() -> None:
         "study_agent.adapters",
         "study_agent.application",
         "study_agent.capabilities",
-        "study_agent.cli",
+        "cardine.cli",
         "study_agent.ingestion",
         "study_agent.playbooks",
         "study_agent.prompts",

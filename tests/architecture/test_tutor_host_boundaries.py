@@ -4,6 +4,7 @@ import ast
 from pathlib import Path
 
 ROOT = Path(__file__).parents[2] / "src" / "study_agent"
+CARDINE_ROOT = Path(__file__).parents[2] / "src" / "cardine"
 
 
 def _imports(path: Path) -> set[str]:
@@ -19,10 +20,10 @@ def _imports(path: Path) -> set[str]:
 
 def test_neutral_host_contracts_do_not_import_effect_or_provider_layers() -> None:
     paths = (
-        ROOT / "hosts" / "contracts.py",
-        ROOT / "hosts" / "context.py",
-        ROOT / "hosts" / "runner.py",
-        ROOT / "hosts" / "scripted.py",
+        CARDINE_ROOT / "hosts" / "contracts.py",
+        CARDINE_ROOT / "hosts" / "context.py",
+        CARDINE_ROOT / "hosts" / "runner.py",
+        CARDINE_ROOT / "hosts" / "scripted.py",
         ROOT / "ports" / "tutor_host.py",
         ROOT / "ports" / "tutor_runner.py",
     )
@@ -42,7 +43,7 @@ def test_neutral_host_contracts_do_not_import_effect_or_provider_layers() -> Non
         "subprocess",
     )
     violations = {
-        f"{path.relative_to(ROOT)} imports {imported}"
+        f"{path.relative_to(ROOT.parent)} imports {imported}"
         for path in paths
         for imported in _imports(path)
         if any(imported == prefix or imported.startswith(prefix + ".") for prefix in forbidden)
@@ -52,7 +53,7 @@ def test_neutral_host_contracts_do_not_import_effect_or_provider_layers() -> Non
 
 def test_host_file_contracts_do_not_import_filesystem_or_provider_layers() -> None:
     paths = (
-        ROOT / "hosts" / "files.py",
+        CARDINE_ROOT / "hosts" / "files.py",
         ROOT / "ports" / "host_file.py",
     )
     forbidden = (
@@ -70,7 +71,7 @@ def test_host_file_contracts_do_not_import_filesystem_or_provider_layers() -> No
         "subprocess",
     )
     violations = {
-        f"{path.relative_to(ROOT)} imports {imported}"
+        f"{path.relative_to(ROOT.parent)} imports {imported}"
         for path in paths
         for imported in _imports(path)
         if any(imported == prefix or imported.startswith(prefix + ".") for prefix in forbidden)
@@ -96,7 +97,7 @@ def test_existing_state_and_behavior_owners_do_not_depend_on_tutor_hosts() -> No
         str(path.relative_to(ROOT))
         for path in owner_paths
         if any(
-            imported == "study_agent.hosts" or imported.startswith("study_agent.hosts.")
+            imported == "cardine.hosts" or imported.startswith("cardine.hosts.")
             for imported in _imports(path)
         )
     }

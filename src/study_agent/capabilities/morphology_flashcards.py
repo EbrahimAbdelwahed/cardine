@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -531,7 +530,7 @@ def _candidate_content(value: JsonObject) -> str:
     content = dict(value)
     content.pop("candidate_key")
     content.pop("parent_candidate_key")
-    return json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return canonical_json_bytes(content).decode("utf-8")
 
 
 __all__ = [

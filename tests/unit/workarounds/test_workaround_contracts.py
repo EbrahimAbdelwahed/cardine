@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from study_agent.feedback import (
+from cardine.feedback import (
     WorkaroundApprovalPolicy,
     WorkaroundApprovalReceipt,
     WorkaroundEffect,

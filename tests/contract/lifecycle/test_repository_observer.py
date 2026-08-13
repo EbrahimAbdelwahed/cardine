@@ -3,6 +3,7 @@ from __future__ import annotations
 from hashlib import sha256
 from pathlib import Path
 
+from cardine.cli.repository import LocalRepository
 from study_agent.adapters.filesystem import initialize_local_repository
 from study_agent.adapters.filesystem.repository_target import (
     LocalRepositoryPaths,
@@ -12,7 +13,6 @@ from study_agent.adapters.filesystem.repository_target import (
     resolve_explicit_repository_target,
 )
 from study_agent.adapters.sqlite import observe_local_repository
-from study_agent.cli.repository import LocalRepository
 from study_agent.domain import (
     CorrelationId,
     CourseId,

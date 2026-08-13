@@ -11,7 +11,12 @@ from typing import cast
 from study_agent.domain._validation import JsonObject, JsonValue
 from study_agent.domain.events import DomainEvent
 from study_agent.domain.identifiers import BlobId, ChunkId, RevisionId, SourceId
-from study_agent.domain.provenance import ContentOrigin, StructureOrigin
+from study_agent.domain.provenance import (
+    ContentOrigin,
+    DocumentConversionProvenance,
+    DocumentPageSpan,
+    StructureOrigin,
+)
 from study_agent.domain.source import BlobRef, SourceChunk, SourceDocument, SourceKind
 
 from .chunking import CHUNKER_VERSION, ChunkingConfig, chunk_text
@@ -53,6 +58,22 @@ _SOURCE_KEYS = frozenset(
         "content_origin",
     }
 )
+_CONVERSION_KEYS = frozenset(
+    {
+        "pdf_sha256",
+        "markdown_sha256",
+        "adapter_identity",
+        "adapter_version",
+        "manifest_fingerprint",
+        "normalizer_policy",
+        "limitations",
+        "assets_omitted",
+        "page_count",
+        "page_spans",
+        "schema_version",
+    }
+)
+_LEGACY_CONVERSION_KEYS = _CONVERSION_KEYS - {"page_spans"}
 _CHUNK_KEYS = frozenset(
     {
         "chunk_id",
@@ -111,9 +132,7 @@ class SourceRevisionSelected:
     revision_id: RevisionId
 
 
-def source_revision_selected_payload(
-    source_id: SourceId, revision_id: RevisionId
-) -> JsonObject:
+def source_revision_selected_payload(source_id: SourceId, revision_id: RevisionId) -> JsonObject:
     return {"source_id": str(source_id), "revision_id": str(revision_id)}
 
 
@@ -194,8 +213,60 @@ def _timestamp(value: JsonValue | None) -> datetime:
     return result
 
 
+def _conversion(value: JsonValue | None) -> DocumentConversionProvenance:
+    if not isinstance(value, Mapping) or frozenset(value) not in {
+        _CONVERSION_KEYS,
+        _LEGACY_CONVERSION_KEYS,
+    }:
+        raise ValueError("source.conversion_provenance fields mismatch")
+    payload = value
+    limitations = payload.get("limitations")
+    if not isinstance(limitations, tuple) or any(not isinstance(item, str) for item in limitations):
+        raise ValueError("conversion limitations must be an array of strings")
+    page_count = payload.get("page_count")
+    if page_count is not None and type(page_count) is not int:
+        raise ValueError("conversion page_count must be an integer or null")
+    raw_spans = payload.get("page_spans", ())
+    if not isinstance(raw_spans, tuple):
+        raise ValueError("conversion page_spans must be an array")
+    spans: list[DocumentPageSpan] = []
+    for index, value in enumerate(raw_spans):
+        span = _object(
+            value,
+            f"conversion.page_spans[{index}]",
+            frozenset({"page", "start_offset", "end_offset"}),
+        )
+        spans.append(
+            DocumentPageSpan(
+                page=_integer(span.get("page"), "page"),
+                start_offset=_integer(span.get("start_offset"), "start_offset"),
+                end_offset=_integer(span.get("end_offset"), "end_offset"),
+            )
+        )
+    return DocumentConversionProvenance(
+        pdf_sha256=_text(payload.get("pdf_sha256"), "conversion.pdf_sha256"),
+        markdown_sha256=_text(payload.get("markdown_sha256"), "conversion.markdown_sha256"),
+        adapter_identity=_text(payload.get("adapter_identity"), "conversion.adapter_identity"),
+        adapter_version=_text(payload.get("adapter_version"), "conversion.adapter_version"),
+        manifest_fingerprint=_text(
+            payload.get("manifest_fingerprint"), "conversion.manifest_fingerprint"
+        ),
+        normalizer_policy=_text(payload.get("normalizer_policy"), "conversion.normalizer_policy"),
+        limitations=cast(tuple[str, ...], limitations),
+        assets_omitted=payload.get("assets_omitted") is True,
+        page_count=page_count,
+        page_spans=tuple(spans),
+        schema_version=_integer(payload.get("schema_version"), "conversion.schema_version"),
+    )
+
+
 def _source(value: JsonValue | None) -> SourceDocument:
-    payload = _object(value, "source", _SOURCE_KEYS)
+    if not isinstance(value, Mapping):
+        raise ValueError("source must be an object")
+    actual = frozenset(value)
+    if actual not in {_SOURCE_KEYS, _SOURCE_KEYS | {"conversion_provenance"}}:
+        raise ValueError("source fields mismatch")
+    payload = value
     try:
         kind = SourceKind(_text(payload.get("kind"), "source.kind"))
         structure_origin = StructureOrigin(
@@ -229,6 +300,11 @@ def _source(value: JsonValue | None) -> SourceDocument:
         structure_origin=structure_origin,
         ingestion_method=_text(payload.get("ingestion_method"), "source.ingestion_method"),
         content_origin=content_origin,
+        conversion_provenance=(
+            _conversion(payload.get("conversion_provenance"))
+            if "conversion_provenance" in payload
+            else None
+        ),
     )
 
 
@@ -251,9 +327,7 @@ def _chunk(value: JsonValue, index: int) -> SourceChunk:
         end_offset=_integer(payload.get("end_offset"), f"{name}.end_offset"),
         section_path=cast(tuple[str, ...], section_path),
         ordinal=_integer(payload.get("ordinal"), f"{name}.ordinal"),
-        checksum_sha256=_text(
-            payload.get("checksum_sha256"), f"{name}.checksum_sha256"
-        ),
+        checksum_sha256=_text(payload.get("checksum_sha256"), f"{name}.checksum_sha256"),
         chunker_version=_text(payload.get("chunker_version"), f"{name}.chunker_version"),
         metadata=metadata,
     )
@@ -346,12 +420,23 @@ def decode_source_revision_event(
         raise ValueError("normalized blob must contain strict UTF-8") from error
     if normalize_utf8(normalized_bytes).content != normalized_bytes:
         raise ValueError("normalized blob is not canonical newline-normalized NFC text")
-    try:
-        expected_normalized = normalize_utf8(original).content
-    except ValueError as error:
-        raise ValueError("original blob must contain strict UTF-8") from error
-    if normalized_bytes != expected_normalized:
-        raise ValueError("normalized blob does not match canonical normalization of original")
+    if source.content_origin is ContentOrigin.ORIGINAL:
+        try:
+            expected_normalized = normalize_utf8(original).content
+        except ValueError as error:
+            raise ValueError("original blob must contain strict UTF-8") from error
+        if normalized_bytes != expected_normalized:
+            raise ValueError("normalized blob does not match canonical normalization of original")
+    elif source.content_origin is ContentOrigin.EXTRACTED:
+        provenance = source.conversion_provenance
+        if provenance is None:
+            raise ValueError("extracted source lacks conversion provenance")
+        if provenance.pdf_sha256 != sha256(original).hexdigest():
+            raise ValueError("PDF provenance does not match original blob")
+        if provenance.markdown_sha256 != sha256(normalized_bytes).hexdigest():
+            raise ValueError("Markdown provenance does not match normalized blob")
+    else:
+        raise ValueError("ingested source content origin is unsupported")
     if decoded.normalized_character_length != len(normalized_text):
         raise ValueError("normalized_character_length does not match normalized text")
     if source.normalization_version != NORMALIZATION_POLICY_VERSION:
@@ -361,8 +446,6 @@ def decode_source_revision_event(
     expected_media_type, expected_method = source_kind_contract(source.kind)
     if source.media_type != expected_media_type or source.ingestion_method != expected_method:
         raise ValueError("source kind, media type, and ingestion method are inconsistent")
-    if source.content_origin is not ContentOrigin.ORIGINAL:
-        raise ValueError("ingested source content_origin must be original")
     if source.structure_origin is not StructureOrigin.MECHANICALLY_EXTRACTED:
         raise ValueError("ingested source structure_origin must be mechanically_extracted")
     if source.created_at != event.occurred_at:

@@ -4,7 +4,7 @@ from dataclasses import fields
 
 import pytest
 
-from study_agent.cli.config import (
+from cardine.cli.config import (
     EMPTY_CONFIG,
     LocalConfigError,
     LocalRepositoryConfig,

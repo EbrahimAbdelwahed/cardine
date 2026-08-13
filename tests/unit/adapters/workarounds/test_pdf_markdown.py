@@ -5,18 +5,18 @@ from pathlib import Path
 
 import pytest
 
-from study_agent.adapters.workarounds import (
-    PDF_MARKDOWN_EXECUTOR_FINGERPRINT,
-    PDF_MARKDOWN_LIMITATION_FINGERPRINT,
-    PDF_MARKDOWN_MANIFEST,
-    PdfMarkdownExecutor,
-)
-from study_agent.feedback import (
+from cardine.feedback import (
     WorkaroundApprovalReceipt,
     WorkaroundInputKind,
     WorkaroundOutputKind,
     WorkaroundReceiptStatus,
     WorkaroundTask,
+)
+from study_agent.adapters.workarounds import (
+    PDF_MARKDOWN_EXECUTOR_FINGERPRINT,
+    PDF_MARKDOWN_LIMITATION_FINGERPRINT,
+    PDF_MARKDOWN_MANIFEST,
+    PdfMarkdownExecutor,
 )
 
 

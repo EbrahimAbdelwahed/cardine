@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from study_agent.feedback import (
+from cardine.feedback import (
     WorkaroundApprovalPolicy,
     WorkaroundApprovalReceipt,
     WorkaroundAuthorityError,

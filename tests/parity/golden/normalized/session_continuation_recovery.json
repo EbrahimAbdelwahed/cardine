@@ -1,0 +1,245 @@
+{
+  "case": "session_continuation_recovery",
+  "causation_id": null,
+  "citations": [],
+  "clock": {
+    "consumed": 5,
+    "script": [
+      "2026-08-09T12:00:00Z",
+      "2026-08-09T12:01:00Z",
+      "2026-08-09T12:02:00Z",
+      "2026-08-09T12:03:00Z",
+      "2026-08-09T12:04:00Z"
+    ]
+  },
+  "correlation_id": "correlation:session-resume",
+  "decisions": {},
+  "effect_counters": {
+    "clock_now_calls": 5,
+    "event_append_calls": 5,
+    "event_read_calls": 6,
+    "gateway_calls": 0
+  },
+  "error_code": null,
+  "event_version": 1,
+  "events": [
+    {
+      "actor": {
+        "kind": "service",
+        "principal_id": "parity-baseline"
+      },
+      "causation_id": null,
+      "correlation_id": "correlation:parity",
+      "course_id": "course-parity",
+      "course_sequence": 1,
+      "event_id": "event-sha256:eb56fbb74ca9d994d4ff4b6032f9ee807e34abe5895fa719ea8a06634fb9b3f1",
+      "event_type": "course.created",
+      "occurred_at": "2026-08-09T12:00:00.000000Z",
+      "payload": {
+        "assessment_styles": [
+          "short-answer"
+        ],
+        "exam_date": null,
+        "id": "course-parity",
+        "language": "en",
+        "learning_goals": [
+          "preserve semantic contracts"
+        ],
+        "source_policy": {
+          "allowed_roles": [],
+          "minimum_trust_level": 0
+        },
+        "terminology_policy": {
+          "entries": []
+        },
+        "title": "Parity course"
+      },
+      "schema_version": 1,
+      "session_id": null
+    },
+    {
+      "actor": {
+        "kind": "service",
+        "principal_id": "parity-baseline"
+      },
+      "causation_id": null,
+      "correlation_id": "correlation:session-start",
+      "course_id": "course-parity",
+      "course_sequence": 2,
+      "event_id": "event-sha256:7ff8778b9fd52f718bc753a038d6359d3beff1ea629c80c8d1f047214aa5ad2f",
+      "event_type": "session.started",
+      "occurred_at": "2026-08-09T12:01:00.000000Z",
+      "payload": {
+        "session_id": "session-parity"
+      },
+      "schema_version": 1,
+      "session_id": "session-parity"
+    },
+    {
+      "actor": {
+        "kind": "service",
+        "principal_id": "parity-baseline"
+      },
+      "causation_id": null,
+      "correlation_id": "correlation:session-note",
+      "course_id": "course-parity",
+      "course_sequence": 3,
+      "event_id": "event-sha256:59c4e9cd05c264b06e0c920f4b37ccac4340f15b36b636a033cb12e20528b051",
+      "event_type": "session.interaction_recorded",
+      "occurred_at": "2026-08-09T12:02:00.000000Z",
+      "payload": {
+        "content": "continuation checkpoint",
+        "interaction_id": "interaction-sha256:b1389ffb0ee678fc3bd9a7b4aced11ba9b0821854db97324047bf6bbd8158501",
+        "kind": "note"
+      },
+      "schema_version": 1,
+      "session_id": "session-parity"
+    },
+    {
+      "actor": {
+        "kind": "service",
+        "principal_id": "parity-baseline"
+      },
+      "causation_id": "event-sha256:59c4e9cd05c264b06e0c920f4b37ccac4340f15b36b636a033cb12e20528b051",
+      "correlation_id": "correlation:session-note",
+      "course_id": "course-parity",
+      "course_sequence": 4,
+      "event_id": "event-sha256:9caf09caf3c21d03adf9ff643aa3264b82379ab4321ef38d17fe3148d17532e9",
+      "event_type": "session.continuation_summary_updated",
+      "occurred_at": "2026-08-09T12:02:00.000000Z",
+      "payload": {
+        "summary": {
+          "character_count": 23,
+          "grounded_points": [],
+          "interaction_count": 1,
+          "recent_exchanges": [],
+          "schema_version": 1,
+          "through_interaction_id": "interaction-sha256:b1389ffb0ee678fc3bd9a7b4aced11ba9b0821854db97324047bf6bbd8158501",
+          "unresolved_notes": [
+            "continuation checkpoint"
+          ]
+        }
+      },
+      "schema_version": 1,
+      "session_id": "session-parity"
+    },
+    {
+      "actor": {
+        "kind": "service",
+        "principal_id": "parity-baseline"
+      },
+      "causation_id": null,
+      "correlation_id": "correlation:session-suspend",
+      "course_id": "course-parity",
+      "course_sequence": 5,
+      "event_id": "event-sha256:9ff794b8c895ab345cef1237f473a8317008edc94f2a7d6188ae73c55f74b803",
+      "event_type": "session.suspended",
+      "occurred_at": "2026-08-09T12:03:00.000000Z",
+      "payload": {},
+      "schema_version": 1,
+      "session_id": "session-parity"
+    },
+    {
+      "actor": {
+        "kind": "service",
+        "principal_id": "parity-baseline"
+      },
+      "causation_id": null,
+      "correlation_id": "correlation:session-resume",
+      "course_id": "course-parity",
+      "course_sequence": 6,
+      "event_id": "event-sha256:620388c4ef70df85cc15f3371496f64ad7bbbf61e36382ce3e10219465c8f43e",
+      "event_type": "session.resumed",
+      "occurred_at": "2026-08-09T12:04:00.000000Z",
+      "payload": {},
+      "schema_version": 1,
+      "session_id": "session-parity"
+    }
+  ],
+  "gateway": {
+    "calls": 0,
+    "capabilities": [
+      "assess_understanding",
+      "explain_concept"
+    ]
+  },
+  "projection": {
+    "course_id": "course-parity",
+    "sequence": 6,
+    "state": {
+      "course": {
+        "assessment_styles": [
+          "short-answer"
+        ],
+        "exam_date": null,
+        "id": "course-parity",
+        "language": "en",
+        "learning_goals": [
+          "preserve semantic contracts"
+        ],
+        "source_policy": {
+          "allowed_roles": [],
+          "minimum_trust_level": 0
+        },
+        "terminology_policy": {
+          "entries": []
+        },
+        "title": "Parity course"
+      },
+      "session_answers": {},
+      "session_interactions": {
+        "interaction-sha256:b1389ffb0ee678fc3bd9a7b4aced11ba9b0821854db97324047bf6bbd8158501": {
+          "answer_id": null,
+          "content": "continuation checkpoint",
+          "kind": "note",
+          "occurred_at": "2026-08-09T12:02:00.000000Z",
+          "run_id": null,
+          "session_id": "session-parity"
+        }
+      },
+      "sessions": {
+        "session-parity": {
+          "continuation_summary": {
+            "character_count": 23,
+            "grounded_points": [],
+            "interaction_count": 1,
+            "recent_exchanges": [],
+            "schema_version": 1,
+            "through_interaction_id": "interaction-sha256:b1389ffb0ee678fc3bd9a7b4aced11ba9b0821854db97324047bf6bbd8158501",
+            "unresolved_notes": [
+              "continuation checkpoint"
+            ]
+          },
+          "course_id": "course-parity",
+          "ended_at": null,
+          "interaction_ids": [
+            "interaction-sha256:b1389ffb0ee678fc3bd9a7b4aced11ba9b0821854db97324047bf6bbd8158501"
+          ],
+          "last_event_at": "2026-08-09T12:04:00.000000Z",
+          "resumed_at": "2026-08-09T12:04:00.000000Z",
+          "run_ids": [],
+          "session_id": "session-parity",
+          "started_at": "2026-08-09T12:01:00.000000Z",
+          "status": "active",
+          "suspended_at": "2026-08-09T12:03:00.000000Z"
+        }
+      }
+    }
+  },
+  "provenance": {
+    "actor": "course-service"
+  },
+  "runtime": {
+    "blob_root": "<TMP_ROOT>",
+    "events_path": "<TMP_ROOT>",
+    "tmp_root": "<TMP_ROOT>"
+  },
+  "schema_version": 1,
+  "semantic_id": "event-sha256:620388c4ef70df85cc15f3371496f64ad7bbbf61e36382ce3e10219465c8f43e",
+  "sequence": 6,
+  "session": {
+    "session_id": "session-parity",
+    "status": "active"
+  },
+  "status": "committed"
+}

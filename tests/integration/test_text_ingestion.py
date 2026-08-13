@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
+from cardine.courses import register_course_events
 from study_agent.adapters.filesystem import FilesystemBlobStore
 from study_agent.adapters.sqlite import SQLiteEventStore
-from study_agent.courses import register_course_events
 from study_agent.domain import (
     Actor,
     BlobId,

@@ -1,10 +1,10 @@
 """Source-checkout wrapper for the installed anatomy demo.
 
 The composition uses TutorHostRunner, ScriptedTutorDecisionPort, and
-OpenAIResponsesTutorDecisionPort in ``study_agent.demo.anatomy``.
+OpenAIResponsesTutorDecisionPort in ``cardine.demo.anatomy``.
 """
 
-from study_agent.demo.anatomy import (
+from cardine.demo.anatomy import (
     COURSE_ID,
     SESSION_ID,
     _capture_descriptor,

@@ -73,6 +73,17 @@ from .runtime import (
 )
 
 _CHECKPOINT_SCHEMA_VERSION = 1
+_SAFE_MODEL_FAILURE_REASONS = frozenset(
+    {
+        ModelErrorCode.AUTHENTICATION.value,
+        ModelErrorCode.MODEL_UNAVAILABLE.value,
+        ModelErrorCode.ENDPOINT_INCOMPATIBLE.value,
+        ModelErrorCode.RATE_LIMITED.value,
+        ModelErrorCode.TIMEOUT.value,
+        ModelErrorCode.PROTOCOL_ERROR.value,
+        ModelErrorCode.UNAVAILABLE.value,
+    }
+)
 
 
 class PlaybookEngine:
@@ -617,6 +628,12 @@ class PlaybookEngine:
                     )
             except PlaybookEngineError as error:
                 cancelled = error.failure.code is EngineErrorCode.CANCELLED
+                failure_details: dict[str, JsonValue] = {
+                    "error_code": error.failure.code.value
+                }
+                model_failure_reason = _model_failure_reason_from_failure(error.failure)
+                if model_failure_reason is not None:
+                    failure_details["model_failure_reason"] = model_failure_reason
                 mutable_traces.append(
                     self._trace(
                         step,
@@ -625,7 +642,7 @@ class PlaybookEngine:
                             if cancelled
                             else StepTraceStatus.FAILED
                         ),
-                        {"error_code": error.failure.code.value},
+                        failure_details,
                     )
                 )
                 failed_checkpoint = self._checkpoint(
@@ -821,13 +838,13 @@ class PlaybookEngine:
                     )
                 self._raise(
                     EngineErrorCode.MODEL_ERROR,
-                    f"model execution failed: {type(error).__name__}",
+                    f"model execution failed: {_safe_model_failure_reason(error)}",
                     step.id,
                 )
-            except Exception as error:
+            except Exception:
                 self._raise(
                     EngineErrorCode.MODEL_ERROR,
-                    f"model execution failed: {type(error).__name__}",
+                    f"model execution failed: {ModelErrorCode.UNAVAILABLE.value}",
                     step.id,
                 )
             if (
@@ -1432,12 +1449,21 @@ def _validate_checkpoint_shape(
         _checkpoint_error("checkpoint trace prefix does not match playbook definition")
     if checkpoint.status in {RunStatus.CANCELLED, RunStatus.FAILED}:
         terminal = traces[-1]
-        if set(terminal.details) != {"error_code"}:
-            _checkpoint_error("terminal trace error receipt fields are invalid")
         try:
             error_code = EngineErrorCode(cast(str, terminal.details["error_code"]))
         except (TypeError, ValueError):
             _checkpoint_error("terminal trace error code is invalid")
+        allowed_error_fields = {"error_code"}
+        if error_code is EngineErrorCode.MODEL_ERROR and "model_failure_reason" in terminal.details:
+            allowed_error_fields.add("model_failure_reason")
+        if set(terminal.details) != allowed_error_fields:
+            _checkpoint_error("terminal trace error receipt fields are invalid")
+        model_failure_reason = terminal.details.get("model_failure_reason")
+        if model_failure_reason is not None and (
+            error_code is not EngineErrorCode.MODEL_ERROR
+            or model_failure_reason not in _SAFE_MODEL_FAILURE_REASONS
+        ):
+            _checkpoint_error("terminal trace model failure reason is invalid")
         if checkpoint.status is RunStatus.CANCELLED:
             if error_code is not EngineErrorCode.CANCELLED:
                 _checkpoint_error("cancelled checkpoint requires a cancelled trace error")
@@ -1727,7 +1753,20 @@ def _validate_resume_generation_proof(
 
 
 _SCHEMA_KEYWORDS = frozenset(
-    {"type", "required", "properties", "items", "enum", "additionalProperties"}
+    {
+        "type",
+        "required",
+        "properties",
+        "items",
+        "enum",
+        "additionalProperties",
+        "minimum",
+        "maximum",
+        "minLength",
+        "minItems",
+        "maxItems",
+        "uniqueItems",
+    }
 )
 _SCHEMA_TYPES = frozenset(
     {"object", "array", "string", "number", "integer", "boolean", "null"}
@@ -1781,6 +1820,18 @@ def _validate_schema_definition(schema: JsonObject, path: str = "schema") -> Non
     enum = schema.get("enum")
     if enum is not None and not isinstance(enum, tuple):
         _schema_error(f"enum must be an array at {path}")
+    minimum = _numeric_schema_bound(schema, "minimum", path)
+    maximum = _numeric_schema_bound(schema, "maximum", path)
+    if minimum is not None and maximum is not None and minimum > maximum:
+        _schema_error(f"minimum cannot exceed maximum at {path}")
+    _nonnegative_integer_schema_bound(schema, "minLength", path)
+    min_items = _nonnegative_integer_schema_bound(schema, "minItems", path)
+    max_items = _nonnegative_integer_schema_bound(schema, "maxItems", path)
+    if min_items is not None and max_items is not None and min_items > max_items:
+        _schema_error(f"minItems cannot exceed maxItems at {path}")
+    unique_items = schema.get("uniqueItems")
+    if unique_items is not None and not isinstance(unique_items, bool):
+        _schema_error(f"uniqueItems must be boolean at {path}")
 
 
 def _validate_schema(
@@ -1799,6 +1850,16 @@ def _validate_schema(
     enum = schema.get("enum")
     if isinstance(enum, tuple) and value not in enum:
         _schema_error(f"{label} is not an allowed enum value at {path}", step_id)
+    if isinstance(value, str):
+        minimum = cast(int | None, schema.get("minLength"))
+        if minimum is not None and len(value) < minimum:
+            _schema_error(f"{label} is too short at {path}", step_id)
+    if isinstance(value, tuple):
+        _validate_bounds(value, schema, label, step_id, path, "minItems", "maxItems")
+        if schema.get("uniqueItems") and len(set(map(repr, value))) != len(value):
+            _schema_error(f"{label} contains duplicate items at {path}", step_id)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        _validate_bounds(value, schema, label, step_id, path, "minimum", "maximum")
     if isinstance(value, Mapping):
         required = cast(tuple[JsonValue, ...], schema.get("required", ()))
         for name in required:
@@ -1841,7 +1902,63 @@ def _matches_type(schema_type: str | tuple[str, ...], value: JsonValue) -> bool:
     return value is None
 
 
+def _validate_bounds(
+    value: int | float | tuple[JsonValue, ...],
+    schema: JsonObject,
+    label: str,
+    step_id: str | None,
+    path: str,
+    low: str,
+    high: str,
+) -> None:
+    size_or_value = len(value) if isinstance(value, tuple) else value
+    minimum = cast(int | float | None, schema.get(low))
+    if minimum is not None and size_or_value < minimum:
+        _schema_error(f"{label} is below {low} at {path}", step_id)
+    maximum = cast(int | float | None, schema.get(high))
+    if maximum is not None and size_or_value > maximum:
+        _schema_error(f"{label} is above {high} at {path}", step_id)
+
+
 def _schema_error(message: str, step_id: str | None = None) -> NoReturn:
     raise PlaybookEngineError(
         EngineFailure(EngineErrorCode.SCHEMA_ERROR, message, step_id)
     )
+
+
+def _numeric_schema_bound(schema: JsonObject, keyword: str, path: str) -> int | float | None:
+    value = schema.get(keyword)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        _schema_error(f"{keyword} must be numeric at {path}")
+    return value
+
+
+def _nonnegative_integer_schema_bound(
+    schema: JsonObject, keyword: str, path: str
+) -> int | None:
+    value = schema.get(keyword)
+    if value is None:
+        return None
+    if type(value) is not int or value < 0:
+        _schema_error(f"{keyword} must be a non-negative integer at {path}")
+    return value
+
+
+def _safe_model_failure_reason(error: ModelError) -> str:
+    """Persist only the closed adapter failure category, never provider text."""
+
+    if error.code.value in _SAFE_MODEL_FAILURE_REASONS:
+        return error.code.value
+    return ModelErrorCode.UNAVAILABLE.value
+
+
+def _model_failure_reason_from_failure(failure: EngineFailure) -> str | None:
+    if failure.code is not EngineErrorCode.MODEL_ERROR:
+        return None
+    prefix = "model execution failed: "
+    if not failure.message.startswith(prefix):
+        return None
+    candidate = failure.message.removeprefix(prefix)
+    return candidate if candidate in _SAFE_MODEL_FAILURE_REASONS else None

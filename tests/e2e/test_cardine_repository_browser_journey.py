@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import shutil
 import signal
 import socket
@@ -27,10 +28,10 @@ from urllib.request import urlopen
 
 import pytest
 
+from cardine.cli.repository import LocalRepository, ModelAdapterRegistry
+from cardine.demo.browser import create_server
+from cardine.demo.ui_application import RepositoryUiApplication
 from study_agent.adapters.filesystem import initialize_local_repository
-from study_agent.cli.repository import LocalRepository, ModelAdapterRegistry
-from study_agent.demo.browser import create_server
-from study_agent.demo.ui_application import RepositoryUiApplication
 from study_agent.domain import (
     CorrelationId,
     CourseId,
@@ -40,9 +41,12 @@ from study_agent.domain import (
     SessionId,
     SourceId,
 )
+from study_agent.domain._validation import JsonObject
 from study_agent.ports import (
     CancellationToken,
     ModelCapabilities,
+    ModelError,
+    ModelErrorCode,
     ModelFinishReason,
     ModelInvocation,
     ModelRequest,
@@ -80,22 +84,43 @@ API_PATHS = (
 class _BrowserModel:
     capabilities = ModelCapabilities(structured_output=True)
 
-    def __init__(self) -> None:
+    def __init__(self, *, fail_grounding_once: bool = False) -> None:
         self.requests: list[ModelRequest] = []
+        self._fail_grounding_once = fail_grounding_once
 
     async def generate(self, request: ModelRequest) -> ModelResponse:
         self.requests.append(request)
+        if request.metadata.get("prompt_id") == "explain_concept.v1":
+            if self._fail_grounding_once:
+                self._fail_grounding_once = False
+                raise ModelError(ModelErrorCode.TIMEOUT, "browser fixture timeout")
+            rendered = "\n".join(message.content for message in request.messages)
+            evidence = re.search(r'"evidence_id":"([^"]+)"', rendered)
+            assert evidence is not None
+            structured_output: JsonObject = {
+                "status": "answered",
+                "segments": (
+                    {
+                        "kind": "supported_claim",
+                        "text": "The aortic valve has three cusps.",
+                        "evidence_ids": (evidence.group(1),),
+                    },
+                ),
+                "unsupported_information_note": None,
+            }
+        else:
+            structured_output = {
+                "decision": {
+                    "kind": "assistant_message",
+                    "message": "ok",
+                }
+            }
         return ModelResponse(
             "",
             None,
             ModelFinishReason.STOP,
             ModelInvocation("browser-fixture", "1.0.0", "fixture", "browser"),
-            structured_output={
-                "decision": {
-                    "kind": "assistant_message",
-                    "message": "The aortic valve has three cusps.",
-                }
-            },
+            structured_output=structured_output,
         )
 
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
@@ -113,13 +138,14 @@ def _repository(
     tmp_path: Path,
     *,
     with_source: bool = True,
+    fail_grounding_once: bool = False,
 ) -> tuple[Path, ModelAdapterRegistry, _BrowserModel]:
     root = tmp_path / "repository"
     initialize_local_repository(
         root,
         LocalRepositoryConfig(ModelAdapterConfig("browser-fixture", {}, None)),
     )
-    model = _BrowserModel()
+    model = _BrowserModel(fail_grounding_once=fail_grounding_once)
     adapters = ModelAdapterRegistry(
         {"browser-fixture": lambda _config, _credential: model},
         versions={"browser-fixture": "1.0.0"},
@@ -438,7 +464,7 @@ def _assert_no_browser_errors(
 def test_repository_ui_full_route_keyboard_reload_and_process_restart(
     tmp_path: Path,
 ) -> None:
-    root, adapters, model = _repository(tmp_path)
+    root, adapters, model = _repository(tmp_path, fail_grounding_once=True)
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
 
     with _serve(application=app) as url, _real_browser(url) as browser:
@@ -448,14 +474,80 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
         browser.evaluate("document.querySelector('#session-entry-text').focus()")
         assert browser.evaluate("document.activeElement.id") == "session-entry-text"
 
-        browser.call("Input.insertText", text="Explain the aortic valve")
+        browser.call("Input.insertText", text="Read Valve notes")
         _press(browser, "Enter", 13)
+        browser.wait_for(
+            "!document.querySelector('[data-optimistic-turn]')"
+            " && document.querySelector('#global-alert-title').textContent"
+            " === 'Messaggio salvato, risposta non completata'"
+        )
+        assert len(model.requests) == 2
+        assert browser.evaluate(
+            "document.querySelectorAll('.thread-message--learner').length"
+        ) == 1
+        assert browser.evaluate(
+            "document.querySelectorAll('.thread-message--assistant').length"
+        ) == 0
+        assert (
+            browser.evaluate("document.querySelector('#view-root').dataset.scrollOwner")
+            == "conversation"
+        )
+        assert "Trascrizione compatta" not in cast(
+            str, browser.evaluate("document.querySelector('#view-root').innerText")
+        )
+        assert set(
+            cast(
+                list[str],
+                browser.evaluate(
+                    "Array.from(document.querySelectorAll('#global-alert-actions button'))"
+                    ".map(button => button.textContent)"
+                ),
+            )
+        ) == {"Riprova", "Apri trace"}
+
+        browser.evaluate(
+            "Array.from(document.querySelectorAll('#global-alert-actions button'))"
+            ".find(button => button.textContent === 'Riprova').click()"
+        )
         browser.wait_for(
             "!document.querySelector('[data-optimistic-turn]')"
             " && document.querySelectorAll('.thread-message--assistant').length === 1"
         )
-        assert model.requests and len(model.requests) == 1
+        assert len(model.requests) == 4
+        assert browser.evaluate(
+            "document.querySelectorAll('.thread-message--learner').length"
+        ) == 1
         assert browser.evaluate("document.activeElement.id") == "session-entry-text"
+        browser.evaluate("document.querySelector('[data-open-turn-trace]').click()")
+        browser.wait_for(
+            "document.querySelector('[data-route=impostazioni].is-active')"
+            " && Boolean(document.querySelector('[data-turn-trace][data-highlighted=true]'))"
+        )
+        trace_text = cast(
+            str,
+            browser.evaluate(
+                "document.querySelector('[data-turn-trace][data-highlighted=true]').innerText"
+            ),
+        )
+        # Advanced diagnostics intentionally expose only the validated tutor
+        # decision, not the internal phase timeline or turn payload metadata.
+        assert "assistant_message" in trace_text
+        for excluded in (
+            "model.grounding",
+            "timeout",
+            "ui.retry",
+            "completed",
+            "persistito: sì",
+        ):
+            assert excluded not in trace_text
+        for excluded in (
+            "Read Valve notes",
+            "The aortic valve has three cusps",
+            "browser fixture timeout",
+        ):
+            assert excluded not in trace_text
+        browser.evaluate("document.querySelector('[data-route=sessione]').click()")
+        browser.wait_for("Boolean(document.querySelector('#session-entry-text'))")
 
         browser.call("Page.reload", ignoreCache=True)
         browser.wait_for("Boolean(document.querySelector('#entry:not([disabled])'))")
@@ -517,7 +609,9 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
         screenshot = browser.call("Page.captureScreenshot", format="png")
         png = base64.b64decode(cast(str, screenshot["data"]))
         assert png.startswith(b"\x89PNG\r\n\x1a\n")
-        _assert_no_browser_errors(browser)
+        _assert_no_browser_errors(
+            browser, allowed_error_suffixes=("/api/v1/session/turns",)
+        )
 
     restarted = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
     with _serve(application=restarted) as restarted_url, _real_browser(
@@ -531,8 +625,137 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
         assert "three cusps" in cast(
             str, browser.evaluate("document.querySelector('#view-root').innerText")
         )
-        assert len(model.requests) == 1
+        assert len(model.requests) == 4
         _assert_no_browser_errors(browser)
+
+
+def test_repository_browser_retry_binds_original_request_across_interleaved_turns(
+    tmp_path: Path,
+) -> None:
+    """A detached retry action retains its original immutable request identity.
+
+    The first two envelopes model transient provider failures from two
+    interleaved submissions.  Clicking the detached retry action from the
+    first submission must resend its original request id, even after the
+    second submission replaced the shell's current command.
+    """
+
+    root, adapters, _model = _repository(tmp_path)
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+
+    with _serve(application=app) as url, _real_browser(url) as browser:
+        browser.wait_for("Boolean(document.querySelector('[data-study-setup]'))")
+        browser.evaluate("document.querySelector('[data-route=\"sessione\"]').click()")
+        browser.wait_for("Boolean(document.querySelector('#session-entry-text:not([disabled])'))")
+        browser.evaluate("document.querySelector('#session-entry-text').focus()")
+        browser.evaluate(
+            "(async()=>{"
+            "const original=window.fetch;"
+            "window.__terminalCanonical=await original('/api/v1/session')"
+            ".then(response=>response.json());"
+            "window.__terminalRequests=[];"
+            "window.fetch=(input,options={})=>{"
+            "if(!String(input).endsWith('/api/v1/session/turns')) return original(input,options);"
+            "const body=JSON.parse(options.body);"
+            "window.__terminalRequests.push(body.request_id);"
+            "if(window.__terminalRequests.length<=2) return Promise.resolve(new Response("
+            "JSON.stringify({code:'tutor_timeout',command_committed:true,request_id:body.request_id,trace_id:'trace-transient'}),"
+            "{status:504,headers:{'Content-Type':'application/json'}}));"
+            "const base=window.__terminalCanonical;"
+            "const terminal={...base,status:'active',shell_status:'ready',"
+            "learner_entry:'first learner',timeline:["
+            "{role:'assistant',content:'Non sono riuscito a completare questa risposta.',"
+            "course_sequence:2}"
+            "]};"
+            "return Promise.resolve(new Response(JSON.stringify({"
+            "schema_version:1,request_id:body.request_id,status:'failed',high_water_sequence:base.high_water_sequence,"
+            "result:terminal"
+            "}),{status:200,headers:{'Content-Type':'application/json'}}));"
+            "};"
+            "})()",
+            await_promise=True,
+        )
+
+        browser.call("Input.insertText", text="first learner")
+        _press(browser, "Enter", 13)
+        browser.wait_for(
+            "window.__terminalRequests.length===1"
+        )
+        browser.wait_for(
+            "Array.from(document.querySelectorAll('#global-alert-actions button'))"
+            ".some(button=>button.textContent==='Riprova')"
+        )
+        browser.evaluate(
+            "window.__firstRetry=document.querySelector("
+            "'#global-alert-actions button:first-child')"
+        )
+        first_request = browser.evaluate("window.__terminalRequests[0]")
+
+        browser.call("Input.insertText", text="second learner")
+        _press(browser, "Enter", 13)
+        browser.wait_for(
+            "window.__terminalRequests.length===2"
+            " && Array.from(document.querySelectorAll('#global-alert-actions button'))"
+            ".some(button=>button.textContent==='Riprova')"
+        )
+
+        browser.evaluate("window.__firstRetry.click()")
+        browser.wait_for("window.__terminalRequests.length===3")
+        assert browser.evaluate("window.__terminalRequests[2]") == first_request
+
+
+@pytest.mark.parametrize("failure_reason", ("authentication", "protocol_error", None))
+def test_repository_browser_terminal_fallback_gets_new_request_id(
+    tmp_path: Path,
+    failure_reason: str | None,
+) -> None:
+    """A settled HTTP-200 fallback cannot turn a later submission into a retry."""
+
+    root, adapters, _model = _repository(tmp_path)
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+
+    with _serve(application=app) as url, _real_browser(url) as browser:
+        browser.wait_for("Boolean(document.querySelector('[data-study-setup]'))")
+        browser.evaluate("document.querySelector('[data-route=\"sessione\"]').click()")
+        browser.wait_for("Boolean(document.querySelector('#session-entry-text:not([disabled])'))")
+        browser.evaluate("document.querySelector('#session-entry-text').focus()")
+        browser.evaluate(
+            "(async()=>{"
+            "const original=window.fetch;"
+            "window.__terminalCanonical=await original('/api/v1/session')"
+            ".then(response=>response.json());"
+            "window.__terminalRequests=[];"
+            "window.fetch=(input,options={})=>{"
+            "if(!String(input).endsWith('/api/v1/session/turns')) return original(input,options);"
+            "const body=JSON.parse(options.body);"
+            "window.__terminalRequests.push(body.request_id);"
+            "const base=window.__terminalCanonical;"
+            "const terminal={...base,status:'active',shell_status:'ready',"
+            "learner_entry:'same learner',timeline:["
+            "{role:'assistant',content:'Non sono riuscito a completare questa risposta.',"
+            "course_sequence:2}]};"
+            "return Promise.resolve(new Response(JSON.stringify({"
+            "schema_version:1,request_id:body.request_id,status:'failed',"
+            f"failure_reason:{json.dumps(failure_reason)},"
+            "high_water_sequence:base.high_water_sequence,result:terminal"
+            "}),{status:200,headers:{'Content-Type':'application/json'}}));"
+            "};"
+            "})()",
+            await_promise=True,
+        )
+
+        for _attempt in range(2):
+            browser.call("Input.insertText", text="same learner")
+            _press(browser, "Enter", 13)
+            browser.wait_for(f"window.__terminalRequests.length === {_attempt + 1}")
+            browser.wait_for("!document.querySelector('[data-optimistic-turn]')")
+            assert browser.evaluate(
+                "document.querySelectorAll('#global-alert-actions button').length"
+            ) == 0
+
+        assert browser.evaluate("window.__terminalRequests[0]") != browser.evaluate(
+            "window.__terminalRequests[1]"
+        )
 
 
 def test_repository_browser_source_first_setup_uploads_a_text_source(tmp_path: Path) -> None:

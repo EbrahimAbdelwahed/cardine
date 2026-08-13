@@ -5,16 +5,7 @@ from dataclasses import replace
 
 import pytest
 
-from study_agent.capabilities import CapabilityContinuation, TutorCapabilityId
-from study_agent.domain import (
-    CorrelationId,
-    CourseId,
-    ExecutionContext,
-    PrincipalKind,
-    RunId,
-    SessionId,
-)
-from study_agent.hosts import (
+from cardine.hosts import (
     AssistantMessageDecision,
     HostActionIdentity,
     HostRetryReceipt,
@@ -29,7 +20,16 @@ from study_agent.hosts import (
     TutorHostRunStatus,
     decision_fingerprint,
 )
-from study_agent.hosts.contracts import AdvertisedCapability, PendingContinuationDescriptor
+from cardine.hosts.contracts import AdvertisedCapability, PendingContinuationDescriptor
+from study_agent.capabilities import CapabilityContinuation, TutorCapabilityId
+from study_agent.domain import (
+    CorrelationId,
+    CourseId,
+    ExecutionContext,
+    PrincipalKind,
+    RunId,
+    SessionId,
+)
 from study_agent.playbooks import ToolBehaviorPin, VersionPins
 from study_agent.skills import ArtifactReference, SemanticVersion
 
@@ -352,7 +352,7 @@ def test_decision_retry_budget_counts_exact_provider_calls() -> None:
             del context, interruption
             self.calls += 1
             if self.calls == 1:
-                from study_agent.hosts import RetryableTutorDecisionError
+                from cardine.hosts import RetryableTutorDecisionError
 
                 raise RetryableTutorDecisionError("transient")
             return AssistantMessageDecision("hello")
@@ -378,3 +378,36 @@ def test_decision_retry_budget_counts_exact_provider_calls() -> None:
     result = asyncio.run(runner.run(CourseId("course"), SessionId("session"), "turn-1", _Token()))
     assert result.status is TutorHostRunStatus.BUDGET_EXHAUSTED
     assert exhausted.calls == 1
+
+
+@pytest.mark.parametrize("failure_reason", ("rate_limited", "timeout", None))
+def test_decision_retry_budget_preserves_last_provider_failure_reason(
+    failure_reason: str | None,
+) -> None:
+    class AlwaysRetry:
+        async def decide(self, context: TutorHostContext, interruption: _Token) -> object:
+            del context, interruption
+            from cardine.hosts import RetryableTutorDecisionError
+
+            raise RetryableTutorDecisionError(
+                "transient", failure_reason=failure_reason
+            )
+
+    runner = TutorHostRunner(
+        AlwaysRetry(),  # type: ignore[arg-type]
+        None,
+        None,
+        _Gateway(),  # type: ignore[arg-type]
+        _Authority(),  # type: ignore[arg-type]
+        _Identity(),  # type: ignore[arg-type]
+        _Store(),  # type: ignore[arg-type]
+        TutorHostLimits(2, 1, 1, 100),
+        context_assembler=_Assembler(_context()),  # type: ignore[arg-type]
+    )
+
+    result = asyncio.run(
+        runner.run(CourseId("course"), SessionId("session"), "turn-1", _Token())
+    )
+
+    assert result.status is TutorHostRunStatus.BUDGET_EXHAUSTED
+    assert result.failure_reason == failure_reason

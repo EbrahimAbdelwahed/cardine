@@ -6,18 +6,7 @@ from dataclasses import dataclass, replace
 
 import pytest
 
-from study_agent.assessments import LearnerEvidenceSnapshot
-from study_agent.domain import (
-    CourseId,
-    SessionId,
-    SessionStatus,
-    StudyStatementKind,
-    TutorContextField,
-    TutorContextState,
-    TutorSnapshotV1,
-)
-from study_agent.domain._validation import JsonObject
-from study_agent.hosts import (
+from cardine.hosts import (
     AdvertisedCapability,
     AnswerDialogueDecision,
     AskLearnerDecision,
@@ -37,6 +26,17 @@ from study_agent.hosts import (
     decision_schema,
     decision_to_bytes,
 )
+from study_agent.assessments import LearnerEvidenceSnapshot
+from study_agent.domain import (
+    CourseId,
+    SessionId,
+    SessionStatus,
+    StudyStatementKind,
+    TutorContextField,
+    TutorContextState,
+    TutorSnapshotV1,
+)
+from study_agent.domain._validation import JsonObject
 
 SHA_A = "a" * 64
 SHA_B = "b" * 64
@@ -140,6 +140,29 @@ def test_decision_schema_is_closed_and_context_advertised() -> None:
     available_branches = available_decision["anyOf"]
     assert isinstance(available_branches, tuple)
     assert len(available_branches) == 4
+    stop_properties: Mapping[str, object] | None = None
+    for branch in available_branches:
+        if not isinstance(branch, Mapping):
+            continue
+        properties = branch.get("properties")
+        if not isinstance(properties, Mapping):
+            continue
+        kind = properties.get("kind")
+        if isinstance(kind, Mapping) and kind.get("enum") == ("stop",):
+            stop_properties = properties
+            break
+    assert stop_properties is not None
+    reason = stop_properties.get("reason")
+    assert isinstance(reason, Mapping)
+    assert reason.get("enum") == (
+        "completed",
+        "no_safe_action",
+    )
+
+
+def test_legacy_needs_learner_input_stop_reason_is_rejected() -> None:
+    with pytest.raises(ValueError):
+        TutorStopReason("needs_learner_input")
 
 
 def test_context_rejects_sequence_owner_order_and_continuation_mismatches() -> None:

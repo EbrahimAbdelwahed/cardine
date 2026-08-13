@@ -9,11 +9,11 @@ from typing import Any, cast
 
 import pytest
 
+from cardine.cli.main import main
 from study_agent.adapters.filesystem.lifecycle import (
     ManifestReadError,
     load_lifecycle_manifest,
 )
-from study_agent.cli.main import main
 
 FIXTURE = (
     Path(__file__).parents[3]
@@ -53,7 +53,7 @@ def _document(capsys: pytest.CaptureFixture[str]) -> dict[str, Any]:
 
 
 def _forbid_effects(monkeypatch: pytest.MonkeyPatch) -> None:
-    import study_agent.cli.repository as repository_module
+    import cardine.cli.repository as repository_module
 
     def forbidden(*args: object, **kwargs: object) -> None:
         del args, kwargs

@@ -11,7 +11,11 @@ from pathlib import PurePath
 from study_agent.domain.context import ExecutionContext
 from study_agent.domain.events import Actor, DomainEvent
 from study_agent.domain.identifiers import BlobId, RevisionId, SourceId
-from study_agent.domain.provenance import ContentOrigin, StructureOrigin
+from study_agent.domain.provenance import (
+    ContentOrigin,
+    DocumentConversionProvenance,
+    StructureOrigin,
+)
 from study_agent.domain.source import BlobRef, SourceChunk, SourceDocument, SourceKind
 from study_agent.ports import BlobStore, ClockPort, CourseViewPort, EventStore
 from study_agent.ports.storage import EventSequenceConflictError
@@ -96,6 +100,9 @@ class TextIngestionService:
         source_role: str,
         context: ExecutionContext,
         expected_sequence: int | None = None,
+        content_origin: ContentOrigin = ContentOrigin.ORIGINAL,
+        conversion_provenance: DocumentConversionProvenance | None = None,
+        original_content: bytes | None = None,
     ) -> TextIngestionResult:
         self._courses.get(context.course_id)
         stream = tuple(self._events.read(context.course_id))
@@ -118,7 +125,8 @@ class TextIngestionService:
         except InvalidUtf8Error as error:
             raise TextIngestionError(IngestionErrorCode.INVALID_UTF8, str(error)) from error
 
-        original_blob = _predicted_blob(content)
+        original_bytes = content if original_content is None else original_content
+        original_blob = _predicted_blob(original_bytes)
         normalized_blob = _predicted_blob(normalized.content)
         revision_id = revision_id_for(
             original_sha256=original_blob.checksum_sha256,
@@ -150,7 +158,8 @@ class TextIngestionService:
                 len(normalized.text),
                 StructureOrigin.MECHANICALLY_EXTRACTED,
                 method,
-                ContentOrigin.ORIGINAL,
+                content_origin,
+                conversion_provenance,
             )
             chunks = chunk_text(
                 normalized.text,
@@ -180,9 +189,7 @@ class TextIngestionService:
                 current.chunks,
                 current_sequence,
             )
-        historical = _find_matching_revision(
-            stream, source_id, source, self._chunking
-        )
+        historical = _find_matching_revision(stream, source_id, source, self._chunking)
         if historical is not None:
             return self._select_historical_revision(
                 historical,
@@ -225,7 +232,7 @@ class TextIngestionService:
             raise TextIngestionError(IngestionErrorCode.INVALID_CONTENT, str(error)) from error
 
         if current is None or current.source.blob != original_blob:
-            _write_expected_blob(self._blobs, content, original_blob)
+            _write_expected_blob(self._blobs, original_bytes, original_blob)
         if current is None or current.source.normalized_blob != normalized_blob:
             _write_expected_blob(self._blobs, normalized.content, normalized_blob)
         try:
@@ -293,9 +300,7 @@ class TextIngestionService:
             committed = self._events.append(context.course_id, current_sequence, (event,))
         except EventSequenceConflictError as error:
             concurrent_stream = tuple(self._events.read(context.course_id))
-            concurrent = _current_revision(
-                concurrent_stream, revision.source.source_id
-            )
+            concurrent = _current_revision(concurrent_stream, revision.source.source_id)
             if (
                 expected_sequence is None
                 and concurrent is not None
@@ -364,9 +369,7 @@ def _find_matching_revision(
         ):
             continue
         decoded = decode_source_revision_ingested(event.payload)
-        if decoded.source.source_id == source_id and _matches_request(
-            decoded, requested, chunking
-        ):
+        if decoded.source.source_id == source_id and _matches_request(decoded, requested, chunking):
             return decoded
     return None
 
@@ -418,11 +421,11 @@ def _matches_request(
         and source.blob == requested.blob
         and source.normalized_blob == requested.normalized_blob
         and source.normalization_version == requested.normalization_version
-        and source.normalized_character_length
-        == requested.normalized_character_length
+        and source.normalized_character_length == requested.normalized_character_length
         and source.structure_origin is requested.structure_origin
         and source.ingestion_method == requested.ingestion_method
         and source.content_origin is requested.content_origin
+        and source.conversion_provenance == requested.conversion_provenance
         and existing.chunking.version == chunking.version
         and existing.chunking.max_characters == chunking.max_characters
     )

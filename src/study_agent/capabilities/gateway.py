@@ -43,6 +43,18 @@ from .contracts import (
 from .fingerprints import capability_output_fingerprint, capability_retry_fingerprint
 from .registry import StudyCapabilityRegistry
 
+_SAFE_MODEL_FAILURE_REASONS = frozenset(
+    {
+        "authentication",
+        "model_unavailable",
+        "endpoint_incompatible",
+        "rate_limited",
+        "timeout",
+        "protocol_error",
+        "unavailable",
+    }
+)
+
 
 class StudyCapabilityGateway:
     """Execute only the capability explicitly selected by a trusted host."""
@@ -500,7 +512,9 @@ class StudyCapabilityGateway:
             )
         if inspected.status is RunStatus.FAILED:
             return FailedCapabilityOutcome(
-                inspected.run_id, "capability execution failed safely"
+                inspected.run_id,
+                "capability execution failed safely",
+                _failed_model_failure_reason(inspected),
             )
         try:
             run = self._engine.recover(
@@ -533,11 +547,33 @@ class StudyCapabilityGateway:
             return StaleCapabilityOutcome(run_id, "capability read dependencies are stale")
         if error.failure.code is EngineErrorCode.CANCELLED:
             return CancelledCapabilityOutcome(run_id, "capability execution was cancelled")
-        return FailedCapabilityOutcome(run_id, "capability execution failed safely")
+        return FailedCapabilityOutcome(
+            run_id,
+            "capability execution failed safely",
+            _engine_model_failure_reason(error),
+        )
 
     @staticmethod
     def _conflict(message: str) -> NoReturn:
         raise CapabilityGatewayError(CapabilityGatewayErrorCode.CONFLICT, message)
+
+
+def _failed_model_failure_reason(inspected: InspectedRunRecord) -> str | None:
+    for trace in reversed(inspected.traces):
+        if trace.status is not StepTraceStatus.FAILED:
+            continue
+        candidate = trace.details.get("model_failure_reason")
+        if candidate in _SAFE_MODEL_FAILURE_REASONS:
+            return candidate
+    return None
+
+
+def _engine_model_failure_reason(error: PlaybookEngineError) -> str | None:
+    if error.failure.code is not EngineErrorCode.MODEL_ERROR:
+        return None
+    prefix = "model execution failed: "
+    candidate = error.failure.message.removeprefix(prefix)
+    return candidate if candidate in _SAFE_MODEL_FAILURE_REASONS else None
 
 
 def _dependencies(

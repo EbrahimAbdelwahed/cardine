@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import date
 from hashlib import sha256
 
+from cardine.domain.course import CourseProfile
 from study_agent.domain._validation import JsonObject
-from study_agent.domain.course import CourseProfile
 from study_agent.domain.identifiers import CourseId
 from study_agent.domain.source import SourceKind
 from study_agent.ports.source_input import SourceSnapshot

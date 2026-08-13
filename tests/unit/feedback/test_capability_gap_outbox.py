@@ -7,8 +7,7 @@ from typing import Any, cast
 
 import pytest
 
-from study_agent.adapters.sqlite.capability_gap_store import SQLiteCapabilityGapStore
-from study_agent.feedback import (
+from cardine.feedback import (
     CapabilityGapAggregate,
     CapabilityGapObservation,
     CapabilityGapService,
@@ -25,6 +24,7 @@ from study_agent.feedback import (
     RequestedOperationKind,
     SafeTargetKind,
 )
+from study_agent.adapters.sqlite.capability_gap_store import SQLiteCapabilityGapStore
 from study_agent.state import canonical_json_bytes
 
 NOW = datetime(2026, 7, 24, 12, 0, tzinfo=UTC)

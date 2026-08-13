@@ -15,12 +15,12 @@ from typing import cast
 
 import pytest
 
-from study_agent.adapters.filesystem import initialize_local_repository
-from study_agent.cli.repository import LocalRepository, ModelAdapterRegistry
-from study_agent.demo.ui_application import (
+from cardine.cli.repository import LocalRepository, ModelAdapterRegistry
+from cardine.demo.ui_application import (
     RepositoryUiApplication,
     UiRequestError,
 )
+from study_agent.adapters.filesystem import initialize_local_repository
 from study_agent.domain import (
     CorrelationId,
     CourseId,
@@ -44,7 +44,7 @@ from study_agent.repository_config import LocalRepositoryConfig, ModelAdapterCon
 
 COURSE = CourseId("closure-course")
 SESSION = SessionId("closure-session")
-DEMO_DIR = Path(__file__).parents[4] / "src" / "study_agent" / "demo"
+DEMO_DIR = Path(__file__).parents[4] / "src" / "cardine" / "demo"
 ROUTES = {
     "oggi": "/api/v1/bootstrap",
     "sessione": "/api/v1/session",

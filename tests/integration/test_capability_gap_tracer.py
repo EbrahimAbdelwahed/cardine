@@ -3,8 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from study_agent.adapters.sqlite.capability_gap_store import SQLiteCapabilityGapStore
-from study_agent.feedback import (
+from cardine.feedback import (
     CapabilityGapHostContext,
     CapabilityGapHostTool,
     CapabilityGapProposal,
@@ -18,6 +17,7 @@ from study_agent.feedback import (
     TrustedLimitationReceipt,
     WorkaroundSuggestionKind,
 )
+from study_agent.adapters.sqlite.capability_gap_store import SQLiteCapabilityGapStore
 
 
 def _proposal() -> CapabilityGapProposal:

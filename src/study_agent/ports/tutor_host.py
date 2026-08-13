@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from study_agent.hosts.contracts import TutorDecision, TutorHostContext
+    from cardine.hosts.contracts import TutorDecision, TutorHostContext
 
 
 class TutorInterruptionToken(Protocol):

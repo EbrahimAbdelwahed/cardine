@@ -6,6 +6,17 @@ from hashlib import sha256
 from pathlib import Path
 from typing import cast
 
+from cardine.cli.registry import public_study_tool_entries
+from cardine.cli.repository import LocalRepository, initialize_local_repository
+from cardine.exams import (
+    ExamAnalysisFacade,
+    ExamAnalysisRequest,
+    ExamPromptEvidenceProjection,
+    PreparedExamSample,
+    PreparedExamSampleScope,
+)
+from cardine.exams.analysis import ExamAnalysisTaskFactory, analyze_exam_sample_binding
+from cardine.exams.worker import ExamAnalysisCompactView
 from study_agent.adapters.filesystem import FilesystemExportWriter
 from study_agent.application import ExportBundleV2, ExportService, ExportVersion
 from study_agent.artifacts import (
@@ -36,8 +47,6 @@ from study_agent.capabilities.hybrid_flashcards import (
     HybridPlannedBundleWorker,
     hybrid_flashcards_binding,
 )
-from study_agent.cli.registry import public_study_tool_entries
-from study_agent.cli.repository import LocalRepository, initialize_local_repository
 from study_agent.domain import (
     Actor,
     ArtifactDecision,
@@ -60,15 +69,6 @@ from study_agent.domain import (
     session_event_id_for,
 )
 from study_agent.domain._validation import JsonObject, JsonValue, freeze_object
-from study_agent.exams import (
-    ExamAnalysisFacade,
-    ExamAnalysisRequest,
-    ExamPromptEvidenceProjection,
-    PreparedExamSample,
-    PreparedExamSampleScope,
-)
-from study_agent.exams.analysis import ExamAnalysisTaskFactory, analyze_exam_sample_binding
-from study_agent.exams.worker import ExamAnalysisCompactView
 from study_agent.flashcards.lesson_worker_contracts import (
     LessonWorkerRequest,
     LessonWorkerStatus,
@@ -408,8 +408,10 @@ class _ScriptedProofReader:
         self.proofs = proofs
         self.calls: list[RunId] = []
 
-    def load(self, task, run_id, receipt, context):  # type: ignore[no-untyped-def]
-        del task, receipt, context
+    def load(  # type: ignore[no-untyped-def]
+        self, task, run_id, receipt, context, execution_inputs=None
+    ):
+        del task, receipt, context, execution_inputs
         self.calls.append(run_id)
         return self.proofs[run_id]
 
@@ -419,8 +421,10 @@ class _ExamProofReader:
         self.scope = scope
         self.output = output
 
-    def load(self, task, run_id, receipt, context):  # type: ignore[no-untyped-def]
-        del context
+    def load(  # type: ignore[no-untyped-def]
+        self, task, run_id, receipt, context, execution_inputs=None
+    ):
+        del context, execution_inputs
         validations = tuple(
             ObservedValidationReceipt(
                 item.step_id,
@@ -523,10 +527,12 @@ class _ProofReaderRouter:
         self.lesson = lesson
         self.exam = exam
 
-    def load(self, task, run_id, receipt, context):  # type: ignore[no-untyped-def]
+    def load(  # type: ignore[no-untyped-def]
+        self, task, run_id, receipt, context, execution_inputs=None
+    ):
         if task.task_kind is GenerationWorkerTaskKind.EXAM_ANALYSIS:
-            return self.exam.load(task, run_id, receipt, context)
-        return self.lesson.load(task, run_id, receipt, context)
+            return self.exam.load(task, run_id, receipt, context, execution_inputs)
+        return self.lesson.load(task, run_id, receipt, context, execution_inputs)
 
 
 class _SourceCommitments:

@@ -11,8 +11,8 @@ from typing import Any, cast
 
 import pytest
 
+from cardine.cli.main import main
 from study_agent import __version__
-from study_agent.cli.main import main
 from study_agent.operator_skill import skill_bytes, skill_fingerprint
 
 
@@ -127,17 +127,17 @@ def test_documented_external_agent_runs_the_actual_blank_project_journey(
     tmp_path: Path,
 ) -> None:
     project = Path(__file__).parents[2]
-    executable = tmp_path / "study-agent"
+    executable = tmp_path / "cardine"
     executable.write_text(
         f"#!{sys.executable}\n"
-        "from study_agent.cli.main import main\n"
+        "from cardine.cli.main import main\n"
         "raise SystemExit(main())\n",
         encoding="utf-8",
     )
     executable.chmod(0o700)
     environment = os.environ.copy()
     environment["PYTHONPATH"] = str(project / "src")
-    environment["STUDY_AGENT_BIN"] = str(executable.absolute())
+    environment["CARDINE_BIN"] = str(executable.absolute())
     repository = tmp_path / "lexical-parent" / ".." / "study"
     process = subprocess.run(
         (

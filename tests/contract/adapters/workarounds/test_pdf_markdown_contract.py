@@ -1,16 +1,16 @@
 from __future__ import annotations
 
+from cardine.feedback import (
+    WorkaroundApprovalPolicy,
+    WorkaroundEffect,
+    WorkaroundInputKind,
+    WorkaroundOutputKind,
+)
 from study_agent.adapters.workarounds import (
     PDF_MARKDOWN_MANIFEST,
     PDF_MARKDOWN_PARSER_IDENTITY,
     PDF_MARKDOWN_RENDERER_POLICY_VERSION,
     pdf_markdown_provenance_bytes,
-)
-from study_agent.feedback import (
-    WorkaroundApprovalPolicy,
-    WorkaroundEffect,
-    WorkaroundInputKind,
-    WorkaroundOutputKind,
 )
 
 

@@ -5,16 +5,16 @@ from hashlib import sha256
 
 import pytest
 
-from study_agent.adapters.memory import MemoryHostFileSnapshotStore
-from study_agent.domain import CorrelationId, CourseId, SessionId, SourceId
-from study_agent.domain.context import ExecutionContext
-from study_agent.domain.events import PrincipalKind
-from study_agent.hosts.files import (
+from cardine.hosts.files import (
     HostFileError,
     HostFileReference,
     HostFileSnapshot,
     TrustedHostFileIngestionCommand,
 )
+from study_agent.adapters.memory import MemoryHostFileSnapshotStore
+from study_agent.domain import CorrelationId, CourseId, SessionId, SourceId
+from study_agent.domain.context import ExecutionContext
+from study_agent.domain.events import PrincipalKind
 
 
 def _context(course: CourseId, session: SessionId) -> ExecutionContext:

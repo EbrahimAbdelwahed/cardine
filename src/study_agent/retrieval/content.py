@@ -165,7 +165,21 @@ class CourseSourceContent:
     @staticmethod
     def _locator(record: SourceRevisionRecord, chunk: SourceChunk, start: int, end: int) -> str:
         section = " > ".join(chunk.section_path) or f"chunk {chunk.ordinal + 1}"
-        return f"{record.source.title} · {section} · chars {start}-{end}"
+        page_label = ""
+        provenance = record.source.conversion_provenance
+        if provenance is not None and provenance.page_spans:
+            pages = tuple(
+                span.page
+                for span in provenance.page_spans
+                if start < span.end_offset and end > span.start_offset
+            )
+            if pages:
+                page_label = (
+                    f" · page {pages[0]}"
+                    if len(pages) == 1
+                    else f" · pages {pages[0]}-{pages[-1]}"
+                )
+        return f"{record.source.title} · {section}{page_label} · chars {start}-{end}"
 
     def resolve(self, citation: Citation) -> ResolvedCitation:
         record = self._record(citation.revision_id)

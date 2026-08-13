@@ -7,6 +7,7 @@ from study_agent.assessments import ASSESSMENT_EVENT_TYPES
 from study_agent.tools import public_study_tool_manifests
 
 ROOT = Path(__file__).parents[2] / "src" / "study_agent"
+CARDINE_ROOT = Path(__file__).parents[2] / "src" / "cardine"
 
 
 def _imports(path: Path) -> set[str]:
@@ -33,7 +34,7 @@ def test_assessment_owner_keeps_inward_provider_neutral_boundaries() -> None:
         "study_agent.adapters",
         "study_agent.application",
         "study_agent.capabilities",
-        "study_agent.cli",
+        "cardine.cli",
         "study_agent.models",
         "study_agent.playbooks",
         "study_agent.prompts",
@@ -105,7 +106,6 @@ def test_registration_is_additive_and_seven_public_study_tools_are_unchanged() -
         "source.search",
     )
     for relative in (
-        "cli/repository.py",
         "application/export.py",
         "adapters/sqlite/lifecycle_observer.py",
     ):
@@ -115,3 +115,9 @@ def test_registration_is_additive_and_seven_public_study_tools_are_unchanged() -
         assert source.index("register_artifact_events") < source.rindex(
             "register_assessment_events"
         )
+    source = (CARDINE_ROOT / "cli" / "repository.py").read_text(encoding="utf-8")
+    assert "register_artifact_events" in source
+    assert "register_assessment_events" in source
+    assert source.index("register_artifact_events") < source.rindex(
+        "register_assessment_events"
+    )

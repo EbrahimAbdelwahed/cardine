@@ -1,0 +1,102 @@
+{
+  "case": "failure_stale",
+  "causation_id": null,
+  "citations": [],
+  "clock": {
+    "consumed": 1,
+    "script": [
+      "2026-08-09T12:00:00Z"
+    ]
+  },
+  "correlation_id": "correlation:parity",
+  "decisions": {},
+  "effect_counters": {
+    "clock_now_calls": 1,
+    "event_append_calls": 1,
+    "event_read_calls": 3,
+    "gateway_calls": 0
+  },
+  "error_code": "stale",
+  "event_version": 1,
+  "events": [
+    {
+      "actor": {
+        "kind": "service",
+        "principal_id": "parity-baseline"
+      },
+      "causation_id": null,
+      "correlation_id": "correlation:parity",
+      "course_id": "course-parity",
+      "course_sequence": 1,
+      "event_id": "event-sha256:eb56fbb74ca9d994d4ff4b6032f9ee807e34abe5895fa719ea8a06634fb9b3f1",
+      "event_type": "course.created",
+      "occurred_at": "2026-08-09T12:00:00.000000Z",
+      "payload": {
+        "assessment_styles": [
+          "short-answer"
+        ],
+        "exam_date": null,
+        "id": "course-parity",
+        "language": "en",
+        "learning_goals": [
+          "preserve semantic contracts"
+        ],
+        "source_policy": {
+          "allowed_roles": [],
+          "minimum_trust_level": 0
+        },
+        "terminology_policy": {
+          "entries": []
+        },
+        "title": "Parity course"
+      },
+      "schema_version": 1,
+      "session_id": null
+    }
+  ],
+  "failure_type": "RetryableCourseConflictError",
+  "gateway": {
+    "calls": 0,
+    "capabilities": [
+      "assess_understanding",
+      "explain_concept"
+    ]
+  },
+  "projection": {
+    "course_id": "course-parity",
+    "sequence": 1,
+    "state": {
+      "course": {
+        "assessment_styles": [
+          "short-answer"
+        ],
+        "exam_date": null,
+        "id": "course-parity",
+        "language": "en",
+        "learning_goals": [
+          "preserve semantic contracts"
+        ],
+        "source_policy": {
+          "allowed_roles": [],
+          "minimum_trust_level": 0
+        },
+        "terminology_policy": {
+          "entries": []
+        },
+        "title": "Parity course"
+      }
+    }
+  },
+  "provenance": {
+    "actor": "course-service"
+  },
+  "runtime": {
+    "blob_root": "<TMP_ROOT>",
+    "events_path": "<TMP_ROOT>",
+    "tmp_root": "<TMP_ROOT>"
+  },
+  "schema_version": 1,
+  "semantic_id": "event-sha256:eb56fbb74ca9d994d4ff4b6032f9ee807e34abe5895fa719ea8a06634fb9b3f1",
+  "sequence": 1,
+  "status": "failed"
+}

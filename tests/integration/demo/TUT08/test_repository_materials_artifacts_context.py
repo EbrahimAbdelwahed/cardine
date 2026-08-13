@@ -6,6 +6,8 @@ from typing import cast
 
 import pytest
 
+from cardine.cli.repository import LocalRepository
+from cardine.demo.ui_application import RepositoryUiApplication, UiRequestError
 from study_agent.adapters.filesystem import initialize_local_repository
 from study_agent.artifacts import (
     AnswerBlock,
@@ -13,8 +15,6 @@ from study_agent.artifacts import (
     HybridFlashcardContent,
     StudyArtifactEnvelope,
 )
-from study_agent.cli.repository import LocalRepository
-from study_agent.demo.ui_application import RepositoryUiApplication, UiRequestError
 from study_agent.domain import (
     Actor,
     ArtifactReadDependency,
@@ -115,9 +115,7 @@ def _repository(root: Path) -> tuple[Path, object]:
                     Actor(PrincipalKind.HUMAN, "learner"),
                     repository.clock.now(),
                     CorrelationId("c2-origin"),
-                    interaction_recorded_payload(
-                        ORIGIN, InteractionKind.HUMAN, "C2 study request"
-                    ),
+                    interaction_recorded_payload(ORIGIN, InteractionKind.HUMAN, "C2 study request"),
                     _context("origin").session_id,
                 ),
             ),
@@ -175,6 +173,10 @@ def test_repository_c2_materials_and_artifact_retry_are_bounded_and_session_scop
     assert "content" not in row
     assert "answer" not in row
     assert "raw_output" not in row
+    review = cast(dict[str, object], row["review"])
+    assert review["status"] == "ready"
+    assert review["prompt"] == "How many cusps does the aortic valve have?"
+    assert "rationale" not in review
 
     sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
     command = {
@@ -186,18 +188,15 @@ def test_repository_c2_materials_and_artifact_retry_are_bounded_and_session_scop
     committed = app.post(f"/api/v1/artifacts/{revision_id}/decisions", command)
     retry = app.post(f"/api/v1/artifacts/{revision_id}/decisions", command)
     assert retry == committed
-    assert cast(int, retry["high_water_sequence"]) == cast(
-        int, committed["high_water_sequence"]
-    )
+    assert cast(int, retry["high_water_sequence"]) == cast(int, committed["high_water_sequence"])
     result = cast(dict[str, object], retry["result"])
     rows = cast(tuple[dict[str, object], ...], result["items"])
     assert rows[0]["status"] == "accepted"
 
     restarted = RepositoryUiApplication(root, COURSE, SESSION)
-    reloaded_rows = cast(
-        tuple[dict[str, object], ...], restarted.get("/api/v1/artifacts")["items"]
-    )
+    reloaded_rows = cast(tuple[dict[str, object], ...], restarted.get("/api/v1/artifacts")["items"])
     assert reloaded_rows[0]["status"] == "accepted"
+    assert cast(dict[str, object], reloaded_rows[0]["review"])["status"] == "ready"
 
     stale = {
         **command,
@@ -207,9 +206,10 @@ def test_repository_c2_materials_and_artifact_retry_are_bounded_and_session_scop
     with pytest.raises(UiRequestError) as stale_error:
         restarted.post(f"/api/v1/artifacts/{revision_id}/decisions", stale)
     assert stale_error.value.status_code == 409
-    assert restarted.get("/api/v1/bootstrap")["high_water_sequence"] == committed[
-        "high_water_sequence"
-    ]
+    assert (
+        restarted.get("/api/v1/bootstrap")["high_water_sequence"]
+        == committed["high_water_sequence"]
+    )
 
 
 def test_repository_c2_revision_retry_recovers_superseded_predecessor(
@@ -275,9 +275,9 @@ def test_repository_c2_revision_retry_recovers_superseded_predecessor(
     with pytest.raises(UiRequestError) as stale_error:
         restarted.post(f"/api/v1/artifacts/{v2_id}/decisions", stale)
     assert stale_error.value.status_code == 409
-    assert restarted.get("/api/v1/bootstrap")["high_water_sequence"] == accepted[
-        "high_water_sequence"
-    ]
+    assert (
+        restarted.get("/api/v1/bootstrap")["high_water_sequence"] == accepted["high_water_sequence"]
+    )
 
 
 def test_repository_c2_context_uses_statement_ids_and_reloads_resolution(
@@ -329,3 +329,90 @@ def test_repository_c2_context_uses_statement_ids_and_reloads_resolution(
     with pytest.raises(UiRequestError) as bad_error:
         app.post("/api/v1/context/conflicts/deadline/resolve", bad)
     assert bad_error.value.status_code == 409
+
+
+def test_provider_consent_and_source_retirement_survive_restart_without_deleting_history(
+    tmp_path: Path,
+) -> None:
+    root, _revision_id = _repository(tmp_path / "repository")
+    app = RepositoryUiApplication(root, COURSE, SESSION)
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+
+    granted = app.post(
+        "/api/v1/consent/grant",
+        {
+            "schema_version": 1,
+            "request_id": "grant-provider",
+            "expected_sequence": sequence,
+            "payload": {},
+        },
+    )
+    assert app.get("/api/v1/consent")["granted"] is True
+
+    retired = app.post(
+        "/api/v1/sources/retire",
+        {
+            "schema_version": 1,
+            "request_id": "retire-source",
+            "expected_sequence": granted["high_water_sequence"],
+            "payload": {"source_id": "c2-source"},
+        },
+    )
+    assert retired["status"] == "retired"
+    assert app.get("/api/v1/materials")["items"] == ()
+
+    restarted = RepositoryUiApplication(root, COURSE, SESSION)
+    assert restarted.get("/api/v1/consent")["granted"] is True
+    assert restarted.get("/api/v1/materials")["items"] == ()
+    with LocalRepository.open(root) as repository:
+        catalog = repository.for_course(COURSE).content.catalog()
+        assert catalog[0].source.source_id == SourceId("c2-source")
+
+    restored = restarted.post(
+        "/api/v1/sources/restore",
+        {
+            "schema_version": 1,
+            "request_id": "restore-source",
+            "expected_sequence": retired["high_water_sequence"],
+            "payload": {"source_id": "c2-source"},
+        },
+    )
+    assert restored["status"] == "restored"
+    assert len(cast(tuple[object, ...], restarted.get("/api/v1/materials")["items"])) == 1
+
+
+def test_ui_bulk_human_decisions_append_once_and_retry_by_request_identity(
+    tmp_path: Path,
+) -> None:
+    root, revision_id = _repository(tmp_path / "repository")
+    app = RepositoryUiApplication(root, COURSE, SESSION)
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+    command = {
+        "schema_version": 1,
+        "request_id": "c2-bulk-decisions",
+        "expected_sequence": sequence,
+        "payload": {
+            "decisions": (
+                {"revision_id": str(revision_id), "decision": "accepted"},
+            )
+        },
+    }
+    committed = app.post("/api/v1/artifacts/decisions", command)
+    assert committed["status"] == "committed"
+    receipt = cast(dict[str, object], committed["receipt"])
+    assert receipt["start_sequence"] == receipt["end_sequence"]
+    retry = app.post("/api/v1/artifacts/decisions", command)
+    assert retry == committed
+
+    conflict = {
+        **command,
+        "request_id": "c2-bulk-conflict",
+        "payload": {
+            "decisions": (
+                {"revision_id": str(revision_id), "decision": "rejected"},
+            )
+        },
+    }
+    with pytest.raises(UiRequestError) as error:
+        app.post("/api/v1/artifacts/decisions", conflict)
+    assert error.value.status_code == 409

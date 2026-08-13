@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from hashlib import sha256
 
-from ._validation import require_text
+from ._validation import JsonObject, require_text
 from .identifiers import ChunkId, RevisionId, RunId, SourceId
 
 
@@ -26,6 +27,94 @@ class StructureOrigin(StrEnum):
     MECHANICALLY_EXTRACTED = "mechanically_extracted"
     MODEL_PROPOSED = "model_proposed"
     HUMAN_APPROVED = "human_approved"
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentPageSpan:
+    """One source-PDF page bound to exact normalized Markdown offsets."""
+
+    page: int
+    start_offset: int
+    end_offset: int
+
+    def __post_init__(self) -> None:
+        if type(self.page) is not int or self.page < 1:
+            raise ValueError("page must be positive")
+        if type(self.start_offset) is not int or type(self.end_offset) is not int:
+            raise ValueError("page offsets must be integers")
+        if self.start_offset < 0 or self.end_offset <= self.start_offset:
+            raise ValueError("page offsets must describe a non-empty span")
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentConversionProvenance:
+    """Lineage for Markdown mechanically extracted from one binary PDF."""
+
+    pdf_sha256: str
+    markdown_sha256: str
+    adapter_identity: str
+    adapter_version: str
+    manifest_fingerprint: str
+    normalizer_policy: str
+    limitations: tuple[str, ...]
+    assets_omitted: bool = True
+    page_count: int | None = None
+    page_spans: tuple[DocumentPageSpan, ...] = ()
+    schema_version: int = 1
+
+    def __post_init__(self) -> None:
+        for name in ("adapter_identity", "adapter_version", "normalizer_policy"):
+            require_text(getattr(self, name), name)
+        for name in ("pdf_sha256", "markdown_sha256", "manifest_fingerprint"):
+            _require_fingerprint(getattr(self, name), name)
+        if self.assets_omitted is not True:
+            raise ValueError("assets_omitted must remain true")
+        if self.page_count is not None and (
+            type(self.page_count) is not int or self.page_count < 1
+        ):
+            raise ValueError("page_count must be positive when present")
+        object.__setattr__(self, "page_spans", tuple(self.page_spans))
+        if self.page_spans:
+            if self.page_count != len(self.page_spans):
+                raise ValueError("page_count must match page_spans")
+            previous_end = 0
+            for expected_page, span in enumerate(self.page_spans, 1):
+                if span.page != expected_page or span.start_offset < previous_end:
+                    raise ValueError("page_spans must be ordered and non-overlapping")
+                previous_end = span.end_offset
+        if type(self.schema_version) is not int or self.schema_version < 1:
+            raise ValueError("schema_version must be positive")
+        object.__setattr__(self, "limitations", tuple(self.limitations))
+        if not self.limitations or len(set(self.limitations)) != len(self.limitations):
+            raise ValueError("limitations must be non-empty and unique")
+        for item in self.limitations:
+            require_text(item, "limitation")
+
+    @property
+    def fingerprint(self) -> str:
+        from study_agent.state.serialization import canonical_json_bytes
+
+        payload: JsonObject = {
+            "adapter_identity": self.adapter_identity,
+            "adapter_version": self.adapter_version,
+            "assets_omitted": self.assets_omitted,
+            "limitations": self.limitations,
+            "manifest_fingerprint": self.manifest_fingerprint,
+            "markdown_sha256": self.markdown_sha256,
+            "normalizer_policy": self.normalizer_policy,
+            "page_count": self.page_count,
+            "pdf_sha256": self.pdf_sha256,
+            "page_spans": tuple(
+                {
+                    "page": span.page,
+                    "start_offset": span.start_offset,
+                    "end_offset": span.end_offset,
+                }
+                for span in self.page_spans
+            ),
+            "schema_version": self.schema_version,
+        }
+        return sha256(canonical_json_bytes(payload)).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)

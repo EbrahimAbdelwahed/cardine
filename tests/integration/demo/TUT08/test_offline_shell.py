@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from study_agent.demo.product_shell import run_offline_shell_demo
+from cardine.demo.product_shell import run_offline_shell_demo
 
 
 def test_one_command_offline_shell_trace_is_recovered_and_inspectable() -> None:

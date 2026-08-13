@@ -5,19 +5,20 @@ from datetime import UTC, datetime
 
 import pytest
 
+from cardine.demo.product_shell import (
+    DueReview,
+    ProductShell,
+    ProductShellStatus,
+    ProductShellView,
+    render,
+)
+from cardine.hosts import TutorHostRunResult, TutorHostRunStatus
 from study_agent.capabilities import (
     EXPLAIN_CONCEPT_MANIFEST,
     CapabilityContinuation,
     CapabilityManifest,
     CapabilityOutcome,
     TutorCapabilityId,
-)
-from study_agent.demo.product_shell import (
-    DueReview,
-    ProductShell,
-    ProductShellStatus,
-    ProductShellView,
-    render,
 )
 from study_agent.domain import (
     CourseId,
@@ -30,7 +31,6 @@ from study_agent.domain import (
     TutorSnapshotV1,
 )
 from study_agent.domain._validation import JsonObject, JsonValue
-from study_agent.hosts import TutorHostRunResult, TutorHostRunStatus
 
 COURSE = CourseId("course")
 SESSION = SessionId("session")

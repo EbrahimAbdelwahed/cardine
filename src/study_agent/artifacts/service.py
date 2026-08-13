@@ -32,6 +32,9 @@ from study_agent.ports import (
 
 from .content import HybridFlashcardContent, MorphologyFlashcardContent, StudyArtifactEnvelope
 from .contracts import (
+    ArtifactBulkDecisionReceipt,
+    ArtifactDecisionRequest,
+    ArtifactDecisionResult,
     ArtifactProposal,
     ArtifactProposalOrigin,
     ArtifactRevisionRecord,
@@ -45,8 +48,13 @@ from .events import (
     DECISION_RECORDED,
     PROPOSAL_BATCH_RECORDED,
     RecordedArtifactProposal,
+    bulk_item_idempotency_key,
+    bulk_item_prefix,
+    bulk_manifest_fingerprint,
+    bulk_request_fingerprint,
     decision_command_fingerprint,
     decision_payload,
+    decode_decision_recorded,
     proposal_batch_payload,
     proposal_command_fingerprint,
     service_decision_command_fingerprint,
@@ -237,6 +245,220 @@ class ArtifactService:
             expected_sequence,
             required=PrincipalKind.HUMAN,
             receipt=None,
+        )
+
+    def record_human_decision_batch(
+        self,
+        decisions: tuple[ArtifactDecisionRequest, ...],
+        context: ExecutionContext,
+        expected_sequence: int,
+    ) -> ArtifactBulkDecisionReceipt:
+        """Atomically record an ordered HUMAN decision manifest.
+
+        The canonical event type and payload remain the existing v1 decision
+        contract. Bulk identity lives in each event's existing idempotency key,
+        which makes the receipt recoverable after a process restart without a
+        second store or a schema extension.
+        """
+        session_id, bulk_key = _context(context, PrincipalKind.HUMAN)
+        _expected(expected_sequence)
+        manifest = tuple(decisions)
+        if not 1 <= len(manifest) <= 24:
+            raise ArtifactCommandError("artifact decision batch requires 1..24 items")
+        if any(not isinstance(item, ArtifactDecisionRequest) for item in manifest):
+            raise TypeError("artifact decision batch contains an invalid item")
+        revision_ids = tuple(item.revision_id for item in manifest)
+        if len(set(revision_ids)) != len(revision_ids):
+            raise ArtifactCommandError("artifact decision batch cannot repeat a revision")
+        manifest_fingerprint = bulk_manifest_fingerprint(manifest)
+        request_fingerprint = bulk_request_fingerprint(
+            context.course_id, session_id, bulk_key, manifest_fingerprint
+        )
+        existing = self._bulk_receipt(
+            context,
+            manifest,
+            manifest_fingerprint,
+            request_fingerprint,
+        )
+        if existing is not None:
+            return existing
+
+        self._expect_sequence(context, expected_sequence)
+        snapshot = self._view.get(context.course_id)
+        existing_event_ids = {
+            event.event_id for event in self._events.read(context.course_id)
+        }
+        events: list[DomainEvent] = []
+        seen_artifacts: set[ArtifactId] = set()
+        for ordinal, item in enumerate(manifest):
+            target = _proposed(snapshot, item.revision_id)
+            _require_decision_session(snapshot, target, session_id)
+            if target.artifact_id in seen_artifacts:
+                raise ArtifactCommandError(
+                    "artifact decision batch cannot decide one artifact twice"
+                )
+            seen_artifacts.add(target.artifact_id)
+            current = _current_accepted(snapshot, target.artifact_id)
+            if item.decision is ArtifactDecision.REJECT:
+                if item.supersedes_revision_id is not None:
+                    raise ArtifactCommandError("reject never supersedes")
+            elif item.supersedes_revision_id != (current.id if current else None):
+                raise ArtifactConflictError(
+                    "accept must name the exact current accepted predecessor"
+                )
+            item_key = bulk_item_idempotency_key(bulk_key, ordinal, manifest_fingerprint)
+            event_id = artifact_event_id_for(
+                context.course_id, session_id, item_key, "decision"
+            )
+            if event_id in existing_event_ids:
+                raise ArtifactConflictError("artifact bulk retry identity collides with history")
+            events.append(
+                self._event(
+                    context,
+                    event_id,
+                    DECISION_RECORDED,
+                    expected_sequence + ordinal + 1,
+                    decision_payload(
+                        item.revision_id,
+                        item.decision,
+                        item.supersedes_revision_id,
+                        session_id,
+                        item_key,
+                        None,
+                    ),
+                )
+            )
+        try:
+            self._events.append(context.course_id, expected_sequence, tuple(events))
+        except EventSequenceConflictError as error:
+            raced = self._bulk_receipt(
+                context,
+                manifest,
+                manifest_fingerprint,
+                request_fingerprint,
+            )
+            if raced is not None:
+                return raced
+            raise RetryableArtifactConflictError(
+                "course stream raced before artifact decision batch committed"
+            ) from error
+        return self._receipt_from_events(
+            context,
+            manifest,
+            manifest_fingerprint,
+            request_fingerprint,
+            tuple(events),
+        )
+
+    def record_human_decisions(
+        self,
+        decisions: tuple[ArtifactDecisionRequest, ...],
+        context: ExecutionContext,
+        expected_sequence: int,
+    ) -> ArtifactBulkDecisionReceipt:
+        """Compatibility spelling for the atomic HUMAN decision command."""
+        return self.record_human_decision_batch(decisions, context, expected_sequence)
+
+    def _bulk_receipt(
+        self,
+        context: ExecutionContext,
+        decisions: tuple[ArtifactDecisionRequest, ...],
+        manifest_fingerprint: str,
+        request_fingerprint: str,
+    ) -> ArtifactBulkDecisionReceipt | None:
+        session_id = context.session_id
+        bulk_key = context.idempotency_key
+        if session_id is None or bulk_key is None:
+            raise ArtifactCommandError("artifact command requires a session and retry identity")
+        prefix = bulk_item_prefix(bulk_key)
+        owned: list[tuple[int, str, DomainEvent]] = []
+        for event in self._events.read(context.course_id):
+            if (
+                event.event_type != DECISION_RECORDED
+                or event.session_id != session_id
+                or event.actor.kind is not PrincipalKind.HUMAN
+            ):
+                continue
+            raw_key = event.payload.get("idempotency_key")
+            if not isinstance(raw_key, str) or not raw_key.startswith(prefix):
+                continue
+            parts = raw_key.split(":")
+            if len(parts) != 4 or parts[0:2] != ["artifact-bulk@1", prefix.split(":")[1]]:
+                raise ArtifactConflictError("artifact bulk retry identity is corrupt")
+            try:
+                ordinal = int(parts[2])
+            except ValueError as error:
+                raise ArtifactConflictError("artifact bulk ordinal is corrupt") from error
+            if parts[3] != manifest_fingerprint:
+                raise ArtifactConflictError("artifact bulk key was reused with another manifest")
+            owned.append((ordinal, parts[3], event))
+        if not owned:
+            return None
+        if len(owned) != len(decisions):
+            raise ArtifactConflictError("artifact bulk retry is incomplete")
+        ordered = tuple(sorted(owned, key=lambda item: item[0]))
+        if tuple(item[0] for item in ordered) != tuple(range(len(decisions))):
+            raise ArtifactConflictError("artifact bulk ordinals are not contiguous")
+        expected_events = tuple(item[2] for item in ordered)
+        return self._receipt_from_events(
+            context,
+            decisions,
+            manifest_fingerprint,
+            request_fingerprint,
+            expected_events,
+        )
+
+    def _receipt_from_events(
+        self,
+        context: ExecutionContext,
+        decisions: tuple[ArtifactDecisionRequest, ...],
+        manifest_fingerprint: str,
+        request_fingerprint: str,
+        events: tuple[DomainEvent, ...],
+    ) -> ArtifactBulkDecisionReceipt:
+        if len(events) != len(decisions):
+            raise ArtifactConflictError("artifact bulk event count does not match manifest")
+        ordered = tuple(sorted(events, key=lambda event: event.course_sequence))
+        start = ordered[0].course_sequence
+        if tuple(event.course_sequence for event in ordered) != tuple(
+            range(start, start + len(ordered))
+        ):
+            raise ArtifactConflictError("artifact bulk events are not contiguous")
+        results: list[ArtifactDecisionResult] = []
+        session_id = context.session_id
+        bulk_key = context.idempotency_key
+        if session_id is None or bulk_key is None:
+            raise ArtifactCommandError("artifact command requires a session and retry identity")
+        for ordinal, (item, event) in enumerate(zip(decisions, ordered, strict=True)):
+            decoded = decode_decision_recorded(event)
+            expected_key = bulk_item_idempotency_key(bulk_key, ordinal, manifest_fingerprint)
+            if (
+                decoded.idempotency_key != expected_key
+                or decoded.revision_id != item.revision_id
+                or decoded.decision is not item.decision
+                or decoded.supersedes_revision_id != item.supersedes_revision_id
+                or event.session_id != session_id
+            ):
+                raise ArtifactConflictError("artifact bulk retry manifest differs from commit")
+            results.append(
+                ArtifactDecisionResult(
+                    ordinal,
+                    decoded.revision_id,
+                    decoded.decision,
+                    decoded.supersedes_revision_id,
+                    event.event_id,
+                    event.course_sequence,
+                )
+            )
+        return ArtifactBulkDecisionReceipt(
+            bulk_key,
+            context.course_id,
+            session_id,
+            request_fingerprint,
+            manifest_fingerprint,
+            start,
+            ordered[-1].course_sequence,
+            tuple(results),
         )
 
     def apply_service_decision(

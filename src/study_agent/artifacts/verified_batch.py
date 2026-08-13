@@ -5,11 +5,18 @@ from __future__ import annotations
 from collections.abc import Mapping
 from hashlib import sha256
 
+from cardine.exams.contracts import (
+    ExamAnalysisProposal,
+    ExamAnalysisRequest,
+    ExamEvidenceMapping,
+    ExamPromptEvidenceProjection,
+)
 from study_agent.artifacts.candidates import (
     FlashcardCandidate,
     FlashcardCandidateBatch,
     FlashcardPedagogicalRole,
 )
+from study_agent.capabilities.bindings import profiled_execution_inputs
 from study_agent.domain import (
     ArtifactReadDependency,
     ExecutionContext,
@@ -26,12 +33,6 @@ from study_agent.domain import (
     VersionPins,
 )
 from study_agent.domain._validation import JsonObject, freeze_object
-from study_agent.exams.contracts import (
-    ExamAnalysisProposal,
-    ExamAnalysisRequest,
-    ExamEvidenceMapping,
-    ExamPromptEvidenceProjection,
-)
 from study_agent.flashcards.lesson_worker_contracts import (
     LessonWorkerCheckpoint,
     LessonWorkerPageStatus,
@@ -127,7 +128,16 @@ class VerifiedLessonOwnerWriterAdapter:
         if task.task_kind is not GenerationWorkerTaskKind.FLASHCARD_BUNDLE:
             raise VerifiedBatchRecoveryError("lesson owner requires a flashcard task")
         child_context = generation_worker_child_context(task, context)
-        proof = self._proofs.load(task, receipt.child_run_id, receipt, child_context)
+        execution_inputs = (
+            task.capability_inputs()
+            if commitment.profile_selection_receipt is None
+            else profiled_execution_inputs(
+                task.capability_inputs(), commitment.profile_selection_receipt
+            )
+        )
+        proof = self._proofs.load(
+            task, receipt.child_run_id, receipt, child_context, execution_inputs
+        )
         _verify_execution(task, receipt, proof)
         owner = LessonGeneratedBatchOwnerReceipt(
             child_run_id=proof.run_id,
@@ -324,7 +334,17 @@ class VerifiedGeneratedBatchAdapter:
             self._verify_lesson_owner(owner, lesson_material, context)
             self._verify_common_owner(owner, task, receipt)
             child_context = generation_worker_child_context(task, context)
-            proof = self._proofs.load(task, run_id, receipt, child_context)
+            selection = (
+                lesson_material.checkpoint.request.profile_expectation
+                .profile_selection_receipt
+            )
+            proof = self._proofs.load(
+                task,
+                run_id,
+                receipt,
+                child_context,
+                profiled_execution_inputs(task.capability_inputs(), selection),
+            )
             self._verify_proof(owner, task, receipt, proof)
             proposals = _lesson_proposals(owner, lesson_material, proof)
         elif isinstance(owner, ExamGeneratedBatchOwnerReceipt):
@@ -333,7 +353,9 @@ class VerifiedGeneratedBatchAdapter:
             self._verify_exam_owner(owner, exam_material)
             self._verify_common_owner(owner, task, receipt)
             child_context = generation_worker_child_context(task, context)
-            proof = self._proofs.load(task, run_id, receipt, child_context)
+            proof = self._proofs.load(
+                task, run_id, receipt, child_context, task.capability_inputs()
+            )
             self._verify_proof(owner, task, receipt, proof)
             proposals = _exam_proposals(owner, exam_material, proof)
         else:

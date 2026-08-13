@@ -5,8 +5,8 @@ from __future__ import annotations
 from hashlib import sha256
 from threading import RLock
 
+from cardine.hosts.contracts import MAX_HOST_FILES
 from study_agent.domain.identifiers import CourseId, SessionId
-from study_agent.hosts.contracts import MAX_HOST_FILES
 from study_agent.ports.host_file import HostFileIdentityPort
 from study_agent.ports.source_input import MAX_TOTAL_SOURCE_BYTES
 
@@ -52,7 +52,7 @@ class MemoryHostFileSnapshotStore:
         # Decode before acquiring mutation state, then validate the key and
         # exact canonical representation.  No untrusted length field can bypass
         # the aggregate bound or poison accounting.
-        from study_agent.hosts.files import HostFileSnapshot
+        from cardine.hosts.files import HostFileSnapshot
 
         with self._lock:
             try:

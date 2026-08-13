@@ -4,8 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from study_agent.cli.main import main
-from study_agent.cli.repository import LocalRepository
+from cardine.cli.main import main
+from cardine.cli.repository import LocalRepository
 from study_agent.domain import CourseId
 
 

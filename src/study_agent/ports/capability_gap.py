@@ -7,14 +7,14 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from study_agent.feedback.contracts import (
+    from cardine.feedback.contracts import (
         CapabilityGapObservation,
         CapabilityGapResolution,
         CapabilityGapWriteContext,
         GapExportState,
     )
-    from study_agent.feedback.host_tool import CapabilityGapHostContext, CapabilityGapProposal
-    from study_agent.feedback.view import CapabilityGapCompactView
+    from cardine.feedback.host_tool import CapabilityGapHostContext, CapabilityGapProposal
+    from cardine.feedback.view import CapabilityGapCompactView
 
 
 class CapabilityGapStore(Protocol):

@@ -9,7 +9,7 @@ from typing import Any, cast
 
 import pytest
 
-from study_agent.cli.main import build_parser, main
+from cardine.cli.main import build_parser, main
 
 _ROOT_KEYS = {
     "contract_version",

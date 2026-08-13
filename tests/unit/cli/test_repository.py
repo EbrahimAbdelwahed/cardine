@@ -9,8 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from study_agent.adapters.model import OpenAICompatibleModel, OpenAIGpt56LunaModel
-from study_agent.cli import (
+from cardine.cli import (
     EMPTY_CONFIG,
     LocalRepository,
     LocalRepositoryConfig,
@@ -20,6 +19,7 @@ from study_agent.cli import (
     ModelAdapterRegistry,
     initialize_local_repository,
 )
+from study_agent.adapters.model import OpenAICompatibleModel, OpenAIGpt56LunaModel
 from study_agent.domain import (
     CorrelationId,
     CourseId,
@@ -278,7 +278,7 @@ def test_registry_does_not_expose_unrelated_environment_or_builder_errors() -> N
 
 def test_default_adapter_resolves_key_only_at_construction() -> None:
     registry = __import__(
-        "study_agent.cli", fromlist=["default_model_adapters"]
+        "cardine.cli", fromlist=["default_model_adapters"]
     ).default_model_adapters(allow_configurable_endpoints=True)
     config = model_config().model
     assert config is not None
@@ -293,7 +293,7 @@ def test_default_adapter_resolves_key_only_at_construction() -> None:
 
 def test_default_adapter_selects_provider_json_object_mode() -> None:
     registry = __import__(
-        "study_agent.cli", fromlist=["default_model_adapters"]
+        "cardine.cli", fromlist=["default_model_adapters"]
     ).default_model_adapters(allow_configurable_endpoints=True)
     config = ModelAdapterConfig(
         "openai-compatible-http",
@@ -313,7 +313,7 @@ def test_default_adapter_selects_provider_json_object_mode() -> None:
 
 def test_default_registry_selects_fixed_luna_adapter_from_credential_reference() -> None:
     registry = __import__(
-        "study_agent.cli", fromlist=["default_model_adapters"]
+        "cardine.cli", fromlist=["default_model_adapters"]
     ).default_model_adapters()
     config = ModelAdapterConfig(
         "openai-gpt-5.6-luna",
@@ -331,7 +331,7 @@ def test_default_registry_selects_fixed_luna_adapter_from_credential_reference()
 
 def test_default_registry_exposes_only_the_fixed_luna_network_destination() -> None:
     registry = __import__(
-        "study_agent.cli", fromlist=["default_model_adapters"]
+        "cardine.cli", fromlist=["default_model_adapters"]
     ).default_model_adapters()
 
     assert registry.adapter_ids == ("openai-gpt-5.6-luna",)
@@ -339,7 +339,7 @@ def test_default_registry_exposes_only_the_fixed_luna_network_destination() -> N
 
 def test_luna_registry_rejects_an_alternate_credential_environment() -> None:
     registry = __import__(
-        "study_agent.cli", fromlist=["default_model_adapters"]
+        "cardine.cli", fromlist=["default_model_adapters"]
     ).default_model_adapters()
     config = ModelAdapterConfig(
         "openai-gpt-5.6-luna",
@@ -363,7 +363,7 @@ def test_luna_registry_rejects_missing_or_overridable_fixed_settings(
     settings: JsonObject,
 ) -> None:
     registry = __import__(
-        "study_agent.cli", fromlist=["default_model_adapters"]
+        "cardine.cli", fromlist=["default_model_adapters"]
     ).default_model_adapters()
     config = ModelAdapterConfig(
         "openai-gpt-5.6-luna",
@@ -435,6 +435,49 @@ def test_single_retrieval_database_is_composed_over_all_courses(tmp_path: Path) 
         )
         with pytest.raises(LocalRepositoryError, match="incompatible"):
             repository.course_index_receipt(first_id, bool_count)
+
+
+def test_rebuild_checks_source_lifetime_once_per_catalog_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "repository"
+    initialize_local_repository(root, EMPTY_CONFIG)
+    course_id = CourseId("course-large-catalog")
+
+    with LocalRepository.open(root) as repository:
+        create_canonical_course(repository.events, course_id)
+        repository.for_course(course_id).ingestion.ingest(
+            filename="large-notes.txt",
+            content=(b"A canonical biochemistry sentence. " * 1000),
+            source_id=SourceId("source-large-catalog"),
+            title="Large notes",
+            trust_level=100,
+            source_role="reference",
+            context=ExecutionContext(
+                PrincipalKind.SERVICE,
+                "composition-test",
+                course_id,
+                CorrelationId("ingest-large-catalog"),
+            ),
+        )
+        calls = 0
+        original = repository.source_lifetime.retired_source_ids
+
+        def tracked_retired_source_ids(selected_course: CourseId) -> frozenset[SourceId]:
+            nonlocal calls
+            calls += 1
+            return original(selected_course)
+
+        monkeypatch.setattr(
+            repository.source_lifetime,
+            "retired_source_ids",
+            tracked_retired_source_ids,
+        )
+
+        receipt = repository.rebuild_retrieval()
+
+        assert receipt.indexed_chunks > 1
+        assert calls <= 4
 
 
 def test_stale_repository_receipt_fails_after_canonical_catalog_changes(
@@ -510,3 +553,52 @@ def test_grounding_composition_uses_injected_adapter_and_durable_run_store(
 
     with LocalRepository.open(root) as reopened:
         assert reopened.runs.load(run_id)
+
+
+def test_pageindex_restart_search_and_lexical_fallback_share_canonical_source(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repository"
+    initialize_local_repository(root, EMPTY_CONFIG)
+    course_id = CourseId("course-pageindex")
+    markdown = b"# Lezione 1\nIl nervo vago e il decimo nervo cranico.\n# Lezione 2\nAltro.\n"
+
+    with LocalRepository.open(root) as repository:
+        create_canonical_course(repository.events, course_id)
+        admitted = repository.for_course(course_id).ingestion.ingest(
+            filename="lezioni.md",
+            content=markdown,
+            source_id=SourceId("source-pageindex"),
+            title="Lezioni",
+            trust_level=100,
+            source_role="reference",
+            context=ExecutionContext(
+                PrincipalKind.SERVICE,
+                "pageindex-test",
+                course_id,
+                CorrelationId("ingest-pageindex"),
+            ),
+        )
+        repository.rebuild_retrieval()
+        assert repository.pageindex_status(course_id)[0].status.value == "queued"
+        assert repository.reconcile_pageindex(course_id, budget=1)[0].status.value == "ready"
+        structural = repository.search_lessons(course_id, "Lezione 1")
+        assert structural.disposition.value == "unique"
+        pin = repository.select_lesson(
+            course_id, "Lezione 1", structural.candidates[0].candidate_id
+        )
+        assert repository.validate_lesson_pin(pin).source_id == "source-pageindex"
+        assert pin.end_offset < len(markdown.decode())
+        projection = repository.disable_pageindex(
+            course_id,
+            admitted.source.source_id,
+            admitted.source.revision_id,
+        )
+        assert projection.status.value == "disabled"
+        lexical = repository.search_lessons(course_id, "Lezione 1")
+        assert lexical.disposition.value == "unique"
+        assert lexical.candidates[0].start_offset == pin.start_offset
+
+    with LocalRepository.open(root) as restarted:
+        assert restarted.pageindex_status(course_id)[0].status.value == "disabled"
+        assert restarted.search_lessons(course_id, "Lezione 1").disposition.value == "unique"

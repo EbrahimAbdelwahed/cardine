@@ -13,8 +13,8 @@ from enum import StrEnum
 from hashlib import sha256
 from typing import Any, cast
 
+from cardine.domain.course import CourseProfile
 from study_agent.domain._validation import JsonObject, JsonValue
-from study_agent.domain.course import CourseProfile
 from study_agent.domain.events import PrincipalKind
 from study_agent.domain.identifiers import CorrelationId
 from study_agent.domain.source import SourceKind

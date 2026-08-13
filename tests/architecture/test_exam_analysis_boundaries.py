@@ -6,16 +6,17 @@ from pathlib import Path
 from study_agent.tools import public_study_tool_manifests
 
 PROJECT_ROOT = Path(__file__).parents[2]
-SOURCE_ROOT = PROJECT_ROOT / "src" / "study_agent"
+SOURCE_ROOT = PROJECT_ROOT / "src" / "cardine"
+STUDY_AGENT_ROOT = PROJECT_ROOT / "src" / "study_agent"
 EXAM_FILES = (
     SOURCE_ROOT / "exams" / "contracts.py",
     SOURCE_ROOT / "exams" / "analysis.py",
     SOURCE_ROOT / "exams" / "worker.py",
-    SOURCE_ROOT / "ports" / "exam.py",
-    SOURCE_ROOT / "tools" / "exam_scope_bridge.py",
-    SOURCE_ROOT / "skills" / "builtin" / "analyze_exam_sample.py",
-    SOURCE_ROOT / "playbooks" / "builtin" / "analyze_exam_sample_flow.py",
-    SOURCE_ROOT / "prompts" / "exam_sample_analysis_v1.py",
+    STUDY_AGENT_ROOT / "ports" / "exam.py",
+    STUDY_AGENT_ROOT / "tools" / "exam_scope_bridge.py",
+    STUDY_AGENT_ROOT / "skills" / "builtin" / "analyze_exam_sample.py",
+    STUDY_AGENT_ROOT / "playbooks" / "builtin" / "analyze_exam_sample_flow.py",
+    STUDY_AGENT_ROOT / "prompts" / "exam_sample_analysis_v1.py",
 )
 
 

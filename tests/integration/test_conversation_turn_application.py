@@ -8,6 +8,15 @@ from typing import cast
 
 import pytest
 
+from cardine.cli import EMPTY_CONFIG, LocalRepository, initialize_local_repository
+from cardine.hosts import (
+    PendingContinuationDescriptor,
+    TutorContinuationRecord,
+    TutorHostRunner,
+    TutorHostRunResult,
+    TutorHostRunStatus,
+    TutorPresentationReceipt,
+)
 from study_agent.application import (
     ConversationTurnApplication,
     ConversationTurnCommand,
@@ -15,7 +24,6 @@ from study_agent.application import (
     ConversationTurnErrorCode,
 )
 from study_agent.capabilities import CapabilityContinuation, TutorCapabilityId
-from study_agent.cli import EMPTY_CONFIG, LocalRepository, initialize_local_repository
 from study_agent.domain import (
     CorrelationId,
     CourseId,
@@ -25,14 +33,6 @@ from study_agent.domain import (
     RunId,
     SessionId,
     TutorPresentationKind,
-)
-from study_agent.hosts import (
-    PendingContinuationDescriptor,
-    TutorContinuationRecord,
-    TutorHostRunner,
-    TutorHostRunResult,
-    TutorHostRunStatus,
-    TutorPresentationReceipt,
 )
 from study_agent.playbooks import ToolBehaviorPin, VersionPins
 from study_agent.ports import TutorContinuationStore, TutorSnapshotPort
@@ -65,13 +65,48 @@ class _Runner:
     ) -> TutorHostRunResult:
         del interruption
         self.calls.append((host_turn_id, pending_fingerprint))
-        if self.mode in {"failed", "interrupted", "budget"}:
+        if self.mode == "raise":
+            raise RuntimeError("private runner detail")
+        if self.mode == "message_without_receipt":
+            return TutorHostRunResult(
+                TutorHostRunStatus.ASSISTANT_MESSAGE,
+                learner_text="uncommitted host text",
+            )
+        typed_failure_reasons = {
+            "authentication",
+            "endpoint_incompatible",
+            "model_unavailable",
+            "protocol_error",
+            "rate_limited",
+            "timeout",
+            "unavailable",
+        }
+        if self.mode in {
+            "failed",
+            "interrupted",
+            "budget",
+            "budget_timeout",
+            "in_progress",
+            *typed_failure_reasons,
+        }:
             status = {
                 "failed": TutorHostRunStatus.FAILED,
                 "interrupted": TutorHostRunStatus.INTERRUPTED,
                 "budget": TutorHostRunStatus.BUDGET_EXHAUSTED,
+                "budget_timeout": TutorHostRunStatus.BUDGET_EXHAUSTED,
+                "in_progress": TutorHostRunStatus.IN_PROGRESS,
+                **dict.fromkeys(typed_failure_reasons, TutorHostRunStatus.FAILED),
             }[self.mode]
-            return TutorHostRunResult(status)
+            return TutorHostRunResult(
+                status,
+                failure_reason=(
+                    "timeout"
+                    if self.mode == "budget_timeout"
+                    else self.mode
+                    if self.mode in typed_failure_reasons
+                    else None
+                ),
+            )
         if self.mode in {"completed", "terminated"}:
             return TutorHostRunResult(
                 TutorHostRunStatus.COMPLETED
@@ -282,7 +317,6 @@ def test_direct_message_restart_and_exact_retry_do_not_repeat_host_or_event(tmp_
 @pytest.mark.parametrize(
     ("mode", "expected_status"),
     (
-        ("completed", TutorHostRunStatus.COMPLETED),
         ("terminated", TutorHostRunStatus.TERMINATED),
     ),
 )
@@ -298,7 +332,9 @@ def test_status_only_terminal_retry_survives_restart_without_repeating_host(
         first = asyncio.run(_conversation(repository).turn(command))
         event_count = len(repository.events.read(COURSE))
         assert first.status is expected_status
-        assert first.presentation is None
+        assert first.presentation is not None
+        assert first.presentation.kind is TutorPresentationKind.ASSISTANT_MESSAGE
+        assert "evidenze sufficienti" in first.presentation.content
         assert len(runner.calls) == 1
 
         with LocalRepository.open(root) as reopened:
@@ -311,9 +347,32 @@ def test_status_only_terminal_retry_survives_restart_without_repeating_host(
             retry = asyncio.run(_conversation(reopened).turn(command))
 
             assert retry.status is expected_status
-            assert retry.presentation is None
+            assert retry.presentation == first.presentation
             assert retry_runner.calls == []
             assert len(reopened.events.read(COURSE)) == event_count
+    finally:
+        repository.close()
+
+
+def test_completed_without_recoverable_output_gets_a_visible_fallback(
+    tmp_path: Path,
+) -> None:
+    repository, runner, _ = _open(tmp_path, "completed")
+    try:
+        sequence = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
+        result = asyncio.run(
+            _conversation(repository).turn(
+                _command("terminal-without-presentation", sequence, "Hello")
+            )
+        )
+        assert result.status is TutorHostRunStatus.COMPLETED
+        assert result.presentation is not None
+        assert result.presentation.kind is TutorPresentationKind.ASSISTANT_MESSAGE
+        assert "Non sono riuscito" in result.presentation.content
+        assert repository.tutor_presentations.presentations(COURSE, SESSION) == (
+            result.presentation,
+        )
+        assert runner.calls
     finally:
         repository.close()
 
@@ -434,6 +493,10 @@ def test_learner_question_is_a_canonical_presentation(tmp_path: Path) -> None:
         assert result.presentation is not None
         assert result.presentation.kind is TutorPresentationKind.LEARNER_QUESTION
         assert result.presentation.content == "What structure should we compare?"
+        persisted = repository.tutor_presentations.presentations(COURSE, SESSION)
+        assert len(persisted) == 1
+        assert persisted[0].kind is TutorPresentationKind.LEARNER_QUESTION
+        assert persisted[0].content == "What structure should we compare?"
     finally:
         repository.close()
 
@@ -525,26 +588,140 @@ def test_concurrent_new_requests_at_one_sequence_have_one_canonical_winner(tmp_p
 
 
 @pytest.mark.parametrize(
-    "mode,code",
+    "mode,expected_status,expected_text",
     [
-        ("failed", ConversationTurnErrorCode.FAILED),
-        ("interrupted", ConversationTurnErrorCode.INTERRUPTED),
-        ("budget", ConversationTurnErrorCode.FAILED),
+        ("failed", TutorHostRunStatus.FAILED, "Non sono riuscito"),
+        ("interrupted", TutorHostRunStatus.INTERRUPTED, "Non sono riuscito"),
+        ("budget", TutorHostRunStatus.BUDGET_EXHAUSTED, "Non sono riuscito"),
+        ("raise", TutorHostRunStatus.FAILED, "Non sono riuscito"),
+        ("message_without_receipt", TutorHostRunStatus.FAILED, "Non sono riuscito"),
     ],
 )
-def test_unsuccessful_host_results_commit_no_presentation(
-    tmp_path: Path, mode: str, code: ConversationTurnErrorCode
+def test_unsuccessful_host_results_commit_a_visible_fallback(
+    tmp_path: Path,
+    mode: str,
+    expected_status: TutorHostRunStatus,
+    expected_text: str,
 ) -> None:
     repository, runner, _ = _open(tmp_path, mode)
     try:
         sequence = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
-        with pytest.raises(ConversationTurnError) as error:
-            asyncio.run(
-                _conversation(repository).turn(_command(f"request-{mode}", sequence, "Hello"))
-            )
-        assert error.value.code is code
-        assert repository.tutor_presentations.presentations(COURSE, SESSION) == ()
+        result = asyncio.run(
+            _conversation(repository).turn(_command(f"request-{mode}", sequence, "Hello"))
+        )
+        assert result.status is expected_status
+        assert result.presentation is not None
+        assert result.presentation.kind is TutorPresentationKind.ASSISTANT_MESSAGE
+        assert expected_text in result.presentation.content
+        assert repository.tutor_presentations.presentations(COURSE, SESSION) == (
+            result.presentation,
+        )
         assert runner.calls
+    finally:
+        repository.close()
+
+
+def test_in_progress_remains_retryable_without_settling_the_turn(tmp_path: Path) -> None:
+    repository, runner, _ = _open(tmp_path, "in_progress")
+    try:
+        sequence = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
+        command = _command("request-in-progress", sequence, "Hello")
+
+        for _attempt in range(2):
+            with pytest.raises(ConversationTurnError) as error:
+                asyncio.run(_conversation(repository).turn(command))
+            assert error.value.code is ConversationTurnErrorCode.FAILED
+            assert error.value.learner_persisted is True
+
+        assert len(runner.calls) == 2
+        assert repository.tutor_presentations.presentations(COURSE, SESSION) == ()
+    finally:
+        repository.close()
+
+
+@pytest.mark.parametrize(
+    "failure_reason",
+    ("rate_limited", "timeout", "unavailable", "model_unavailable"),
+)
+def test_transient_provider_failure_retries_without_fallback_or_duplicate_learner(
+    tmp_path: Path,
+    failure_reason: str,
+) -> None:
+    repository, runner, _ = _open(tmp_path, failure_reason)
+    try:
+        sequence = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
+        command = _command(
+            f"request-{failure_reason}", sequence, "Retry this tutor turn"
+        )
+
+        for _attempt in range(2):
+            with pytest.raises(ConversationTurnError) as error:
+                asyncio.run(_conversation(repository).turn(command))
+            assert error.value.code is ConversationTurnErrorCode.FAILED
+            assert error.value.failure_reason == failure_reason
+            assert error.value.learner_persisted is True
+
+        assert len(runner.calls) == 2
+        assert repository.tutor_presentations.presentations(COURSE, SESSION) == ()
+        learner_rows = tuple(
+            item
+            for item in repository.tutor_snapshots.get(COURSE, SESSION).timeline
+            if item.kind.value == "learner"
+        )
+        assert len(learner_rows) == 1
+    finally:
+        repository.close()
+
+
+def test_budget_exhaustion_preserves_transient_failure_for_exact_retry(
+    tmp_path: Path,
+) -> None:
+    repository, runner, _ = _open(tmp_path, "budget_timeout")
+    try:
+        sequence = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
+        command = _command("request-budget-timeout", sequence, "Retry this tutor turn")
+
+        for _attempt in range(2):
+            with pytest.raises(ConversationTurnError) as error:
+                asyncio.run(_conversation(repository).turn(command))
+            assert error.value.code is ConversationTurnErrorCode.FAILED
+            assert error.value.failure_reason == "timeout"
+            assert error.value.learner_persisted is True
+
+        assert len(runner.calls) == 2
+        assert repository.tutor_presentations.presentations(COURSE, SESSION) == ()
+        learner_rows = tuple(
+            item
+            for item in repository.tutor_snapshots.get(COURSE, SESSION).timeline
+            if item.kind.value == "learner"
+        )
+        assert len(learner_rows) == 1
+    finally:
+        repository.close()
+
+
+@pytest.mark.parametrize(
+    "failure_reason",
+    ("authentication", "endpoint_incompatible", "protocol_error", None),
+)
+def test_non_transient_provider_failure_commits_safe_fallback(
+    tmp_path: Path,
+    failure_reason: str | None,
+) -> None:
+    repository, runner, _ = _open(tmp_path, failure_reason or "failed")
+    try:
+        sequence = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
+        command = _command(
+            f"request-{failure_reason or 'reasonless'}", sequence, "Save this turn"
+        )
+        result = asyncio.run(_conversation(repository).turn(command))
+
+        assert result.status is TutorHostRunStatus.FAILED
+        assert "Non sono riuscito" in result.presentation.content
+        assert repository.tutor_presentations.presentations(COURSE, SESSION) == (
+            result.presentation,
+        )
+        assert len(runner.calls) == 1
     finally:
         repository.close()
 

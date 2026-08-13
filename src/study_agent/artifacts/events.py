@@ -27,6 +27,7 @@ from study_agent.state import canonical_json_bytes
 
 from .content import StudyArtifactEnvelope
 from .contracts import (
+    ArtifactDecisionRequest,
     ArtifactProposalOrigin,
     GeneratedBatchProofReceipt,
     ServiceDecisionPolicyReceipt,
@@ -319,6 +320,58 @@ def service_decision_command_fingerprint(revision_id: ArtifactRevisionId) -> str
     return _sha({"revision_id": str(revision_id), "authority": "service_policy"})
 
 
+def bulk_manifest_fingerprint(decisions: tuple[ArtifactDecisionRequest, ...]) -> str:
+    """Hash the ordered decision manifest without including its retry key."""
+    return _sha(
+        {
+            "decisions": tuple(
+                {
+                    "ordinal": ordinal,
+                    "revision_id": str(item.revision_id),
+                    "decision": item.decision.value,
+                    "supersedes_revision_id": (
+                        str(item.supersedes_revision_id)
+                        if item.supersedes_revision_id is not None
+                        else None
+                    ),
+                }
+                for ordinal, item in enumerate(decisions)
+            )
+        }
+    )
+
+
+def bulk_request_fingerprint(
+    course_id: CourseId,
+    session_id: SessionId,
+    bulk_key: str,
+    manifest_fingerprint: str,
+) -> str:
+    """Bind a bulk manifest to its course/session and host retry key."""
+    return _sha(
+        {
+            "course_id": str(course_id),
+            "session_id": str(session_id),
+            "bulk_key": bulk_key,
+            "manifest_fingerprint": manifest_fingerprint,
+        }
+    )
+
+
+def bulk_item_idempotency_key(
+    bulk_key: str, ordinal: int, manifest_fingerprint: str
+) -> str:
+    """Derive one opaque child identity from bulk key, ordinal, and manifest."""
+    key_digest = sha256(bulk_key.encode("utf-8")).hexdigest()
+    return f"artifact-bulk@1:{key_digest}:{ordinal}:{manifest_fingerprint}"
+
+
+def bulk_item_prefix(bulk_key: str) -> str:
+    """Return the scan prefix used to detect changed bulk-manifest retries."""
+    key_digest = sha256(bulk_key.encode("utf-8")).hexdigest()
+    return f"artifact-bulk@1:{key_digest}:"
+
+
 def _proposal_manifest(value: RecordedArtifactProposal) -> JsonObject:
     return {
         "ordinal": value.ordinal,
@@ -503,6 +556,10 @@ __all__ = [
     "DecisionRecorded",
     "ProposalBatchRecorded",
     "RecordedArtifactProposal",
+    "bulk_item_idempotency_key",
+    "bulk_item_prefix",
+    "bulk_manifest_fingerprint",
+    "bulk_request_fingerprint",
     "decision_command_fingerprint",
     "decision_payload",
     "decode_decision_recorded",

@@ -10,6 +10,7 @@ from typing import cast
 
 import pytest
 
+from cardine.courses import course_profile_manifest, register_course_events
 from study_agent.adapters.filesystem import FilesystemBlobStore
 from study_agent.adapters.model import ScriptedExchange, ScriptedModel
 from study_agent.adapters.sqlite import SQLiteEventStore, SQLiteFtsRetrieval
@@ -19,7 +20,6 @@ from study_agent.application import (
     GroundingAskErrorCode,
     GroundingAskService,
 )
-from study_agent.courses import course_profile_manifest, register_course_events
 from study_agent.domain import (
     CorrelationId,
     CourseId,

@@ -40,6 +40,8 @@ from study_agent.ports import (
     CancellationToken,
     MessageRole,
     ModelCapabilities,
+    ModelError,
+    ModelErrorCode,
     ModelFinishReason,
     ModelInvocation,
     ModelMessage,
@@ -436,6 +438,56 @@ def test_mismatched_model_invocation_provenance_fails_before_model_output_checkp
     assert set(persisted["checkpoint"]["outputs"]) == {"evidence"}
     with pytest.raises(TypeError):
         result.outputs["new"] = True  # type: ignore[index]
+
+
+@pytest.mark.parametrize(
+    ("model_failure", "expected_reason"),
+    (
+        (RuntimeError("transport failed"), ModelErrorCode.UNAVAILABLE.value),
+        (ModelError(ModelErrorCode.TIMEOUT, "provider timeout"), ModelErrorCode.TIMEOUT.value),
+        (
+            ModelError(ModelErrorCode.PROTOCOL_ERROR, "provider protocol failure"),
+            ModelErrorCode.PROTOCOL_ERROR.value,
+        ),
+    ),
+)
+def test_model_transport_faults_persist_safe_model_error_receipts(
+    model_failure: Exception,
+    expected_reason: str,
+) -> None:
+    calls: list[tuple[str, object]] = []
+    definition = make_definition()
+    skill = make_skill(definition)
+    store = MemoryRunStore()
+    run_id = RunId(f"run-model-failure-{expected_reason}")
+
+    result = asyncio.run(
+        make_engine(calls, model_response=model_failure, run_store=store).execute(
+            run_id=run_id,
+            skill=skill,
+            definition=definition,
+            inputs={"question": "Question"},
+            pins=make_pins(skill, definition),
+        )
+    )
+
+    assert isinstance(result, FailedRunResult)
+    assert result.failure.code is EngineErrorCode.MODEL_ERROR
+    assert result.failure.message == f"model execution failed: {expected_reason}"
+    assert result.traces[-1].details == {
+        "error_code": "model_error",
+        "model_failure_reason": expected_reason,
+    }
+    persisted = json.loads(store.load(run_id))
+    assert persisted["traces"][-1]["details"] == {
+        "error_code": "model_error",
+        "model_failure_reason": expected_reason,
+    }
+    inspected = make_engine(calls, run_store=store).inspect(
+        run_id=run_id,
+        definition=definition,
+    )
+    assert inspected.status.value == "failed"
 
 
 def test_validator_termination_prevents_later_effects() -> None:

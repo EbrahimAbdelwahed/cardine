@@ -33,14 +33,14 @@ from urllib.request import HTTPCookieProcessor, Request, build_opener, urlopen
 
 import pytest
 
-from study_agent.adapters.filesystem import initialize_local_repository
-from study_agent.cli.repository import (
+from cardine.cli.repository import (
     LocalRepository,
     ModelAdapterBuilder,
     ModelAdapterRegistry,
 )
-from study_agent.demo.browser import _BrowserServer, create_server
-from study_agent.demo.ui_application import RepositoryUiApplication, UiApplicationPort
+from cardine.demo.browser import create_server
+from cardine.demo.ui_application import RepositoryUiApplication, UiApplicationPort
+from study_agent.adapters.filesystem import initialize_local_repository
 from study_agent.domain import (
     CorrelationId,
     CourseId,
@@ -182,8 +182,8 @@ def _private_server(
     request or browser payload.
     """
 
-    from study_agent.demo.private_access import PrivateAccessController, hash_password
-    from study_agent.demo.product_settings import (
+    from cardine.demo.private_access import PrivateAccessController, hash_password
+    from cardine.demo.product_settings import (
         PrivateSettingsApplication,
         RuntimeCredentialStore,
     )
@@ -271,7 +271,7 @@ def _free_port() -> int:
 
 
 @contextmanager
-def _serve_local_owner_setup() -> Iterator[tuple[str, str]]:
+def _serve_local_owner_setup() -> Iterator[str]:
     try:
         server = create_server(
             "127.0.0.1",
@@ -281,13 +281,11 @@ def _serve_local_owner_setup() -> Iterator[tuple[str, str]]:
         )
     except PermissionError as error:
         pytest.skip(f"local sockets are unavailable: {error}")
-    token = cast(_BrowserServer, server).surface.local_owner_setup_token
-    assert isinstance(token, str)
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     host, port = cast(tuple[str, int], server.server_address)
     try:
-        yield f"http://{host}:{port}", token
+        yield f"http://{host}:{port}"
     finally:
         server.shutdown()
         thread.join(timeout=5)
@@ -370,48 +368,37 @@ def test_private_http_rejects_missing_or_cross_origin_mutations_and_bad_hosts() 
         assert bad_host.json == {"error": "host is not allowed"}
 
 
-def test_local_owner_setup_http_requires_out_of_band_one_time_token() -> None:
-    with _serve_local_owner_setup() as (url, token):
+def test_local_owner_setup_http_is_same_origin_and_one_time() -> None:
+    with _serve_local_owner_setup() as url:
         client = Client(url)
         setup_probe = client.request("/api/v1/auth/session")
         assert setup_probe.status == 200
-        assert token not in setup_probe.body
         page = client.request("/")
         assert page.status == 200
-        assert token not in page.body
 
         missing = client.post(
             "/api/v1/auth/setup-owner", {"password": PASSWORD}
         )
-        wrong = client.post(
+        malformed = client.post(
             "/api/v1/auth/setup-owner",
-            {"password": PASSWORD, "bootstrap_token": "wrong"},
+            {"password": PASSWORD, "unexpected": "value"},
         )
-        assert missing.status == wrong.status == 403
-        assert token not in missing.body
-        assert token not in wrong.body
-
-        correct = client.post(
-            "/api/v1/auth/setup-owner",
-            {"password": PASSWORD, "bootstrap_token": token},
-        )
-        assert correct.status == 200, correct.body
-        assert token not in correct.body
+        assert missing.status == 200
+        assert malformed.status == 403
 
         replay = Client(url).post(
             "/api/v1/auth/setup-owner",
-            {"password": PASSWORD, "bootstrap_token": token},
+            {"password": PASSWORD},
         )
         assert replay.status == 403
-        assert token not in replay.body
 
 
-def test_local_owner_setup_http_token_is_race_safe() -> None:
-    with _serve_local_owner_setup() as (url, token):
+def test_local_owner_setup_http_is_race_safe() -> None:
+    with _serve_local_owner_setup() as url:
         def submit() -> int:
             return Client(url).post(
                 "/api/v1/auth/setup-owner",
-                {"password": PASSWORD, "bootstrap_token": token},
+                {"password": PASSWORD},
             ).status
 
         with ThreadPoolExecutor(max_workers=2) as pool:
@@ -677,6 +664,28 @@ def test_private_browser_routes_composer_scope_keyboard_draft_and_mobile() -> No
         assert cast(
             str, browser.evaluate("document.querySelector('#global-alert-title').innerText")
         ).strip() != ""
+        # A validated tutor protocol failure is not a key failure.  Exercise
+        # the same browser transport envelope emitted by the repository turn
+        # endpoint and ensure the user sees the specific next diagnosis.
+        browser.evaluate(
+            "window.fetch=()=>Promise.resolve(new Response("
+            "JSON.stringify({code:'tutor_protocol_error'}),"
+            "{status:502,headers:{'Content-Type':'application/json'}}))"
+        )
+        browser.evaluate(
+            "document.querySelector('#session-entry-text')"
+            ".dispatchEvent(new KeyboardEvent("
+            "'keydown',{key:'Enter',bubbles:true}))"
+        )
+        browser.wait(
+            "document.querySelector('#global-alert').innerText"
+            ".includes('risposta non compatibile')"
+        )
+        assert (
+            "chiave del modello" not in cast(
+                str, browser.evaluate("document.querySelector('#global-alert').innerText")
+            ).lower()
+        )
         browser.evaluate("window.fetch=window.__cardineOriginalFetch")
         _click(browser, "#global-alert-dismiss")
         assert browser.evaluate("document.querySelector('#global-alert').hidden") is True
@@ -767,6 +776,10 @@ def test_settings_labels_write_only_empty_after_save_and_pending_continuation_ro
             "document.querySelector('#settings-model-form input, #credential-settings-form input')"
             ".value === ''"
         )
+        browser.wait(
+            "document.querySelector('#credential-settings-status')?.innerText"
+            ".includes('Chiave aggiornata per questa sessione.')"
+        )
         assert SENTINEL not in cast(str, browser.evaluate("document.body.innerText"))
         assert (
             browser.evaluate(
@@ -774,6 +787,11 @@ def test_settings_labels_write_only_empty_after_save_and_pending_continuation_ro
                 "#credential-settings-form input[type=password]').length"
             )
             == 1
+        )
+        _click(browser, "[data-settings-check]")
+        browser.wait(
+            "document.querySelector('#model-check-status')?.innerText"
+            ".includes('Decisione del tutor verificata.')"
         )
 
         _click(browser, '[data-route="sessione"]')

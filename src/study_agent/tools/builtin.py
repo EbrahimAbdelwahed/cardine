@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
 
-from study_agent.courses import course_profile_manifest
+from cardine.courses import course_profile_manifest
 from study_agent.domain import ChunkId, Citation, ExecutionContext, RevisionId, SourceId, SourceKind
 from study_agent.domain._validation import JsonObject, freeze_object
 from study_agent.ports import CourseViewPort, RetrievalPort, RetrievalQuery, SourceContentPort
@@ -26,7 +26,7 @@ from .contracts import (
 )
 
 if TYPE_CHECKING:
-    from study_agent.application.grounding_ask import GroundingAskService, GroundingStudyEvent
+    from cardine.application.grounding_ask import GroundingAskService, GroundingStudyEvent
 
 _VERSION = "1.0.0"
 _ERRORS = tuple(ToolErrorCode)

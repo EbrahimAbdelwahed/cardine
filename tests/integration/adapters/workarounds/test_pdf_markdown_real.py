@@ -6,15 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from study_agent.adapters.workarounds import PDF_MARKDOWN_MANIFEST, PdfMarkdownExecutor
-from study_agent.adapters.workarounds.worker import containment_supported
-from study_agent.feedback import (
+from cardine.feedback import (
     WorkaroundApprovalReceipt,
     WorkaroundInputKind,
     WorkaroundOutputKind,
     WorkaroundReceiptStatus,
     WorkaroundTask,
 )
+from study_agent.adapters.workarounds import PDF_MARKDOWN_MANIFEST, PdfMarkdownExecutor
+from study_agent.adapters.workarounds.worker import containment_supported
 
 pytestmark = pytest.mark.skipif(
     importlib.util.find_spec("pypdf") is None or not containment_supported(),

@@ -1,0 +1,165 @@
+{
+  "cases": [
+    {
+      "case": "replay",
+      "input": "tests/parity/golden/inputs/replay.json",
+      "input_sha256": "87e37cb738883726ae3d735fc7a7f60993ccfe0e84e46760bf4ba77559b6c799",
+      "normalized_output": "tests/parity/golden/normalized/replay.json",
+      "normalized_sha256": "38ec33bf59a7afc786feee707bbdf7fca7ab7fb8bd3d2ea6469d7a098349e0de",
+      "schema_version": 1
+    },
+    {
+      "case": "source_identity",
+      "input": "tests/parity/golden/inputs/source_identity.json",
+      "input_sha256": "0b18793d7a71268e25fce4398c3f0db42b334fcc0ea9dc5436a4c5f1aba37021",
+      "normalized_output": "tests/parity/golden/normalized/source_identity.json",
+      "normalized_sha256": "4455811e2fc4efb19fb568dec40b997c259c64d2ea07cf27fb9952e6a2ed7188",
+      "schema_version": 1
+    },
+    {
+      "case": "substrate_identity_lineage",
+      "input": "tests/parity/golden/inputs/substrate_identity_lineage.json",
+      "input_sha256": "fb07517fbcd66448809502615829d38a30c50a1954450c3ab7675f00f524243e",
+      "normalized_output": "tests/parity/golden/normalized/substrate_identity_lineage.json",
+      "normalized_sha256": "76a3ade66e57e082370620ea4414d57f3b692918da247a05996c2324e4d68453",
+      "schema_version": 1
+    },
+    {
+      "case": "citation_resolution",
+      "input": "tests/parity/golden/inputs/citation_resolution.json",
+      "input_sha256": "004ce3a520007328e83d5b85778258918649636550e5776af49f992f082833ec",
+      "normalized_output": "tests/parity/golden/normalized/citation_resolution.json",
+      "normalized_sha256": "baf69f15fd63a62f65d4849858f94aa0c34e4c17892965e2fb485bb63198a141",
+      "schema_version": 1
+    },
+    {
+      "case": "session_continuation_recovery",
+      "input": "tests/parity/golden/inputs/session_continuation_recovery.json",
+      "input_sha256": "9d74a447ea183abeb50f998648226fc47211490f1a77c967aa068a8c4b24e232",
+      "normalized_output": "tests/parity/golden/normalized/session_continuation_recovery.json",
+      "normalized_sha256": "1d979428e79c1532ca892bc2cff52eed58072aca556e66eac44587ed135162f8",
+      "schema_version": 1
+    },
+    {
+      "case": "artifact_decisions",
+      "input": "tests/parity/golden/inputs/artifact_decisions.json",
+      "input_sha256": "f6a875e5ea205a0cd27d3cfe4a4117734d675d1ee0de0cb28aaa7bacc577e5d8",
+      "normalized_output": "tests/parity/golden/normalized/artifact_decisions.json",
+      "normalized_sha256": "b029e96bef295bfbf8f89c424a2e6a1c2234520265b1d5feff15b1a721fa7468",
+      "schema_version": 1
+    },
+    {
+      "case": "assessment_presentation",
+      "input": "tests/parity/golden/inputs/assessment_presentation.json",
+      "input_sha256": "c7171952a6c1f7bfabd3a0ec612e924d786a10e3dd0d1822e3dc873acf6527ec",
+      "normalized_output": "tests/parity/golden/normalized/assessment_presentation.json",
+      "normalized_sha256": "1a7658ecb8da07c8a21f9d0a3b43a6bd40fe4649030b15358aa0172f24129bab",
+      "schema_version": 1
+    },
+    {
+      "case": "assessment_attempt",
+      "input": "tests/parity/golden/inputs/assessment_attempt.json",
+      "input_sha256": "17799d836073fd9f9ece0dd1ac38e9c4845715cec2db35a66c4d8b6296fe7482",
+      "normalized_output": "tests/parity/golden/normalized/assessment_attempt.json",
+      "normalized_sha256": "6b6e4b4deb987264c45e1d52358bcd23b1dd9b3e3b37a3ba5ac3f3c88c7b2ffa",
+      "schema_version": 1
+    },
+    {
+      "case": "assessment_grade",
+      "input": "tests/parity/golden/inputs/assessment_grade.json",
+      "input_sha256": "6d9e75014a33c093eab14e713ae9e615c2e39b0f924aec3e6aabe62d76bb3e76",
+      "normalized_output": "tests/parity/golden/normalized/assessment_grade.json",
+      "normalized_sha256": "652b9eff7d368d05e43d9b9cdd44b70aa255f064563a2f2d43f05d6b60da4805",
+      "schema_version": 1
+    },
+    {
+      "case": "assessment_contest",
+      "input": "tests/parity/golden/inputs/assessment_contest.json",
+      "input_sha256": "8fab123d917cc0402580d739ad6b7bd03413b7861ea5af99dbde9163e9b907a4",
+      "normalized_output": "tests/parity/golden/normalized/assessment_contest.json",
+      "normalized_sha256": "34f03173604f4e359d70be3564bb57cbb6d94c7befb2b3d74414144777f7fde5",
+      "schema_version": 1
+    },
+    {
+      "case": "recall_enrollment",
+      "input": "tests/parity/golden/inputs/recall_enrollment.json",
+      "input_sha256": "c7171952a6c1f7bfabd3a0ec612e924d786a10e3dd0d1822e3dc873acf6527ec",
+      "normalized_output": "tests/parity/golden/normalized/recall_enrollment.json",
+      "normalized_sha256": "9a06a731bdc98c8aa9bf3aa155d9d0cc797fd0c46e1c6acbeeb7560ae10859d1",
+      "schema_version": 1
+    },
+    {
+      "case": "recall_review",
+      "input": "tests/parity/golden/inputs/recall_review.json",
+      "input_sha256": "17799d836073fd9f9ece0dd1ac38e9c4845715cec2db35a66c4d8b6296fe7482",
+      "normalized_output": "tests/parity/golden/normalized/recall_review.json",
+      "normalized_sha256": "c2685df310855f707a88b80efb8102ee5920f6ea3cfb2fb84b28d0722b64075f",
+      "schema_version": 1
+    },
+    {
+      "case": "recall_due",
+      "input": "tests/parity/golden/inputs/recall_due.json",
+      "input_sha256": "c7171952a6c1f7bfabd3a0ec612e924d786a10e3dd0d1822e3dc873acf6527ec",
+      "normalized_output": "tests/parity/golden/normalized/recall_due.json",
+      "normalized_sha256": "3e0a1e4da0a63a2ebee6137b60b6e86cd236be371f6031cd7fa34f3ac5dda7b0",
+      "schema_version": 1
+    },
+    {
+      "case": "semantic_export",
+      "input": "tests/parity/golden/inputs/semantic_export.json",
+      "input_sha256": "9f59b6bcc96555a59895bcb8da0b822dbc5f683e199a03580db73e1938dff8ee",
+      "normalized_output": "tests/parity/golden/normalized/semantic_export.json",
+      "normalized_sha256": "fbde7972295c0d1f0c1efc1debbcb8a134cec43ee1a90562e0c08afe8083b3ca",
+      "schema_version": 1
+    },
+    {
+      "case": "failure_invalid",
+      "input": "tests/parity/golden/inputs/failure_invalid.json",
+      "input_sha256": "87e37cb738883726ae3d735fc7a7f60993ccfe0e84e46760bf4ba77559b6c799",
+      "normalized_output": "tests/parity/golden/normalized/failure_invalid.json",
+      "normalized_sha256": "d7e9cde1c4631c7a6ae5237c21a870e99e4a7215c64a48caf068de1d1f5f2b93",
+      "schema_version": 1
+    },
+    {
+      "case": "failure_stale",
+      "input": "tests/parity/golden/inputs/failure_stale.json",
+      "input_sha256": "87e37cb738883726ae3d735fc7a7f60993ccfe0e84e46760bf4ba77559b6c799",
+      "normalized_output": "tests/parity/golden/normalized/failure_stale.json",
+      "normalized_sha256": "4ba57b8e560d4dc3429aed05fb56394382d1f9e6739aba1a5b37056ab141ac01",
+      "schema_version": 1
+    },
+    {
+      "case": "failure_unauthorized",
+      "input": "tests/parity/golden/inputs/failure_unauthorized.json",
+      "input_sha256": "87e37cb738883726ae3d735fc7a7f60993ccfe0e84e46760bf4ba77559b6c799",
+      "normalized_output": "tests/parity/golden/normalized/failure_unauthorized.json",
+      "normalized_sha256": "148c6899de6645721261d17a0181dfa147c0f6807047f599950374358852c9f6",
+      "schema_version": 1
+    },
+    {
+      "case": "failure_not_found",
+      "input": "tests/parity/golden/inputs/failure_not_found.json",
+      "input_sha256": "87e37cb738883726ae3d735fc7a7f60993ccfe0e84e46760bf4ba77559b6c799",
+      "normalized_output": "tests/parity/golden/normalized/failure_not_found.json",
+      "normalized_sha256": "941216a5f204df3e4d3429aabfbf82050e0439ad56f066382f556456984652ad",
+      "schema_version": 1
+    },
+    {
+      "case": "failure_conflict",
+      "input": "tests/parity/golden/inputs/failure_conflict.json",
+      "input_sha256": "87e37cb738883726ae3d735fc7a7f60993ccfe0e84e46760bf4ba77559b6c799",
+      "normalized_output": "tests/parity/golden/normalized/failure_conflict.json",
+      "normalized_sha256": "19c166488a031026800f724f2fffd47eacfbfaaac7f68b725e359857d914dc4f",
+      "schema_version": 1
+    }
+  ],
+  "manifest_schema_version": 1,
+  "normalization": {
+    "json_pointer_replacements": [
+      "/runtime/blob_root",
+      "/runtime/events_path",
+      "/runtime/tmp_root"
+    ],
+    "name": "cardine-parity-json-pointer"
+  }
+}

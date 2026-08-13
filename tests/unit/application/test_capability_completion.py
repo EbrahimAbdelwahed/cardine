@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from study_agent.application.capability_completion import (
+from cardine.application.capability_completion import (
     CapabilityCompletionHandlerRegistry,
     CapabilityCompletionProductReceipt,
 )
+from cardine.hosts import TutorCapabilityCompletionReference
 from study_agent.domain import ExecutionContext, RunId
-from study_agent.hosts import TutorCapabilityCompletionReference
 
 
 def _reference() -> TutorCapabilityCompletionReference:

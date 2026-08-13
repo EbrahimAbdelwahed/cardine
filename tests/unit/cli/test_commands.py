@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import signal
 
-from study_agent.cli.commands import _DeferredSigint
+from cardine.cli.commands import _DeferredSigint
 
 
 def test_automatic_ask_region_defers_injected_sigint_until_atomic_operation_finishes() -> None:

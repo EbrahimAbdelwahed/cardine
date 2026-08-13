@@ -5,14 +5,14 @@ from dataclasses import dataclass
 
 import pytest
 
-from study_agent.adapters.host import (
+from cardine.adapters.host import (
     OpenAIResponsesAdapterError,
     OpenAIResponsesClient,
     OpenAIResponsesResource,
     OpenAIResponsesTutorConfig,
     OpenAIResponsesTutorDecisionPort,
 )
-from study_agent.hosts import AdvertisedCapability, TutorHostContext
+from cardine.hosts import AdvertisedCapability, TutorHostContext
 from study_agent.ports import RetryableTutorDecisionError
 
 _SHA = "a" * 64

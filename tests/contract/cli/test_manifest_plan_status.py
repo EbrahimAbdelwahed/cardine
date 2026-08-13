@@ -9,8 +9,8 @@ from typing import Any, cast
 
 import pytest
 
-from study_agent.cli.main import main
-from study_agent.cli.registry import (
+from cardine.cli.main import main
+from cardine.cli.registry import (
     NetworkRequirement,
     OperationEffect,
     RepositoryRequirement,
@@ -96,7 +96,7 @@ def _tree(root: Path) -> tuple[tuple[str, int, int, int, str | None], ...]:
 
 
 def _forbid_external_composition(monkeypatch: pytest.MonkeyPatch) -> None:
-    import study_agent.cli.repository as repository_module
+    import cardine.cli.repository as repository_module
 
     def forbidden(*args: object, **kwargs: object) -> None:
         del args, kwargs

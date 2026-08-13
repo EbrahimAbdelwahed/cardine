@@ -21,7 +21,7 @@ def test_substrate_domain_contract_has_no_adapter_provider_or_model_imports() ->
     forbidden = (
         "study_agent.adapters",
         "study_agent.application",
-        "study_agent.cli",
+        "cardine.cli",
         "study_agent.connectors",
         "study_agent.models",
         "study_agent.providers",

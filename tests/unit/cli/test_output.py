@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from io import StringIO
 
-from study_agent.cli.output import CommandOutcome, emit_error, emit_success
+from cardine.cli.output import CommandOutcome, emit_error, emit_success
 
 
 def test_json_success_is_exactly_one_stable_document() -> None:
