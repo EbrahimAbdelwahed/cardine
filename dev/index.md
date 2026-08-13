@@ -1,6 +1,6 @@
 # Cardine development memory
 
-Updated: 2026-08-13 18:05 CEST
+Updated: 2026-08-13 19:55 CEST
 
 This file is the authoritative entrypoint for Cardine development memory.
 Cardine-specific plans, logs, notes, and handoffs belong in this repository's
@@ -43,6 +43,9 @@ archive and must not be treated as Cardine's current state.
   `openai-gpt-5.6-luna` adapter through the server-owned credential boundary.
 - The browser is presentation and transport. It does not own canonical study
   state or call model providers directly.
+- Cardine currently runs its copied `src/study_agent` core. Harness `0.3.0` is
+  the adoption artifact, but installed-distribution parity (CA-08) and
+  copied-core removal (CA-10) are still pending; see [`../CONTEXT.md`](../CONTEXT.md).
 
 ## Recovery history
 
