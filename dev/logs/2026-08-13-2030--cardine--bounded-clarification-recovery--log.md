@@ -41,6 +41,8 @@ falls back to the first valid question.
   repository check still reports pre-existing typing errors in Tool Chips and
   other concurrent Wave A files.
 - `git diff --check`: passed.
+- Commit `22fc152` pushed to `github/codex/cardine-wave-a-recovery`; the live
+  server was restarted from that commit and `/health` returned HTTP 200.
 
 ## Notes
 

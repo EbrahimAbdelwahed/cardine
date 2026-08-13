@@ -10,6 +10,10 @@ of immediately repeating the same question. The fix is prompt-driven and uses
 Luna's existing natural-language decision ability; no classifier or general
 agent runtime was added.
 
+The implementation is published on `codex/cardine-wave-a-recovery` at
+`22fc152` and the local live server was restarted from that commit. `/health`
+returned HTTP 200.
+
 ## Completed
 
 - Prompt `tutor_decision.v1` version 1.3.2.
@@ -36,3 +40,4 @@ agent runtime was added.
 - Routing/retrieval/pin suite: 40 passed.
 - Broader slice: 113 passed, 2 skips, 2 documented unrelated failures.
 - Ruff, focused mypy, and diff check: passed.
+- GitHub publication: `22fc152` pushed successfully; live health check: HTTP 200.
