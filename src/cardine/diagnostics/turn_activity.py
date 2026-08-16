@@ -1,11 +1,12 @@
-"""Payload-free, process-local observations for one live tutor turn.
+"""Process-local observations for one live tutor turn.
 
 The activity store is deliberately separate from :mod:`turn_trace`: it keeps
-only a bounded list of UI-safe observations.  Labels and references come from
+only a bounded list of UI-safe observations. Labels and references come from
 the closed vocabulary below; targets are canonical titles already selected by
-the host.  Learner/model text, prompts, tool arguments, search queries,
-citations, and canonical identifiers are rejected before they can enter the
-store.  Nothing in this module is durable or emitted to telemetry.
+the host. One separately bounded model-authored progress message may be held
+for the authenticated live pending turn. Learner text, prompts, tool arguments,
+search queries, citations, and canonical identifiers remain excluded from
+activity records. Nothing in this module is durable or emitted to telemetry.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from study_agent.domain._validation import JsonObject, JsonValue
 MAX_TURNS = 8
 MAX_RECORDS_PER_TURN = 32
 MAX_TARGET_CHARS = 80
+MAX_PROGRESS_MESSAGE_CHARS = 240
 
 # The values are product copy, never provider/model/user supplied text.
 REF_LABELS: Mapping[str, str] = MappingProxyType({
@@ -47,6 +49,10 @@ REF_LABELS: Mapping[str, str] = MappingProxyType({
     "artifact.get": "Leggo gli artefatti",
     "assessment.get": "Leggo la valutazione",
     "evidence.get": "Leggo le evidenze",
+    "conversation.search": "Cerco nella conversazione",
+    "conversation.read": "Leggo la conversazione",
+    "study_memory.record": "Aggiorno la memoria di studio",
+    "study_memory.search": "Cerco nella memoria di studio",
 })
 ACTIVITY_KINDS = frozenset({"tool", "retrieval", "capability", "model", "verification"})
 ACTIVITY_STATES = frozenset({"running", "done", "failed"})
@@ -72,12 +78,13 @@ _FORBIDDEN_TARGET = re.compile(
 
 
 class _Turn:
-    __slots__ = ("keys", "omitted", "records", "sequence", "state")
+    __slots__ = ("keys", "omitted", "progress_message", "records", "sequence", "state")
 
     def __init__(self) -> None:
         self.records: list[dict[str, JsonValue]] = []
         self.keys: dict[tuple[str, str], int] = {}
         self.omitted = 0
+        self.progress_message: str | None = None
         self.state = "running"
         self.sequence = 0
 
@@ -277,6 +284,28 @@ class TurnActivityStore:
 
     finish_activity = finish
 
+    def publish_progress_message(self, message: str | None) -> None:
+        """Publish one bounded transient message for the current live turn."""
+
+        if message is None:
+            return
+        if (
+            not isinstance(message, str)
+            or not message
+            or message != message.strip()
+            or len(message) > MAX_PROGRESS_MESSAGE_CHARS
+            or any(ord(character) < 0x20 or ord(character) == 0x7F for character in message)
+        ):
+            raise ValueError("progress message is invalid")
+        with self._lock:
+            current = _CURRENT.get()
+            if current is None or current[0] is not self:
+                return
+            turn = self._turn(current[1])
+            if turn is None or turn.state != "running":
+                return
+            turn.progress_message = message
+
     def add_settled(
         self,
         request_id: str | Mapping[str, object],
@@ -333,20 +362,24 @@ class TurnActivityStore:
                     if status == "failed":
                         record["error_code"] = "capability_failed"
             turn.state = "failed" if status == "failed" else "settled"
+            turn.progress_message = None
             self._turns.move_to_end(request_id)
             return self._snapshot_locked(request_id)
 
     def _snapshot_locked(self, request_id: str) -> JsonObject:
         turn = self._turn(request_id)
         if turn is None:
-            return {"schema_version": 1, "state": "unknown", "records": [], "omitted": 0}
+            return {"schema_version": 2, "state": "unknown", "records": [], "omitted": 0}
         records = tuple(cast(JsonObject, dict(item)) for item in turn.records)
-        return {
-            "schema_version": 1,
+        snapshot: dict[str, JsonValue] = {
+            "schema_version": 2,
             "state": turn.state,
             "records": records,
             "omitted": turn.omitted,
         }
+        if turn.state == "running" and turn.progress_message is not None:
+            snapshot["progress_message"] = turn.progress_message
+        return snapshot
 
     def snapshot(self, request_id: str) -> JsonObject:
         if not isinstance(request_id, str) or not request_id:
@@ -387,12 +420,20 @@ def add_settled(record: Mapping[str, object]) -> None:
         current[0].add_settled(current[1], record)
 
 
+def publish_progress_message(message: str | None) -> None:
+    current = _CURRENT.get()
+    if current is not None:
+        current[0].publish_progress_message(message)
+
+
 __all__ = [
     "ACTIVITY_KINDS",
     "ERROR_CODES",
+    "MAX_PROGRESS_MESSAGE_CHARS",
     "REF_LABELS",
     "TurnActivityStore",
     "add_settled",
     "begin_activity",
     "finish_activity",
+    "publish_progress_message",
 ]

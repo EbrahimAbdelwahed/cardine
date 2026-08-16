@@ -1,6 +1,6 @@
 """Bounded, in-memory diagnostics for validated tutor decisions.
 
-Only the opaque correlation id and the typed decision discriminator are kept.
+Only the opaque correlation id and a bounded structural decision trajectory are kept.
 Learner/model text, prompts, arguments, sources, timing, lifecycle phases, and
 HTTP payloads never enter this store.
 """
@@ -19,12 +19,14 @@ from typing import cast
 from study_agent.domain._validation import JsonObject, JsonValue
 
 MAX_TURN_TRACES = 24
+MAX_STEPS_PER_TRACE = 4
 
 
 @dataclass(slots=True)
 class _Trace:
     trace_id: str
     decision: JsonObject | None = None
+    steps: tuple[JsonObject, ...] = ()
 
 
 _CURRENT: contextvars.ContextVar[tuple[TurnTraceStore, str] | None] = (
@@ -113,10 +115,23 @@ class TurnTraceStore:
             if not isinstance(reason, str):
                 return
             payload["reason"] = reason
+        elif kind == "invoke_tool":
+            name = getattr(decision, "tool_name", None)
+            if not isinstance(name, str):
+                return
+            payload["tool_name"] = name
+        elif kind == "start_capability":
+            capability_id = getattr(decision, "capability_id", None)
+            if not isinstance(capability_id, str):
+                return
+            payload["capability_id"] = capability_id
         with self._lock:
             trace = self._traces.get(trace_id)
             if trace is not None:
                 trace.decision = payload
+                trace.steps = (*trace.steps, cast(JsonObject, dict(payload)))[
+                    -MAX_STEPS_PER_TRACE:
+                ]
                 self._traces.move_to_end(trace_id)
 
     def snapshot(self) -> JsonObject:
@@ -127,6 +142,7 @@ class TurnTraceStore:
                     {
                         "trace_id": trace.trace_id,
                         "decision": cast(JsonObject, dict(trace.decision)),
+                        "steps": tuple(cast(JsonObject, dict(step)) for step in trace.steps),
                     },
                 )
                 for trace in self._traces.values()
@@ -137,7 +153,7 @@ class TurnTraceStore:
                 None,
             )
         return {
-            "schema_version": 3,
+            "schema_version": 4,
             "latest_trace_id": latest,
             "turn_traces": traces,
             "retention": {
@@ -145,6 +161,7 @@ class TurnTraceStore:
                 "storage": "memory_only",
                 "external_telemetry": False,
                 "payload_capture": False,
+                "max_steps_per_trace": MAX_STEPS_PER_TRACE,
             },
         }
 

@@ -13,7 +13,8 @@ Cardine owns a second, bounded in-memory `TurnActivityStore` beside `TurnTraceSt
 
 - The current context binds both the application-owned store and request ID, preventing cross-instance contamination.
 - Records use a closed Cardine vocabulary. Labels are compiled locally; targets may contain only bounded canonical lesson/section titles already shown elsewhere in the product.
-- Prompts, answers, tool arguments, search queries, evidence text, fingerprints, and canonical source/revision/chunk identifiers are rejected.
+- Prompts, answers, tool arguments, search queries, evidence text, fingerprints, and canonical source/revision/chunk identifiers are rejected from activity records.
+- A validated `start_capability` may additionally select one capability-specific progress sentence from the closed host-owned template advertised in its schema. It is exposed only to the authenticated live pending turn and is never stored in the durable handoff, telemetry, or canonical history.
 - A lock-independent, authenticated `GET /api/v1/turns/<request_id>/activity` route supports polling while the tutor POST holds the repository mutation lock.
 - The settled POST receipt carries the same safe records for the final message. In the first delivery they do not survive reload or process restart.
 

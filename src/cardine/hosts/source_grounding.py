@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from study_agent.ports.tutor_host import TutorDecisionPort, TutorInterruptionToken
 
 from .contracts import (
+    InvokeToolDecision,
     StartCapabilityDecision,
     TutorDecision,
     TutorHostContext,
@@ -81,6 +82,11 @@ def _require_grounded_explanation(
     """Select the advertised evidence-bound capability for an explicit source request."""
 
     if context.pending_continuation is not None:
+        return decision
+    if (
+        isinstance(decision, InvokeToolDecision)
+        and decision.tool_name in {"study_memory.record", "study_memory.search"}
+    ):
         return decision
     learner_text = _latest_learner_text(context)
     if learner_text is None or not _is_source_explanation_request(learner_text):

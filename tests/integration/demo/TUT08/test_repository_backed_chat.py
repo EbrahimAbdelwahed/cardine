@@ -988,9 +988,12 @@ def test_read_request_with_course_materials_enters_the_grounded_flow(
     ]
     diagnostics = app.turn_traces.snapshot()
     trace = cast(tuple[dict[str, object], ...], diagnostics["turn_traces"])[-1]
-    # Diagnostics report the validated model decision, not the host-side
-    # source-grounding rewrite that subsequently enforces capability routing.
-    assert trace["decision"] == {"kind": "assistant_message"}
+    # Diagnostics report the validated decision that the host actually
+    # executes after its source-grounding safety router.
+    assert trace["decision"] == {
+        "kind": "start_capability",
+        "capability_id": "explain_concept",
+    }
     assert {
         "events",
         "final_status",

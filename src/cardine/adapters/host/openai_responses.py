@@ -172,7 +172,7 @@ class OpenAIResponsesTutorDecisionPort(TutorDecisionPort):
                     "type": "json_schema",
                     "name": "study_agent_tutor_decision",
                     "strict": True,
-                    "schema": _plain(decision_schema(context)),
+                    "schema": _plain(_provider_strict_schema(decision_schema(context))),
                 }
             },
             "store": False,
@@ -249,8 +249,13 @@ class OpenAIResponsesTutorDecisionPort(TutorDecisionPort):
             if not isinstance(decoded, dict) or set(decoded) != {"decision"}:
                 raise ValueError
             decision = decoded["decision"]
+            local_schema = decision_schema(context)
+            decision_schema_value = local_schema["properties"]["decision"]
+            cleaned_decision = _remove_provider_null_optionals(
+                decision, decision_schema_value
+            )
             encoded = json.dumps(
-                _plain(decision),
+                _plain(cleaned_decision),
                 ensure_ascii=False,
                 sort_keys=True,
                 separators=(",", ":"),
@@ -275,6 +280,77 @@ def _plain(value: object) -> object:
     if isinstance(value, list):
         return [_plain(item) for item in value]
     return value
+
+
+def _provider_strict_schema(value: object) -> object:
+    """Project optional local object fields into OpenAI strict JSON schema."""
+
+    if isinstance(value, Mapping):
+        projected = {str(key): _provider_strict_schema(item) for key, item in value.items()}
+        properties = projected.get("properties")
+        required = projected.get("required")
+        if isinstance(properties, dict) and isinstance(required, tuple):
+            required_names = set(required)
+            for name, item in tuple(properties.items()):
+                if name not in required_names:
+                    properties[name] = {"anyOf": (item, {"type": "null"})}
+                    required_names.add(name)
+            projected["required"] = tuple(sorted(required_names))
+        return projected
+    if isinstance(value, tuple):
+        return tuple(_provider_strict_schema(item) for item in value)
+    return value
+
+
+def _remove_provider_null_optionals(value: object, schema: object) -> object:
+    """Remove nulls introduced by the strict provider projection."""
+
+    if not isinstance(schema, Mapping):
+        return value
+    variants = schema.get("anyOf")
+    if isinstance(variants, tuple):
+        schema = _matching_variant(value, variants)
+        if not isinstance(schema, Mapping):
+            return value
+    if isinstance(value, Mapping):
+        properties = schema.get("properties")
+        required = schema.get("required")
+        if not isinstance(properties, Mapping) or not isinstance(required, tuple):
+            return value
+        required_names = set(required)
+        cleaned: dict[str, object] = {}
+        for key, item in value.items():
+            name = str(key)
+            if name not in properties:
+                cleaned[name] = item
+            elif item is None and name not in required_names:
+                continue
+            else:
+                cleaned[name] = _remove_provider_null_optionals(item, properties[name])
+        return cleaned
+    if isinstance(value, tuple):
+        items = schema.get("items")
+        return tuple(_remove_provider_null_optionals(item, items) for item in value)
+    if isinstance(value, list):
+        items = schema.get("items")
+        return [_remove_provider_null_optionals(item, items) for item in value]
+    return value
+
+
+def _matching_variant(value: object, variants: tuple[object, ...]) -> object:
+    if not isinstance(value, Mapping):
+        return variants[0] if variants else {}
+    kind = value.get("kind")
+    for variant in variants:
+        if not isinstance(variant, Mapping):
+            continue
+        properties = variant.get("properties")
+        if not isinstance(properties, Mapping):
+            continue
+        discriminator = properties.get("kind")
+        if isinstance(discriminator, Mapping) and kind in discriminator.get("enum", ()):
+            return variant
+    return variants[0] if variants else {}
 
 
 async def _close_client(client: object) -> None:

@@ -6,7 +6,7 @@ import json
 from collections.abc import Mapping
 from typing import cast
 
-from cardine.diagnostics import begin_activity, record_turn_decision
+from cardine.diagnostics import begin_activity
 from cardine.hosts import (
     TutorDecision,
     TutorHostContext,
@@ -148,7 +148,6 @@ class ModelTutorDecisionPort(TutorDecisionPort):
                 separators=(",", ":"),
             ).encode("utf-8")
             decision = decision_from_bytes(encoded, context)
-            record_turn_decision(decision)
             _observe_decision(decision)
             return decision
         except (TypeError, ValueError, OverflowError):

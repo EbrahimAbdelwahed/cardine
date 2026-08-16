@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, cast
 
 from study_agent.domain import CourseId, SessionId, TutorSnapshotV1
 from study_agent.domain._validation import JsonObject
@@ -56,6 +56,12 @@ class HarnessToolDiscoveryPort(Protocol):
     def manifests(self) -> tuple[HarnessToolManifestView, ...]: ...
 
 
+class PrivateTutorNoteView(Protocol):
+    def validated_memory_ids(
+        self, course_id: CourseId, *, through_sequence: int | None = None
+    ) -> frozenset[str]: ...
+
+
 class HarnessToolManifestView(Protocol):
     @property
     def name(self) -> str: ...
@@ -74,12 +80,14 @@ class TutorHostContextAssembler:
         capabilities: CapabilityDiscoveryPort,
         presentations: TutorPresentationViewPort | None = None,
         tools: HarnessToolDiscoveryPort | None = None,
+        private_notes: PrivateTutorNoteView | None = None,
     ) -> None:
         self._snapshots = snapshots
         self._evidence = evidence
         self._capabilities = capabilities
         self._presentations = presentations
         self._tools = tools
+        self._private_notes = private_notes
 
     def assemble(
         self,
@@ -107,7 +115,16 @@ class TutorHostContextAssembler:
                 key=lambda item: (item.identity, item.manifest_fingerprint),
             )
         )
-        tutor_snapshot = snapshot.to_json()
+        private_note_ids = (
+            frozenset()
+            if self._private_notes is None
+            else self._private_notes.validated_memory_ids(
+                course_id, through_sequence=snapshot.high_water_sequence
+            )
+        )
+        tutor_snapshot = _without_study_memory(
+            snapshot.to_json(), private_note_ids
+        )
         if self._tools is not None:
             tutor_snapshot = {
                 **tutor_snapshot,
@@ -119,6 +136,7 @@ class TutorHostContextAssembler:
                     for item in self._tools.manifests
                 ),
             }
+        presentations: tuple[JsonObject, ...] = ()
         if self._presentations is not None:
             presentations = tuple(
                 {
@@ -133,7 +151,7 @@ class TutorHostContextAssembler:
                 }
                 for item in self._presentations.presentations(course_id, session_id)
             )
-            tutor_snapshot = _bounded_decision_history(tutor_snapshot, presentations)
+        tutor_snapshot = _bounded_decision_history(tutor_snapshot, presentations)
         return TutorHostContext(
             course_id=str(course_id),
             session_id=str(session_id),
@@ -162,6 +180,18 @@ def _bounded_decision_history(
         if type(sequence := item.get("course_sequence")) is int
     )
     retained = frozenset(sequences[-_MAX_RECENT_CONVERSATION_ENTRIES:])
+    conversation_sequences = frozenset(
+        sequence
+        for item in timeline
+        if item.get("kind") in {"learner", "assistant"}
+        and type(sequence := item.get("course_sequence")) is int
+    ) | frozenset(
+        sequence
+        for item in presentations
+        if item.get("kind") in {"assistant_message", "learner_question"}
+        and type(sequence := item.get("course_sequence")) is int
+    )
+    included_conversation = len(conversation_sequences & retained)
     return {
         **tutor_snapshot,
         "timeline": tuple(
@@ -170,7 +200,65 @@ def _bounded_decision_history(
         "tutor_presentations": tuple(
             item for item in presentations if item.get("course_sequence") in retained
         ),
+        "conversation_window": {
+            "total_entries": len(conversation_sequences),
+            "included_entries": included_conversation,
+            "omitted_entries": len(conversation_sequences) - included_conversation,
+            "through_sequence": tutor_snapshot.get("high_water_sequence", 0),
+        },
     }
+
+
+def _without_study_memory(
+    snapshot: JsonObject, private_note_ids: frozenset[str]
+) -> JsonObject:
+    """Keep structured memory out of ordinary provider conversation context."""
+
+    timeline = snapshot.get("timeline", ())
+    notes = snapshot.get("notes", ())
+    session = snapshot.get("session")
+    filtered: dict[str, object] = dict(snapshot)
+    private_contents = frozenset(
+        content
+        for item in (
+            timeline if isinstance(timeline, tuple) else ()
+        )
+        if isinstance(item, Mapping)
+        and str(item.get("interaction_id", "")) in private_note_ids
+        and isinstance((content := item.get("content")), str)
+    )
+    if isinstance(timeline, tuple):
+        filtered["timeline"] = tuple(
+            item
+            for item in timeline
+            if not (
+                isinstance(item, Mapping)
+                and str(item.get("interaction_id", "")) in private_note_ids
+            )
+        )
+    if isinstance(notes, tuple):
+        filtered["notes"] = tuple(
+            item
+            for item in notes
+            if not (
+                isinstance(item, Mapping)
+                and str(item.get("interaction_id", "")) in private_note_ids
+            )
+        )
+    if isinstance(session, Mapping):
+        summary = session.get("continuation_summary")
+        if isinstance(summary, Mapping):
+            cleaned_summary = dict(summary)
+            for key in ("grounded_points", "unresolved_notes"):
+                values = summary.get(key)
+                if isinstance(values, tuple):
+                    cleaned_summary[key] = tuple(
+                        value for value in values if value not in private_contents
+                    )
+            cleaned_session = dict(session)
+            cleaned_session["continuation_summary"] = cleaned_summary
+            filtered["session"] = cleaned_session
+    return cast(JsonObject, filtered)
 
 
 def _require_owners(

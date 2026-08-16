@@ -1,6 +1,6 @@
 # Cardine development memory
 
-Updated: 2026-08-13 23:44 CEST
+Updated: 2026-08-15 00:40 CEST
 
 This file is the authoritative entrypoint for Cardine development memory.
 Cardine-specific plans, logs, notes, and handoffs belong in this repository's
@@ -9,7 +9,16 @@ archive and must not be treated as Cardine's current state.
 
 ## Start here
 
-- [Canonical source viewer handoff](handoffs/2026-08-13-2344--cardine--canonical-source-viewer--handoff.md) and [implementation log](logs/2026-08-13-2344--cardine--canonical-source-viewer--log.md) — inline Sources-page PDF/Markdown viewing and floating citation viewer over authenticated canonical revisions; awaiting shared-worktree integration and live restart.
+- [Page-aware flashcard locator fix](logs/2026-08-15-0040--cardine--page-aware-flashcard-locator-fix--log.md) — repeated live flashcard turns selected the correct capability but failed before Luna because planning omitted immutable PDF page provenance from the locator; planner and resolver now share one canonical formatter while exact integrity validation remains fail-closed.
+- [Password-free runtime API key UI](logs/2026-08-14-2352--cardine--password-free-runtime-api-key-ui--log.md) — the loopback `local_repository` shell has no password gate but exposes write-only, process-local OpenAI credential settings backed by the same store used by Luna; local mutations require exact same-origin requests.
+- [Atomic capability progress message](logs/2026-08-14-2223--cardine--atomic-capability-progress-message--log.md) — Luna can atomically select a safe host-owned progress sentence with `start_capability`; it is authenticated, process-local, non-canonical, non-durable, and does not weaken host-owned execution.
+- [Restart-safe paired material generation](logs/2026-08-14-1935--materials--restart-safe-paired-generation--log.md) and [four-slice spec](../specs/material-generation-workflow/README.md) — Slices 01–02 now provide lesson-material lineage plus Luna-only checkpointed complete/study proposals; HUMAN approval/publication and product entrypoints remain unauthorized Slices 03–04.
+- [Minimal study memory implementation](logs/2026-08-14-1649--cardine--minimal-study-memory--log.md) — private record/search tools for topics covered and attributable learner signals, prompt-private canonical storage, and completed-capability settlement.
+- [Learner Model Context Map contract](notes/2026-08-14-1446--cardine--learner-model-context-map-contract--note.md) — recovered target behavior for attributable study evidence, multidimensional mastery, exam-relative readiness, coverage/confidence, and the strict separation between factual ledgers and derived estimates.
+- [Repeated deictic flashcard live failure](logs/2026-08-14-1438--cardine--repeated-deictic-flashcard-live-failure--log.md) — the clean-path lesson-scope fix misses a repeated failed `questa lezione` request, falls back to the 3,676-chunk global planner, and misreports the local planning failure as provider unavailability.
+- [Deictic flashcard lesson-scope fix](logs/2026-08-14-0142--cardine--deictic-flashcard-lesson-scope--log.md) and [live diagnosis](logs/2026-08-14-0129--cardine--live-flashcard-lesson-scope-failure--log.md) — `questa lezione` now reuses the nearest recent uniquely resolved lesson and avoids the 3,676-chunk global planner failure.
+- [Conversation-memory handoff](handoffs/2026-08-14-0044--cardine--conversation-memory-tools--handoff.md), [implementation log](logs/2026-08-14-0044--cardine--conversation-memory-tools--log.md), and [ADR-0002](decisions/2026-08-14--ADR-0002--conversation-memory-is-context-not-evidence.md) — bounded search/read over older canonical turns, source-only flashcard grounding, v3 excerpt-safe retry handoffs, and post-routing structural trajectories.
+- [Canonical source viewer handoff](handoffs/2026-08-13-2344--cardine--canonical-source-viewer--handoff.md), [implementation log](logs/2026-08-13-2344--cardine--canonical-source-viewer--log.md), and [layout follow-up](logs/2026-08-14-0006--cardine--source-viewer-layout--log.md) — lateral Sources-page PDF/Markdown reading pane and bounded resizable citation viewer over authenticated canonical revisions; awaiting shared-worktree integration and live restart.
 - [Bounded agent-loop handoff](handoffs/2026-08-13-2145--cardine--bounded-agent-loop--handoff.md) and [implementation log](logs/2026-08-13-2145--cardine--bounded-agent-loop--log.md) — same-turn tool observations, exact duplicate suppression, four-decision budget, and restart-safe tool-informed capability handoffs.
 - [Targeted latency-reduction handoff](handoffs/2026-08-13-2036--cardine--latency-reduction--handoff.md) and [measurement log](logs/2026-08-13-2036--cardine--targeted-latency-reduction--log.md) — coherent snapshot fast path, bounded Luna context, faster FTS result resolution, immediate receipt rendering, and responsive reads.
 - [Current live Tool Chips handoff](handoffs/2026-08-13-1647--cardine--live-tool-chips--handoff.md) — truthful process-local tutor activity, polling boundary, verification, and deferred reload work.
@@ -44,6 +53,9 @@ archive and must not be treated as Cardine's current state.
   durable, restart-safe, observable, and may degrade to lexical retrieval.
 - Generated flashcards remain proposals. Only explicit HUMAN acceptance and
   enrollment make them eligible for recall.
+- Generated lesson materials likewise remain one atomic complete/study proposal
+  batch; no output becomes a canonical source before explicit HUMAN decisions
+  and dependency-aware publication.
 - Provider-backed natural-language processing uses the configured
   `openai-gpt-5.6-luna` adapter through the server-owned credential boundary.
 - The browser is presentation and transport. It does not own canonical study

@@ -12,6 +12,11 @@ from dataclasses import dataclass
 from hashlib import sha256
 from typing import Protocol, cast
 
+from cardine.application.conversation_history import (
+    ConversationHistoryEntry,
+    ConversationHistoryReader,
+)
+from cardine.application.study_memory import StudyMemoryArchive, StudyMemoryEntry
 from cardine.courses import course_profile_manifest
 from cardine.courses.service import CourseService
 from study_agent.domain import (
@@ -34,7 +39,7 @@ from study_agent.ports import (
     StudyContextViewPort,
 )
 from study_agent.recall.composition import RecallComposition
-from study_agent.sessions.service import SessionService
+from study_agent.sessions.service import IdempotencyConflictError, SessionService
 from study_agent.state import Projection
 from study_agent.tools import (
     IdempotencyMode,
@@ -63,6 +68,8 @@ class HarnessToolOwner(Protocol):
     artifacts: object
     assessments: object
     learner_evidence: object
+    conversation_history: object
+    study_memory: object
     recall_composition: object
     events: object
 
@@ -174,8 +181,19 @@ class HarnessToolSurface:
     it intentionally has no HTTP, browser, or provider dependency.
     """
 
-    def __init__(self, owner: HarnessToolOwner) -> None:
+    def __init__(
+        self,
+        owner: HarnessToolOwner,
+        *,
+        conversation_through_sequence: int | None = None,
+    ) -> None:
+        if conversation_through_sequence is not None and (
+            type(conversation_through_sequence) is not int
+            or conversation_through_sequence < 0
+        ):
+            raise ValueError("conversation high-water bound is invalid")
         self._owner = owner
+        self._conversation_through_sequence = conversation_through_sequence
         self._operations = {item.manifest.name: item for item in self._build_operations()}
         if len(self._operations) != len(self._build_operations()):
             raise RuntimeError("harness tool names must be unique")
@@ -210,6 +228,8 @@ class HarnessToolSurface:
             if result.value is not None:
                 validate_json(result.value, operation.manifest.output_schema)
             return result
+        except IdempotencyConflictError:
+            return _failure(ToolErrorCode.CONFLICT, "tool retry conflicts with canonical state")
         except (SchemaValidationError, TypeError, ValueError):
             return _failure(
                 ToolErrorCode.INVALID_ARGUMENTS, "tool arguments violate the study contract"
@@ -304,6 +324,146 @@ class HarnessToolSurface:
                     idempotency=IdempotencyMode.REQUIRED,
                 ),
                 self._ingest_source,
+            ),
+            _Operation(
+                _manifest(
+                    "study_memory.record",
+                    _object(
+                        {
+                            "topic": {"type": "string", "minLength": 1, "maxLength": 120},
+                            "summary": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 300,
+                            },
+                            "signal": {
+                                "type": "string",
+                                "enum": (
+                                    "self_reported_difficulty",
+                                    "incorrect",
+                                    "partial",
+                                    "correct",
+                                    "unknown",
+                                ),
+                            },
+                            "assistance": {
+                                "type": "string",
+                                "enum": ("none", "hint", "explanation", "unknown"),
+                            },
+                        },
+                        ("topic", "summary", "signal", "assistance"),
+                    ),
+                    output_schema=_object(
+                        {
+                            "memory_id": _TEXT,
+                            "kind": {"type": "string", "enum": ("learner_signal",)},
+                            "origin_sequence": {"type": "integer", "minimum": 1},
+                            "recorded_sequence": {"type": "integer", "minimum": 1},
+                        },
+                        ("memory_id", "kind", "origin_sequence", "recorded_sequence"),
+                    ),
+                    effect=ToolEffect.CANONICAL_WRITE,
+                    capability="study:write",
+                    idempotency=IdempotencyMode.REQUIRED,
+                ),
+                self._record_study_memory,
+            ),
+            _Operation(
+                _manifest(
+                    "study_memory.search",
+                    _object(
+                        {
+                            "query": {
+                                "type": ("string", "null"),
+                            },
+                            "kind": {
+                                "type": "string",
+                                "enum": ("any", "topic_covered", "learner_signal"),
+                            },
+                            "signal": {
+                                "type": "string",
+                                "enum": (
+                                    "any",
+                                    "self_reported_difficulty",
+                                    "incorrect",
+                                    "partial",
+                                    "correct",
+                                    "unknown",
+                                ),
+                            },
+                            "limit": {"type": "integer", "minimum": 1, "maximum": 8},
+                        },
+                        ("query", "kind", "signal", "limit"),
+                    ),
+                    output_schema=_object(
+                        {"entries": _array(_study_memory_entry_schema())},
+                        ("entries",),
+                    ),
+                    effect=ToolEffect.READ_ONLY,
+                    capability="study:read",
+                ),
+                self._search_study_memory,
+            ),
+            _Operation(
+                _manifest(
+                    "conversation.search",
+                    _object(
+                        {
+                            "query": {"type": "string", "minLength": 1, "maxLength": 240},
+                            "limit": {"type": "integer", "minimum": 1, "maximum": 8},
+                        },
+                        ("query", "limit"),
+                    ),
+                    output_schema=_object(
+                        {
+                            "entries": _array(_history_entry_schema()),
+                            "total_entries": {"type": "integer", "minimum": 0},
+                            "match_count": {"type": "integer", "minimum": 0},
+                            "through_sequence": {"type": "integer", "minimum": 0},
+                        },
+                        ("entries", "total_entries", "match_count", "through_sequence"),
+                    ),
+                    effect=ToolEffect.READ_ONLY,
+                    capability="study:read",
+                ),
+                self._search_conversation,
+            ),
+            _Operation(
+                _manifest(
+                    "conversation.read",
+                    _object(
+                        {
+                            "cursor": {"type": ("integer", "null")},
+                            "direction": {
+                                "type": "string",
+                                "enum": ("backward", "forward"),
+                            },
+                            "limit": {"type": "integer", "minimum": 1, "maximum": 12},
+                        },
+                        ("cursor", "direction", "limit"),
+                    ),
+                    output_schema=_object(
+                        {
+                            "entries": _array(_history_entry_schema()),
+                            "total_entries": {"type": "integer", "minimum": 0},
+                            "through_sequence": {"type": "integer", "minimum": 0},
+                            "next_cursor": {
+                                "type": ("integer", "null"),
+                            },
+                            "has_more": _BOOL,
+                        },
+                        (
+                            "entries",
+                            "total_entries",
+                            "through_sequence",
+                            "next_cursor",
+                            "has_more",
+                        ),
+                    ),
+                    effect=ToolEffect.READ_ONLY,
+                    capability="study:read",
+                ),
+                self._read_conversation,
             ),
             _Operation(
                 _manifest(
@@ -467,6 +627,93 @@ class HarnessToolSurface:
             }
         )
 
+    def _search_conversation(
+        self, arguments: JsonObject, context: ExecutionContext
+    ) -> ToolResult:
+        if context.session_id is None:
+            return _failure(ToolErrorCode.UNAUTHORIZED, "conversation scope is host-derived")
+        result = cast(ConversationHistoryReader, self._owner.conversation_history).search(
+            context.course_id,
+            context.session_id,
+            str(arguments["query"]),
+            limit=cast(int, arguments["limit"]),
+            through_sequence=self._conversation_through_sequence,
+        )
+        return ToolResult.success(
+            {
+                "entries": tuple(_history_entry(item, 700) for item in result.entries),
+                "total_entries": result.total_entries,
+                "match_count": result.match_count,
+                "through_sequence": result.through_sequence,
+            }
+        )
+
+    def _record_study_memory(
+        self, arguments: JsonObject, context: ExecutionContext
+    ) -> ToolResult:
+        if context.session_id is None:
+            return _failure(ToolErrorCode.UNAUTHORIZED, "study memory scope is host-derived")
+        archive = cast(StudyMemoryArchive, self._owner.study_memory)
+        origin_sequence = archive.latest_learner_sequence(
+            context.course_id,
+            context.session_id,
+            through_sequence=self._conversation_through_sequence,
+        )
+        entry = archive.record_learner_signal(
+            topic=str(arguments["topic"]),
+            summary=str(arguments["summary"]),
+            signal=str(arguments["signal"]),
+            assistance=str(arguments["assistance"]),
+            context=context,
+            origin_sequence=origin_sequence,
+        )
+        return ToolResult.success(
+            {
+                "memory_id": entry.memory_id,
+                "kind": entry.kind,
+                "origin_sequence": entry.origin_sequence,
+                "recorded_sequence": entry.recorded_sequence,
+            }
+        )
+
+    def _search_study_memory(
+        self, arguments: JsonObject, context: ExecutionContext
+    ) -> ToolResult:
+        entries = cast(StudyMemoryArchive, self._owner.study_memory).search(
+            context.course_id,
+            query=cast(str | None, arguments["query"]),
+            kind=str(arguments["kind"]),
+            signal=str(arguments["signal"]),
+            limit=cast(int, arguments["limit"]),
+            through_sequence=self._conversation_through_sequence,
+        )
+        return ToolResult.success(
+            {"entries": tuple(_study_memory_entry(item) for item in entries)}
+        )
+
+    def _read_conversation(
+        self, arguments: JsonObject, context: ExecutionContext
+    ) -> ToolResult:
+        if context.session_id is None:
+            return _failure(ToolErrorCode.UNAUTHORIZED, "conversation scope is host-derived")
+        result = cast(ConversationHistoryReader, self._owner.conversation_history).read(
+            context.course_id,
+            context.session_id,
+            cursor=cast(int | None, arguments.get("cursor")),
+            direction=str(arguments["direction"]),
+            limit=cast(int, arguments["limit"]),
+            through_sequence=self._conversation_through_sequence,
+        )
+        return ToolResult.success(
+            {
+                "entries": tuple(_history_entry(item, 500) for item in result.entries),
+                "total_entries": result.total_entries,
+                "through_sequence": result.through_sequence,
+                "next_cursor": result.next_cursor,
+                "has_more": result.has_more,
+            }
+        )
+
     def _context(self, _arguments: JsonObject, context: ExecutionContext) -> ToolResult:
         snapshot = cast(StudyContextViewPort, self._owner.study_context).get(
             context.course_id
@@ -537,6 +784,67 @@ def _failure(code: ToolErrorCode, message: str) -> ToolResult:
     return ToolResult.failure(
         ToolError(code, message, retryable=code is ToolErrorCode.RETRYABLE_CONFLICT)
     )
+
+
+def _history_entry_schema() -> JsonObject:
+    return _object(
+        {
+            "role": {"type": "string", "enum": ("learner", "assistant")},
+            "course_sequence": {"type": "integer", "minimum": 1},
+            "excerpt": _TEXT,
+        },
+        ("role", "course_sequence", "excerpt"),
+    )
+
+
+def _history_entry(entry: ConversationHistoryEntry, maximum: int) -> JsonObject:
+    return {
+        "role": entry.role,
+        "course_sequence": entry.course_sequence,
+        "excerpt": entry.excerpt[:maximum],
+    }
+
+
+def _study_memory_entry_schema() -> JsonObject:
+    nullable_text: JsonObject = {"type": ("string", "null")}
+    return _object(
+        {
+            "memory_id": _TEXT,
+            "kind": {"type": "string", "enum": ("topic_covered", "learner_signal")},
+            "topic": _TEXT,
+            "summary": nullable_text,
+            "signal": nullable_text,
+            "assistance": nullable_text,
+            "origin_sequence": {"type": "integer", "minimum": 1},
+            "recorded_sequence": {"type": "integer", "minimum": 1},
+            "recorded_by": {"type": "string", "enum": ("host", "tutor_agent")},
+        },
+        (
+            "memory_id",
+            "kind",
+            "topic",
+            "summary",
+            "signal",
+            "assistance",
+            "origin_sequence",
+            "recorded_sequence",
+            "recorded_by",
+        ),
+    )
+
+
+def _study_memory_entry(entry: StudyMemoryEntry) -> JsonObject:
+    return {
+        "memory_id": entry.memory_id,
+        "kind": entry.kind,
+        "topic": entry.topic,
+        "summary": entry.summary,
+        "signal": entry.signal,
+        "assistance": entry.assistance,
+        "origin_sequence": entry.origin_sequence,
+        "recorded_sequence": entry.recorded_sequence,
+        "recorded_by": entry.recorded_by,
+    }
 
 
 __all__ = ["HarnessToolSurface"]

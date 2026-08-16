@@ -446,6 +446,10 @@
   function setAccountControl() {
     const control = $("#account-control");
     if (!control) return;
+    if (state.auth.mode === "local_repository") {
+      control.hidden = true;
+      return;
+    }
     const name = $("#account-control-name");
     const status = $("#account-control-status");
     const avatar = $("#account-control-avatar");
@@ -559,6 +563,8 @@
 
   function renderSettings(payload = {}) {
     const settings = object(payload);
+    const settingsMode = text(first(settings, ["mode", "access_mode"], state.auth.mode), state.auth.mode);
+    const localMode = settingsMode === "local_repository";
     const account = object(first(settings, ["account", "identity", "user"], state.auth.account));
     const model = object(first(settings, ["model", "model_status"], {}));
     const modelLabel = text(first(model, ["label", "name", "model"], "GPT-5.6 Luna"), "GPT-5.6 Luna");
@@ -566,7 +572,10 @@
       ? "Chiave presente nel runtime: verifica la connessione prima di iniziare la chat."
       : "Nessuna chiave API configurata";
     const accountLabel = text(first(account, ["label", "email", "name", "username"], "Account personale"), "Account personale");
-    setView("impostazioni", `<section class="settings-surface" aria-labelledby="settings-heading"><p class="eyebrow">area privata · impostazioni</p><h1 id="settings-heading">Impostazioni</h1><p class="section-copy">Gestisci accesso, dati locali e modello.</p>${settings.error ? `<p class="field-error" role="alert"><span class="icon icon--warning-circle" aria-hidden="true"></span>${esc(settings.error)}</p>` : ""}<div class="settings-grid"><section class="settings-card"><h2>Account locale</h2><p>${esc(accountLabel)}</p><p>Uscire chiude questa sessione senza eliminare i dati locali.</p><div class="settings-card__actions"><button class="button button--quiet" type="button" data-auth-logout>Esci</button></div></section><section class="settings-card"><h2>Modello</h2><p>Modello attivo: <strong>${esc(modelLabel)}</strong>.</p><p>${esc(credentialStatus)}</p></section><section class="settings-card"><h2>Chiave API</h2><p>La chiave inserita qui resta disponibile fino al riavvio del servizio. Per mantenerla, configura <code>OPENAI_API_KEY</code> nel secret store del deployment. Cardine non mostra né restituisce il valore.</p><form id="settings-model-form" data-settings-credential autocomplete="off"><label for="settings-credential">Nuova chiave API</label><span class="password-field"><input id="settings-credential" name="api_key" type="password" autocomplete="new-password" spellcheck="false" placeholder="Incolla una nuova chiave" required aria-describedby="credential-settings-help"><button class="text-button" type="button" data-toggle-secret="settings-credential" aria-pressed="false">Mostra</button></span><p class="field-note" id="credential-settings-help">Cardine non scrive il valore nello storage del browser e svuota il campo subito dopo il salvataggio.</p><div class="settings-card__actions"><button class="button" type="submit">Salva nuova chiave</button><button class="button button--danger" type="button" data-settings-remove>Rimuovi chiave temporanea</button><span class="settings-card__status" id="credential-settings-status" role="status"></span></div></form></section><section class="settings-card settings-card--diagnostics"><h2>Diagnostica · Decisione tutor</h2><p>Ogni turno mostra solo la decisione validata. Retention locale bounded; nessun testo, prompt, fonte, cookie, chiave o body provider.</p><div id="preview-diagnostics"><p class="field-note">Carico diagnostica locale…</p></div><div class="settings-card__actions"><button class="button button--quiet" type="button" data-diagnostics-refresh>Aggiorna diagnostica</button></div></section><section class="settings-card"><h2>Dati del corso</h2><p>I dati di studio restano nel repository locale e non vengono inclusi nelle impostazioni del browser.</p></section><section class="settings-card"><h2>Privacy</h2><p>Sessione e chiave temporanea vengono rimosse al riavvio. Cardine non salva segreti nello storage del browser.</p></section></div></section>`);
+    const accountCard = localMode ? "" : `<section class="settings-card" data-settings-account><h2>Account locale</h2><p>${esc(accountLabel)}</p><p>Uscire chiude questa sessione senza eliminare i dati locali.</p><div class="settings-card__actions"><button class="button button--quiet" type="button" data-auth-logout>Esci</button></div></section>`;
+    const eyebrow = localMode ? "ambiente locale · impostazioni" : "area privata · impostazioni";
+    const copy = localMode ? "Gestisci il modello e i dati locali." : "Gestisci accesso, dati locali e modello.";
+    setView("impostazioni", `<section class="settings-surface" aria-labelledby="settings-heading"><p class="eyebrow">${eyebrow}</p><h1 id="settings-heading">Impostazioni</h1><p class="section-copy">${copy}</p>${settings.error ? `<p class="field-error" role="alert"><span class="icon icon--warning-circle" aria-hidden="true"></span>${esc(settings.error)}</p>` : ""}<div class="settings-grid">${accountCard}<section class="settings-card" data-settings-model><h2>Modello</h2><p>Modello attivo: <strong>${esc(modelLabel)}</strong>.</p><p>${esc(credentialStatus)}</p></section><section class="settings-card" data-settings-credential><h2>Chiave API</h2><p>La chiave inserita qui resta disponibile fino al riavvio del servizio. Per mantenerla, configura <code>OPENAI_API_KEY</code> nel secret store del deployment. Cardine non mostra né restituisce il valore.</p><form id="settings-model-form" data-settings-credential autocomplete="off"><label for="settings-credential">Nuova chiave API</label><span class="password-field"><input id="settings-credential" name="api_key" type="password" autocomplete="new-password" spellcheck="false" placeholder="Incolla una nuova chiave" required aria-describedby="credential-settings-help"><button class="text-button" type="button" data-toggle-secret="settings-credential" aria-pressed="false">Mostra</button></span><p class="field-note" id="credential-settings-help">Cardine non scrive il valore nello storage del browser e svuota il campo subito dopo il salvataggio.</p><div class="settings-card__actions"><button class="button" type="submit">Salva nuova chiave</button><button class="button button--danger" type="button" data-settings-remove>Rimuovi chiave temporanea</button><span class="settings-card__status" id="credential-settings-status" role="status"></span></div></form></section><section class="settings-card settings-card--diagnostics" data-settings-diagnostics><h2>Diagnostica · Decisione tutor</h2><p>Ogni turno mostra solo la decisione validata. Retention locale bounded; nessun testo, prompt, fonte, cookie, chiave o body provider.</p><div id="preview-diagnostics"><p class="field-note">Carico diagnostica locale…</p></div><div class="settings-card__actions"><button class="button button--quiet" type="button" data-diagnostics-refresh>Aggiorna diagnostica</button></div></section><section class="settings-card"><h2>Dati del corso</h2><p>I dati di studio restano nel repository locale e non vengono inclusi nelle impostazioni del browser.</p></section><section class="settings-card"><h2>Privacy</h2><p>Sessione e chiave temporanea vengono rimosse al riavvio. Cardine non salva segreti nello storage del browser.</p></section></div></section>`);
   }
 
   async function loadSettings(navigationVersion = state.navigationVersion) {
@@ -588,11 +597,11 @@
   }
 
   function enhanceSettingsSurface() {
-    const cards = $$(".settings-card", root);
-    const modelCard = cards[1];
+    const modelCard = $("[data-settings-model]", root);
+    const credentialCard = $("[data-settings-credential]", root);
     const settingsAvailable = object(state.viewData).settings_available !== false;
-    if (!settingsAvailable && cards[2]) {
-      patch(cards[2], "<h2>Configurazione modello</h2><p>Disponibile soltanto nell’area privata della preview locale.</p>");
+    if (!settingsAvailable && credentialCard) {
+      patch(credentialCard, "<h2>Configurazione modello</h2><p>Disponibile soltanto nell’area privata della preview locale.</p>");
     }
     if (settingsAvailable && modelCard && !$("[data-settings-check]", modelCard)) {
       modelCard.insertAdjacentHTML("beforeend", `<div class="settings-card__actions"><button class="button button--quiet" type="button" data-settings-check>Verifica decisione tutor</button><span class="settings-card__status" id="model-check-status" role="status"></span></div>`);
@@ -602,7 +611,7 @@
       workspaceCard.className = "settings-card";
       workspaceCard.id = "workspace-card";
       patch(workspaceCard, `<h2>Corso e sessione</h2><div id="workspace-manager"><p class="field-note">Carico corsi e sessioni disponibili…</p></div>`);
-      cards[2]?.before(workspaceCard);
+      credentialCard?.before(workspaceCard);
     }
   }
 
@@ -1633,7 +1642,7 @@
       records: recordRows,
     });
     const searchView = aiSidebarSearch({ placeholder: "Cerca in Cardine", shortcut: "/" });
-    setView("fonti", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="material-heading"><p class="section-kicker">libreria del corso</p><h1 class="section-title" id="material-heading">Fonti del corso</h1><p class="section-copy">Apri una fonte per leggere la revisione salvata nel repository del corso.</p><div class="ai-fonts-search">${searchView}</div><ul class="source-list">${rows}</ul><section class="materials-viewer" id="materials-viewer" aria-labelledby="materials-viewer-title" hidden><header class="materials-viewer__header"><div><p class="eyebrow" id="materials-viewer-kind">fonte del corso</p><h2 id="materials-viewer-title">Documento</h2></div></header><div class="source-viewer__content" id="materials-viewer-content"><p class="empty-state">Scegli una fonte da aprire.</p></div></section><div class="ai-fonts-context">${contextView}</div><details class="ai-fonts-records"><summary>Registro delle revisioni</summary>${registerView}</details></section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">da sapere</p><h2 class="side-card__title">Le fonti arrivano dal repository</h2><p class="side-card__copy">Il viewer è in sola lettura e apre soltanto revisioni canoniche appartenenti a questo corso.</p></div></aside></section>`);
+    setView("fonti", `<section class="section-grid section-grid--materials"><section class="section-grid__main" aria-labelledby="material-heading"><p class="section-kicker">libreria del corso</p><h1 class="section-title" id="material-heading">Fonti del corso</h1><p class="section-copy">Apri una fonte per leggerla nel pannello laterale.</p><div class="ai-fonts-search">${searchView}</div><ul class="source-list">${rows}</ul><div class="ai-fonts-context">${contextView}</div><details class="ai-fonts-records"><summary>Registro delle revisioni</summary>${registerView}</details></section><aside class="section-grid__side materials-pane"><section class="materials-viewer" id="materials-viewer" aria-labelledby="materials-viewer-title"><header class="materials-viewer__header"><div><p class="eyebrow" id="materials-viewer-kind">fonte del corso</p><h2 id="materials-viewer-title">Documento</h2></div></header><div class="source-viewer__content" id="materials-viewer-content"><p class="empty-state">Scegli una fonte dall’elenco per aprirla qui.</p></div></section><div class="side-card"><p class="section-kicker">da sapere</p><h2 class="side-card__title">Le fonti arrivano dal repository</h2><p class="side-card__copy">Il viewer è in sola lettura e apre soltanto revisioni canoniche appartenenti a questo corso.</p></div></aside></section>`);
   }
 
   function renderSource(item) {
@@ -2051,7 +2060,7 @@
     const pendingCopy = flashcards
       ? "Sto generando e verificando le proposte flashcard…"
       : "Sto preparando una risposta basata sulle fonti del corso…";
-    const pending = `<article class="thread-message thread-message--assistant thread-message--pending" data-optimistic-turn><p class="thread-message__role">tutor</p><p class="thread-message__text">${pendingCopy}</p><div class="thread-message__activity" data-turn-activity aria-live="polite"></div></article>`;
+    const pending = `<article class="thread-message thread-message--assistant thread-message--pending" data-optimistic-turn><p class="thread-message__role">tutor</p><p class="thread-message__text" data-turn-progress>${pendingCopy}</p><div class="thread-message__activity" data-turn-activity aria-live="polite"></div></article>`;
     const thread = $(".session-thread", root);
     if (thread) {
       thread.insertAdjacentHTML("beforeend", outgoing + pending);
@@ -2080,6 +2089,13 @@
       try {
         const payload = await fetchJson(`/api/v1/turns/${encodeURIComponent(requestId)}/activity`);
         failures = 0;
+        const progressMessage = text(payload.progress_message, "");
+        const progressNode = $("[data-turn-progress]", root);
+        if (progressNode && progressMessage && token === state.activityPollToken) {
+          // Keep model text out of HTML parsing; textContent preserves the
+          // escaped pending bubble even when the provider returns markup.
+          progressNode.textContent = progressMessage;
+        }
         const node = $("[data-turn-activity]", root);
         if (node && token === state.activityPollToken) patch(node, aiToolChips(payload));
         if (["settled", "failed"].includes(text(payload.state))) return;
@@ -2507,8 +2523,9 @@
     $(inline ? "#materials-viewer-kind" : "#source-viewer-kind").textContent = kindLabel;
     patch(content, '<p class="source-viewer__loading">Apro la fonte…</p>');
     if (inline) {
-      inline.hidden = false;
-      inline.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+      if (window.matchMedia("(max-width: 1080px)").matches) {
+        inline.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+      }
     } else if (!dialog.open) {
       dialog.showModal();
     }
@@ -2533,9 +2550,48 @@
     }
   }
 
+  function bindSourceViewerResize() {
+    const dialog = $("#source-viewer");
+    const handle = $("[data-source-viewer-resize]", dialog);
+    if (!dialog || !handle) return;
+    const resize = (width, height) => {
+      const inset = 24;
+      const minWidth = Math.min(360, window.innerWidth - inset);
+      const minHeight = Math.min(320, window.innerHeight - inset);
+      dialog.style.width = `${Math.max(minWidth, Math.min(width, window.innerWidth - inset))}px`;
+      dialog.style.height = `${Math.max(minHeight, Math.min(height, window.innerHeight - inset))}px`;
+    };
+    handle.addEventListener("pointerdown", (event) => {
+      if (window.matchMedia("(max-width: 700px)").matches) return;
+      event.preventDefault();
+      const start = dialog.getBoundingClientRect();
+      const startX = event.clientX;
+      const startY = event.clientY;
+      handle.setPointerCapture(event.pointerId);
+      const move = (moveEvent) => resize(start.width + startX - moveEvent.clientX, start.height + moveEvent.clientY - startY);
+      const stop = () => {
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", stop);
+        handle.removeEventListener("pointercancel", stop);
+      };
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", stop);
+      handle.addEventListener("pointercancel", stop);
+    });
+    handle.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+      event.preventDefault();
+      const current = dialog.getBoundingClientRect();
+      const step = event.shiftKey ? 64 : 24;
+      const width = current.width + (event.key === "ArrowLeft" ? step : event.key === "ArrowRight" ? -step : 0);
+      const height = current.height + (event.key === "ArrowDown" ? step : event.key === "ArrowUp" ? -step : 0);
+      resize(width, height);
+    });
+  }
+
   function commandSearchEntries() {
     const routes = Object.entries(ROUTES)
-      .filter(([route, config]) => route !== "login" && (!config.private || state.auth.authenticated))
+      .filter(([route, config]) => route !== "login" && (!config.private || state.auth.authenticated || (route === "impostazioni" && state.auth.mode !== "private")))
       .map(([route, config]) => ({
         group: "Vai a",
         icon: config.icon,
@@ -2916,6 +2972,7 @@
   applyRailState();
   bindStaticControls();
   bindDynamicControls();
+  bindSourceViewerResize();
   window.addEventListener("resize", applyRailState);
   loadAuthSession().then((auth) => {
     if (auth.mode === "setup") {

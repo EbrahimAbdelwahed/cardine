@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator, Mapping
 from threading import RLock
-from typing import TypeVar, cast, overload
+from typing import Literal, TypeVar, cast, overload
 
 from study_agent.domain._validation import JsonObject
 
@@ -81,10 +81,18 @@ class RuntimeCredentialStore(Mapping[str, str]):
         return "RuntimeCredentialStore(<redacted>)"
 
 
-class PrivateSettingsApplication(UiApplicationPort):
-    """Add safe account/model settings to an existing UI application."""
+SettingsMode = Literal["private", "local_repository"]
 
-    mode = "private"
+
+class SettingsApplication(UiApplicationPort):
+    """Add safe model settings to an existing UI application.
+
+    ``private`` remains the compatibility default.  The local repository
+    preview uses the same wrapper without activating the private account
+    surface or changing the repository application's canonical mode.
+    """
+
+    mode: SettingsMode
 
     def __init__(
         self,
@@ -92,7 +100,10 @@ class PrivateSettingsApplication(UiApplicationPort):
         *,
         credentials: RuntimeCredentialStore | None = None,
         account_label: str = "Proprietario",
+        mode: SettingsMode = "private",
     ) -> None:
+        if mode not in {"private", "local_repository"}:
+            raise ValueError("mode must be private or local_repository")
         if (
             not isinstance(account_label, str)
             or not account_label.strip()
@@ -100,6 +111,7 @@ class PrivateSettingsApplication(UiApplicationPort):
         ):
             raise ValueError("account_label must be bounded non-empty text")
         self._delegate = delegate
+        self.mode = mode
         self.credentials = (
             credentials if credentials is not None else RuntimeCredentialStore()
         )
@@ -115,7 +127,7 @@ class PrivateSettingsApplication(UiApplicationPort):
         payload = self._delegate.get(path)
         if path in {"/api/v1/bootstrap", "/api/v1/session"}:
             payload = dict(payload)
-            payload["mode"] = "private"
+            payload["mode"] = self.mode
         return payload
 
     def post(self, path: str, command: Mapping[str, object]) -> JsonObject:
@@ -148,9 +160,8 @@ class PrivateSettingsApplication(UiApplicationPort):
         return self._credential_result("configured")
 
     def _settings(self) -> JsonObject:
-        return {
+        settings: JsonObject = {
             "schema_version": 1,
-            "account": {"label": self._account_label, "mode": "single_owner"},
             "data": {
                 "repository": {"configured": True, "kind": "local_repository"},
                 "persistence": "local_repository",
@@ -168,6 +179,14 @@ class PrivateSettingsApplication(UiApplicationPort):
                 "secret_echo": False,
             },
         }
+        if self.mode == "private":
+            settings["account"] = {
+                "label": self._account_label,
+                "mode": "single_owner",
+            }
+        else:
+            settings["mode"] = "local_repository"
+        return settings
 
     def _credential_result(self, status: str) -> JsonObject:
         return {
@@ -185,4 +204,10 @@ __all__ = [
     "MAX_RUNTIME_CREDENTIAL_CHARS",
     "PrivateSettingsApplication",
     "RuntimeCredentialStore",
+    "SettingsApplication",
 ]
+
+
+# Keep the existing private import surface stable while the local preview
+# composes the generalized wrapper explicitly.
+PrivateSettingsApplication = SettingsApplication

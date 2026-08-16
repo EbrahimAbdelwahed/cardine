@@ -318,8 +318,13 @@ class StudySessionRecord:
         if self.continuation_summary is not None:
             if self.continuation_summary.through_interaction_id not in self.interaction_ids:
                 raise ValueError("summary must link to an existing interaction")
-            if self.continuation_summary.interaction_count != len(self.interaction_ids):
-                raise ValueError("summary interaction_count must match canonical history")
+            summary_count = self.continuation_summary.interaction_count
+            if summary_count > len(self.interaction_ids):
+                raise ValueError("summary cannot exceed canonical history")
+            if self.interaction_ids[summary_count - 1] != (
+                self.continuation_summary.through_interaction_id
+            ):
+                raise ValueError("summary must describe a canonical history prefix")
 
 
 # Pre-release compatibility alias. The record shape is now event-sourced.

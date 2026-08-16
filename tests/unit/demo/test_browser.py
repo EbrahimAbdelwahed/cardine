@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
+from http.client import HTTPConnection
+from threading import Thread
 from typing import cast
 
 import pytest
@@ -13,7 +16,10 @@ from cardine.demo.browser import (
     _require_bind_host,
     create_server,
 )
-from cardine.demo.product_settings import RuntimeCredentialStore
+from cardine.demo.product_settings import (
+    PrivateSettingsApplication,
+    RuntimeCredentialStore,
+)
 from cardine.demo.ui_application import SourceDocumentView, UiRequestError
 from study_agent.domain._validation import JsonObject
 
@@ -61,6 +67,16 @@ def test_non_loopback_requires_private_production() -> None:
         _require_bind_host("192.0.2.10")
     with pytest.raises(ValueError, match="private production"):
         create_server("0.0.0.0", 0, ui_application=_RepositoryApplication())
+    with pytest.raises(ValueError, match="private production"):
+        create_server(
+            "0.0.0.0",
+            0,
+            ui_application=_RepositoryApplication(),
+            settings_application=PrivateSettingsApplication(
+                _RepositoryApplication(),
+                mode="local_repository",
+            ),
+        )
 
 
 def test_browser_page_bytes_are_static_and_accessible() -> None:
@@ -97,6 +113,89 @@ def test_browser_page_bytes_are_static_and_accessible() -> None:
 def test_browser_surface_exposes_only_versioned_repository_api() -> None:
     surface = BrowserSurface(_RepositoryApplication())
     assert surface.api_post("/api/v1/session/turns", {})["status"] == "committed"
+
+
+def test_local_repository_settings_are_same_origin_write_only_and_password_free() -> None:
+    credentials = RuntimeCredentialStore()
+    settings = PrivateSettingsApplication(
+        _RepositoryApplication(),
+        credentials=credentials,
+        mode="local_repository",
+    )
+    try:
+        server = create_server(
+            "127.0.0.1",
+            0,
+            ui_application=_RepositoryApplication(),
+            settings_application=settings,
+        )
+    except PermissionError as error:
+        pytest.skip(f"local sockets are unavailable: {error}")
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = cast(tuple[str, int], server.server_address)
+    origin = f"http://{host}:{port}"
+    secret = "sk-local-browser-secret"
+
+    def request(
+        method: str,
+        path: str,
+        *,
+        payload: Mapping[str, object] | None = None,
+        request_origin: str | None = None,
+    ) -> tuple[int, object]:
+        connection = HTTPConnection(host, port, timeout=2)
+        body = None if payload is None else json.dumps(payload).encode("utf-8")
+        headers = {"Accept": "application/json"}
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+            headers["Content-Length"] = str(len(body))
+        if request_origin is not None:
+            headers["Origin"] = request_origin
+        connection.request(method, path, body=body, headers=headers)
+        response = connection.getresponse()
+        result = json.loads(response.read().decode("utf-8"))
+        connection.close()
+        return response.status, result
+
+    try:
+        status, settings_payload = request("GET", "/api/v1/settings")
+        assert status == 200
+        assert cast(dict[str, object], settings_payload)["model"]
+
+        missing_origin_status, _ = request(
+            "POST",
+            "/api/v1/settings/model/credential",
+            payload={"api_key": secret},
+        )
+        cross_origin_status, _ = request(
+            "POST",
+            "/api/v1/settings/model/credential",
+            payload={"api_key": secret},
+            request_origin="http://evil.example",
+        )
+        assert missing_origin_status == 403
+        assert cross_origin_status == 403
+        assert not credentials.configured
+
+        saved_status, saved_payload = request(
+            "POST",
+            "/api/v1/settings/model/credential",
+            payload={"api_key": secret},
+            request_origin=origin,
+        )
+        assert saved_status == 200
+        assert secret not in str(saved_payload)
+        assert credentials.get("OPENAI_API_KEY") == secret
+
+        read_status, read_payload = request("GET", "/api/v1/settings")
+        assert read_status == 200
+        assert cast(dict[str, object], read_payload)["model"]["credential_configured"] is True  # type: ignore[index]
+        assert secret not in str(read_payload)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
 
 
 def test_browser_surface_reads_a_canonical_document_through_the_application() -> None:

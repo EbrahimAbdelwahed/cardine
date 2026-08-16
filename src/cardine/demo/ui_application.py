@@ -521,6 +521,10 @@ class RepositoryUiApplication(UiApplicationPort):
                             self._session_id,
                             presentations,
                         ),
+                        "study_memory_ids": repository.study_memory.validated_memory_ids(
+                            self._course_id,
+                            through_sequence=snapshot.high_water_sequence,
+                        ),
                     },
                 )
         except UiRequestError:
@@ -728,6 +732,7 @@ class RepositoryUiApplication(UiApplicationPort):
                         if continuation_fingerprint is None
                         else application.resume_continuation(continuation_fingerprint, turn)
                     )
+                    repository.settle_study_memory(self._course_id, self._session_id)
                     projection, refreshed = self._captured_state(repository)
 
                     def captured(_course_id: CourseId) -> Projection:
@@ -743,6 +748,10 @@ class RepositoryUiApplication(UiApplicationPort):
                                 captured
                             ).presentations(self._course_id, self._session_id),
                             "continuation": result.pending_continuation,
+                            "study_memory_ids": repository.study_memory.validated_memory_ids(
+                                self._course_id,
+                                through_sequence=refreshed.high_water_sequence,
+                            ),
                         },
                     )
                     settled_artifacts = ProjectionArtifactView(captured).get(self._course_id)
@@ -2302,7 +2311,14 @@ class RepositoryUiApplication(UiApplicationPort):
             tuple[SourceRevisionRecord, ...], metadata.get("source_records", ())
         )
         readiness = metadata.get("readiness")
-        canonical_timeline = [_timeline_item(item) for item in snapshot.timeline]
+        private_note_ids = frozenset(
+            str(item) for item in cast(Sequence[object], metadata.get("study_memory_ids", ()))
+        )
+        canonical_timeline = [
+            _timeline_item(item)
+            for item in snapshot.timeline
+            if str(getattr(item, "interaction_id", "")) not in private_note_ids
+        ]
         if isinstance(presentations, Sequence):
             canonical_timeline.extend(
                 _presentation_timeline_item(item, source_records)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import threading
 from http.client import HTTPConnection
+from pathlib import Path
 from threading import Thread
 from typing import cast
 
@@ -57,7 +58,7 @@ def test_activity_route_returns_unknown_without_touching_repository_lock() -> No
         connection.close()
         assert status == 200
         assert payload == {
-            "schema_version": 1,
+            "schema_version": 2,
             "state": "unknown",
             "records": [],
             "omitted": 0,
@@ -113,7 +114,7 @@ def test_repository_activity_get_is_independent_of_mutation_lock(tmp_path) -> No
     assert not worker.is_alive(), "activity polling must not wait on the repository lock"
     assert result and not isinstance(result[0], Exception)
     assert result[0] == {
-        "schema_version": 1,
+        "schema_version": 2,
         "state": "unknown",
         "records": [],
         "omitted": 0,
@@ -147,3 +148,17 @@ def test_repository_session_read_is_independent_of_long_tutor_mutation_lock(
     assert not worker.is_alive(), "session reads must not wait for the model call lock"
     assert result and not isinstance(result[0], Exception)
     assert result[0]["session_id"] == "cardine-session"  # type: ignore[index]
+
+
+def test_progress_message_is_patched_into_only_the_optimistic_bubble_as_escaped_text() -> None:
+    javascript = (
+        Path(__file__).parents[3] / "src" / "cardine" / "demo" / "browser.js"
+    ).read_text(encoding="utf-8")
+
+    assert "progress_message" in javascript
+    assert "data-optimistic-turn" in javascript
+    assert "data-turn-activity" in javascript
+    # Raw model text must never be interpolated into HTML. Assigning textContent
+    # keeps markup inert inside the optimistic bubble.
+    assert "progressNode.textContent = progressMessage" in javascript
+    assert "${progressMessage}" not in javascript

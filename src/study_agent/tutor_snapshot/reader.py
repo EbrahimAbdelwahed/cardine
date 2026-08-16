@@ -37,7 +37,10 @@ from study_agent.domain import (
     TutorTimelineStatus,
 )
 from study_agent.domain._validation import JsonValue
-from study_agent.ingestion import decode_source_revision_ingested
+from study_agent.ingestion import (
+    decode_generated_source_revision_ingested,
+    decode_source_revision_ingested,
+)
 from study_agent.ports import EventStore
 from study_agent.sessions import (
     SESSION_ANSWER_RECORDED,
@@ -381,16 +384,22 @@ def _materials(projection: Projection) -> tuple[TutorMaterialSummary, ...]:
                         key=lambda item: _ordinal(item[1].get("ordinal")),
                     )
                 )
-                decoded = decode_source_revision_ingested(
-                    {
-                        "source": raw_revision["source"],
-                        "chunks": ordered_chunks,
-                        "normalized_character_length": raw_revision[
-                            "normalized_character_length"
-                        ],
-                        "chunking": raw_revision["chunking"],
-                    }
-                )
+                revision_payload = {
+                    "source": raw_revision["source"],
+                    "chunks": ordered_chunks,
+                    "normalized_character_length": raw_revision[
+                        "normalized_character_length"
+                    ],
+                    "chunking": raw_revision["chunking"],
+                }
+                source_manifest = raw_revision["source"]
+                if (
+                    isinstance(source_manifest, Mapping)
+                    and source_manifest.get("content_origin") == "generated"
+                ):
+                    decoded = decode_generated_source_revision_ingested(revision_payload)
+                else:
+                    decoded = decode_source_revision_ingested(revision_payload)
             except (KeyError, TypeError, ValueError) as error:
                 raise ValueError("source revision projection is corrupt") from error
             if (

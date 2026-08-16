@@ -7,13 +7,20 @@ from datetime import UTC, datetime
 from typing import cast
 
 from study_agent.domain._validation import JsonObject, JsonValue
+from study_agent.domain.artifact import ArtifactRevisionStatus, LessonMaterialVariant
 from study_agent.domain.events import DomainEvent
 from study_agent.domain.identifiers import BlobId, SubstrateId
-from study_agent.domain.provenance import DocumentConversionProvenance
-from study_agent.domain.source import BlobRef, SourceChunk, SourceDocument
+from study_agent.domain.provenance import (
+    ContentOrigin,
+    DocumentConversionProvenance,
+    GeneratedDocumentProvenance,
+    generated_document_provenance_to_json,
+)
+from study_agent.domain.source import BlobRef, SourceChunk, SourceDocument, SourceKind
 from study_agent.state import EventRegistry
 
 from .events import (
+    GENERATED_SOURCE_REVISION_SCHEMA_VERSION,
     SOURCE_REVISION_INGESTED,
     SOURCE_REVISION_SCHEMA_VERSION,
     SOURCE_REVISION_SELECTED,
@@ -25,7 +32,11 @@ from .events import (
     decode_source_revision_event,
     decode_source_revision_selected_event,
 )
-from .identity import CHUNK_MAX_CHARACTERS, CHUNKER_POLICY_VERSION
+from .identity import (
+    CHUNK_MAX_CHARACTERS,
+    CHUNKER_POLICY_VERSION,
+    GENERATED_MARKDOWN_INGESTION_METHOD,
+)
 from .substrate_events import (
     SOURCE_SUBSTRATE_PRODUCED,
     SOURCE_SUBSTRATE_PRODUCED_SCHEMA_VERSION,
@@ -69,6 +80,10 @@ def _conversion(provenance: DocumentConversionProvenance) -> JsonObject:
     }
 
 
+def _generated(provenance: GeneratedDocumentProvenance) -> JsonObject:
+    return generated_document_provenance_to_json(provenance)
+
+
 def source_manifest(source: SourceDocument) -> JsonObject:
     manifest: dict[str, JsonValue] = {
         "source_id": str(source.source_id),
@@ -91,6 +106,8 @@ def source_manifest(source: SourceDocument) -> JsonObject:
     }
     if source.conversion_provenance is not None:
         manifest["conversion_provenance"] = _conversion(source.conversion_provenance)
+    if source.generated_provenance is not None:
+        manifest["generated_provenance"] = _generated(source.generated_provenance)
     return manifest
 
 
@@ -116,8 +133,66 @@ def source_revision_payload(
     chunker_version: str = CHUNKER_POLICY_VERSION,
     max_characters: int = CHUNK_MAX_CHARACTERS,
 ) -> JsonObject:
+    if source.content_origin is ContentOrigin.GENERATED or source.generated_provenance is not None:
+        raise ValueError("v1 source payload cannot represent generated provenance")
     chunking = PersistedChunkingConfig(chunker_version, max_characters)
     decoded = SourceRevisionIngested(source, chunks, source.normalized_character_length, chunking)
+    return {
+        "source": source_manifest(decoded.source),
+        "chunks": tuple(chunk_manifest(chunk) for chunk in decoded.chunks),
+        "normalized_character_length": decoded.normalized_character_length,
+        "chunking": {
+            "version": decoded.chunking.version,
+            "max_characters": decoded.chunking.max_characters,
+        },
+    }
+
+
+def generated_source_revision_payload(
+    source: SourceDocument,
+    chunks: tuple[SourceChunk, ...],
+    *,
+    chunker_version: str = CHUNKER_POLICY_VERSION,
+    max_characters: int = CHUNK_MAX_CHARACTERS,
+) -> JsonObject:
+    """Encode a generated source without embedding its Markdown bytes."""
+
+    if source.content_origin is not ContentOrigin.GENERATED:
+        raise ValueError("generated source payload requires generated provenance")
+    if source.generated_provenance is None:
+        raise ValueError("generated source payload requires generated provenance")
+    if source.conversion_provenance is not None:
+        raise ValueError("generated source payload cannot carry conversion provenance")
+    if source.kind is not SourceKind.MARKDOWN:
+        raise ValueError("generated source payload requires Markdown kind")
+    if (
+        source.media_type != "text/markdown"
+        or source.ingestion_method != GENERATED_MARKDOWN_INGESTION_METHOD
+    ):
+        raise ValueError("generated source payload has an unsupported Markdown contract")
+    if source.structure_origin.value != "human_approved":
+        raise ValueError("generated source payload requires human-approved structure")
+    if source.blob != source.normalized_blob:
+        raise ValueError("generated source blob and normalized blob must be identical")
+    chunking = PersistedChunkingConfig(chunker_version, max_characters)
+    opaque_chunks = tuple(
+        SourceChunk(
+            chunk.chunk_id,
+            chunk.source_id,
+            chunk.revision_id,
+            chunk.start_offset,
+            chunk.end_offset,
+            (),
+            chunk.ordinal,
+            chunk.checksum_sha256,
+            chunk.chunker_version,
+            {"block_kind": "opaque"},
+        )
+        for chunk in chunks
+    )
+    decoded = SourceRevisionIngested(
+        source, opaque_chunks, source.normalized_character_length, chunking
+    )
     return {
         "source": source_manifest(decoded.source),
         "chunks": tuple(chunk_manifest(chunk) for chunk in decoded.chunks),
@@ -272,6 +347,212 @@ def reduce_source_revision(
     return {**state, "sources": sources, "chunks": chunks, "substrates": substrates}
 
 
+def validate_generated_source_admission(
+    state: JsonObject, event: DomainEvent, payload: SourceRevisionIngested
+) -> None:
+    """Validate generated-source admission against the canonical projection."""
+    from hashlib import sha256
+
+    from study_agent.artifacts.content import LessonMaterialContent, StudyArtifactEnvelope
+    from study_agent.artifacts.identity import (
+        GeneratedArtifactProvenance,
+        artifact_provenance_from_bytes,
+    )
+    from study_agent.domain.provenance import ContentOrigin
+
+    if event.schema_version != GENERATED_SOURCE_REVISION_SCHEMA_VERSION:
+        raise ValueError("generated admission validator requires source.revision_ingested@2")
+    provenance = payload.source.generated_provenance
+    if provenance is None or payload.source.content_origin is not ContentOrigin.GENERATED:
+        raise ValueError("generated source admission requires generated provenance")
+    raw_artifacts = _mapping(state.get("study_artifacts"), "study_artifacts")
+    revisions = _mapping(raw_artifacts.get("revisions"), "artifact revisions")
+    artifacts = _mapping(raw_artifacts.get("artifacts"), "artifacts")
+    batches = _mapping(raw_artifacts.get("batches"), "artifact batches")
+    decisions = raw_artifacts.get("decisions")
+    commands = _mapping(raw_artifacts.get("commands"), "artifact commands")
+    if not isinstance(decisions, tuple):
+        raise ValueError("artifact decisions projection is corrupt")
+    revision_id = str(provenance.artifact_revision_id)
+    raw_revision = revisions.get(revision_id)
+    if not isinstance(raw_revision, Mapping):
+        raise ValueError("generated source artifact revision is not projected")
+    if raw_revision.get("status") != ArtifactRevisionStatus.ACCEPTED.value:
+        raise ValueError("generated source artifact revision is not accepted")
+    artifact_id = raw_revision.get("artifact_id")
+    if not isinstance(artifact_id, str):
+        raise ValueError("generated source artifact identity is corrupt")
+    artifact = _mapping(artifacts.get(artifact_id), "generated artifact")
+    if artifact.get("current_revision_id") != revision_id:
+        raise ValueError("generated source artifact revision is not the current head")
+    content_text = raw_revision.get("content")
+    provenance_text = raw_revision.get("provenance")
+    if not isinstance(content_text, str) or not isinstance(provenance_text, str):
+        raise ValueError("generated artifact revision payload is corrupt")
+    try:
+        envelope = StudyArtifactEnvelope.from_bytes(content_text.encode())
+        artifact_provenance = artifact_provenance_from_bytes(provenance_text.encode())
+    except (TypeError, ValueError) as error:
+        raise ValueError("generated artifact revision payload is invalid") from error
+    if not isinstance(envelope.content, LessonMaterialContent):
+        raise ValueError("generated source requires a lesson material artifact")
+    content = envelope.content
+    if envelope.kind.value != "lesson_material" or content.variant is not provenance.variant:
+        raise ValueError("generated source variant does not match its artifact")
+    if not isinstance(artifact_provenance, GeneratedArtifactProvenance):
+        raise ValueError("generated source requires generated artifact provenance")
+    if artifact_provenance.run_id != provenance.material_run_id:
+        raise ValueError("generated source run does not match artifact provenance")
+    if sha256(provenance_text.encode()).hexdigest() != provenance.artifact_provenance_sha256:
+        raise ValueError("generated source artifact provenance hash does not match")
+    if content.markdown_blob.checksum_sha256 != payload.source.normalized_blob.checksum_sha256:
+        raise ValueError("generated source blob does not match lesson material")
+    if content.direct_parent_blob_sha256 != provenance.direct_parent_blob_sha256:
+        raise ValueError("generated source direct parent does not match artifact")
+    if content.markdown_blob.byte_length != payload.source.blob.byte_length:
+        raise ValueError("generated source blob length does not match artifact")
+    batch_id = raw_revision.get("batch_id")
+    if not isinstance(batch_id, str):
+        raise ValueError("generated source artifact batch identity is corrupt")
+    raw_batch = batches.get(batch_id)
+    if not isinstance(raw_batch, Mapping) or raw_batch.get("origin") != "generated":
+        raise ValueError("generated source artifact batch is not generated")
+    if raw_batch.get("run_id") != str(provenance.material_run_id):
+        raise ValueError("generated source batch run does not match")
+    causation = str(provenance.human_decision_event_id)
+    command = commands.get(causation)
+    if not isinstance(command, Mapping) or command.get("result_id") != revision_id:
+        raise ValueError("generated source causation does not bind its artifact decision")
+    matching_decisions = [
+        item
+        for item in decisions
+        if isinstance(item, Mapping) and item.get("revision_id") == revision_id
+    ]
+    if len(matching_decisions) != 1:
+        raise ValueError("generated source requires exactly one artifact decision")
+    decision = matching_decisions[0]
+    if (
+        decision.get("decision") != "accept"
+        or decision.get("policy_receipt") is not None
+        or decision.get("decided_at")
+        != provenance.human_decision_at.astimezone(UTC)
+        .isoformat(timespec="microseconds")
+        .replace("+00:00", "Z")
+    ):
+        raise ValueError("generated source requires the exact HUMAN acceptance decision")
+    revision_ids = raw_batch.get("revision_ids")
+    if not isinstance(revision_ids, tuple) or len(revision_ids) != 2:
+        raise ValueError("generated material batch must contain complete and study pair")
+    pair: list[
+        tuple[Mapping[str, JsonValue], LessonMaterialContent, GeneratedArtifactProvenance]
+    ] = []
+    for pair_id in revision_ids:
+        if not isinstance(pair_id, str):
+            raise ValueError("generated material pair revision identity is corrupt")
+        pair_raw = revisions.get(pair_id)
+        if not isinstance(pair_raw, Mapping):
+            raise ValueError("generated material pair revision is missing")
+        pair_content_text = pair_raw.get("content")
+        pair_provenance_text = pair_raw.get("provenance")
+        if not isinstance(pair_content_text, str) or not isinstance(pair_provenance_text, str):
+            raise ValueError("generated material pair revision is corrupt")
+        pair_envelope = StudyArtifactEnvelope.from_bytes(pair_content_text.encode())
+        pair_provenance = artifact_provenance_from_bytes(pair_provenance_text.encode())
+        if not isinstance(pair_envelope.content, LessonMaterialContent) or not isinstance(
+            pair_provenance, GeneratedArtifactProvenance
+        ):
+            raise ValueError("generated material batch contains a non-material pair")
+        pair.append((pair_raw, pair_envelope.content, pair_provenance))
+    variants = {item[1].variant for item in pair}
+    if variants != {LessonMaterialVariant.COMPLETE, LessonMaterialVariant.STUDY}:
+        raise ValueError("generated material batch must contain complete and study variants")
+    roots = {
+        (str(item.source_id), str(item.revision_id))
+        for item in artifact_provenance.source_commitments
+    }
+    if len(roots) != 1 or roots != {
+        (str(provenance.root_source_id), str(provenance.root_revision_id))
+    }:
+        raise ValueError("generated material root lineage is not exact")
+    for _, _, pair_provenance in pair:
+        pair_roots = {
+            (str(item.source_id), str(item.revision_id))
+            for item in pair_provenance.source_commitments
+        }
+        if pair_provenance.run_id != provenance.material_run_id or pair_roots != roots:
+            raise ValueError("generated material pair lineage is inconsistent")
+    sources = _mapping(state.get("sources"), "sources")
+    root_projection = _mapping(sources.get(str(provenance.root_source_id)), "root source")
+    root_revisions = _mapping(root_projection.get("revisions"), "root revisions")
+    root_revision = root_revisions.get(str(provenance.root_revision_id))
+    if root_projection.get("current_revision_id") != str(provenance.root_revision_id):
+        raise ValueError("generated material root revision is not current")
+    root_manifest = _mapping(root_revision, "root revision")
+    root_source = _mapping(root_manifest.get("source"), "root source manifest")
+    root_normalized = _mapping(root_source.get("normalized_blob"), "root normalized blob")
+    if (
+        root_source.get("content_origin") == ContentOrigin.GENERATED.value
+        or root_source.get("generated_provenance") is not None
+    ):
+        raise ValueError("generated material root must be an original admitted source")
+    if (
+        root_normalized.get("checksum_sha256") != provenance.root_normalized_blob_sha256
+        or root_source.get("trust_level") != payload.source.trust_level
+        or root_source.get("source_role") != payload.source.source_role
+    ):
+        raise ValueError("generated source trust, role, or root digest does not match")
+    complete = next(item[1] for item in pair if item[1].variant is LessonMaterialVariant.COMPLETE)
+    study = next(item[1] for item in pair if item[1].variant is LessonMaterialVariant.STUDY)
+    if complete.direct_parent_blob_sha256 != provenance.root_normalized_blob_sha256:
+        raise ValueError("complete material must parent the root normalized blob")
+    if study.direct_parent_blob_sha256 != complete.markdown_blob.checksum_sha256:
+        raise ValueError("study material must parent the complete material blob")
+    if provenance.variant is LessonMaterialVariant.STUDY:
+        complete_revision_id = next(
+            pair_id
+            for pair_id, (_, pair_content, _) in zip(revision_ids, pair, strict=True)
+            if pair_content.variant is LessonMaterialVariant.COMPLETE
+        )
+        if not isinstance(complete_revision_id, str):
+            raise ValueError("complete material revision identity is corrupt")
+        complete_raw = revisions.get(complete_revision_id)
+        complete_artifact_id = _mapping(complete_raw, "complete revision").get("artifact_id")
+        if not isinstance(complete_artifact_id, str):
+            raise ValueError("complete material artifact identity is corrupt")
+        complete_artifact = _mapping(artifacts.get(complete_artifact_id), "complete artifact")
+        if complete_artifact.get("current_revision_id") != complete_revision_id or _mapping(
+            complete_raw, "complete revision"
+        ).get("status") != ArtifactRevisionStatus.ACCEPTED.value:
+            raise ValueError("study material requires an accepted current complete sibling")
+        found_projected_complete = False
+        for source_value in sources.values():
+            source_item = _mapping(source_value, "generated source")
+            for revision_value in _mapping(
+                source_item.get("revisions"), "generated revisions"
+            ).values():
+                revision_item = _mapping(revision_value, "generated source revision")
+                manifest = _mapping(revision_item.get("source"), "generated source manifest")
+                generated = manifest.get("generated_provenance")
+                if (
+                    isinstance(generated, Mapping)
+                    and generated.get("artifact_revision_id") == str(complete_revision_id)
+                    and generated.get("variant") == LessonMaterialVariant.COMPLETE.value
+                    and generated.get("root_source_id") == str(provenance.root_source_id)
+                    and generated.get("root_revision_id") == str(provenance.root_revision_id)
+                    and generated.get("material_run_id") == str(provenance.material_run_id)
+                ):
+                    found_projected_complete = True
+        if not found_projected_complete:
+            raise ValueError("study material requires a prior projected complete source")
+
+
+def reduce_generated_source_revision(
+    state: JsonObject, event: DomainEvent, payload: SourceRevisionIngested
+) -> Mapping[str, JsonValue]:
+    validate_generated_source_admission(state, event, payload)
+    return reduce_source_revision(state, event, payload)
+
+
 def reduce_source_revision_selected(
     state: JsonObject, _: DomainEvent, payload: SourceRevisionSelected
 ) -> Mapping[str, JsonValue]:
@@ -301,6 +582,12 @@ def register_source_revision_events(registry: EventRegistry, load_blob: BlobLoad
         SOURCE_REVISION_SCHEMA_VERSION,
         lambda event: decode_source_revision_event(event, load_blob),
         reduce_source_revision,
+    )
+    registry.register_event(
+        SOURCE_REVISION_INGESTED,
+        GENERATED_SOURCE_REVISION_SCHEMA_VERSION,
+        lambda event: decode_source_revision_event(event, load_blob),
+        reduce_generated_source_revision,
     )
     registry.register_event(
         SOURCE_REVISION_SELECTED,
