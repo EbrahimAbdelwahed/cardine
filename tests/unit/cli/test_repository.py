@@ -38,7 +38,9 @@ from study_agent.ports import (
     ModelRequest,
     ModelResponse,
     ModelStreamEvent,
+    RetrievalQuery,
 )
+from study_agent.retrieval import CourseSourceContent
 from tests.course_fixtures import create_canonical_course
 
 
@@ -435,6 +437,50 @@ def test_single_retrieval_database_is_composed_over_all_courses(tmp_path: Path) 
         )
         with pytest.raises(LocalRepositoryError, match="incompatible"):
             repository.course_index_receipt(first_id, bool_count)
+
+
+def test_search_reuses_its_verified_catalog_snapshot_for_all_candidates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "repository"
+    initialize_local_repository(root, EMPTY_CONFIG)
+    course_id = CourseId("course-search-snapshot")
+
+    with LocalRepository.open(root) as repository:
+        create_canonical_course(repository.events, course_id)
+        repository.for_course(course_id).ingestion.ingest(
+            filename="large-notes.txt",
+            content=(b"Canonical biochemistry evidence. " * 150),
+            source_id=SourceId("source-search-snapshot"),
+            title="Large notes",
+            trust_level=100,
+            source_role="reference",
+            context=ExecutionContext(
+                PrincipalKind.SERVICE,
+                "composition-test",
+                course_id,
+                CorrelationId("ingest-search-snapshot"),
+            ),
+        )
+        repository.rebuild_retrieval()
+        calls = 0
+        original = CourseSourceContent.documents
+
+        def tracked_documents(
+            content: CourseSourceContent, *, include_superseded: bool = False
+        ):
+            nonlocal calls
+            calls += 1
+            return original(content, include_superseded=include_superseded)
+
+        monkeypatch.setattr(CourseSourceContent, "documents", tracked_documents)
+
+        result = repository.for_course(course_id).retrieval.search(
+            RetrievalQuery(course_id, "canonical biochemistry", limit=8)
+        )
+
+        assert len(result.evidence) > 1
+        assert calls == 1
 
 
 def test_rebuild_checks_source_lifetime_once_per_catalog_snapshot(

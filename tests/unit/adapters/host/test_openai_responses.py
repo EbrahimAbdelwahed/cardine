@@ -12,7 +12,7 @@ from cardine.adapters.host import (
     OpenAIResponsesTutorConfig,
     OpenAIResponsesTutorDecisionPort,
 )
-from cardine.hosts import AdvertisedCapability, TutorHostContext
+from cardine.hosts import AdvertisedCapability, StartCapabilityDecision, TutorHostContext
 from study_agent.ports import RetryableTutorDecisionError
 
 _SHA = "a" * 64
@@ -89,6 +89,18 @@ def _response(text: str) -> dict[str, object]:
     }
 
 
+def _assert_strict_objects_require_all_properties(schema: object) -> None:
+    if isinstance(schema, dict):
+        properties = schema.get("properties")
+        if isinstance(properties, dict):
+            assert set(schema.get("required", ())) == set(properties)
+        for item in schema.values():
+            _assert_strict_objects_require_all_properties(item)
+    elif isinstance(schema, list | tuple):
+        for item in schema:
+            _assert_strict_objects_require_all_properties(item)
+
+
 def test_responses_request_is_bounded_and_decision_is_validated() -> None:
     responses = _Responses(
         _response('{"decision":{"kind":"assistant_message","message":"Hello"}}')
@@ -125,6 +137,51 @@ def test_responses_request_is_bounded_and_decision_is_validated() -> None:
     assert "tools" not in responses.request
     assert "previous_response_id" not in responses.request
     assert client.closed is False
+
+
+def test_responses_strict_schema_projects_optional_progress_and_removes_null() -> None:
+    capability = AdvertisedCapability(
+        "explain_concept",
+        "explain_concept@1.0.0",
+        _SHA,
+        {
+            "type": "object",
+            "properties": {"topic": {"type": "string"}},
+            "required": ("topic",),
+            "additionalProperties": False,
+        },
+        False,
+    )
+    context = TutorHostContext(
+        "course",
+        "session",
+        1,
+        1,
+        {"status": "active"},
+        {"estimates": ()},
+        (capability,),
+    )
+    responses = _Responses(
+        _response(
+            '{"decision":{"kind":"start_capability","capability_id":'
+            '"explain_concept","inputs":{"topic":"valves"},'
+            '"progress_message":null}}'
+        )
+    )
+    port = OpenAIResponsesTutorDecisionPort(
+        OpenAIResponsesTutorConfig("gpt-5.6", "OPENAI_API_KEY"),
+        client=_Client(responses),
+    )
+
+    decision = asyncio.run(port.decide(context, _Interruption()))
+
+    assert decision == StartCapabilityDecision("explain_concept", {"topic": "valves"})
+    assert responses.request is not None
+    text_config = responses.request["text"]
+    assert isinstance(text_config, dict)
+    format_config = text_config["format"]
+    assert isinstance(format_config, dict)
+    _assert_strict_objects_require_all_properties(format_config["schema"])
 
 
 @pytest.mark.parametrize(

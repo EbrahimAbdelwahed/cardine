@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 
 from cardine.application.conversation_turn import (
@@ -93,6 +94,72 @@ def test_retired_source_keeps_raw_historical_flashcard_evidence_resolvable() -> 
 
     assert evidence.envelope.items[0].evidence.text == text
     assert evidence.bundle_id == "bundle-historical"
+
+
+def test_page_aware_flashcard_plan_uses_the_canonical_resolved_locator() -> None:
+    text = "page-aware source text"
+    revision = RevisionId("revision-page-aware")
+    chunk = SourceChunk(
+        ChunkId("chunk-page-aware"),
+        SOURCE,
+        revision,
+        0,
+        len(text),
+        ("Lesson",),
+        0,
+        "b" * 64,
+        "chunker@1",
+    )
+    source = SimpleNamespace(
+        source_id=SOURCE,
+        title="Page-aware lesson",
+        conversion_provenance=SimpleNamespace(
+            page_spans=(SimpleNamespace(page=3, start_offset=0, end_offset=len(text)),)
+        ),
+    )
+    record = SimpleNamespace(
+        source=source,
+        chunks=(chunk,),
+        text=text,
+        is_current_revision=True,
+    )
+    document = SimpleNamespace(source_id=SOURCE, revision_id=revision, chunk=chunk)
+
+    class PageAwareContent:
+        def catalog(self):
+            return (record,)
+
+        def documents(self, *, include_superseded: bool = False):
+            del include_superseded
+            return (document,)
+
+        def get_text(self, revision_id: RevisionId) -> str:
+            assert revision_id == revision
+            return text
+
+        def resolve(self, citation: Citation) -> ResolvedCitation:
+            canonical = replace(
+                citation,
+                locator=(
+                    "Page-aware lesson · Lesson · page 3 · "
+                    f"chars {chunk.start_offset}-{chunk.end_offset}"
+                ),
+            )
+            return ResolvedCitation(canonical, text)
+
+    content = PageAwareContent()
+    plan = _lesson_plan(content)  # type: ignore[arg-type]
+    bundle = plan.bundles[0]
+
+    resolved = _LessonEvidenceResolver(content, frozenset).resolve(  # type: ignore[arg-type]
+        plan,
+        bundle,
+        (),
+        SimpleNamespace(),
+    )
+
+    assert resolved.envelope.items[0].evidence.citation.locator == bundle.slots[0].span.locator
+    assert "page 3" in bundle.slots[0].span.locator
 
 
 def test_all_retired_sources_report_empty_grounding_status() -> None:

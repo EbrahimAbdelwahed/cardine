@@ -6,6 +6,7 @@ from typing import cast
 
 import pytest
 
+from cardine.diagnostics.turn_activity import TurnActivityStore
 from cardine.hosts import (
     AdvertisedCapability,
     AnswerDialogueDecision,
@@ -24,6 +25,8 @@ from cardine.hosts import (
     TutorHostRunner,
     TutorHostRunStatus,
     TutorStopReason,
+    completion_handoff_key,
+    decision_fingerprint,
 )
 from study_agent.capabilities import (
     CancelledCapabilityOutcome,
@@ -380,6 +383,19 @@ class _OutcomeGateway(_Gateway):
         return self.outcome
 
 
+class _ProgressObservingGateway(_OutcomeGateway):
+    def __init__(self, activity: TurnActivityStore) -> None:
+        super().__init__(_completed())
+        self.activity = activity
+        self.seen_progress: str | None = None
+
+    async def start(self, *args: object) -> object:
+        snapshot = self.activity.snapshot("progress-publication")
+        value = snapshot.get("progress_message")
+        self.seen_progress = value if isinstance(value, str) else None
+        return await super().start(*args)
+
+
 class _StaleStartGateway(_Gateway):
     def __init__(self, stale_count: int) -> None:
         super().__init__()
@@ -572,8 +588,154 @@ def test_completion_handoff_codec_is_canonical_and_closed() -> None:
     record = TutorCompletionHandoff.from_bytes(payload)
     assert record.state is TutorCompletionHandoffState.COMPLETED
     assert TutorCompletionHandoff.from_bytes(record.to_bytes()) == record
+    legacy = replace(
+        record,
+        record_fingerprint=None,
+        agent_observations=(),
+        serialized_schema_version=1,
+        replay_context_fingerprint=None,
+    )
+    assert TutorCompletionHandoff.from_bytes(legacy.to_bytes()).to_bytes() == legacy.to_bytes()
+    legacy_v2 = replace(
+        record,
+        record_fingerprint=None,
+        serialized_schema_version=2,
+        replay_context_fingerprint=None,
+    )
+    assert (
+        TutorCompletionHandoff.from_bytes(legacy_v2.to_bytes()).to_bytes()
+        == legacy_v2.to_bytes()
+    )
+    with pytest.raises(ValueError, match="bounded projection"):
+        replace(
+            record,
+            record_fingerprint=None,
+            agent_observations=(
+                {
+                    "tool_name": "context.get",
+                    "action_fingerprint": "a" * 64,
+                    "status": "succeeded",
+                    "result": {
+                        "nested": {
+                            "raw_prompt_text": "do not persist",
+                            "vendor_name": "do not persist",
+                        }
+                    },
+                },
+            ),
+        )
+    with pytest.raises(ValueError, match="result must be an object"):
+        replace(
+            record,
+            record_fingerprint=None,
+            agent_observations=(
+                {
+                    "tool_name": "context.get",
+                    "action_fingerprint": "a" * 64,
+                    "status": "succeeded",
+                    "result": ("invalid",),
+                },
+            ),
+        )
     with pytest.raises(ValueError):
         TutorCompletionHandoff.from_bytes(payload[:-1] + b"0")
+
+
+def test_handoff_drops_progress_message_and_reads_v1_to_v3_without_one() -> None:
+    handoffs = _HandoffStore()
+    gateway = _OutcomeGateway(_completed())
+    context = _Assembler().assemble(CourseId("course"), SessionId("session"))
+    decision = StartCapabilityDecision(
+        "explain_concept",
+        {"topic": "valves"},
+        progress_message="Preparo la spiegazione",
+    )
+    runner = _handoff_runner(
+        ScriptedTutorDecisionPort(((context.fingerprint, decision),)), gateway, handoffs
+    )
+    result = asyncio.run(
+        runner.run(CourseId("course"), SessionId("session"), "handoff-progress", _Token())
+    )
+    assert result.status is TutorHostRunStatus.COMPLETED
+    handoff_key = completion_handoff_key(
+        CourseId("course"), SessionId("session"), "handoff-progress"
+    )
+    record = TutorCompletionHandoff.from_bytes(handoffs.values[handoff_key])
+    assert "progress_message" not in record.action
+    assert record.decision(context).progress_message is None
+
+    old_action = dict(record.action)
+    old_action.pop("progress_message", None)
+    legacy_decision = StartCapabilityDecision("explain_concept", {"topic": "valves"})
+    legacy_retry_receipt = replace(
+        record.retry_receipt,
+        action_fingerprint=decision_fingerprint(legacy_decision),
+    )
+    for version in (1, 2, 3):
+        legacy = replace(
+            record,
+            action=old_action,
+            retry_receipt=legacy_retry_receipt,
+            record_fingerprint=None,
+            agent_observations=() if version == 1 else record.agent_observations,
+            serialized_schema_version=version,
+            replay_context_fingerprint=record.replay_context_fingerprint if version == 3 else None,
+        )
+        recovered = TutorCompletionHandoff.from_bytes(legacy.to_bytes())
+        assert recovered.decision(context).progress_message is None
+
+
+def test_progress_is_published_after_handoff_and_before_capability_execution() -> None:
+    activity = TurnActivityStore()
+    gateway = _ProgressObservingGateway(activity)
+    handoffs = _HandoffStore()
+    context = _Assembler().assemble(CourseId("course"), SessionId("session"))
+    decision = StartCapabilityDecision(
+        "explain_concept",
+        {"topic": "valves"},
+        progress_message="Preparo la spiegazione",
+    )
+    runner = _handoff_runner(
+        ScriptedTutorDecisionPort(((context.fingerprint, decision),)), gateway, handoffs
+    )
+
+    with activity.capture("progress-publication"):
+        result = asyncio.run(
+            runner.run(
+                CourseId("course"),
+                SessionId("session"),
+                "progress-publication",
+                _Token(),
+            )
+        )
+
+    assert result.status is TutorHostRunStatus.COMPLETED
+    assert gateway.seen_progress == "Preparo la spiegazione"
+    snapshot = activity.snapshot("progress-publication")
+    assert snapshot["progress_message"] == "Preparo la spiegazione"
+    activity.settle("progress-publication")
+    assert "progress_message" not in activity.snapshot("progress-publication")
+
+
+def test_progress_publication_is_best_effort_when_no_live_activity_store_is_bound() -> None:
+    handoffs = _HandoffStore()
+    context = _Assembler().assemble(CourseId("course"), SessionId("session"))
+    decision = StartCapabilityDecision(
+        "explain_concept",
+        {"topic": "valves"},
+        progress_message="Preparo la spiegazione",
+    )
+    gateway = _OutcomeGateway(_completed())
+    runner = _handoff_runner(
+        ScriptedTutorDecisionPort(((context.fingerprint, decision),)), gateway, handoffs
+    )
+
+    result = asyncio.run(
+        runner.run(CourseId("course"), SessionId("session"), "no-activity", _Token())
+    )
+
+    assert result.status is TutorHostRunStatus.COMPLETED
+    assert gateway.starts == 1
 
 
 def test_completed_preflight_skips_decision_and_gateway_after_restart() -> None:
@@ -1058,6 +1220,31 @@ def test_public_runner_path_maps_gateway_failure_without_leaking_message() -> No
     assert result.completed_output is None
     assert result.learner_text is None
     assert gateway.starts == 1
+
+
+def test_assistant_message_remains_terminal_and_never_executes_a_capability() -> None:
+    context = _Assembler().assemble(CourseId("course"), SessionId("session"))
+    runner = TutorHostRunner(
+        ScriptedTutorDecisionPort(
+            ((context.fingerprint, AssistantMessageDecision("Posso aiutarti.")),)
+        ),
+        None,
+        None,
+        _Gateway(),  # type: ignore[arg-type]
+        _Authority(),
+        _Identity(),
+        _Store(),  # type: ignore[arg-type]
+        TutorHostLimits(1, 1, 1, 128),
+        context_assembler=_Assembler(),  # type: ignore[arg-type]
+    )
+
+    result = asyncio.run(
+        runner.run(CourseId("course"), SessionId("session"), "message-terminal", _Token())
+    )
+
+    assert result.status is TutorHostRunStatus.ASSISTANT_MESSAGE
+    assert result.learner_text == "Posso aiutarti."
+    assert result.presentation_receipt is not None
 
 
 def test_suspend_persists_bytes_and_new_runner_resumes_exact_context() -> None:

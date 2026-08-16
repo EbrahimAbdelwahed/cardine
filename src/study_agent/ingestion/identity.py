@@ -2,9 +2,20 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from hashlib import sha256
 
-from study_agent.domain.identifiers import ChunkId, CourseId, EventId, RevisionId, SourceId
+from study_agent.domain._validation import JsonObject
+from study_agent.domain.artifact import LessonMaterialVariant
+from study_agent.domain.identifiers import (
+    ArtifactRevisionId,
+    ChunkId,
+    CourseId,
+    EventId,
+    RevisionId,
+    RunId,
+    SourceId,
+)
 from study_agent.domain.source import SourceKind
 from study_agent.state import canonical_json_bytes
 
@@ -15,6 +26,7 @@ TEXT_MEDIA_TYPE = "text/plain"
 MARKDOWN_MEDIA_TYPE = "text/markdown"
 TEXT_INGESTION_METHOD = "utf8-text-v1"
 MARKDOWN_INGESTION_METHOD = "utf8-markdown-v1"
+GENERATED_MARKDOWN_INGESTION_METHOD = "generated-markdown-v1"
 
 
 def source_kind_contract(kind: SourceKind) -> tuple[str, str]:
@@ -89,6 +101,112 @@ def chunk_id_for(
 
 def source_event_id_for(course_id: CourseId, revision_id: RevisionId) -> EventId:
     identity = f"{course_id}\0{revision_id}".encode()
+    return EventId(f"event-sha256:{sha256(identity).hexdigest()}")
+
+
+def generated_source_id_for(
+    *,
+    course_id: CourseId,
+    root_source_id: SourceId,
+    root_revision_id: RevisionId,
+    artifact_revision_id: ArtifactRevisionId,
+    material_run_id: RunId,
+    variant: LessonMaterialVariant,
+) -> SourceId:
+    """Derive a generated source identity from its complete lineage."""
+
+    if not all(
+        isinstance(value, expected)
+        for value, expected in (
+            (course_id, CourseId),
+            (root_source_id, SourceId),
+            (root_revision_id, RevisionId),
+            (artifact_revision_id, ArtifactRevisionId),
+            (material_run_id, RunId),
+            (variant, LessonMaterialVariant),
+        )
+    ):
+        raise TypeError("generated source identity inputs are not typed")
+    identity = b"cardine-generated-source@1\0" + canonical_json_bytes(
+        {
+            "artifact_revision_id": str(artifact_revision_id),
+            "course_id": str(course_id),
+            "material_run_id": str(material_run_id),
+            "root_revision_id": str(root_revision_id),
+            "root_source_id": str(root_source_id),
+            "variant": variant.value,
+        }
+    )
+    return SourceId(f"generated-source-sha256:{sha256(identity).hexdigest()}")
+
+
+def generated_revision_id_for(
+    *,
+    source_id: SourceId,
+    root_source_id: SourceId,
+    root_revision_id: RevisionId,
+    artifact_revision_id: ArtifactRevisionId,
+    material_run_id: RunId,
+    variant: LessonMaterialVariant,
+    markdown_sha256: str,
+    title: str,
+    normalization_version: str,
+    chunker_version: str,
+    max_characters: int,
+    trust_level: int,
+    source_role: str,
+    root_normalized_blob_sha256: str,
+    artifact_provenance_sha256: str,
+    direct_parent_blob_sha256: str,
+    human_decision_event_id: EventId,
+    human_decision_at: datetime,
+) -> RevisionId:
+    """Derive the immutable revision identity for generated Markdown."""
+
+    if not isinstance(source_id, SourceId):
+        raise TypeError("generated revision requires SourceId")
+    if len(markdown_sha256) != 64 or any(c not in "0123456789abcdef" for c in markdown_sha256):
+        raise ValueError("markdown_sha256 must be lowercase SHA-256")
+    approval_identity: JsonObject = {
+        "artifact_provenance_sha256": artifact_provenance_sha256,
+        "direct_parent_blob_sha256": direct_parent_blob_sha256,
+        "human_decision_at": human_decision_at.astimezone(UTC)
+        .isoformat(timespec="microseconds")
+        .replace("+00:00", "Z"),
+        "human_decision_event_id": str(human_decision_event_id),
+        "root_normalized_blob_sha256": root_normalized_blob_sha256,
+        "source_role": source_role,
+        "trust_level": trust_level,
+    }
+    identity = b"cardine-generated-revision@1\0" + canonical_json_bytes(
+        {
+            "artifact_revision_id": str(artifact_revision_id),
+            "chunker_version": chunker_version,
+            "max_characters": max_characters,
+            "markdown_sha256": markdown_sha256,
+            "material_run_id": str(material_run_id),
+            "normalization_version": normalization_version,
+            "root_revision_id": str(root_revision_id),
+            "root_source_id": str(root_source_id),
+            "source_id": str(source_id),
+            "title": title,
+            "variant": variant.value,
+            "approval_identity": approval_identity,
+        }
+    )
+    return RevisionId(f"generated-revision-sha256:{sha256(identity).hexdigest()}")
+
+
+def generated_source_event_id_for(
+    course_id: CourseId, source_id: SourceId, revision_id: RevisionId
+) -> EventId:
+    identity = b"cardine-generated-source-event@1\0" + canonical_json_bytes(
+        {
+            "course_id": str(course_id),
+            "revision_id": str(revision_id),
+            "source_id": str(source_id),
+        }
+    )
     return EventId(f"event-sha256:{sha256(identity).hexdigest()}")
 
 

@@ -142,9 +142,12 @@
     chatCourseCreation: null,
     studySetup: null,
     lastTurn: null,
+    turnActivities: Object.create(null),
     authProbeUnavailable: false,
     indexingPollToken: 0,
+    activityPollToken: 0,
     diagnosticTraceId: "",
+    sourceViewerVersion: 0,
     lesson: { query: "", candidates: [], pin: null, answer: null },
   };
 
@@ -283,6 +286,7 @@
   const aiAnswer = (options) => typeof CardineAI.answer === "function" ? CardineAI.answer(options || {}) : "";
   const aiApproval = (options) => typeof CardineAI.approval === "function" ? CardineAI.approval(options || {}) : "";
   const aiToolStack = (options) => typeof CardineAI.toolStack === "function" ? CardineAI.toolStack(options || {}) : "";
+  const aiToolChips = (options) => typeof CardineAI.toolChips === "function" ? CardineAI.toolChips(options || {}) : "";
   const aiTaskList = (options) => typeof CardineAI.taskList === "function" ? CardineAI.taskList(options || {}) : "";
   const aiChatPanel = (options) => typeof CardineAI.chatPanel === "function" ? CardineAI.chatPanel(options || {}) : "";
   const aiRecommendation = (options) => typeof CardineAI.recommendation === "function" ? CardineAI.recommendation(options || {}) : "";
@@ -442,6 +446,10 @@
   function setAccountControl() {
     const control = $("#account-control");
     if (!control) return;
+    if (state.auth.mode === "local_repository") {
+      control.hidden = true;
+      return;
+    }
     const name = $("#account-control-name");
     const status = $("#account-control-status");
     const avatar = $("#account-control-avatar");
@@ -555,6 +563,8 @@
 
   function renderSettings(payload = {}) {
     const settings = object(payload);
+    const settingsMode = text(first(settings, ["mode", "access_mode"], state.auth.mode), state.auth.mode);
+    const localMode = settingsMode === "local_repository";
     const account = object(first(settings, ["account", "identity", "user"], state.auth.account));
     const model = object(first(settings, ["model", "model_status"], {}));
     const modelLabel = text(first(model, ["label", "name", "model"], "GPT-5.6 Luna"), "GPT-5.6 Luna");
@@ -562,7 +572,10 @@
       ? "Chiave presente nel runtime: verifica la connessione prima di iniziare la chat."
       : "Nessuna chiave API configurata";
     const accountLabel = text(first(account, ["label", "email", "name", "username"], "Account personale"), "Account personale");
-    setView("impostazioni", `<section class="settings-surface" aria-labelledby="settings-heading"><p class="eyebrow">area privata · impostazioni</p><h1 id="settings-heading">Impostazioni</h1><p class="section-copy">Gestisci accesso, dati locali e modello.</p>${settings.error ? `<p class="field-error" role="alert"><span class="icon icon--warning-circle" aria-hidden="true"></span>${esc(settings.error)}</p>` : ""}<div class="settings-grid"><section class="settings-card"><h2>Account locale</h2><p>${esc(accountLabel)}</p><p>Uscire chiude questa sessione senza eliminare i dati locali.</p><div class="settings-card__actions"><button class="button button--quiet" type="button" data-auth-logout>Esci</button></div></section><section class="settings-card"><h2>Modello</h2><p>Modello attivo: <strong>${esc(modelLabel)}</strong>.</p><p>${esc(credentialStatus)}</p></section><section class="settings-card"><h2>Chiave API</h2><p>La chiave inserita qui resta disponibile fino al riavvio del servizio. Per mantenerla, configura <code>OPENAI_API_KEY</code> nel secret store del deployment. Cardine non mostra né restituisce il valore.</p><form id="settings-model-form" data-settings-credential autocomplete="off"><label for="settings-credential">Nuova chiave API</label><span class="password-field"><input id="settings-credential" name="api_key" type="password" autocomplete="new-password" spellcheck="false" placeholder="Incolla una nuova chiave" required aria-describedby="credential-settings-help"><button class="text-button" type="button" data-toggle-secret="settings-credential" aria-pressed="false">Mostra</button></span><p class="field-note" id="credential-settings-help">Cardine non scrive il valore nello storage del browser e svuota il campo subito dopo il salvataggio.</p><div class="settings-card__actions"><button class="button" type="submit">Salva nuova chiave</button><button class="button button--danger" type="button" data-settings-remove>Rimuovi chiave temporanea</button><span class="settings-card__status" id="credential-settings-status" role="status"></span></div></form></section><section class="settings-card settings-card--diagnostics"><h2>Diagnostica · Decisione tutor</h2><p>Ogni turno mostra solo la decisione validata. Retention locale bounded; nessun testo, prompt, fonte, cookie, chiave o body provider.</p><div id="preview-diagnostics"><p class="field-note">Carico diagnostica locale…</p></div><div class="settings-card__actions"><button class="button button--quiet" type="button" data-diagnostics-refresh>Aggiorna diagnostica</button></div></section><section class="settings-card"><h2>Dati del corso</h2><p>I dati di studio restano nel repository locale e non vengono inclusi nelle impostazioni del browser.</p></section><section class="settings-card"><h2>Privacy</h2><p>Sessione e chiave temporanea vengono rimosse al riavvio. Cardine non salva segreti nello storage del browser.</p></section></div></section>`);
+    const accountCard = localMode ? "" : `<section class="settings-card" data-settings-account><h2>Account locale</h2><p>${esc(accountLabel)}</p><p>Uscire chiude questa sessione senza eliminare i dati locali.</p><div class="settings-card__actions"><button class="button button--quiet" type="button" data-auth-logout>Esci</button></div></section>`;
+    const eyebrow = localMode ? "ambiente locale · impostazioni" : "area privata · impostazioni";
+    const copy = localMode ? "Gestisci il modello e i dati locali." : "Gestisci accesso, dati locali e modello.";
+    setView("impostazioni", `<section class="settings-surface" aria-labelledby="settings-heading"><p class="eyebrow">${eyebrow}</p><h1 id="settings-heading">Impostazioni</h1><p class="section-copy">${copy}</p>${settings.error ? `<p class="field-error" role="alert"><span class="icon icon--warning-circle" aria-hidden="true"></span>${esc(settings.error)}</p>` : ""}<div class="settings-grid">${accountCard}<section class="settings-card" data-settings-model><h2>Modello</h2><p>Modello attivo: <strong>${esc(modelLabel)}</strong>.</p><p>${esc(credentialStatus)}</p></section><section class="settings-card" data-settings-credential><h2>Chiave API</h2><p>La chiave inserita qui resta disponibile fino al riavvio del servizio. Per mantenerla, configura <code>OPENAI_API_KEY</code> nel secret store del deployment. Cardine non mostra né restituisce il valore.</p><form id="settings-model-form" data-settings-credential autocomplete="off"><label for="settings-credential">Nuova chiave API</label><span class="password-field"><input id="settings-credential" name="api_key" type="password" autocomplete="new-password" spellcheck="false" placeholder="Incolla una nuova chiave" required aria-describedby="credential-settings-help"><button class="text-button" type="button" data-toggle-secret="settings-credential" aria-pressed="false">Mostra</button></span><p class="field-note" id="credential-settings-help">Cardine non scrive il valore nello storage del browser e svuota il campo subito dopo il salvataggio.</p><div class="settings-card__actions"><button class="button" type="submit">Salva nuova chiave</button><button class="button button--danger" type="button" data-settings-remove>Rimuovi chiave temporanea</button><span class="settings-card__status" id="credential-settings-status" role="status"></span></div></form></section><section class="settings-card settings-card--diagnostics" data-settings-diagnostics><h2>Diagnostica · Decisione tutor</h2><p>Ogni turno mostra solo la decisione validata. Retention locale bounded; nessun testo, prompt, fonte, cookie, chiave o body provider.</p><div id="preview-diagnostics"><p class="field-note">Carico diagnostica locale…</p></div><div class="settings-card__actions"><button class="button button--quiet" type="button" data-diagnostics-refresh>Aggiorna diagnostica</button></div></section><section class="settings-card"><h2>Dati del corso</h2><p>I dati di studio restano nel repository locale e non vengono inclusi nelle impostazioni del browser.</p></section><section class="settings-card"><h2>Privacy</h2><p>Sessione e chiave temporanea vengono rimosse al riavvio. Cardine non salva segreti nello storage del browser.</p></section></div></section>`);
   }
 
   async function loadSettings(navigationVersion = state.navigationVersion) {
@@ -584,11 +597,11 @@
   }
 
   function enhanceSettingsSurface() {
-    const cards = $$(".settings-card", root);
-    const modelCard = cards[1];
+    const modelCard = $("[data-settings-model]", root);
+    const credentialCard = $("[data-settings-credential]", root);
     const settingsAvailable = object(state.viewData).settings_available !== false;
-    if (!settingsAvailable && cards[2]) {
-      patch(cards[2], "<h2>Configurazione modello</h2><p>Disponibile soltanto nell’area privata della preview locale.</p>");
+    if (!settingsAvailable && credentialCard) {
+      patch(credentialCard, "<h2>Configurazione modello</h2><p>Disponibile soltanto nell’area privata della preview locale.</p>");
     }
     if (settingsAvailable && modelCard && !$("[data-settings-check]", modelCard)) {
       modelCard.insertAdjacentHTML("beforeend", `<div class="settings-card__actions"><button class="button button--quiet" type="button" data-settings-check>Verifica decisione tutor</button><span class="settings-card__status" id="model-check-status" role="status"></span></div>`);
@@ -598,7 +611,7 @@
       workspaceCard.className = "settings-card";
       workspaceCard.id = "workspace-card";
       patch(workspaceCard, `<h2>Corso e sessione</h2><div id="workspace-manager"><p class="field-note">Carico corsi e sessioni disponibili…</p></div>`);
-      cards[2]?.before(workspaceCard);
+      credentialCard?.before(workspaceCard);
     }
   }
 
@@ -1320,20 +1333,42 @@
     const createCourse = state.auth.authenticated
       ? `<button class="chat-home__course-action" type="button" data-open-course-creation>Crea un corso</button>`
       : "";
-    setView("oggi", `<section class="chat-home" aria-labelledby="home-heading"><div class="chat-home__center"><p class="eyebrow">${esc(text(course.title, "corso locale"))}</p><h1 id="home-heading">${suspended ? "Riprendiamo da dove eravamo?" : "Come vuoi studiare oggi?"}</h1>${entryForm("hero-entry", "Scrivi al tutor", "Chiedi qualsiasi cosa sul corso…")}${renderLessonStudy()}${createCourse}${renderChatCourseCreation()}${suspended ? `<button class="resume-chat" type="button" data-route="sessione">Riprendi la sessione in corso</button>` : ""}${today}</div>${support}</section>`);
+    setView("oggi", `<section class="chat-home" aria-labelledby="home-heading"><div class="chat-home__center"><p class="eyebrow">${esc(text(course.title, "corso locale"))}</p><h1 id="home-heading">${suspended ? "Riprendiamo da dove eravamo?" : "Come vuoi studiare oggi?"}</h1>${lessonPinAttachment()}${entryForm("hero-entry", "Scrivi al tutor", "Chiedi qualsiasi cosa sul corso…")}${renderLessonStudy()}${createCourse}${renderChatCourseCreation()}${suspended ? `<button class="resume-chat" type="button" data-route="sessione">Riprendi la sessione in corso</button>` : ""}${today}</div>${support}</section>`);
   }
 
+  /* The lesson picker is a disclosure, not a second hero: the composer stays
+     the first thing on the page, and this only chooses which source the chat
+     is anchored to. Questions and flashcards are asked in the chat itself. */
   function renderLessonStudy() {
     const lesson = state.lesson || { query: "", candidates: [], pin: null, answer: null };
     const candidates = Array.isArray(lesson.candidates) ? lesson.candidates : [];
+    const pin = lessonPin();
+    const pinnedId = pin ? text(pin.revision_id) : "";
     const rows = candidates.length
-      ? `<ul class="lesson-search-results">${candidates.map((candidate) => `<li><button class="button button--quiet" type="button" data-lesson-select="${esc(text(candidate.candidate_id))}">${esc(text(candidate.section_title, "Lezione"))}</button><span class="field-note">${esc(shortId(candidate.source_id, 12))} · ${esc(text(candidate.revision_id))}</span></li>`).join("")}</ul>`
+      ? `<ul class="lesson-results">${candidates.map((candidate) => {
+        const item = object(candidate);
+        const selected = pinnedId && text(item.revision_id) === pinnedId;
+        return `<li class="lesson-results__item"><button class="lesson-results__pick" type="button" data-lesson-select="${esc(text(item.candidate_id))}"${selected ? ' aria-current="true"' : ""}><span class="lesson-results__title">${esc(text(item.section_title, "Lezione"))}</span><span class="lesson-results__meta">${esc(shortId(item.source_id, 12))} · ${esc(text(item.revision_id))}</span></button></li>`;
+      }).join("")}</ul>`
       : "";
-    const pin = lesson.pin && typeof lesson.pin === "object";
-    const answer = lesson.answer && typeof lesson.answer === "object"
-      ? `<article class="lesson-answer" aria-live="polite"><p class="section-kicker">risposta ancorata alla lezione</p><pre>${esc(JSON.stringify(lesson.answer, null, 2))}</pre></article>`
+    const empty = !candidates.length && text(lesson.query)
+      ? `<p class="field-note lesson-study__empty">Nessuna lezione trovata per «${esc(text(lesson.query))}». Prova con il titolo esatto o un argomento della lezione.</p>`
       : "";
-    return `<section class="lesson-study" aria-labelledby="lesson-study-heading"><p class="section-kicker">selezione esplicita · grounding</p><h2 id="lesson-study-heading">Cerca una lezione</h2><p class="field-note">La domanda e le flashcard usano solo il pin selezionato e falliscono se la fonte è cambiata.</p><form data-lesson-search novalidate><label for="lesson-query">Titolo o argomento</label><input id="lesson-query" name="query" value="${esc(text(lesson.query))}" required maxlength="512" placeholder="es. Lezione 1"><button class="button" type="submit">Cerca</button></form>${rows}${pin ? `<form data-lesson-ask novalidate><label for="lesson-question">Domanda sulla lezione selezionata</label><textarea id="lesson-question" name="question" required maxlength="4000" placeholder="Cosa spiega questa lezione?"></textarea><button class="button" type="submit">Chiedi sulla lezione selezionata</button></form><form data-lesson-flashcards novalidate><label for="lesson-flashcards-query">Richiesta flashcard</label><input id="lesson-flashcards-query" name="query" required maxlength="4000" value="Crea flashcard dalla lezione selezionata"><button class="button button--quiet" type="submit">Crea flashcard dalla lezione selezionata</button></form>` : ""}${answer}</section>`;
+    const open = Boolean(candidates.length || pin || text(lesson.query));
+    return `<details class="lesson-study"${open ? " open" : ""}><summary class="lesson-study__summary">Studia una lezione specifica</summary><div class="lesson-study__body"><div class="lesson-study__intro"><p class="section-kicker">selezione esplicita · grounding</p><p class="field-note">La lezione scelta resta allegata alla chat: le domande e le flashcard usano solo quella fonte e falliscono se è cambiata.</p></div><form class="lesson-study__form" data-lesson-search novalidate><div class="field"><label for="lesson-query">Titolo o argomento</label><div class="lesson-study__row"><input id="lesson-query" name="query" type="search" value="${esc(text(lesson.query))}" required maxlength="512" placeholder="es. Lezione 1"><button class="button" type="submit">Cerca</button></div></div></form>${rows}${empty}</div></details>`;
+  }
+
+  function lessonPin() {
+    const pin = state.lesson && state.lesson.pin;
+    return pin && typeof pin === "object" ? object(pin) : null;
+  }
+
+  /* A pinned lesson is an attachment on the composer, not a second form:
+     the learner asks and asks for flashcards in the chat, as usual. */
+  function lessonPinAttachment() {
+    const pin = lessonPin();
+    if (!pin) return "";
+    return `<div class="composer-attachment" aria-live="polite"><span class="composer-attachment__label">Fonte allegata</span><span class="composer-attachment__title">${esc(text(pin.section_title, "Lezione"))}</span><span class="composer-attachment__meta">${esc(shortId(pin.source_id, 12))} · ${esc(text(pin.revision_id))}</span><button class="composer-attachment__remove" type="button" data-lesson-unpin aria-label="Rimuovi la fonte allegata" data-tooltip="Rimuovi la fonte allegata">Rimuovi</button></div>`;
   }
 
   /* A three-step setup shows where you are and lets you go back. The frame
@@ -1487,6 +1522,19 @@
       const messageRole = text(first(object(message), ["role", "speaker", "who"], "assistant"), "assistant").toLowerCase();
       if (!["learner", "user", "student"].includes(messageRole)) lastAssistantIndex = index;
     });
+    displayMessages.forEach((message, index) => {
+      const item = object(message);
+      const presentationId = text(first(item, ["interaction_id", "presentation_id"], ""), "");
+      const remembered = object(state.turnActivities[presentationId]);
+      const records = array(remembered.records);
+      if (presentationId && records.length) {
+        displayMessages[index] = {
+          ...item,
+          activity_records: records,
+          activity_state: text(remembered.state, "settled"),
+        };
+      }
+    });
     const thread = displayMessages.length
       ? displayMessages.map((message, index) => renderMessage(message, index === lastAssistantIndex)).join("")
       : emptyState(
@@ -1505,14 +1553,6 @@
       })
       : "";
     const continuationHtml = continuation && Object.keys(continuation).length ? `<div class="continuation"><p class="section-kicker">richiesta del tutor</p><p class="continuation__prompt">${esc(continuationPrompt)}</p>${continuationApproval}${continuationFingerprint ? entryForm("continuation-entry", "Risposta", "Scrivi la risposta…", "", `data-fingerprint="${esc(continuationFingerprint)}"`) : emptyState("Continuazione non disponibile", "Manca il riferimento necessario per riprendere la conversazione.")}</div>` : "";
-    const activityDisclosure = `<details class="ai-session-activity"><summary>Attività</summary><div class="ai-session-activity__grid">${aiThinking({
-      summary: "Trace di ragionamento non esposto",
-      hint: "Cardine mostra solo attività dichiarata dal contratto.",
-      steps: [{ label: "Risposta canonica disponibile", detail: "Il servizio non espone il ragionamento interno del modello.", status: "unavailable" }],
-    })}${aiToolStack({
-      title: "Attività tecnica",
-      tools: [{ label: "Strumenti usati", detail: "Il servizio non ha dichiarato strumenti usati in questa conversazione.", status: "unavailable" }],
-    })}</div></details>`;
     const createCourse = state.auth.authenticated
       ? `<button class="text-button" type="button" data-open-course-creation>Crea un corso</button>`
       : "";
@@ -1523,7 +1563,7 @@
       title: text(first(snapshot, ["title", "topic"], object(state.bootstrap?.course).title), "Sessione di studio"),
       subtitle: statusLabel(status),
       thread,
-      extras: `${continuationHtml}${activityDisclosure}`,
+      extras: continuationHtml,
       actions: `${createCourse}${tutorStatus}<button class="text-button" type="button" data-route="fonti">Fonti</button>`,
       placeholder: "Rispondi al tutor…",
     }));
@@ -1534,7 +1574,7 @@
      session render the same markup, so they cannot drift apart or invent a
      subtitle that contradicts the real state. */
   function sessionShell({ title, subtitle, thread, extras = "", actions = "", placeholder }) {
-    return `<section class="chat-session" data-ai-chat-ready="true" aria-labelledby="conversation-heading"><header class="conversation-header"><div><h1 id="conversation-heading">${esc(title)}</h1><p>${esc(subtitle)}</p></div><div class="conversation-header__actions">${actions}</div></header><div class="conversation-scroll"><div class="conversation-column"><div class="session-thread">${thread}</div>${extras}</div></div><div class="conversation-composer-dock"><div class="conversation-column">${entryForm("session-entry", "Scrivi al tutor", placeholder)}</div></div></section>`;
+    return `<section class="chat-session" data-ai-chat-ready="true" aria-labelledby="conversation-heading"><header class="conversation-header"><div><h1 id="conversation-heading">${esc(title)}</h1><p>${esc(subtitle)}</p></div><div class="conversation-header__actions">${actions}</div></header><div class="conversation-scroll"><div class="conversation-column"><div class="session-thread">${thread}</div>${extras}</div></div><div class="conversation-composer-dock"><div class="conversation-column">${lessonPinAttachment()}${entryForm("session-entry", "Scrivi al tutor", placeholder)}</div></div></section>`;
   }
 
   function renderMessage(message, showFineTune = false) {
@@ -1546,13 +1586,14 @@
     if (learner) {
       return `<article class="thread-message thread-message--learner"><p class="thread-message__role">tu</p><p class="thread-message__text">${esc(text(content, "Messaggio senza testo visualizzabile."))}</p></article>`;
     }
-    const citations = Object.keys(citation).length ? [citation] : [];
+    const citations = array(first(item, ["citations", "sources"], []));
+    if (Object.keys(citation).length) citations.unshift(citation);
     const followUps = array(first(item, ["follow_ups", "followUps", "suggestions", "actions"], []));
     const thinking = array(first(item, ["thinking", "trace", "steps", "activity"], []));
-    const tools = array(first(item, ["tools", "tool_activity", "capabilities", "retrieval"], []));
+    const tools = array(first(item, ["activity_records", "tools", "tool_activity", "capabilities", "retrieval"], []));
     const answer = aiAnswer({ answer: text(content, "Messaggio senza testo visualizzabile."), citations, followUps, status: first(item, ["status", "state"], "ready"), reveal: showFineTune });
     const thinkingView = thinking.length ? aiThinking({ steps: thinking, summary: "Come ho costruito questa risposta" }) : "";
-    const toolsView = tools.length ? aiToolStack({ tools, title: "Attività dichiarata" }) : "";
+    const toolsView = tools.length ? aiToolChips({ records: tools, state: text(first(item, ["activity_state", "state"], "settled"), "settled") }) : "";
     const fineTune = showFineTune ? aiFineTune({
       title: "Continua",
       detail: "Ogni opzione prepara un follow-up nel campo di scrittura, senza inviarlo.",
@@ -1601,7 +1642,7 @@
       records: recordRows,
     });
     const searchView = aiSidebarSearch({ placeholder: "Cerca in Cardine", shortcut: "/" });
-    setView("fonti", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="material-heading"><p class="section-kicker">libreria del corso</p><h1 class="section-title" id="material-heading">Fonti del corso</h1><p class="section-copy">Di ogni fonte vedi titolo, revisione e un estratto. Il testo completo resta nel repository del corso.</p><div class="ai-fonts-search">${searchView}</div><ul class="source-list">${rows}</ul><div class="ai-fonts-context">${contextView}</div><details class="ai-fonts-records"><summary>Registro delle revisioni</summary>${registerView}</details></section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">da sapere</p><h2 class="side-card__title">Le fonti arrivano dal repository</h2><p class="side-card__copy">Aggiungi il file al repository del corso e ricarica: Cardine non modifica i materiali canonici dal browser.</p></div></aside></section>`);
+    setView("fonti", `<section class="section-grid section-grid--materials"><section class="section-grid__main" aria-labelledby="material-heading"><p class="section-kicker">libreria del corso</p><h1 class="section-title" id="material-heading">Fonti del corso</h1><p class="section-copy">Apri una fonte per leggerla nel pannello laterale.</p><div class="ai-fonts-search">${searchView}</div><ul class="source-list">${rows}</ul><div class="ai-fonts-context">${contextView}</div><details class="ai-fonts-records"><summary>Registro delle revisioni</summary>${registerView}</details></section><aside class="section-grid__side materials-pane"><section class="materials-viewer" id="materials-viewer" aria-labelledby="materials-viewer-title"><header class="materials-viewer__header"><div><p class="eyebrow" id="materials-viewer-kind">fonte del corso</p><h2 id="materials-viewer-title">Documento</h2></div></header><div class="source-viewer__content" id="materials-viewer-content"><p class="empty-state">Scegli una fonte dall’elenco per aprirla qui.</p></div></section><div class="side-card"><p class="section-kicker">da sapere</p><h2 class="side-card__title">Le fonti arrivano dal repository</h2><p class="side-card__copy">Il viewer è in sola lettura e apre soltanto revisioni canoniche appartenenti a questo corso.</p></div></aside></section>`);
   }
 
   function renderSource(item) {
@@ -1611,10 +1652,23 @@
     const checksum = first(source, ["checksum_sha256", "checksum", "sha256"], "checksum non dichiarato");
     const type = first(source, ["type", "kind", "role"], "materiale");
     const chunks = first(source, ["chunk_count", "chunks", "fragment_count"], "—");
+    const viewer = object(source.viewer);
+    const viewerKind = text(viewer.kind);
+    const viewerReference = viewerKind && viewerKind !== "unavailable"
+      ? {
+        source_id: text(source.source_id),
+        revision_id: text(first(source, ["revision_id", "revision"])),
+        viewer_kind: viewerKind,
+        page: null,
+      }
+      : null;
     // Opaque identifiers belong in the provenance sheet, not as the loudest
     // thing in the row: 64 monospaced characters wrapping mid-token used to
     // outrank the title of the source itself.
-    return `<li class="source-row"><div><h3 class="source-row__title">${esc(title)}</h3><p class="source-row__meta"><span>Revisione <span class="checksum">${esc(shortId(revision))}</span></span><span>Checksum <span class="checksum">${esc(shortId(checksum))}</span></span></p></div><div class="source-row__value source-row__type">Tipo <b>${esc(type)}</b></div><div class="source-row__value">Frammenti <b>${esc(chunks)}</b></div><div class="source-row__button"><button class="button button--quiet" type="button" data-provenance='${esc(JSON.stringify({ title, revision, checksum, type, excerpt: first(source, ["excerpt", "quote"], "") }))}'>Provenienza</button></div></li>`;
+    const sourceAction = viewerReference
+      ? `<button class="button button--quiet" type="button" data-source-viewer-mode="page" data-source-viewer='${esc(JSON.stringify({ ...viewerReference, title }))}'>Apri fonte</button>`
+      : `<button class="button button--quiet" type="button" data-provenance='${esc(JSON.stringify({ title, revision, checksum, type, excerpt: first(source, ["excerpt", "quote"], "") }))}'>Provenienza</button>`;
+    return `<li class="source-row"><div><h3 class="source-row__title">${esc(title)}</h3><p class="source-row__meta"><span>Revisione <span class="checksum">${esc(shortId(revision))}</span></span><span>Checksum <span class="checksum">${esc(shortId(checksum))}</span></span></p></div><div class="source-row__value source-row__type">Tipo <b>${esc(type)}</b></div><div class="source-row__value">Frammenti <b>${esc(chunks)}</b></div><div class="source-row__button">${sourceAction}</div></li>`;
   }
 
   function renderProposte(payload) {
@@ -1856,7 +1910,13 @@
       return;
     }
     const endpoint = continuation ? `/api/v1/session/continuations/${encodeURIComponent(form.dataset.fingerprint || "opaque")}/responses` : "/api/v1/session/turns";
-    const payload = continuation ? { response: value } : { content: value };
+    // The attached lesson travels with the turn, so the answer and any
+    // flashcards asked for in the chat stay inside that one source.
+    const pin = lessonPin();
+    const payload = {
+      ...(continuation ? { response: value } : { content: value }),
+      ...(pin ? { lesson_pin: pin } : {}),
+    };
     if (textarea) {
       textarea.value = "";
       resizeComposer(textarea);
@@ -1888,6 +1948,7 @@
     if (isTutorTurn) {
       state.pendingTurn = { requestId: request, content: text(payload.content || payload.response) };
       renderOptimisticTurn(state.pendingTurn.content);
+      pollTurnActivity(request).catch(() => {});
     }
     setBusy(true);
     setStatus(
@@ -1897,6 +1958,11 @@
     try {
       const receipt = await fetchJson(endpoint, { method: "POST", body: JSON.stringify(commandPayload(payload, request)) });
       const activity = object(receipt.activity);
+      const settledRecords = array(receipt.activity_records);
+      const presentationId = text(receipt.presentation_id, "");
+      if (isTutorTurn && presentationId && settledRecords.length) {
+        state.turnActivities[presentationId] = { records: settledRecords, state: "settled" };
+      }
       const flashcardCompleted = text(activity.kind) === "flashcard_generation"
         && text(activity.status) === "completed";
       const traceId = text(receipt.trace_id, "");
@@ -1911,10 +1977,10 @@
       // command for an explicit transient retry action.
       if (commandIsCurrent) state.lastCommand = null;
       if (isTutorTurn && state.pendingTurn?.requestId === request) state.pendingTurn = null;
+      if (isTutorTurn) state.activityPollToken += 1;
       if (endpoint === "/api/v1/session/turns" || endpoint.includes("/session/continuations/")) {
         state.continuationDraft = "";
       }
-      await refreshBootstrapCounts();
       const originIsStillActive = commandNavigationVersion === state.navigationVersion;
       if (originIsStillActive && status === "demo_completed" && refreshRoute === "sessione") {
         state.route = "sessione";
@@ -1926,8 +1992,27 @@
         state.viewData = object(receipt.result);
         renderSessione(state.viewData);
         dismissAlert();
+      } else if (originIsStillActive && isTutorTurn) {
+        // The receipt is the only first-delivery carrier for process-local
+        // activity records. Rendering it directly keeps the settled chips on
+        // the answer without pretending they survive a later reload.
+        state.route = "sessione";
+        state.viewData = object(receipt.result);
+        renderSessione(state.viewData);
       } else if (originIsStillActive) {
         await loadRoute((isFlashcardCommand || flashcardCompleted) && status === "completed" ? "proposte" : refreshRoute);
+      }
+      if (isTutorTurn) {
+        void refreshBootstrapCounts();
+      } else {
+        await refreshBootstrapCounts();
+      }
+      if (isTutorTurn && originIsStillActive && receipt.result) {
+        const assistant = $$(".thread-message--assistant", root).at(-1);
+        if (assistant && settledRecords.length) {
+          const existing = $(".thread-message__activity", assistant);
+          if (existing) patch(existing, aiToolChips({ records: settledRecords, state: "settled" }));
+        }
       }
       const nextComposer = originIsStillActive ? $("#session-entry-text") : null;
       if (nextComposer) nextComposer.focus({ preventScroll: true });
@@ -1975,7 +2060,7 @@
     const pendingCopy = flashcards
       ? "Sto generando e verificando le proposte flashcard…"
       : "Sto preparando una risposta basata sulle fonti del corso…";
-    const pending = `<article class="thread-message thread-message--assistant thread-message--pending" data-optimistic-turn><p class="thread-message__role">tutor</p><p class="thread-message__text">${pendingCopy}</p></article>`;
+    const pending = `<article class="thread-message thread-message--assistant thread-message--pending" data-optimistic-turn><p class="thread-message__role">tutor</p><p class="thread-message__text" data-turn-progress>${pendingCopy}</p><div class="thread-message__activity" data-turn-activity aria-live="polite"></div></article>`;
     const thread = $(".session-thread", root);
     if (thread) {
       thread.insertAdjacentHTML("beforeend", outgoing + pending);
@@ -1994,6 +2079,32 @@
 
   function removeOptimisticTurn() {
     $$('[data-optimistic-turn]', root).forEach((item) => item.remove());
+  }
+
+  async function pollTurnActivity(requestId) {
+    const token = ++state.activityPollToken;
+    const navigationVersion = state.navigationVersion;
+    let failures = 0;
+    for (let attempt = 0; attempt < 240 && token === state.activityPollToken && navigationVersion === state.navigationVersion && state.pendingTurn?.requestId === requestId && failures < 3; attempt += 1) {
+      try {
+        const payload = await fetchJson(`/api/v1/turns/${encodeURIComponent(requestId)}/activity`);
+        failures = 0;
+        const progressMessage = text(payload.progress_message, "");
+        const progressNode = $("[data-turn-progress]", root);
+        if (progressNode && progressMessage && token === state.activityPollToken) {
+          // Keep model text out of HTML parsing; textContent preserves the
+          // escaped pending bubble even when the provider returns markup.
+          progressNode.textContent = progressMessage;
+        }
+        const node = $("[data-turn-activity]", root);
+        if (node && token === state.activityPollToken) patch(node, aiToolChips(payload));
+        if (["settled", "failed"].includes(text(payload.state))) return;
+        await new Promise((resolve) => window.setTimeout(resolve, 600));
+      } catch (_) {
+        failures += 1;
+        await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      }
+    }
   }
 
   function restoreFailedTurnDraft(content, originForm) {
@@ -2204,17 +2315,8 @@
         selectLesson(control).catch((error) => showCommandError(error));
       });
     });
-    $$('[data-lesson-ask]').forEach((form) => {
-      form.addEventListener("submit", (event) => {
-        event.preventDefault();
-        askPinnedLesson(form).catch((error) => showCommandError(error));
-      });
-    });
-    $$('[data-lesson-flashcards]').forEach((form) => {
-      form.addEventListener("submit", (event) => {
-        event.preventDefault();
-        createPinnedFlashcards(form).catch((error) => showCommandError(error));
-      });
+    $$('[data-lesson-unpin]').forEach((control) => {
+      control.addEventListener("click", () => unpinLesson());
     });
     $$('[data-artifact-bulk]').forEach((form) => {
       form.addEventListener("submit", (event) => {
@@ -2246,6 +2348,7 @@
     }));
     $$('[data-command]').forEach((control) => control.addEventListener("click", () => commandFromControl(control)));
     $$('[data-provenance]').forEach((control) => control.addEventListener("click", () => openProvenance(control.dataset.provenance)));
+    $$('[data-source-viewer]').forEach((control) => control.addEventListener("click", () => openSourceViewer(control.dataset.sourceViewer, control.dataset.sourceViewerMode)));
     $$('[data-retry-route]').forEach((control) => control.addEventListener("click", () => loadRoute(control.dataset.retryRoute)));
     $$('[data-open-turn-trace]').forEach((control) => control.addEventListener("click", () => {
       state.diagnosticTraceId = text(control.dataset.openTurnTrace, state.diagnosticTraceId);
@@ -2287,38 +2390,22 @@
       state.lesson = { ...lesson, pin: object(receipt.pin), answer: null };
       updateSequence(first(receipt, ["high_water_sequence"], state.highWaterSequence));
       renderOggi(state.viewData || state.bootstrap || {});
-      setStatus("selected", "Lezione fissata per il grounding");
+      setStatus("selected", "Lezione allegata alla chat");
     } finally {
       setBusy(false);
     }
   }
 
-  async function askPinnedLesson(form) {
-    const question = text(form.elements.namedItem("question")?.value).trim();
-    const pin = state.lesson && state.lesson.pin;
-    if (!question || !pin) return;
-    const request = requestId();
-    setBusy(true);
-    try {
-      const receipt = await fetchJson("/api/v1/lessons/ask", {
-        method: "POST",
-        body: JSON.stringify(commandPayload({ question, pin }, request)),
-      });
-      state.lesson = { ...state.lesson, answer: object(receipt.answer) };
-      updateSequence(first(receipt, ["high_water_sequence"], state.highWaterSequence));
-      renderOggi(state.viewData || state.bootstrap || {});
-      setStatus(text(receipt.status, "completed"), "Risposta ancorata completata");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function createPinnedFlashcards(form) {
-    const query = text(form.elements.namedItem("query")?.value).trim();
-    const pin = state.lesson && state.lesson.pin;
-    if (!query || !pin) return;
-    await executeCommand("/api/v1/lessons/flashcards", { query, pin }, form, "proposte");
-    setStatus("completed", "Flashcard della lezione create");
+  /* Detaching a source is a local choice: nothing was committed by pinning,
+     so the browser only drops what it was carrying into the next question. */
+  function unpinLesson() {
+    if (!state.lesson) return;
+    state.lesson = { ...state.lesson, pin: null, answer: null };
+    // The attachment is shown both on the home screen and above the chat
+    // composer, so the detach has to repaint whichever one is on screen.
+    if (state.route === "sessione") renderSessione(state.viewData || {});
+    else renderOggi(state.viewData || state.bootstrap || {});
+    setStatus("ready", "Fonte allegata rimossa");
   }
 
   async function submitArtifactBulk(form) {
@@ -2417,9 +2504,94 @@
     $("#provenance-drawer").showModal();
   }
 
+  async function openSourceViewer(serialized, mode = "sheet") {
+    let source = {};
+    try { source = object(JSON.parse(serialized)); } catch (_) { source = {}; }
+    const sourceId = text(source.source_id);
+    const revisionId = text(source.revision_id);
+    const viewer_kind = text(source.viewer_kind);
+    if (!sourceId || !revisionId || !["pdf", "markdown", "text"].includes(viewer_kind)) return;
+    const title = text(source.title, "Fonte del corso");
+    const page = Number.isInteger(source.page) && source.page > 0 ? source.page : null;
+    const endpoint = `/api/v1/materials/${encodeURIComponent(sourceId)}/revisions/${encodeURIComponent(revisionId)}/content`;
+    const inline = mode === "page" && $("#materials-viewer");
+    const dialog = inline ? null : $("#source-viewer");
+    const content = inline ? $("#materials-viewer-content") : $("#source-viewer-content");
+    const requestVersion = ++state.sourceViewerVersion;
+    const kindLabel = viewer_kind === "pdf" ? page ? `PDF · pagina ${page}` : "PDF" : viewer_kind === "markdown" ? "Markdown" : "testo";
+    $(inline ? "#materials-viewer-title" : "#source-viewer-title").textContent = title;
+    $(inline ? "#materials-viewer-kind" : "#source-viewer-kind").textContent = kindLabel;
+    patch(content, '<p class="source-viewer__loading">Apro la fonte…</p>');
+    if (inline) {
+      if (window.matchMedia("(max-width: 1080px)").matches) {
+        inline.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+      }
+    } else if (!dialog.open) {
+      dialog.showModal();
+    }
+    if (viewer_kind === "pdf") {
+      const target = `${endpoint}${page ? `#page=${page}` : ""}`;
+      patch(content, `<iframe class="source-viewer__frame" src="${esc(target)}" title="${esc(`Documento: ${title}`)}"></iframe>`);
+      return;
+    }
+    try {
+      const response = await fetch(endpoint, {
+        credentials: "same-origin",
+        headers: { Accept: viewer_kind === "markdown" ? "text/markdown" : "text/plain" },
+      });
+      if (!response.ok) throw new Error("source viewer request failed");
+      const documentText = await response.text();
+      if (requestVersion !== state.sourceViewerVersion) return;
+      const rendered = viewer_kind === "markdown" ? CardineAI.markdown(documentText) : `<pre>${esc(documentText)}</pre>`;
+      patch(content, `<article class="source-viewer__markdown ai-answer__markdown">${rendered}</article>`);
+    } catch (_) {
+      if (requestVersion !== state.sourceViewerVersion) return;
+      patch(content, '<p class="source-viewer__error">Non riesco ad aprire questa fonte. Riprova o verifica che la revisione sia ancora disponibile.</p>');
+    }
+  }
+
+  function bindSourceViewerResize() {
+    const dialog = $("#source-viewer");
+    const handle = $("[data-source-viewer-resize]", dialog);
+    if (!dialog || !handle) return;
+    const resize = (width, height) => {
+      const inset = 24;
+      const minWidth = Math.min(360, window.innerWidth - inset);
+      const minHeight = Math.min(320, window.innerHeight - inset);
+      dialog.style.width = `${Math.max(minWidth, Math.min(width, window.innerWidth - inset))}px`;
+      dialog.style.height = `${Math.max(minHeight, Math.min(height, window.innerHeight - inset))}px`;
+    };
+    handle.addEventListener("pointerdown", (event) => {
+      if (window.matchMedia("(max-width: 700px)").matches) return;
+      event.preventDefault();
+      const start = dialog.getBoundingClientRect();
+      const startX = event.clientX;
+      const startY = event.clientY;
+      handle.setPointerCapture(event.pointerId);
+      const move = (moveEvent) => resize(start.width + startX - moveEvent.clientX, start.height + moveEvent.clientY - startY);
+      const stop = () => {
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", stop);
+        handle.removeEventListener("pointercancel", stop);
+      };
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", stop);
+      handle.addEventListener("pointercancel", stop);
+    });
+    handle.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+      event.preventDefault();
+      const current = dialog.getBoundingClientRect();
+      const step = event.shiftKey ? 64 : 24;
+      const width = current.width + (event.key === "ArrowLeft" ? step : event.key === "ArrowRight" ? -step : 0);
+      const height = current.height + (event.key === "ArrowDown" ? step : event.key === "ArrowUp" ? -step : 0);
+      resize(width, height);
+    });
+  }
+
   function commandSearchEntries() {
     const routes = Object.entries(ROUTES)
-      .filter(([route, config]) => route !== "login" && (!config.private || state.auth.authenticated))
+      .filter(([route, config]) => route !== "login" && (!config.private || state.auth.authenticated || (route === "impostazioni" && state.auth.mode !== "private")))
       .map(([route, config]) => ({
         group: "Vai a",
         icon: config.icon,
@@ -2800,6 +2972,7 @@
   applyRailState();
   bindStaticControls();
   bindDynamicControls();
+  bindSourceViewerResize();
   window.addEventListener("resize", applyRailState);
   loadAuthSession().then((auth) => {
     if (auth.mode === "setup") {

@@ -16,7 +16,7 @@ from pathlib import Path
 # ruff: noqa: E501
 
 
-DEMO_DIR = Path(__file__).parents[3] / "src" / "study_agent" / "demo"
+DEMO_DIR = Path(__file__).parents[3] / "src" / "cardine" / "demo"
 PRIMITIVES = DEMO_DIR / "ai-primitives.js"
 
 
@@ -111,6 +111,108 @@ console.log(JSON.stringify(output));
             "hasQuoteEscaped": True,
         }, name
     assert result["longBounded"] is True
+
+
+def test_answer_renders_safe_markdown_and_verified_sources_as_compact_chips() -> None:
+    source = json.dumps(str(PRIMITIVES))
+    script = f"""
+const path = {source};
+require(path);
+const answer = `# Struttura
+
+La pompa ha una **subunità alfa** e usa \\`ATP\\`.
+
+- Primo passaggio
+- Secondo passaggio
+
+> Punto da ricordare.
+
+Fonti verificate:
+- Biochimica · Lezione 1
+- <script>alert('fonte')</script>
+- Altre 6 citazioni verificate.`;
+console.log(JSON.stringify(CardineAI.answer({{answer}})));
+"""
+
+    rendered = _run_node(script)
+
+    assert isinstance(rendered, str)
+    assert '<div class="ai-answer__markdown">' in rendered
+    assert '<h2>Struttura</h2>' in rendered
+    assert '<strong>subunità alfa</strong>' in rendered
+    assert '<code>ATP</code>' in rendered
+    assert '<ul><li>Primo passaggio</li><li>Secondo passaggio</li></ul>' in rendered
+    assert '<blockquote><p>Punto da ricordare.</p></blockquote>' in rendered
+    assert "Fonti verificate:" not in rendered
+    assert '<details class="ai-answer__source-disclosure">' in rendered
+    assert '<details class="ai-answer__source-disclosure" open>' not in rendered
+    assert "8 fonti verificate" in rendered
+    assert rendered.count('class="ai-citation"') == 2
+    assert 'class="icon icon--book-open"' in rendered
+    assert "Biochimica · Lezione 1" in rendered
+    assert "Altre 6 citazioni verificate." not in rendered
+    assert "&lt;script&gt;alert(&#39;fonte&#39;)&lt;/script&gt;" in rendered
+    assert "<script>alert('fonte')</script>" not in rendered
+
+
+def test_verified_source_with_canonical_reference_is_an_openable_viewer_control() -> None:
+    source = json.dumps(str(PRIMITIVES))
+    script = f"""
+const path = {source};
+require(path);
+const rendered = CardineAI.answer({{
+  answer: 'La pompa mantiene il gradiente.',
+  citations: [{{
+    label: 'Biochimica · Trasporti · page 451',
+    source_id: 'source-pdf-sha256:abc',
+    revision_id: 'revision-sha256:def',
+    viewer_kind: 'pdf',
+    page: 451,
+  }}],
+}});
+console.log(JSON.stringify(rendered));
+"""
+
+    rendered = _run_node(script)
+
+    assert isinstance(rendered, str)
+    assert '<button type="button" class="ai-citation"' in rendered
+    assert 'data-source-viewer=' in rendered
+    assert '&quot;source_id&quot;:&quot;source-pdf-sha256:abc&quot;' in rendered
+    assert '&quot;revision_id&quot;:&quot;revision-sha256:def&quot;' in rendered
+    assert '&quot;page&quot;:451' in rendered
+    assert 'Biochimica · Trasporti · page 451' in rendered
+
+
+def test_answer_hides_legacy_verbatim_chunks_and_keeps_their_source_chips() -> None:
+    source = json.dumps(str(PRIMITIVES))
+    script = f"""
+const path = {source};
+require(path);
+const answer = `Primo paragrafo della spiegazione.
+
+Fonti: Biochimica · pagina 451
+«Chunk verbatim che non deve essere mostrato.», Biochimica · pagina 452
+«Secondo chunk verbatim.»
+
+Secondo paragrafo con **concetto importante**.
+
+Fonti: Biochimica · pagina 451
+«Lo stesso chunk ripetuto.»`;
+console.log(JSON.stringify(CardineAI.answer({{answer}})));
+"""
+
+    rendered = _run_node(script)
+
+    assert isinstance(rendered, str)
+    assert "Primo paragrafo della spiegazione." in rendered
+    assert "Secondo paragrafo con <strong>concetto importante</strong>." in rendered
+    assert "Fonti:" not in rendered
+    assert "Chunk verbatim" not in rendered
+    assert "Lo stesso chunk ripetuto" not in rendered
+    assert rendered.count('class="ai-citation"') == 2
+    assert rendered.count('class="ai-citation__label">Biochimica · pagina 451') == 1
+    assert rendered.count('class="ai-citation__label">Biochimica · pagina 452') == 1
 
 
 def test_enhance_binds_local_hooks_without_submitting_or_networking() -> None:

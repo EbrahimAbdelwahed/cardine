@@ -23,7 +23,7 @@ from urllib.request import Request, urlopen
 import pytest
 
 from cardine.demo.browser import ICON_ASSETS, create_server
-from cardine.demo.ui_application import UiRequestError
+from cardine.demo.ui_application import SourceDocumentView, UiRequestError
 from cardine.documents import DocumentImportPolicy
 from study_agent.domain._validation import JsonObject
 
@@ -97,6 +97,19 @@ class _ContractApplication:
             "title": title,
             "request_id": request_id,
         }
+
+    def read_source_document(
+        self, source_id: str, revision_id: str
+    ) -> SourceDocumentView:
+        if (source_id, revision_id) != ("source-pdf", "revision-pdf"):
+            raise UiRequestError("source revision was not found", status_code=404)
+        return SourceDocumentView(
+            title="Lezione PDF",
+            viewer_kind="pdf",
+            media_type="application/pdf",
+            content=b"%PDF-viewer-fixture",
+            page_count=3,
+        )
 
 
 class _RouteParser(HTMLParser):
@@ -219,6 +232,23 @@ def test_pdf_transport_streams_a_private_file_with_bound_identity(browser_url: s
     }
 
 
+def test_source_viewer_streams_only_the_requested_canonical_revision(browser_url: str) -> None:
+    path = "/api/v1/materials/source-pdf/revisions/revision-pdf/content"
+    with urlopen(f"{browser_url}{path}", timeout=5) as response:
+        assert response.status == 200
+        assert response.headers.get_content_type() == "application/pdf"
+        assert response.headers["X-Frame-Options"] == "SAMEORIGIN"
+        assert "frame-ancestors 'self'" in response.headers["Content-Security-Policy"]
+        assert response.read() == b"%PDF-viewer-fixture"
+
+    status, payload, _ = _get(
+        browser_url,
+        "/api/v1/materials/source-pdf/revisions/another-revision/content",
+    )
+    assert status == 404
+    assert isinstance(payload, dict)
+
+
 def test_real_http_surface_serves_every_navigation_route(browser_url: str) -> None:
     """Each visible nav destination has a bounded API read or local state."""
 
@@ -298,8 +328,9 @@ def test_selected_lesson_flashcards_and_bulk_decisions_are_reachable() -> None:
     javascript = (DEMO_DIR / "browser.js").read_text(encoding="utf-8")
 
     for marker in (
-        "data-lesson-flashcards",
-        "Crea flashcard dalla lezione selezionata",
+        "lessonPinAttachment",
+        "data-lesson-unpin",
+        "le domande e le flashcard usano solo quella fonte",
         "data-artifact-bulk",
         "data-bulk-revision",
         "submitArtifactBulk",

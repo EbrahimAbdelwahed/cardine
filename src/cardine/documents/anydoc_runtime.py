@@ -70,6 +70,10 @@ _MEMBERS = {
 ANYDOC_MANIFEST_FINGERPRINT = hashlib.sha256(
     json.dumps(_MEMBERS, sort_keys=True, separators=(",", ":")).encode()
 ).hexdigest()
+_CORE_GRAPHICS_BENIGN_STDERR = (
+    b'CoreGraphics PDF has logged an error. Set environment variable "CG_PDF_VERBOSE" '
+    b"to learn more.\n"
+)
 
 
 class AnyDocErrorCode(StrEnum):
@@ -373,15 +377,20 @@ def _convert_pdf_in_worker(
             ):
                 raise AnyDocWorkerError(AnyDocErrorCode.WORKER_PROTOCOL)
             raise AnyDocWorkerError(str(response["code"]))
-        if stderr or process.returncode != 0 or set(response) != {
-            "v",
-            "ok",
-            "pages",
-            "page_map_bytes",
-            "page_map_sha256",
-            "markdown_bytes",
-            "markdown_sha256",
-        }:
+        if (
+            stderr not in {b"", _CORE_GRAPHICS_BENIGN_STDERR}
+            or process.returncode != 0
+            or set(response)
+            != {
+                "v",
+                "ok",
+                "pages",
+                "page_map_bytes",
+                "page_map_sha256",
+                "markdown_bytes",
+                "markdown_sha256",
+            }
+        ):
             raise AnyDocWorkerError(AnyDocErrorCode.WORKER_PROTOCOL)
         descriptor = os.open(output, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
         try:

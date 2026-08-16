@@ -81,7 +81,7 @@ def test_password_hash_cli_rejects_short_creation(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(
-        "study_agent.demo.private_access.getpass.getpass", lambda _prompt: "too-short"
+        "cardine.demo.private_access.getpass.getpass", lambda _prompt: "too-short"
     )
 
     assert main([]) == 2

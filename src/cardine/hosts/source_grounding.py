@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from study_agent.ports.tutor_host import TutorDecisionPort, TutorInterruptionToken
 
 from .contracts import (
+    InvokeToolDecision,
     StartCapabilityDecision,
     TutorDecision,
     TutorHostContext,
@@ -21,8 +22,25 @@ _SOURCE_REFERENCE = re.compile(
 )
 _SOURCE_EXPLANATION_REQUEST = re.compile(
     r"\b(?:read|explain|summari[sz]e|describe|tell|leggi|leggere|spiega|"
-    r"spiegami|spiegare|spiegazione|avvia|avviare|inizia|iniziare|parliamo|"
+    r"spiegami|spiegare|spiegazione|parliamo|"
     r"riassumi|riassunto|descrivi|cosa\s+dice)\b",
+    re.IGNORECASE,
+)
+_LESSON_REFERENCE = re.compile(
+    r"(?:\blezione\s+(?:numero\s+)?\d+\b|"
+    r"\bl[\s_-]*0*\d+(?=$|[\s_./-]))",
+    re.IGNORECASE,
+)
+_LESSON_STUDY_REQUEST = re.compile(
+    r"\b(?:studiamo|studiare|riprendiamo|riprendere|"
+    r"di\s+cosa\s+parla|cosa\s+tratta|what\s+is\s+it\s+about|"
+    r"let(?:'s|\s+us)\s+study)\b",
+    re.IGNORECASE,
+)
+_DIRECT_LESSON_START = re.compile(
+    r"\b(?:facciamo|avvia|avviare|inizia|iniziare)\s+(?:la\s+)?"
+    r"(?:lezione\s+(?:numero\s+)?\d+|"
+    r"l[\s_-]*0*\d+(?=$|[\s_./-]))",
     re.IGNORECASE,
 )
 _ITALIAN_REQUEST = re.compile(
@@ -37,7 +55,8 @@ _RETRIEVAL_STOP_WORDS = frozenset(
         "delle", "di", "does", "e", "explain", "fonte", "from", "ha", "how", "i",
         "il", "in", "inizia", "iniziare", "it", "la", "le", "leggi", "materiale", "me",
         "many", "parliamo", "quante", "read", "say", "source", "spiega", "spiegami",
-        "spiegazione", "the", "this", "to", "una", "what", "with",
+        "spiegazione", "studiamo", "studiare", "facciamo", "fare", "riprendiamo",
+        "riprendere", "parla", "tratta", "the", "this", "to", "una", "what", "with",
     }
 )
 
@@ -63,6 +82,11 @@ def _require_grounded_explanation(
     """Select the advertised evidence-bound capability for an explicit source request."""
 
     if context.pending_continuation is not None:
+        return decision
+    if (
+        isinstance(decision, InvokeToolDecision)
+        and decision.tool_name in {"study_memory.record", "study_memory.search"}
+    ):
         return decision
     learner_text = _latest_learner_text(context)
     if learner_text is None or not _is_source_explanation_request(learner_text):
@@ -111,7 +135,11 @@ def _is_source_explanation_request(text: str) -> bool:
     # (for example, "Leggi biochimica").  Requiring a literal word such as
     # "fonte" leaves the most natural requests to model guesswork and permits
     # a bare acknowledgement instead of the evidence-bound capability.
-    return bool(_SOURCE_EXPLANATION_REQUEST.search(text))
+    return bool(
+        _SOURCE_EXPLANATION_REQUEST.search(text)
+        or _DIRECT_LESSON_START.search(text)
+        or (_LESSON_REFERENCE.search(text) and _LESSON_STUDY_REQUEST.search(text))
+    )
 
 
 def _retrieval_query(learner_text: str) -> str:
