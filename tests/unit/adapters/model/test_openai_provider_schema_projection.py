@@ -21,6 +21,7 @@ from study_agent.ports import (
     ModelRequest,
     StructuredOutputConstraint,
 )
+from study_agent.skills.builtin.hybrid_flashcards import HYBRID_FLASHCARDS_MODEL_SCHEMA
 
 
 class _Transport:
@@ -60,6 +61,27 @@ def _model(response: HttpResponse | Exception) -> tuple[OpenAICompatibleModel, _
 
 def _response(value: object, status: int = 200) -> HttpResponse:
     return HttpResponse(status, json.dumps(value).encode())
+
+
+def _contains_schema_keyword(
+    value: object,
+    keyword: str,
+    *,
+    property_map: bool = False,
+) -> bool:
+    if isinstance(value, Mapping):
+        for name, item in value.items():
+            if not property_map and name == keyword:
+                return True
+            if _contains_schema_keyword(
+                item,
+                keyword,
+                property_map=not property_map and name == "properties",
+            ):
+                return True
+    elif isinstance(value, (list, tuple)):
+        return any(_contains_schema_keyword(item, keyword) for item in value)
+    return False
 
 
 def test_provider_projection_removes_validation_only_keyword_without_mutating_local_schema() -> (
@@ -110,6 +132,44 @@ def test_provider_projection_removes_validation_only_keyword_without_mutating_lo
     assert result.structured_output is not None
     assert result.structured_output["items"] == ("a",)
     assert result.structured_output["uniqueItems"] is True
+
+
+def test_hybrid_flashcard_schema_sent_to_provider_excludes_local_validation_keywords() -> None:
+    adapter, transport = _model(
+        _response(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"topic_plan":[],"candidates":[],"omissions":[],'
+                                '"detail_bases":[]}'
+                            )
+                        },
+                        "finish_reason": "stop",
+                    }
+                ]
+            }
+        )
+    )
+    request = ModelRequest(
+        (ModelMessage(MessageRole.USER, "Generate grounded flashcards."),),
+        StructuredOutputConstraint(
+            "hybrid_flashcards",
+            HYBRID_FLASHCARDS_MODEL_SCHEMA.value,
+        ),
+    )
+
+    asyncio.run(adapter.generate(request))
+    sent: dict[str, Any] = json.loads(transport.calls[0])
+    provider_schema = sent["response_format"]["json_schema"]["schema"]
+
+    assert not _contains_schema_keyword(provider_schema, "uniqueItems")
+    assert not _contains_schema_keyword(provider_schema, "minLength")
+    assert request.structured_output is not None
+    local_schema = request.structured_output.schema
+    assert _contains_schema_keyword(local_schema, "uniqueItems")
+    assert _contains_schema_keyword(local_schema, "minLength")
 
 
 @pytest.mark.parametrize(

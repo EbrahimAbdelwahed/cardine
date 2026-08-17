@@ -37,7 +37,7 @@ _HEADER_NAME = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
 _STRUCTURED_OUTPUT_FORMATS = frozenset({"json_schema", "json_object"})
 _REASONING_EFFORTS = frozenset({"none", "low", "medium", "high", "xhigh", "max"})
 _MAX_OUTPUT_TOKEN_FIELDS = frozenset({"max_tokens", "max_completion_tokens"})
-_PROVIDER_LOCAL_VALIDATION_ONLY_KEYWORDS = frozenset({"uniqueItems"})
+_PROVIDER_LOCAL_VALIDATION_ONLY_KEYWORDS = frozenset({"minLength", "uniqueItems"})
 _PROVIDER_SCHEMA_ERROR_CODES = frozenset(
     {
         "invalid_json_schema",
