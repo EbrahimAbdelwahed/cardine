@@ -4,6 +4,8 @@ from cardine.application.flashcard_proposals import (
     _failure_reason,
     _worker_failure_reason,
 )
+from cardine.cli.repository import _cardine_fallback_message
+from cardine.hosts import TutorHostRunStatus
 from study_agent.flashcards.lesson_worker_service import LessonWorkerConflictError
 
 
@@ -19,3 +21,13 @@ def test_worker_failure_taxonomy_separates_validation_from_execution() -> None:
 def test_local_scope_conflict_is_not_mislabeled_as_provider_unavailable() -> None:
     assert _failure_reason(LessonWorkerConflictError("changed")) == "scope_stale"
     assert _failure_reason(ValueError("planner bound")) == "capability_execution_failed"
+
+
+def test_publication_failure_is_not_reported_as_execution_or_evidence_failure() -> None:
+    message = _cardine_fallback_message(
+        TutorHostRunStatus.COMPLETED,
+        "publication_failed",
+    )
+
+    assert "completato" in message
+    assert "pubblicarne" in message

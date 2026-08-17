@@ -144,3 +144,41 @@ def test_answered_clarification_enriches_the_single_model_call() -> None:
     resolution = delegate.contexts[0].tutor_snapshot["clarification_resolution"]
     assert isinstance(resolution, Mapping)
     assert resolution["current_answer"] == "negli istoni"
+
+
+def test_history_scoped_flashcards_with_complete_window_use_one_model_call() -> None:
+    expected = StartCapabilityDecision(
+        "propose_flashcards",
+        {
+            "query": "glicolisi",
+            "scope": "glicolisi",
+            "language": "it",
+            "candidate_ceiling": 12,
+            "continuation_summary_json": None,
+        },
+    )
+    delegate = _CountingPort(expected)
+
+    decision = asyncio.run(
+        FlashcardProfileRoutingTutorDecisionPort(delegate).decide(
+            _context("Crea flashcard su quello che abbiamo discusso finora"),
+            _Token(),
+        )
+    )
+
+    assert decision == expected
+    assert delegate.calls == 1
+
+
+def test_history_scoped_model_promise_cannot_complete_the_effect() -> None:
+    delegate = _CountingPort()
+
+    decision = asyncio.run(
+        FlashcardProfileRoutingTutorDecisionPort(delegate).decide(
+            _context("Crea flashcard su quello che abbiamo discusso finora"),
+            _Token(),
+        )
+    )
+
+    assert not isinstance(decision, AssistantMessageDecision)
+    assert delegate.calls == 1

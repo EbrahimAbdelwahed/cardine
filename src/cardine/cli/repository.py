@@ -273,6 +273,10 @@ _SCOPE_FAILURE_MESSAGE = (
     "Non sono riuscito a mantenere il riferimento alla lezione o alla fonte selezionata. "
     "Seleziona di nuovo la lezione e riprova."
 )
+_PUBLICATION_FAILURE_MESSAGE = (
+    "Il lavoro è stato completato, ma Cardine non è riuscito a pubblicarne il risultato. "
+    "Il contenuto non verrà rigenerato automaticamente."
+)
 
 _PAGEINDEX_RECONCILE_BUDGET = 32
 _PAGEINDEX_ADMISSION_BUDGET = 4
@@ -458,6 +462,8 @@ def _cardine_fallback_message(status: TutorHostRunStatus, failure_reason: str | 
         return _PROVIDER_CONFIGURATION_MESSAGE
     if failure_reason in {"scope_missing", "scope_stale"}:
         return _SCOPE_FAILURE_MESSAGE
+    if failure_reason == "publication_failed":
+        return _PUBLICATION_FAILURE_MESSAGE
     if status in {TutorHostRunStatus.TERMINATED, TutorHostRunStatus.STOPPED}:
         return _INSUFFICIENT_EVIDENCE_MESSAGE
     return _GENERIC_TUTOR_FAILURE_MESSAGE

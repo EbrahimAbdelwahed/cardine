@@ -112,18 +112,27 @@ class FlashcardProfileRoutingTutorDecisionPort(TutorDecisionPort):
             return await self._delegate.decide(context, interruption)
 
         observed_history = _observed_conversation_history(context)
-        if not observed_history and (
-            _HISTORY_SCOPED.search(learner_text)
-            and _omitted_conversation_entries(context) > 0
-            and _has_conversation_read_tool(context)
-        ):
-            return InvokeToolDecision(
-                "conversation.read",
-                {
-                    "cursor": _oldest_included_conversation_sequence(context),
-                    "direction": "backward",
-                    "limit": 12,
-                },
+        history_scoped = _HISTORY_SCOPED.search(learner_text) is not None
+        if history_scoped and not observed_history:
+            if _omitted_conversation_entries(context) > 0 and _has_conversation_read_tool(context):
+                return InvokeToolDecision(
+                    "conversation.read",
+                    {
+                        "cursor": _oldest_included_conversation_sequence(context),
+                        "direction": "backward",
+                        "limit": 12,
+                    },
+                )
+            decision = await self._delegate.decide(context, interruption)
+            if isinstance(decision, InvokeToolDecision):
+                return decision
+            if (
+                isinstance(decision, StartCapabilityDecision)
+                and decision.capability_id == _PROPOSE_FLASHCARDS
+            ):
+                return decision
+            return AskLearnerDecision(
+                "Quali argomenti della conversazione devo trasformare in flashcard?"
             )
         if observed_history:
             decision = await self._delegate.decide(context, interruption)

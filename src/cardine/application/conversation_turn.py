@@ -487,7 +487,7 @@ class ConversationTurnApplication:
                         learner,
                         service_context,
                         presentation_key,
-                        failure_reason=host_result.failure_reason,
+                        failure_reason="publication_failed",
                     )
                 if pending_fingerprint is not None and self._continuations is not None:
                     with suppress(KeyError, OSError, RuntimeError, ValueError):
