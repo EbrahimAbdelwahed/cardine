@@ -31,23 +31,11 @@ jobs:
 
           path = Path('src/cardine/hosts/flashcard_routing.py')
           source = path.read_text()
-          old = '''        observed_history = _observed_conversation_history(context)
-          if not observed_history and (
-              _HISTORY_SCOPED.search(learner_text)
-              and _omitted_conversation_entries(context) > 0
-              and _has_conversation_read_tool(context)
-          ):
-              return InvokeToolDecision(
-                  "conversation.read",
-                  {
-                      "cursor": _oldest_included_conversation_sequence(context),
-                      "direction": "backward",
-                      "limit": 12,
-                  },
-              )
-          if observed_history:
-          '''
-          new = '''        observed_history = _observed_conversation_history(context)
+          start_marker = '        observed_history = _observed_conversation_history(context)\n'
+          end_marker = '        if observed_history:\n'
+          start = source.index(start_marker)
+          end = source.index(end_marker, start)
+          replacement = '''        observed_history = _observed_conversation_history(context)
           history_scoped = _HISTORY_SCOPED.search(learner_text) is not None
           if history_scoped and not observed_history:
               if (
@@ -73,78 +61,50 @@ jobs:
               return AskLearnerDecision(
                   "Quali argomenti della conversazione devo trasformare in flashcard?"
               )
-          if observed_history:
           '''
-          if old not in source:
-              raise SystemExit('flashcard history routing seam changed')
-          path.write_text(source.replace(old, new, 1))
+          path.write_text(source[:start] + replacement + source[end:])
 
           path = Path('src/cardine/application/conversation_turn.py')
           source = path.read_text()
-          old = '''                if presentation is None:
-                  presentation = self._record_fallback_presentation(
-                      context.course_id,
-                      session_id,
-                      host_turn_id,
-                      command.content,
-                      pending_fingerprint,
-                      host_result.status,
-                      learner,
-                      service_context,
-                      presentation_key,
-                      failure_reason=host_result.failure_reason,
-                  )
-          '''
-          new = '''                if presentation is None:
-                  presentation = self._record_fallback_presentation(
-                      context.course_id,
-                      session_id,
-                      host_turn_id,
-                      command.content,
-                      pending_fingerprint,
-                      host_result.status,
-                      learner,
-                      service_context,
-                      presentation_key,
-                      failure_reason="publication_failed",
-                  )
-          '''
-          if old not in source:
+          anchor = '            if host_result.status is TutorHostRunStatus.COMPLETED:\n'
+          start = source.index(anchor)
+          end = source.index('            if host_result.status is TutorHostRunStatus.TERMINATED:\n', start)
+          block = source[start:end]
+          old = '                        failure_reason=host_result.failure_reason,\n'
+          if block.count(old) != 1:
               raise SystemExit('completion publication seam changed')
-          path.write_text(source.replace(old, new, 1))
+          block = block.replace(
+              old,
+              '                        failure_reason="publication_failed",\n',
+              1,
+          )
+          path.write_text(source[:start] + block + source[end:])
 
           path = Path('src/cardine/cli/repository.py')
           source = path.read_text()
-          old = '''_SCOPE_FAILURE_MESSAGE = (
-              "Non sono riuscito a mantenere il riferimento alla lezione o alla fonte selezionata. "
-              "Seleziona di nuovo la lezione e riprova."
-          )
-          '''
-          new = old + '''_PUBLICATION_FAILURE_MESSAGE = (
+          if '_PUBLICATION_FAILURE_MESSAGE' in source:
+              raise SystemExit('publication failure message already exists')
+          start = source.index('_SCOPE_FAILURE_MESSAGE = (')
+          end = source.index('\n)\n', start) + 3
+          publication_message = '''_PUBLICATION_FAILURE_MESSAGE = (
               "Il lavoro è stato completato, ma Cardine non è riuscito a pubblicarne il risultato. "
               "Il contenuto non verrà rigenerato automaticamente."
           )
           '''
-          if old not in source:
-              raise SystemExit('fallback message constants seam changed')
-          source = source.replace(old, new, 1)
-          old = '''    if failure_reason in {"scope_missing", "scope_stale"}:
-              return _SCOPE_FAILURE_MESSAGE
-          if status in {TutorHostRunStatus.TERMINATED, TutorHostRunStatus.STOPPED}:
-          '''
-          new = '''    if failure_reason in {"scope_missing", "scope_stale"}:
-              return _SCOPE_FAILURE_MESSAGE
-          if failure_reason == "publication_failed":
+          source = source[:end] + publication_message + source[end:]
+          marker = '    if status in {TutorHostRunStatus.TERMINATED, TutorHostRunStatus.STOPPED}:\n'
+          index = source.index(marker, source.index('def _cardine_fallback_message'))
+          publication_branch = '''    if failure_reason == "publication_failed":
               return _PUBLICATION_FAILURE_MESSAGE
-          if status in {TutorHostRunStatus.TERMINATED, TutorHostRunStatus.STOPPED}:
           '''
-          if old not in source:
-              raise SystemExit('fallback policy seam changed')
-          path.write_text(source.replace(old, new, 1))
+          source = source[:index] + publication_branch + source[index:]
+          path.write_text(source)
 
           path = Path('tests/unit/hosts/test_effect_fast_paths.py')
           source = path.read_text()
-          addition = '''
+          if 'test_history_scoped_flashcards_with_complete_window_use_one_model_call' in source:
+              raise SystemExit('history-scoped regression already exists')
+          source += '''
 
           def test_history_scoped_flashcards_with_complete_window_use_one_model_call() -> None:
               expected = StartCapabilityDecision(
@@ -183,24 +143,19 @@ jobs:
               assert not isinstance(decision, AssistantMessageDecision)
               assert delegate.calls == 1
           '''
-          if 'test_history_scoped_flashcards_with_complete_window_use_one_model_call' in source:
-              raise SystemExit('history-scoped regression already exists')
-          path.write_text(source + addition)
+          path.write_text(source)
 
           path = Path('tests/unit/cardine/test_flashcard_failure_taxonomy.py')
           source = path.read_text()
-          marker = '''from cardine.application.flashcard_proposals import (
-              _failure_reason,
-              _worker_failure_reason,
+          if 'test_publication_failure_is_not_reported_as_execution_or_evidence_failure' in source:
+              raise SystemExit('publication failure regression already exists')
+          import_marker = 'from study_agent.flashcards.lesson_worker_service import LessonWorkerConflictError\n'
+          imports = (
+              'from cardine.cli.repository import _cardine_fallback_message\n'
+              'from cardine.hosts import TutorHostRunStatus\n'
           )
-          '''
-          replacement = marker + '''from cardine.cli.repository import _cardine_fallback_message
-          from cardine.hosts import TutorHostRunStatus
-          '''
-          if marker not in source:
-              raise SystemExit('failure taxonomy imports seam changed')
-          source = source.replace(marker, replacement, 1)
-          addition = '''
+          source = source.replace(import_marker, imports + import_marker, 1)
+          source += '''
 
           def test_publication_failure_is_not_reported_as_execution_or_evidence_failure() -> None:
               message = _cardine_fallback_message(
@@ -211,9 +166,7 @@ jobs:
               assert "completato" in message
               assert "pubblicarne" in message
           '''
-          if 'test_publication_failure_is_not_reported_as_execution_or_evidence_failure' in source:
-              raise SystemExit('publication failure regression already exists')
-          path.write_text(source + addition)
+          path.write_text(source)
           PY
       - name: Install locked development environment
         run: |
