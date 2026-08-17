@@ -39,6 +39,20 @@ jobs:
           echo '6b0b1509838f2f79024ded5362c4db0a86e8fa8bb59afa64febe59a9032f88d0  /tmp/apply_cardine_architecture_fixes.py' | sha256sum --check --strict
           python -m py_compile /tmp/apply_cardine_architecture_fixes.py
           python /tmp/apply_cardine_architecture_fixes.py
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/cardine/cli/repository.py')
+          source = path.read_text()
+          old = '''            count = len(output.get("items", ())) if isinstance(output, Mapping) else None
+          '''
+          new = '''            items = output.get("items", ()) if isinstance(output, Mapping) else ()
+                      count = len(items) if isinstance(items, tuple) else None
+          '''
+          if old not in source:
+              raise SystemExit('repository activity count seam changed')
+          path.write_text(source.replace(old, new, 1))
+          PY
       - name: Install locked development environment
         run: |
           python -m pip install --disable-pip-version-check 'uv==0.9.15'
