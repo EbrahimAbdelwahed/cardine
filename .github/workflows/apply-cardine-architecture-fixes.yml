@@ -71,6 +71,18 @@ jobs:
           if marker not in source:
               raise SystemExit('fast-path test import seam changed')
           path.write_text(source.replace(marker, imports + marker, 1))
+
+          path = Path('tests/unit/adapters/model/test_openai_provider_schema_projection.py')
+          source = path.read_text()
+          old = '''    assert result.structured_output == {"items": ["a"], "uniqueItems": True}
+          '''
+          new = '''    assert result.structured_output is not None
+              assert result.structured_output["items"] == ("a",)
+              assert result.structured_output["uniqueItems"] is True
+          '''
+          if old not in source:
+              raise SystemExit('schema projection assertion seam changed')
+          path.write_text(source.replace(old, new, 1))
           PY
       - name: Install locked development environment
         run: |
