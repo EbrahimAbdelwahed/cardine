@@ -110,12 +110,19 @@ class ConversationTurnError(RuntimeError):
         require_text(message, "conversation error message")
         if failure_reason is not None and failure_reason not in {
             "authentication",
+            "authorization",
             "model_unavailable",
             "endpoint_incompatible",
+            "schema_incompatible",
             "rate_limited",
             "timeout",
             "protocol_error",
             "unavailable",
+            "capability_execution_failed",
+            "capability_validation_failed",
+            "scope_missing",
+            "scope_stale",
+            "publication_failed",
             "consent_required",
         }:
             raise ValueError("conversation failure reason is invalid")
@@ -246,9 +253,7 @@ class ConversationTurnApplication:
                 "conversation application requires the runner's exact completion handoff store"
             )
         self._completion_handoffs = (
-            runner_handoffs
-            if runner_handoffs is not None
-            else completion_handoff_store
+            runner_handoffs if runner_handoffs is not None else completion_handoff_store
         )
         self._completion_handlers = completion_handlers or CapabilityCompletionHandlerRegistry()
         if not callable(fallback_message_policy):
@@ -305,9 +310,7 @@ class ConversationTurnApplication:
     ) -> ConversationTurnResult:
         """Explicit alias used by HTTP/application compositions."""
 
-        return await self.resume(
-            pending_fingerprint, command, interruption=interruption
-        )
+        return await self.resume(pending_fingerprint, command, interruption=interruption)
 
     async def execute(
         self,
@@ -333,9 +336,7 @@ class ConversationTurnApplication:
                 ConversationTurnErrorCode.INVALID_REQUEST,
                 "conversation command requires a session",
             )
-        learner_key = _identity(
-            context.course_id, session_id, command.request_id, "learner"
-        )
+        learner_key = _identity(context.course_id, session_id, command.request_id, "learner")
         host_turn_id = _host_turn_id(context.course_id, session_id, command.request_id)
         presentation_key = _identity(
             context.course_id, session_id, command.request_id, "presentation"
@@ -839,9 +840,7 @@ class ConversationTurnApplication:
         # input sequence. Preserve the verified handoff binding above, then
         # append the presentation at the freshly observed shared-stream high
         # water rather than racing the product events it just created.
-        settlement_sequence = self._snapshots.get(
-            course_id, session_id
-        ).high_water_sequence
+        settlement_sequence = self._snapshots.get(course_id, session_id).high_water_sequence
         context = ExecutionContext(
             PrincipalKind.SERVICE,
             self._service_principal_id,
@@ -861,9 +860,7 @@ class ConversationTurnApplication:
             content=product.content,
             observed_host_context_sequence=settlement_sequence,
             host_context_fingerprint=(
-                retry.context_fingerprint
-                if handoff is None
-                else handoff.context_fingerprint
+                retry.context_fingerprint if handoff is None else handoff.context_fingerprint
             ),
             decision_fingerprint=retry.action_fingerprint,
         )
@@ -1001,9 +998,7 @@ class ConversationTurnApplication:
         return None
 
 
-def _identity(
-    course_id: CourseId, session_id: SessionId, request_id: str, domain: str
-) -> str:
+def _identity(course_id: CourseId, session_id: SessionId, request_id: str, domain: str) -> str:
     return sha256(
         f"study-agent-conversation-{domain}-identity-v1\0"
         f"{course_id}\0{session_id}\0{request_id}".encode()
@@ -1014,9 +1009,7 @@ def _host_turn_id(course_id: CourseId, session_id: SessionId, request_id: str) -
     return f"tutor-host-turn-sha256:{_identity(course_id, session_id, request_id, 'host-turn')}"
 
 
-def _terminal_receipt_key(
-    course_id: CourseId, session_id: SessionId, host_turn_id: str
-) -> str:
+def _terminal_receipt_key(course_id: CourseId, session_id: SessionId, host_turn_id: str) -> str:
     digest = sha256(
         f"study-agent-conversation-terminal-receipt-v1\0"
         f"{course_id}\0{session_id}\0{host_turn_id}".encode()
@@ -1073,9 +1066,7 @@ def _decode_terminal_receipt(
         "pending_fingerprint",
         "status",
     }
-    expected_fields = (
-        common_fields if schema_version == 1 else common_fields | {"fallback_message"}
-    )
+    expected_fields = common_fields if schema_version == 1 else common_fields | {"fallback_message"}
     if schema_version not in {1, 2} or set(raw) != expected_fields:
         raise ValueError("terminal conversation receipt shape is invalid")
     expected = {
@@ -1130,8 +1121,10 @@ def _validate_sequence(sequence: object) -> None:
 
 
 def _validate_fingerprint(value: object) -> None:
-    if not isinstance(value, str) or len(value) != 64 or any(
-        character not in "0123456789abcdef" for character in value
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
     ):
         raise ValueError("continuation fingerprint must be a SHA-256 digest")
 

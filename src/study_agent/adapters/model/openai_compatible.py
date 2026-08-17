@@ -37,6 +37,16 @@ _HEADER_NAME = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
 _STRUCTURED_OUTPUT_FORMATS = frozenset({"json_schema", "json_object"})
 _REASONING_EFFORTS = frozenset({"none", "low", "medium", "high", "xhigh", "max"})
 _MAX_OUTPUT_TOKEN_FIELDS = frozenset({"max_tokens", "max_completion_tokens"})
+_PROVIDER_LOCAL_VALIDATION_ONLY_KEYWORDS = frozenset({"uniqueItems"})
+_PROVIDER_SCHEMA_ERROR_CODES = frozenset(
+    {
+        "invalid_json_schema",
+        "invalid_schema",
+        "json_schema_invalid",
+        "schema_validation_error",
+        "unsupported_schema",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,13 +135,8 @@ class OpenAICompatibleConfig:
         if self.capabilities.streaming or self.capabilities.cancellation:
             raise ValueError("HTTP streaming and cancellation are unsupported in v0.1")
         if self.structured_output_format not in _STRUCTURED_OUTPUT_FORMATS:
-            raise ValueError(
-                "structured_output_format must be json_schema or json_object"
-            )
-        if (
-            self.reasoning_effort is not None
-            and self.reasoning_effort not in _REASONING_EFFORTS
-        ):
+            raise ValueError("structured_output_format must be json_schema or json_object")
+        if self.reasoning_effort is not None and self.reasoning_effort not in _REASONING_EFFORTS:
             raise ValueError("reasoning_effort is unsupported")
         if self.max_output_tokens_field not in _MAX_OUTPUT_TOKEN_FIELDS:
             raise ValueError("max_output_tokens_field is unsupported")
@@ -153,6 +158,31 @@ def _plain(value: JsonValue) -> object:
         return {key: _plain(item) for key, item in value.items()}
     if isinstance(value, tuple):
         return [_plain(item) for item in value]
+    return value
+
+
+def _provider_schema(value: object, *, property_map: bool = False) -> object:
+    """Compile the full local schema into the provider's generation subset.
+
+    Validation-only constraints remain on the immutable ``ModelRequest`` and
+    are still enforced by Cardine's local validators.  Property names are data,
+    so a user property literally named ``uniqueItems`` is preserved while the
+    unsupported schema keyword is removed.
+    """
+
+    if isinstance(value, Mapping):
+        projected: dict[str, object] = {}
+        for key, item in value.items():
+            name = str(key)
+            if not property_map and name in _PROVIDER_LOCAL_VALIDATION_ONLY_KEYWORDS:
+                continue
+            projected[name] = _provider_schema(
+                item,
+                property_map=not property_map and name == "properties",
+            )
+        return projected
+    if isinstance(value, (tuple, list)):
+        return [_provider_schema(item) for item in value]
     return value
 
 
@@ -220,7 +250,7 @@ class OpenAICompatibleModel:
                     "type": "json_schema",
                     "json_schema": {
                         "name": request.structured_output.name,
-                        "schema": _plain(request.structured_output.schema),
+                        "schema": _provider_schema(request.structured_output.schema),
                         "strict": request.structured_output.strict,
                     },
                 }
@@ -242,8 +272,15 @@ class OpenAICompatibleModel:
     @staticmethod
     def _error_for_status(status: int, body: bytes) -> ModelError:
         provider_code = _provider_error_code(body)
-        if status in (401, 403):
+        if status == 401:
             return ModelError(ModelErrorCode.AUTHENTICATION, "model authentication failed")
+        if status == 403:
+            return ModelError(ModelErrorCode.AUTHORIZATION, "model request was not authorized")
+        if provider_code in _PROVIDER_SCHEMA_ERROR_CODES:
+            return ModelError(
+                ModelErrorCode.SCHEMA_INCOMPATIBLE,
+                "model endpoint rejected the structured-output schema",
+            )
         if status == 429:
             return ModelError(
                 ModelErrorCode.RATE_LIMITED,
@@ -383,9 +420,7 @@ class OpenAICompatibleModel:
                     ModelErrorCode.PROTOCOL_ERROR, "tool arguments are malformed"
                 ) from None
             if not isinstance(parsed, dict):
-                raise ModelError(
-                    ModelErrorCode.PROTOCOL_ERROR, "tool arguments must be an object"
-                )
+                raise ModelError(ModelErrorCode.PROTOCOL_ERROR, "tool arguments must be an object")
             identifier, name = item.get("id"), function.get("name")
             if not isinstance(identifier, str) or not isinstance(name, str):
                 raise ModelError(ModelErrorCode.PROTOCOL_ERROR, "tool call identity is invalid")
@@ -417,6 +452,8 @@ class OpenAICompatibleModel:
                 self._body(request),
                 self._config.timeout_seconds,
             )
+        except ModelError:
+            raise
         except _TransportFailure:
             raise ModelError(
                 ModelErrorCode.UNAVAILABLE,
