@@ -26,7 +26,14 @@ jobs:
       - name: Reconstruct and apply exact source changes
         shell: bash
         run: |
-          cat dev/.apply-cardine-fixes.* > /tmp/apply-cardine-fixes.b64
+          cat \
+            dev/.apply-cardine-fixes.00 \
+            dev/.apply-cardine-fixes.01 \
+            dev/.apply-cardine-fixes.02 \
+            dev/.apply-cardine-fixes.030 \
+            dev/.apply-cardine-fixes.031 \
+            dev/.apply-cardine-fixes.04 \
+            > /tmp/apply-cardine-fixes.b64
           echo '9fdf2b8464675de1cfa09c6c48b573c2f413214ab12c6d765f3aa9eee866d177  /tmp/apply-cardine-fixes.b64' | sha256sum --check --strict
           base64 --decode /tmp/apply-cardine-fixes.b64 | gzip --decompress > /tmp/apply_cardine_architecture_fixes.py
           echo '6b0b1509838f2f79024ded5362c4db0a86e8fa8bb59afa64febe59a9032f88d0  /tmp/apply_cardine_architecture_fixes.py' | sha256sum --check --strict
