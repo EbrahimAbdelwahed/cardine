@@ -52,6 +52,25 @@ jobs:
           if old not in source:
               raise SystemExit('repository activity count seam changed')
           path.write_text(source.replace(old, new, 1))
+
+          path = Path('tests/unit/hosts/test_effect_fast_paths.py')
+          source = path.read_text()
+          source = source.replace(
+              '''    ClarificationRecoveryTutorDecisionPort,
+              FlashcardProfileRoutingTutorDecisionPort,
+              SourceGroundedTutorDecisionPort,
+          ''',
+              '',
+              1,
+          )
+          marker = 'from study_agent.ports.tutor_host import TutorInterruptionToken\n'
+          imports = '''from cardine.hosts.clarification_recovery import ClarificationRecoveryTutorDecisionPort
+          from cardine.hosts.flashcard_routing import FlashcardProfileRoutingTutorDecisionPort
+          from cardine.hosts.source_grounding import SourceGroundedTutorDecisionPort
+          '''
+          if marker not in source:
+              raise SystemExit('fast-path test import seam changed')
+          path.write_text(source.replace(marker, imports + marker, 1))
           PY
       - name: Install locked development environment
         run: |
