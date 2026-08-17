@@ -1,0 +1,118 @@
+name: Apply Cardine architecture fixes
+
+on:
+  push:
+    branches:
+      - agent/cardine-architecture-reliability-latency
+    paths:
+      - .github/workflows/apply-cardine-architecture-fixes.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: agent/cardine-architecture-reliability-latency
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+      - name: Apply exact source and regression changes
+        shell: bash
+        run: |
+          echo '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' | base64 -d | gzip -d > /tmp/apply_cardine_architecture_fixes.py
+          python /tmp/apply_cardine_architecture_fixes.py
+      - name: Install locked development environment
+        run: |
+          python -m pip install --disable-pip-version-check 'uv==0.9.15'
+          uv sync --frozen --extra dev
+      - name: Format changed Python files
+        run: |
+          uv run --frozen --extra dev python -m ruff format \
+            src/study_agent/ports/model.py \
+            src/study_agent/adapters/model/openai_compatible.py \
+            src/study_agent/playbooks/engine.py \
+            src/study_agent/capabilities/contracts.py \
+            src/study_agent/capabilities/gateway.py \
+            src/study_agent/capabilities/worker_adapter.py \
+            src/cardine/application/conversation_turn.py \
+            src/cardine/application/flashcard_proposals.py \
+            src/cardine/hosts/runner.py \
+            src/cardine/hosts/flashcard_routing.py \
+            src/cardine/hosts/source_grounding.py \
+            src/cardine/hosts/clarification_recovery.py \
+            src/cardine/hosts/scope_resolution.py \
+            src/cardine/cli/repository.py \
+            tests/unit/adapters/model/test_openai_provider_schema_projection.py \
+            tests/unit/hosts/test_effect_fast_paths.py \
+            tests/unit/hosts/test_scope_resolution.py \
+            tests/unit/cardine/test_flashcard_failure_taxonomy.py
+      - name: Focused regression suite
+        run: |
+          uv run --frozen --extra dev python -m pytest -q \
+            tests/unit/adapters/model/test_openai_compatible.py \
+            tests/unit/adapters/model/test_openai_luna.py \
+            tests/unit/adapters/model/test_tutor_decision.py \
+            tests/unit/adapters/model/test_openai_provider_schema_projection.py \
+            tests/unit/hosts/test_flashcard_routing_natural_language.py \
+            tests/unit/hosts/test_source_grounding.py \
+            tests/unit/hosts/test_effect_fast_paths.py \
+            tests/unit/hosts/test_scope_resolution.py \
+            tests/unit/cardine/test_flashcard_failure_taxonomy.py \
+            tests/unit/cardine/test_a2_regressions.py \
+            tests/unit/flashcards/test_lesson_worker_service.py \
+            tests/integration/demo/TUT08/test_flashcard_proposals.py
+      - name: Lint changed files
+        run: |
+          uv run --frozen --extra dev python -m ruff check \
+            src/study_agent/ports/model.py \
+            src/study_agent/adapters/model/openai_compatible.py \
+            src/study_agent/playbooks/engine.py \
+            src/study_agent/capabilities/contracts.py \
+            src/study_agent/capabilities/gateway.py \
+            src/study_agent/capabilities/worker_adapter.py \
+            src/cardine/application/conversation_turn.py \
+            src/cardine/application/flashcard_proposals.py \
+            src/cardine/hosts/runner.py \
+            src/cardine/hosts/flashcard_routing.py \
+            src/cardine/hosts/source_grounding.py \
+            src/cardine/hosts/clarification_recovery.py \
+            src/cardine/hosts/scope_resolution.py \
+            src/cardine/cli/repository.py \
+            tests/unit/adapters/model/test_openai_provider_schema_projection.py \
+            tests/unit/hosts/test_effect_fast_paths.py \
+            tests/unit/hosts/test_scope_resolution.py \
+            tests/unit/cardine/test_flashcard_failure_taxonomy.py
+      - name: Type-check changed modules
+        run: |
+          MYPYPATH=src uv run --frozen --extra dev python -m mypy --explicit-package-bases \
+            src/study_agent/ports/model.py \
+            src/study_agent/adapters/model/openai_compatible.py \
+            src/study_agent/playbooks/engine.py \
+            src/study_agent/capabilities/contracts.py \
+            src/study_agent/capabilities/gateway.py \
+            src/study_agent/capabilities/worker_adapter.py \
+            src/cardine/application/conversation_turn.py \
+            src/cardine/application/flashcard_proposals.py \
+            src/cardine/hosts/runner.py \
+            src/cardine/hosts/flashcard_routing.py \
+            src/cardine/hosts/source_grounding.py \
+            src/cardine/hosts/clarification_recovery.py \
+            src/cardine/hosts/scope_resolution.py \
+            src/cardine/cli/repository.py
+      - name: Verify and publish implementation commit
+        shell: bash
+        run: |
+          git diff --check
+          rm .github/workflows/apply-cardine-architecture-fixes.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(cardine): enforce reliable effect execution'
+          git push origin HEAD:agent/cardine-architecture-reliability-latency
