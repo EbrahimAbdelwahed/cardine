@@ -35,40 +35,47 @@ jobs:
           end_marker = '        if observed_history:\n'
           start = source.index(start_marker)
           end = source.index(end_marker, start)
-          replacement = '''        observed_history = _observed_conversation_history(context)
-          history_scoped = _HISTORY_SCOPED.search(learner_text) is not None
-          if history_scoped and not observed_history:
-              if (
-                  _omitted_conversation_entries(context) > 0
-                  and _has_conversation_read_tool(context)
-              ):
-                  return InvokeToolDecision(
-                      "conversation.read",
-                      {
-                          "cursor": _oldest_included_conversation_sequence(context),
-                          "direction": "backward",
-                          "limit": 12,
-                      },
-                  )
-              decision = await self._delegate.decide(context, interruption)
-              if isinstance(decision, InvokeToolDecision):
-                  return decision
-              if (
-                  isinstance(decision, StartCapabilityDecision)
-                  and decision.capability_id == _PROPOSE_FLASHCARDS
-              ):
-                  return decision
-              return AskLearnerDecision(
-                  "Quali argomenti della conversazione devo trasformare in flashcard?"
-              )
-          '''
+          replacement = '\n'.join(
+              [
+                  '        observed_history = _observed_conversation_history(context)',
+                  '        history_scoped = _HISTORY_SCOPED.search(learner_text) is not None',
+                  '        if history_scoped and not observed_history:',
+                  '            if (',
+                  '                _omitted_conversation_entries(context) > 0',
+                  '                and _has_conversation_read_tool(context)',
+                  '            ):',
+                  '                return InvokeToolDecision(',
+                  '                    "conversation.read",',
+                  '                    {',
+                  '                        "cursor": _oldest_included_conversation_sequence(context),',
+                  '                        "direction": "backward",',
+                  '                        "limit": 12,',
+                  '                    },',
+                  '                )',
+                  '            decision = await self._delegate.decide(context, interruption)',
+                  '            if isinstance(decision, InvokeToolDecision):',
+                  '                return decision',
+                  '            if (',
+                  '                isinstance(decision, StartCapabilityDecision)',
+                  '                and decision.capability_id == _PROPOSE_FLASHCARDS',
+                  '            ):',
+                  '                return decision',
+                  '            return AskLearnerDecision(',
+                  '                "Quali argomenti della conversazione devo trasformare in flashcard?"',
+                  '            )',
+                  '',
+              ]
+          )
           path.write_text(source[:start] + replacement + source[end:])
 
           path = Path('src/cardine/application/conversation_turn.py')
           source = path.read_text()
           anchor = '            if host_result.status is TutorHostRunStatus.COMPLETED:\n'
           start = source.index(anchor)
-          end = source.index('            if host_result.status is TutorHostRunStatus.TERMINATED:\n', start)
+          end = source.index(
+              '            if host_result.status is TutorHostRunStatus.TERMINATED:\n',
+              start,
+          )
           block = source[start:end]
           old = '                        failure_reason=host_result.failure_reason,\n'
           if block.count(old) != 1:
@@ -86,17 +93,28 @@ jobs:
               raise SystemExit('publication failure message already exists')
           start = source.index('_SCOPE_FAILURE_MESSAGE = (')
           end = source.index('\n)\n', start) + 3
-          publication_message = '''_PUBLICATION_FAILURE_MESSAGE = (
-              "Il lavoro è stato completato, ma Cardine non è riuscito a pubblicarne il risultato. "
-              "Il contenuto non verrà rigenerato automaticamente."
+          publication_message = '\n'.join(
+              [
+                  '_PUBLICATION_FAILURE_MESSAGE = (',
+                  '    "Il lavoro è stato completato, ma Cardine non è riuscito a pubblicarne il risultato. "',
+                  '    "Il contenuto non verrà rigenerato automaticamente."',
+                  ')',
+                  '',
+              ]
           )
-          '''
           source = source[:end] + publication_message + source[end:]
-          marker = '    if status in {TutorHostRunStatus.TERMINATED, TutorHostRunStatus.STOPPED}:\n'
+          marker = (
+              '    if status in '
+              '{TutorHostRunStatus.TERMINATED, TutorHostRunStatus.STOPPED}:\n'
+          )
           index = source.index(marker, source.index('def _cardine_fallback_message'))
-          publication_branch = '''    if failure_reason == "publication_failed":
-              return _PUBLICATION_FAILURE_MESSAGE
-          '''
+          publication_branch = '\n'.join(
+              [
+                  '    if failure_reason == "publication_failed":',
+                  '        return _PUBLICATION_FAILURE_MESSAGE',
+                  '',
+              ]
+          )
           source = source[:index] + publication_branch + source[index:]
           path.write_text(source)
 
@@ -104,69 +122,82 @@ jobs:
           source = path.read_text()
           if 'test_history_scoped_flashcards_with_complete_window_use_one_model_call' in source:
               raise SystemExit('history-scoped regression already exists')
-          source += '''
-
-          def test_history_scoped_flashcards_with_complete_window_use_one_model_call() -> None:
-              expected = StartCapabilityDecision(
-                  "propose_flashcards",
-                  {
-                      "query": "glicolisi",
-                      "scope": "glicolisi",
-                      "language": "it",
-                      "candidate_ceiling": 12,
-                      "continuation_summary_json": None,
-                  },
-              )
-              delegate = _CountingPort(expected)
-
-              decision = asyncio.run(
-                  FlashcardProfileRoutingTutorDecisionPort(delegate).decide(
-                      _context("Crea flashcard su quello che abbiamo discusso finora"),
-                      _Token(),
-                  )
-              )
-
-              assert decision == expected
-              assert delegate.calls == 1
-
-
-          def test_history_scoped_model_promise_cannot_complete_the_effect() -> None:
-              delegate = _CountingPort()
-
-              decision = asyncio.run(
-                  FlashcardProfileRoutingTutorDecisionPort(delegate).decide(
-                      _context("Crea flashcard su quello che abbiamo discusso finora"),
-                      _Token(),
-                  )
-              )
-
-              assert not isinstance(decision, AssistantMessageDecision)
-              assert delegate.calls == 1
-          '''
-          path.write_text(source)
+          addition = '\n'.join(
+              [
+                  '',
+                  '',
+                  'def test_history_scoped_flashcards_with_complete_window_use_one_model_call() -> None:',
+                  '    expected = StartCapabilityDecision(',
+                  '        "propose_flashcards",',
+                  '        {',
+                  '            "query": "glicolisi",',
+                  '            "scope": "glicolisi",',
+                  '            "language": "it",',
+                  '            "candidate_ceiling": 12,',
+                  '            "continuation_summary_json": None,',
+                  '        },',
+                  '    )',
+                  '    delegate = _CountingPort(expected)',
+                  '',
+                  '    decision = asyncio.run(',
+                  '        FlashcardProfileRoutingTutorDecisionPort(delegate).decide(',
+                  '            _context("Crea flashcard su quello che abbiamo discusso finora"),',
+                  '            _Token(),',
+                  '        )',
+                  '    )',
+                  '',
+                  '    assert decision == expected',
+                  '    assert delegate.calls == 1',
+                  '',
+                  '',
+                  'def test_history_scoped_model_promise_cannot_complete_the_effect() -> None:',
+                  '    delegate = _CountingPort()',
+                  '',
+                  '    decision = asyncio.run(',
+                  '        FlashcardProfileRoutingTutorDecisionPort(delegate).decide(',
+                  '            _context("Crea flashcard su quello che abbiamo discusso finora"),',
+                  '            _Token(),',
+                  '        )',
+                  '    )',
+                  '',
+                  '    assert not isinstance(decision, AssistantMessageDecision)',
+                  '    assert delegate.calls == 1',
+                  '',
+              ]
+          )
+          path.write_text(source + addition)
 
           path = Path('tests/unit/cardine/test_flashcard_failure_taxonomy.py')
           source = path.read_text()
           if 'test_publication_failure_is_not_reported_as_execution_or_evidence_failure' in source:
               raise SystemExit('publication failure regression already exists')
-          import_marker = 'from study_agent.flashcards.lesson_worker_service import LessonWorkerConflictError\n'
+          import_marker = (
+              'from study_agent.flashcards.lesson_worker_service '
+              'import LessonWorkerConflictError\n'
+          )
           imports = (
               'from cardine.cli.repository import _cardine_fallback_message\n'
               'from cardine.hosts import TutorHostRunStatus\n'
           )
+          if import_marker not in source:
+              raise SystemExit('failure taxonomy import seam changed')
           source = source.replace(import_marker, imports + import_marker, 1)
-          source += '''
-
-          def test_publication_failure_is_not_reported_as_execution_or_evidence_failure() -> None:
-              message = _cardine_fallback_message(
-                  TutorHostRunStatus.COMPLETED,
-                  "publication_failed",
-              )
-
-              assert "completato" in message
-              assert "pubblicarne" in message
-          '''
-          path.write_text(source)
+          addition = '\n'.join(
+              [
+                  '',
+                  '',
+                  'def test_publication_failure_is_not_reported_as_execution_or_evidence_failure() -> None:',
+                  '    message = _cardine_fallback_message(',
+                  '        TutorHostRunStatus.COMPLETED,',
+                  '        "publication_failed",',
+                  '    )',
+                  '',
+                  '    assert "completato" in message',
+                  '    assert "pubblicarne" in message',
+                  '',
+              ]
+          )
+          path.write_text(source + addition)
           PY
       - name: Install locked development environment
         run: |
