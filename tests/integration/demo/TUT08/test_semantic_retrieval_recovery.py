@@ -85,8 +85,10 @@ def test_unpinned_explain_recovers_once_with_bounded_alternative_queries(
         ("still-no-match", "aortic valve", "unused-third-alternative"),
     )
 
+    # Deliberately avoid the explicit source-explanation fast path: this test
+    # exercises model-selected explain_concept followed by retrieval recovery.
     with LocalRepository.open(root, model_adapters=adapters) as repository:
-        result = _turn(repository, "Explain the aortic valve", "semantic-recovery")
+        result = _turn(repository, "aortic valve", "semantic-recovery")
 
     assert result.status is TutorHostRunStatus.COMPLETED
     assert "three cusps" in result.presentation.content
@@ -131,7 +133,7 @@ def test_unpinned_explain_that_hits_initially_does_not_call_recovery_model(
     requests = _install_recovery_model(model, ("should-not-be-used",))
 
     with LocalRepository.open(root, model_adapters=adapters) as repository:
-        result = _turn(repository, "Explain the aortic valve", "initial-hit")
+        result = _turn(repository, "aortic valve", "initial-hit")
 
     assert result.status is TutorHostRunStatus.COMPLETED
     assert "three cusps" in result.presentation.content
