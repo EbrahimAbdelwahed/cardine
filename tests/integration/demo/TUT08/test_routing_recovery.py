@@ -19,7 +19,7 @@ SESSION = SessionId("cardine-session")
 def test_natural_italian_lesson_request_recovers_from_promise_and_answers(
     tmp_path: Path,
 ) -> None:
-    """A study request must not surface Luna's promise as the final answer."""
+    """A high-confidence lesson request bypasses routing prose and answers from sources."""
 
     root, adapters, model = _repository(
         tmp_path,
@@ -49,7 +49,6 @@ def test_natural_italian_lesson_request_recovers_from_promise_and_answers(
     assert "three cusps" in answer
     assert "avvio una spiegazione" not in answer
     assert [request.metadata.get("prompt_id") for request in model.requests] == [
-        "tutor_decision.v1",
         "explain_concept.v1",
     ]
 
@@ -86,18 +85,11 @@ def test_social_lesson_mention_remains_conversational(tmp_path: Path) -> None:
 def test_answered_clarification_gets_one_semantic_retry_then_explains(
     tmp_path: Path,
 ) -> None:
-    """A direct answer to the tutor's choice cannot restart the same clarification."""
+    """A direct answer to the tutor's choice is resolved in one enriched retry."""
 
     root, adapters, model = _repository(
         tmp_path,
         (
-            {
-                "kind": "ask_learner",
-                "question": (
-                    "Vuoi approfondire gli effetti sulla proteina in generale "
-                    "oppure l'acetilazione degli istoni?"
-                ),
-            },
             {
                 "kind": "ask_learner",
                 "question": (
@@ -149,10 +141,9 @@ def test_answered_clarification_gets_one_semantic_retry_then_explains(
     assert [request.metadata.get("prompt_id") for request in model.requests] == [
         "tutor_decision.v1",
         "tutor_decision.v1",
-        "tutor_decision.v1",
         "explain_concept.v1",
     ]
-    recovery_context = json.loads(model.requests[2].messages[-1].content)
+    recovery_context = json.loads(model.requests[1].messages[-1].content)
     assert recovery_context["tutor_snapshot"]["clarification_resolution"] == {
         "current_answer": "negli istoni",
         "previous_question": (
