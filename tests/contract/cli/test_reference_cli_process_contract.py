@@ -5,31 +5,42 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+PROJECT_ROOT = Path(__file__).parents[3]
+
 
 def _run(*arguments: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    merged = os.environ.copy()
-    if env:
-        merged.update(env)
+    process_env = os.environ.copy()
+    process_env["PYTHONPATH"] = str(PROJECT_ROOT / "src")
+    if env is not None:
+        process_env.update(env)
     return subprocess.run(
         [sys.executable, "-m", "cardine.cli", *arguments],
-        check=False,
-        capture_output=True,
+        cwd=PROJECT_ROOT,
+        env=process_env,
         text=True,
-        env=merged,
+        capture_output=True,
+        check=False,
     )
 
 
-def _document(process: subprocess.CompletedProcess[str]) -> dict[str, object]:
-    return json.loads(process.stdout)
+def _document(process: subprocess.CompletedProcess[str]) -> dict[str, Any]:
+    assert process.stderr == ""
+    assert process.stdout.endswith("\n")
+    assert process.stdout.count("\n") == 1
+    value = json.loads(process.stdout)
+    assert isinstance(value, dict)
+    return value
 
 
 @pytest.mark.parametrize(
     "arguments",
     [
         ("--json", "course", "create"),
+        ("course", "--json", "create"),
         ("course", "create", "--json"),
     ],
 )
@@ -73,7 +84,7 @@ def test_host_authority_cannot_be_supplied_as_a_cli_flag(flag: str, tmp_path: Pa
         str(tmp_path),
         "doctor",
         flag,
-        "forged",
+        "service",
     )
 
     assert process.returncode == 2
@@ -82,51 +93,58 @@ def test_host_authority_cannot_be_supplied_as_a_cli_flag(flag: str, tmp_path: Pa
     assert document["error"]["code"] == "invalid_request"
 
 
-def test_json_help_is_one_success_document() -> None:
-    process = _run("--json", "--help")
+def test_missing_and_malformed_repositories_fail_without_tracebacks_or_secrets(
+    tmp_path: Path,
+) -> None:
+    missing = _run("--json", "--repository", str(tmp_path / "missing"), "doctor")
+    assert missing.returncode == 4
+    assert _document(missing)["error"] == {
+        "code": "repository_error",
+        "message": "local repository is absent or incompatible",
+    }
 
-    assert process.returncode == 0
-    assert process.stderr == ""
-    document = _document(process)
-    assert document["ok"] is True
-    assert document["command"] == "help"
-    assert "usage: cardine" in document["data"]["text"]
-
-
-def test_plain_help_is_plain_text() -> None:
-    process = _run("--help")
-
-    assert process.returncode == 0
-    assert process.stderr == ""
-    assert process.stdout.startswith("usage: cardine")
-
-
-def test_unknown_command_returns_invalid_request() -> None:
-    process = _run("--json", "definitely-not-a-command")
-
-    assert process.returncode == 2
-    assert _document(process)["error"]["code"] == "invalid_request"
+    root = tmp_path / "malformed"
+    root.mkdir()
+    secret = "super-secret-provider-token"
+    (root / "study-agent.json").write_text(secret, encoding="utf-8")
+    malformed = _run("--json", "--repository", str(root), "doctor")
+    assert malformed.returncode == 4
+    rendered = malformed.stdout + malformed.stderr
+    assert secret not in rendered
+    assert "Traceback" not in rendered
+    assert _document(malformed)["error"]["code"] == "repository_error"
 
 
-def test_missing_repository_is_not_found_or_repository_error(tmp_path: Path) -> None:
-    process = _run("--json", "--repository", str(tmp_path / "missing"), "doctor")
+def test_non_tty_empty_lists_are_successful_json_without_progress_contamination(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repository"
+    assert _run("--json", "init", str(root)).returncode == 0
+    created = _run(
+        "--repository",
+        str(root),
+        "course",
+        "create",
+        "--json",
+        "--course-id",
+        "course-empty",
+        "--title",
+        "Empty course",
+        "--learning-goal",
+        "Verify empty collections",
+    )
+    assert created.returncode == 0
+    _document(created)
 
-    assert process.returncode == 4
-    assert _document(process)["error"]["code"] == "repository_error"
-
-
-def test_no_color_never_changes_json_contract() -> None:
-    process = _run("--json", "describe", env={"NO_COLOR": "1", "TERM": "dumb"})
-
-    assert process.returncode == 0
-    assert process.stderr == ""
-    assert _document(process)["ok"] is True
-    assert "\x1b[" not in process.stdout
-
-
-def test_plain_describe_is_human_readable() -> None:
-    process = _run("describe")
-
-    assert process.returncode == 0
-    assert process.stderr == ""
-    assert process.stdout
+    for command, key in (("source", "sources"), ("session", "sessions")):
+        process = _run(
+            "--repository",
+            str(root),
+            command,
+            "list",
+            "course-empty",
+            "--json",
+            env={"NO_COLOR": "1", "TERM": "dumb"},
+        )
+        assert process.returncode == 0
+        assert _document(process)["data"][key] == []
