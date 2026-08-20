@@ -6,7 +6,7 @@ CA-02 namespace transition, and the currently required successor paths without
 assuming post-CA-02 product code is byte-for-byte immutable forever.
 
 ``--live`` adds byte/AST drift checks against the historical CA-01/CA-02
-snapshots.  This keeps the historical ownership gate useful without making it
+snapshots. This keeps the historical ownership gate useful without making it
 an accidental freeze on later reviewed product work.
 """
 
@@ -130,7 +130,9 @@ def _load_classification() -> list[dict[str, str]]:
             if not isinstance(item.get(field), str) or not str(item[field]).strip()
         ]
         if missing:
-            raise ValueError(f"classification row {index} has blank fields: {', '.join(missing)}")
+            raise ValueError(
+                f"classification row {index} has blank fields: {', '.join(missing)}"
+            )
         row = {field: str(item[field]) for field in FIELDS}
         row["baseline_state"] = str(item.get("baseline_state", "clean"))
         if row["baseline_state"] not in {"clean", "modified", "untracked"}:
@@ -277,7 +279,10 @@ def _transition_contract() -> tuple[set[str], set[str]]:
     for node in seam_tree.body:
         if (
             isinstance(node, ast.Assign)
-            and any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets)
+            and any(
+                isinstance(target, ast.Name) and target.id == "__all__"
+                for target in node.targets
+            )
             and isinstance(node.value, (ast.List, ast.Tuple))
         ):
             values = {
@@ -298,17 +303,20 @@ def _transition_contract() -> tuple[set[str], set[str]]:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=relative)
         for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module == "cardine._transition.study_agent":
-                consumers.add(relative)
-            elif (
-                isinstance(node, ast.ImportFrom)
-                and node.module == "cardine._transition"
-                and any(alias.name == "study_agent" for alias in node.names)
-            ):
-                consumers.add(relative)
-            elif isinstance(node, ast.Import) and any(
-                alias.name == "cardine._transition.study_agent" for alias in node.names
-            ):
+            imports_transition = isinstance(node, ast.ImportFrom) and (
+                node.module == "cardine._transition.study_agent"
+                or (
+                    node.module == "cardine._transition"
+                    and any(alias.name == "study_agent" for alias in node.names)
+                )
+            )
+            imports_transition = imports_transition or (
+                isinstance(node, ast.Import)
+                and any(
+                    alias.name == "cardine._transition.study_agent" for alias in node.names
+                )
+            )
+            if imports_transition:
                 consumers.add(relative)
     return exports, consumers
 
@@ -335,9 +343,14 @@ def _validate_transition(
     source_rows = [row for row in cardine_rows if row["path"].startswith("src/")]
     entrypoint_rows = [row for row in cardine_rows if row["path"].startswith("entrypoint:")]
     if len(source_rows) != 86:
-        errors.append(f"CA-02 must classify exactly 86 Cardine source targets, found {len(source_rows)}")
+        errors.append(
+            f"CA-02 must classify exactly 86 Cardine source targets, found {len(source_rows)}"
+        )
     if len(entrypoint_rows) != 5:
-        errors.append(f"CA-02 must classify exactly five Cardine entrypoints, found {len(entrypoint_rows)}")
+        errors.append(
+            "CA-02 must classify exactly five Cardine entrypoints, "
+            f"found {len(entrypoint_rows)}"
+        )
     if {row["path"] for row in entrypoint_rows} != EXPECTED_ENTRYPOINTS:
         errors.append("CA-02 Cardine entrypoint rows are not exact")
     if set(targets) != EXPECTED_ENTRYPOINTS:
@@ -350,7 +363,9 @@ def _validate_transition(
     }
     for old_path, replacement in expected_moved.items():
         if not replacement.startswith("src/cardine/"):
-            errors.append(f"Cardine source row has invalid replacement: {old_path} -> {replacement}")
+            errors.append(
+                f"Cardine source row has invalid replacement: {old_path} -> {replacement}"
+            )
             continue
         if (ROOT / old_path).exists():
             errors.append(f"moved Cardine path remains present: {old_path}")
@@ -359,14 +374,18 @@ def _validate_transition(
 
     expected_paths = set(expected_moved) | COPIED_IMPORT_PATHS | TRANSITION_CONSUMERS
     if len(transition_rows) != 119:
-        errors.append(f"CA-02 transition overlay must contain 119 rows, found {len(transition_rows)}")
+        errors.append(
+            f"CA-02 transition overlay must contain 119 rows, found {len(transition_rows)}"
+        )
     if {row["path"] for row in transition_rows} != expected_paths:
         errors.append("CA-02 transition overlay path set is not the reviewed 119-target set")
 
     by_path = {row["path"]: row for row in transition_rows}
     for old_path, replacement in expected_moved.items():
         row = by_path.get(old_path)
-        if row and (row["source_path"] != replacement or row["disposition"] != "CARDINE_OWNER"):
+        if row and (
+            row["source_path"] != replacement or row["disposition"] != "CARDINE_OWNER"
+        ):
             errors.append(f"CA-02 moved transition binding is invalid: {old_path}")
     for path in COPIED_IMPORT_PATHS:
         row = by_path.get(path)
@@ -374,7 +393,9 @@ def _validate_transition(
             errors.append(f"CA-02 copied-core transition binding is invalid: {path}")
     for path in TRANSITION_CONSUMERS:
         row = by_path.get(path)
-        if row and (row["source_path"] != path or row["disposition"] != "TRANSITION_CONSUMER"):
+        if row and (
+            row["source_path"] != path or row["disposition"] != "TRANSITION_CONSUMER"
+        ):
             errors.append(f"CA-02 transition consumer binding is invalid: {path}")
 
     for row in transition_rows:
@@ -443,7 +464,9 @@ def validate(*, live: bool = False) -> list[str]:
     if len(reviewed) != 322:
         errors.append(f"classification must contain 322 rows, found {len(reviewed)}")
     if len(actual) != len(reviewed):
-        errors.append(f"ledger row count {len(actual)} does not match classification {len(reviewed)}")
+        errors.append(
+            f"ledger row count {len(actual)} does not match classification {len(reviewed)}"
+        )
 
     reviewed_by_path = {row["path"]: row for row in reviewed}
     actual_by_path = {row.get("path", ""): row for row in actual}
@@ -457,7 +480,10 @@ def validate(*, live: bool = False) -> list[str]:
         for field in FIELDS:
             if row.get(field) != expected[field]:
                 errors.append(f"ledger {field} mismatch for {path}")
-        if row.get("disposition") == "LEGACY_ORACLE_THEN_REMOVE" and row.get("removal_slice") != "CA-10":
+        if (
+            row.get("disposition") == "LEGACY_ORACLE_THEN_REMOVE"
+            and row.get("removal_slice") != "CA-10"
+        ):
             errors.append(f"legacy row {path} must remove at CA-10")
 
     # The frozen inventory owns only its reviewed paths. New post-CA-02 modules
@@ -471,9 +497,12 @@ def validate(*, live: bool = False) -> list[str]:
         if row["disposition"] == "CARDINE_OWNER":
             if not candidate.is_file():
                 errors.append(f"classified Cardine successor path is absent: {current}")
-        elif row.get("baseline_state", "clean") == "clean" and row["removal_slice"] != "CA-02":
-            if not candidate.is_file():
-                errors.append(f"classification has undeclared baseline-only path: {current}")
+        elif (
+            row.get("baseline_state", "clean") == "clean"
+            and row["removal_slice"] != "CA-02"
+            and not candidate.is_file()
+        ):
+            errors.append(f"classification has undeclared baseline-only path: {current}")
 
     _validate_transition(
         reviewed,
@@ -507,7 +536,11 @@ def validate(*, live: bool = False) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true", help="validate the frozen ownership inventory")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="validate the frozen ownership inventory",
+    )
     parser.add_argument(
         "--live",
         action="store_true",
