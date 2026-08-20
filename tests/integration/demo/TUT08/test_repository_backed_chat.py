@@ -859,7 +859,7 @@ def test_unrenderable_grounded_completion_still_returns_a_visible_chat_message(
     assert receipt["presentation_id"] is not None
     timeline = cast(tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"])
     assert timeline[-1]["role"] == "assistant"
-    assert "Non sono riuscito" in str(timeline[-1]["content"])
+    assert "non è riuscito a pubblicarne il risultato" in str(timeline[-1]["content"])
     assert len(model.requests) == 2
 
 
