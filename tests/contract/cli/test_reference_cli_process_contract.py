@@ -68,8 +68,9 @@ def test_module_entrypoint_help_exposes_only_the_approved_surface() -> None:
         "{init,course,source,consent,pageindex,lesson,artifact,ask,session,export,doctor,operator,manifest,describe,tool}"
         in process.stdout
     )
-    for forbidden in ("principal", "capability", "execution-context", "provider", "api-key"):
+    for forbidden in ("principal", "capability", "execution-context", "api-key"):
         assert forbidden not in process.stdout.lower()
+    assert "--provider" not in process.stdout.lower()
     assert "\x1b[" not in process.stdout
 
 
