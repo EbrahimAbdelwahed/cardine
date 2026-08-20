@@ -5,8 +5,9 @@ import shutil
 import sys
 from pathlib import Path
 
-import cardine.documents.anydoc_runtime as anydoc_runtime
 import pytest
+
+import cardine.documents.anydoc_runtime as anydoc_runtime
 from cardine.documents import AnyDocErrorCode, AnyDocWorkerError, convert_pdf_in_worker
 from cardine.documents.config import DocumentImportPolicy
 
