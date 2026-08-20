@@ -184,6 +184,15 @@ def _repository(
                 session_id=SESSION,
             )
         )
+        repository.provider_consent_service.grant(
+            ExecutionContext(
+                PrincipalKind.HUMAN,
+                "browser-session",
+                COURSE,
+                CorrelationId("browser-provider-consent"),
+            ),
+            "browser-provider-consent",
+        )
     return root, adapters, model
 
 
@@ -529,8 +538,6 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
                 "document.querySelector('[data-turn-trace][data-highlighted=true]').innerText"
             ),
         )
-        # Advanced diagnostics intentionally expose only the validated tutor
-        # decision, not the internal phase timeline or turn payload metadata.
         assert "assistant_message" in trace_text
         for excluded in (
             "model.grounding",
@@ -678,9 +685,7 @@ def test_repository_browser_retry_binds_original_request_across_interleaved_turn
 
         browser.call("Input.insertText", text="first learner")
         _press(browser, "Enter", 13)
-        browser.wait_for(
-            "window.__terminalRequests.length===1"
-        )
+        browser.wait_for("window.__terminalRequests.length===1")
         browser.wait_for(
             "Array.from(document.querySelectorAll('#global-alert-actions button'))"
             ".some(button=>button.textContent==='Riprova')"
