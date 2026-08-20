@@ -3,12 +3,16 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import platform
 import re
+import shutil
 import subprocess
 import sys
 from collections.abc import AsyncIterator, Mapping
 from pathlib import Path
 from typing import Any, cast
+
+import pytest
 
 from cardine.cli.main import main
 from cardine.cli.repository import LocalRepository, ModelAdapterRegistry
@@ -35,6 +39,12 @@ from study_agent.tools import StudyEvent
 
 _EVIDENCE_ID = re.compile(r'"evidence_id":"([^"]+)"')
 _PROJECT_ROOT = Path(__file__).parents[2]
+_VERIFIED_ANYDOC_WORKER = (
+    sys.platform == "darwin"
+    and platform.machine() == "arm64"
+    and sys.version_info[:2] in {(3, 12), (3, 13)}
+    and shutil.which("sandbox-exec") == "/usr/bin/sandbox-exec"
+)
 
 
 class _FixtureModel:
@@ -71,7 +81,7 @@ class _FixtureModel:
 
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
         del request
-        if False:  # pragma: no cover - makes this an async generator
+        if False:  # pragma: no cover
             yield ModelStreamEvent(ModelStreamEventKind.CANCELLED)
         raise AssertionError("the reference flow must not stream")
 
@@ -109,19 +119,9 @@ def _run_in_fresh_process(
     counter: Path, *arguments: str, expected_code: int = 0
 ) -> dict[str, Any]:
     environment = os.environ.copy()
-    environment["PYTHONPATH"] = os.pathsep.join(
-        (str(_PROJECT_ROOT / "src"), str(_PROJECT_ROOT))
-    )
+    environment["PYTHONPATH"] = os.pathsep.join((str(_PROJECT_ROOT / "src"), str(_PROJECT_ROOT)))
     process = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "tests.support.cli_fixture_driver",
-            str(counter),
-            "--",
-            *arguments,
-            "--json",
-        ],
+        [sys.executable, "-m", "tests.support.cli_fixture_driver", str(counter), "--", *arguments, "--json"],
         cwd=_PROJECT_ROOT,
         env=environment,
         text=True,
@@ -149,14 +149,7 @@ def test_offline_release_journey_survives_restart_and_is_deterministic(
     root = tmp_path / "study"
     calls: list[ModelRequest] = []
     registry = _registry(calls)
-    assert _run(
-        capsys,
-        registry,
-        "init",
-        str(root),
-        "--model-adapter",
-        "test-fixture",
-    )[0] == 0
+    assert _run(capsys, registry, "init", str(root), "--model-adapter", "test-fixture")[0] == 0
     base = ("--repository", str(root))
     assert _run(
         capsys,
@@ -180,15 +173,7 @@ def test_offline_release_journey_survives_restart_and_is_deterministic(
         encoding="utf-8",
     )
     for source in ("plexus.md", "context.md"):
-        assert _run(
-            capsys,
-            registry,
-            *base,
-            "source",
-            "add",
-            "course-anatomy",
-            source,
-        )[0] == 0
+        assert _run(capsys, registry, *base, "source", "add", "course-anatomy", source)[0] == 0
     assert _run(
         capsys,
         registry,
@@ -230,23 +215,13 @@ def test_offline_release_journey_survives_restart_and_is_deterministic(
         "--session-id",
         "session-release",
     ) == (0, started)
-    code, session = _run(
-        capsys,
-        registry,
-        *base,
-        "session",
-        "get",
-        "course-anatomy",
-        "session-release",
-    )
+    code, session = _run(capsys, registry, *base, "session", "get", "course-anatomy", "session-release")
     assert code == 0
     assert session["data"] == started["data"]
-    # The first process succeeds canonically but its stdout is deliberately discarded.
     _run_in_fresh_process(counter, *ask)
     first = _run_in_fresh_process(counter, *ask)
     assert first["data"]["answer"]["status"] == "answered"
     assert counter.read_text(encoding="utf-8") == "1"
-
 
     retried = _run_in_fresh_process(counter, *ask)
     assert retried == first
@@ -278,15 +253,11 @@ def test_offline_release_journey_survives_restart_and_is_deterministic(
             "source.list",
             "source.search",
         )
-        canonical_answers = repository.sessions.answers(
-            CourseId("course-anatomy"), SessionId("session-release")
-        )
+        canonical_answers = repository.sessions.answers(CourseId("course-anatomy"), SessionId("session-release"))
         assert len(canonical_answers) == 1
         assert str(canonical_answers[0].id) == first["data"]["answer_id"]
         assert str(canonical_answers[0].run_id) == first["data"]["run_id"]
-        canonical_answer = json.loads(
-            json.dumps(grounded_answer_manifest(canonical_answers[0].answer))
-        )
+        canonical_answer = json.loads(json.dumps(grounded_answer_manifest(canonical_answers[0].answer)))
         assert canonical_answer == first["data"]["answer"]
         parity_context = ExecutionContext(
             PrincipalKind.HUMAN,
@@ -303,14 +274,8 @@ def test_offline_release_journey_survives_restart_and_is_deterministic(
             repository.course_index_receipt(CourseId("course-anatomy"), receipt),
         )
         direct = asyncio.run(service.ask("brachial plexus", parity_context))
-        tool = asyncio.run(
-            tool_registry.invoke(
-                "grounding.ask", {"question": "brachial plexus"}, parity_context
-            )
-        )
-        harness_events = asyncio.run(
-            _events(StudyHarness(service), "brachial plexus", parity_context)
-        )
+        tool = asyncio.run(tool_registry.invoke("grounding.ask", {"question": "brachial plexus"}, parity_context))
+        harness_events = asyncio.run(_events(StudyHarness(service), "brachial plexus", parity_context))
         assert str(direct.answer.id) == first["data"]["answer_id"]
         assert tool.error is None and tool.value is not None
         tool_record = json.loads(str(tool.value["answer_record_json"]))
@@ -328,29 +293,13 @@ def test_offline_release_journey_survives_restart_and_is_deterministic(
                 session_id=SessionId("session-release"),
             )
         )
-    code, resumed = _run(
-        capsys,
-        registry,
-        *base,
-        "session",
-        "resume",
-        "course-anatomy",
-        "session-release",
-    )
+    code, resumed = _run(capsys, registry, *base, "session", "resume", "course-anatomy", "session-release")
     assert code == 0
     assert resumed["data"]["status"] == "active"
 
     destinations = (root / "exports" / "one", root / "exports" / "two")
     for destination in destinations:
-        assert _run(
-            capsys,
-            registry,
-            *base,
-            "export",
-            "course-anatomy",
-            "--output",
-            str(destination),
-        )[0] == 0
+        assert _run(capsys, registry, *base, "export", "course-anatomy", "--output", str(destination))[0] == 0
     snapshots = tuple(
         {
             item.relative_to(destination): item.read_bytes()
@@ -369,12 +318,14 @@ def test_offline_release_journey_survives_restart_and_is_deterministic(
     assert doctor["data"]["status"] == "ok"
 
 
+@pytest.mark.skipif(
+    not _VERIFIED_ANYDOC_WORKER,
+    reason="canonical AnyDoc PDF admission requires verified macOS arm64 sandbox containment",
+)
 def test_cli_admits_pdf_through_the_same_canonical_source_ledger(
     tmp_path: Path, capsys: Any
 ) -> None:
-    from tests.integration.adapters.workarounds.test_pdf_markdown_real import (
-        _minimal_text_pdf,
-    )
+    from tests.integration.adapters.workarounds.test_pdf_markdown_real import _minimal_text_pdf
 
     root = tmp_path / "study"
     registry = _registry([])
@@ -396,15 +347,7 @@ def test_cli_admits_pdf_through_the_same_canonical_source_ledger(
     pdf = root / "lesson.pdf"
     pdf.write_bytes(_minimal_text_pdf())
 
-    code, receipt = _run(
-        capsys,
-        registry,
-        *base,
-        "source",
-        "add",
-        "course-pdf",
-        "lesson.pdf",
-    )
+    code, receipt = _run(capsys, registry, *base, "source", "add", "course-pdf", "lesson.pdf")
 
     assert code == 0
     assert receipt["data"]["input_kind"] == "pdf"
@@ -436,30 +379,12 @@ def test_cli_pageindex_status_and_explicit_lesson_selection(
         "# Lezione 1\nPrimo contenuto.\n# Lezione 2\nSecondo contenuto.\n",
         encoding="utf-8",
     )
-    assert _run(
-        capsys,
-        registry,
-        *base,
-        "source",
-        "add",
-        "course-lessons",
-        "lessons.md",
-    )[0] == 0
+    assert _run(capsys, registry, *base, "source", "add", "course-lessons", "lessons.md")[0] == 0
 
-    status_code, status = _run(
-        capsys, registry, *base, "pageindex", "status", "course-lessons"
-    )
+    status_code, status = _run(capsys, registry, *base, "pageindex", "status", "course-lessons")
     assert status_code == 0
     assert status["data"]["revisions"][0]["status"] == "ready"
-    search_code, search = _run(
-        capsys,
-        registry,
-        *base,
-        "lesson",
-        "search",
-        "course-lessons",
-        "Lezione 1",
-    )
+    search_code, search = _run(capsys, registry, *base, "lesson", "search", "course-lessons", "Lezione 1")
     assert search_code == 0
     assert search["data"]["disposition"] == "unique"
     candidate = search["data"]["candidates"][0]
@@ -481,14 +406,7 @@ def test_cli_pageindex_status_and_explicit_lesson_selection(
 def test_fixture_adapter_is_not_an_implicit_cli_fallback(tmp_path: Path, capsys: Any) -> None:
     root = tmp_path / "study"
     registry = _registry([])
-    assert _run(
-        capsys,
-        registry,
-        "init",
-        str(root),
-        "--model-adapter",
-        "test-fixture",
-    )[0] == 0
+    assert _run(capsys, registry, "init", str(root), "--model-adapter", "test-fixture")[0] == 0
     base = ("--repository", str(root))
     assert _run(
         capsys,
