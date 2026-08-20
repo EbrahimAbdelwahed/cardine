@@ -55,7 +55,13 @@ _TOOL_MANIFEST_KEYS = {
     "error_codes",
     "idempotency",
 }
-_EFFECTS = {"read_only", "local_write", "canonical_write", "operational_write", "external_model"}
+_EFFECTS = {
+    "read_only",
+    "local_write",
+    "canonical_write",
+    "operational_write",
+    "external_model",
+}
 _REPOSITORY_REQUIREMENTS = {"none", "optional", "required"}
 _NETWORK_REQUIREMENTS = {"never", "model_only"}
 _ARGUMENT_KINDS = {"positional", "option"}
@@ -70,18 +76,59 @@ _TOOL_FINGERPRINTS = {
     "source.search": "f66b9bf4a901367ab9867efeab53bd749218e8d01f1639282300abb55b2f5c97",
 }
 _PARSER_INVOCATIONS = {
-    "artifact.decisions": ("artifact", "decisions", "course-1", "[]", "--session-id", "session-1", "--request-id", "request-1", "--expected-sequence", "1"),
+    "artifact.decisions": (
+        "artifact",
+        "decisions",
+        "course-1",
+        "[]",
+        "--session-id",
+        "session-1",
+        "--request-id",
+        "request-1",
+        "--expected-sequence",
+        "1",
+    ),
     "ask": ("ask", "course-1", "question"),
-    "consent.grant": ("consent", "grant", "course-1", "--request-id", "request-1"),
-    "consent.revoke": ("consent", "revoke", "course-1", "--request-id", "request-1"),
+    "consent.grant": (
+        "consent",
+        "grant",
+        "course-1",
+        "--request-id",
+        "request-1",
+    ),
+    "consent.revoke": (
+        "consent",
+        "revoke",
+        "course-1",
+        "--request-id",
+        "request-1",
+    ),
     "consent.status": ("consent", "status", "course-1"),
-    "course.create": ("course", "create", "--title", "Course", "--learning-goal", "Goal"),
+    "course.create": (
+        "course",
+        "create",
+        "--title",
+        "Course",
+        "--learning-goal",
+        "Goal",
+    ),
     "course.list": ("course", "list"),
     "describe": ("describe",),
     "doctor": ("doctor",),
     "export": ("export", "course-1", "--output", "export"),
     "init": ("init", "repository"),
-    "lesson.flashcards": ("lesson", "flashcards", "course-1", "lesson", "--lesson-pin", "{}", "--session-id", "session-1", "--request-id", "request-1"),
+    "lesson.flashcards": (
+        "lesson",
+        "flashcards",
+        "course-1",
+        "lesson",
+        "--lesson-pin",
+        "{}",
+        "--session-id",
+        "session-1",
+        "--request-id",
+        "request-1",
+    ),
     "lesson.search": ("lesson", "search", "course-1", "lesson"),
     "lesson.select": ("lesson", "select", "course-1", "lesson", "candidate-1"),
     "manifest.apply": ("manifest", "apply", "--expect-plan", "0" * 64),
@@ -90,18 +137,56 @@ _PARSER_INVOCATIONS = {
     "manifest.status": ("manifest", "status"),
     "manifest.validate": ("manifest", "validate"),
     "operator.skill": ("operator", "skill", "--output", "operator-skill.md"),
-    "pageindex.disable": ("pageindex", "disable", "course-1", "source-1", "revision-1"),
-    "pageindex.enable": ("pageindex", "enable", "course-1", "source-1", "revision-1"),
-    "pageindex.rebuild": ("pageindex", "rebuild", "course-1", "source-1", "revision-1"),
+    "pageindex.disable": (
+        "pageindex",
+        "disable",
+        "course-1",
+        "source-1",
+        "revision-1",
+    ),
+    "pageindex.enable": (
+        "pageindex",
+        "enable",
+        "course-1",
+        "source-1",
+        "revision-1",
+    ),
+    "pageindex.rebuild": (
+        "pageindex",
+        "rebuild",
+        "course-1",
+        "source-1",
+        "revision-1",
+    ),
     "pageindex.status": ("pageindex", "status", "course-1"),
     "session.list": ("session", "list", "course-1"),
     "session.get": ("session", "get", "course-1", "session-1"),
     "session.resume": ("session", "resume", "course-1", "session-1"),
-    "session.start": ("session", "start", "course-1", "--session-id", "session-1"),
+    "session.start": (
+        "session",
+        "start",
+        "course-1",
+        "--session-id",
+        "session-1",
+    ),
     "source.add": ("source", "add", "course-1", "source.md"),
     "source.list": ("source", "list", "course-1"),
-    "source.restore": ("source", "restore", "course-1", "source-1", "--request-id", "request-1"),
-    "source.retire": ("source", "retire", "course-1", "source-1", "--request-id", "request-1"),
+    "source.restore": (
+        "source",
+        "restore",
+        "course-1",
+        "source-1",
+        "--request-id",
+        "request-1",
+    ),
+    "source.retire": (
+        "source",
+        "retire",
+        "course-1",
+        "source-1",
+        "--request-id",
+        "request-1",
+    ),
     "source.status": ("source", "status", "course-1", "source-1"),
     "tool.describe": ("tool", "describe", "grounding.ask"),
     "tool.list": ("tool", "list"),
@@ -145,7 +230,9 @@ def _assert_closed_manifest(manifest: Mapping[str, Any]) -> None:
     assert set(operator_skill) == _OPERATOR_SKILL_KEYS
     assert operator_skill["id"] == "study-agent-operator"
     assert operator_skill["version"] == "1.0.0"
-    assert operator_skill["extraction_command"] == "cardine --json operator skill --output PATH"
+    assert operator_skill["extraction_command"] == (
+        "cardine --json operator skill --output PATH"
+    )
     assert len(operator_skill["fingerprint"]) == 64
     assert manifest["repository_schema_versions"] == [1]
 
@@ -170,13 +257,17 @@ def _assert_closed_manifest(manifest: Mapping[str, Any]) -> None:
     tools = manifest["study_tools"]
     tool_names = [item["manifest"]["name"] for item in tools]
     assert tool_names == sorted(_TOOL_FINGERPRINTS)
-    assert {item["manifest"]["name"]: item["fingerprint"] for item in tools} == _TOOL_FINGERPRINTS
+    assert {
+        item["manifest"]["name"]: item["fingerprint"] for item in tools
+    } == _TOOL_FINGERPRINTS
     for tool in tools:
         assert set(tool) == _TOOL_ENTRY_KEYS
         assert set(tool["manifest"]) == _TOOL_MANIFEST_KEYS
 
 
-def test_describe_has_the_exact_closed_contract_and_stable_order(capsys: pytest.CaptureFixture[str]) -> None:
+def test_describe_has_the_exact_closed_contract_and_stable_order(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     assert main(("--json", "describe")) == 0
     manifest = _success_document(capsys)["data"]
     _assert_closed_manifest(manifest)
@@ -184,19 +275,44 @@ def test_describe_has_the_exact_closed_contract_and_stable_order(capsys: pytest.
     assert _success_document(capsys)["data"] == manifest
 
 
-def test_describe_models_repeated_init_settings_as_cli_strings(capsys: pytest.CaptureFixture[str]) -> None:
+def test_describe_models_repeated_init_settings_as_cli_strings(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     assert main(("--json", "describe")) == 0
     manifest = _success_document(capsys)["data"]
-    init_command = next(item for item in manifest["commands"] if item["name"] == "init")
-    model_setting = next(item for item in init_command["arguments"] if item["name"] == "model_setting")
-    assert {"value_type": model_setting["value_type"], "required": model_setting["required"], "repeated": model_setting["repeated"], "default_json": model_setting["default_json"]} == {"value_type": "string", "required": False, "repeated": True, "default_json": []}
+    init_command = next(
+        item for item in manifest["commands"] if item["name"] == "init"
+    )
+    model_setting = next(
+        item
+        for item in init_command["arguments"]
+        if item["name"] == "model_setting"
+    )
+    assert {
+        "value_type": model_setting["value_type"],
+        "required": model_setting["required"],
+        "repeated": model_setting["repeated"],
+        "default_json": model_setting["default_json"],
+    } == {
+        "value_type": "string",
+        "required": False,
+        "repeated": True,
+        "default_json": [],
+    }
 
 
-def test_each_discovered_command_maps_to_exactly_one_parser_leaf(capsys: pytest.CaptureFixture[str]) -> None:
+def test_each_discovered_command_maps_to_exactly_one_parser_leaf(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     assert main(("--json", "describe")) == 0
-    command_names = {item["name"] for item in _success_document(capsys)["data"]["commands"]}
+    command_names = {
+        item["name"] for item in _success_document(capsys)["data"]["commands"]
+    }
     parser = build_parser()
-    parsed_names = [parser.parse_args(arguments).command_name for arguments in _PARSER_INVOCATIONS.values()]
+    parsed_names = [
+        parser.parse_args(arguments).command_name
+        for arguments in _PARSER_INVOCATIONS.values()
+    ]
     assert set(parsed_names) == command_names == set(_PARSER_INVOCATIONS)
     assert len(parsed_names) == len(set(parsed_names))
 
@@ -226,11 +342,19 @@ def test_each_discovered_command_maps_to_exactly_one_parser_leaf(capsys: pytest.
         (("tool", "describe", "grounding.ask"), "tool.describe"),
     ],
 )
-def test_discovery_is_offline_and_side_effect_free_in_an_empty_directory(arguments: tuple[str, ...], command: str, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+def test_discovery_is_offline_and_side_effect_free_in_an_empty_directory(
+    arguments: tuple[str, ...],
+    command: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.chdir(tmp_path)
     before = tuple(tmp_path.iterdir())
+
     def forbidden(*_args: object, **_kwargs: object) -> object:
         raise AssertionError("discovery attempted an external side effect")
+
     monkeypatch.setattr(socket, "socket", _NoNetworkSocket)
     monkeypatch.setattr(socket, "create_connection", forbidden)
     monkeypatch.setattr(sqlite3, "connect", forbidden)
@@ -246,7 +370,9 @@ def test_tool_list_and_describe_are_consistent(capsys: pytest.CaptureFixture[str
     assert [item["manifest"]["name"] for item in listed] == sorted(_TOOL_FINGERPRINTS)
     assert main(("--json", "tool", "describe", "grounding.ask")) == 0
     described = _success_document(capsys)["data"]["tool"]
-    assert described == next(item for item in listed if item["manifest"]["name"] == "grounding.ask")
+    assert described == next(
+        item for item in listed if item["manifest"]["name"] == "grounding.ask"
+    )
 
 
 def test_unknown_tool_is_one_safe_json_error(capsys: pytest.CaptureFixture[str]) -> None:
@@ -254,4 +380,10 @@ def test_unknown_tool_is_one_safe_json_error(capsys: pytest.CaptureFixture[str])
     captured = capsys.readouterr()
     assert captured.err == ""
     assert captured.out.count("\n") == 1
-    assert json.loads(captured.out) == {"error": {"code": "not_found", "message": "requested canonical or local resource was not found"}, "ok": False}
+    assert json.loads(captured.out) == {
+        "error": {
+            "code": "not_found",
+            "message": "requested canonical or local resource was not found",
+        },
+        "ok": False,
+    }
