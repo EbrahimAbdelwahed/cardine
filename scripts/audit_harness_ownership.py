@@ -213,6 +213,33 @@ def _current_path(row: Mapping[str, str]) -> str:
     return row["path"]
 
 
+def _source_paths(reviewed_current_paths: set[str]) -> set[str]:
+    """Return the source universe governed by the frozen CA-02 ownership audit.
+
+    ``study_agent`` remains fully visible so unexpected harness-side additions
+    cannot hide behind the Cardine exception. Cardine integrations are the one
+    reviewed package family excluded from CA-02; other Cardine files are
+    included only when they belong to the frozen ownership inventory.
+    """
+
+    paths: set[str] = set()
+    for package_root in (ROOT / "src/study_agent", ROOT / "src/cardine"):
+        paths.update(
+            path.relative_to(ROOT).as_posix()
+            for path in package_root.rglob("*")
+            if path.is_file()
+            and "/__pycache__/" not in path.as_posix()
+            and path.suffix != ".pyc"
+            and "_transition" not in path.parts
+            and not path.is_relative_to(ROOT / "src/cardine/integrations")
+            and (
+                package_root == ROOT / "src/study_agent"
+                or path.relative_to(ROOT).as_posix() in reviewed_current_paths
+            )
+        )
+    return paths
+
+
 def _digest(path: str, targets: Mapping[str, str]) -> str:
     if path.startswith("entrypoint:"):
         return hashlib.sha256(f"{path}\0{targets[path]}".encode()).hexdigest()
