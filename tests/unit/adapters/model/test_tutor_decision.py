@@ -113,11 +113,16 @@ def test_decision_adapter_sends_canonical_context_and_returns_closed_decision() 
     assert request.structured_output is not None
     assert request.structured_output.schema["additionalProperties"] is False
     assert request.metadata["prompt_id"] == "tutor_decision.v1"
+    assert request.metadata["prompt_version"] == "1.7.0"
     system_prompt = request.messages[0].content
     assert "ROUTING ORDER" in system_prompt
     assert "Tutto bene?" in system_prompt
     assert "1 to 6 informative" in system_prompt
     assert "Never promise to start a study workflow later" in system_prompt
+    assert "CLARIFICATION FOLLOW-UP RULE" in system_prompt
+    assert "BOUNDED AGENT LOOP" in system_prompt
+    assert "duplicate_skipped" in system_prompt
+    assert "negli istoni" in system_prompt
     assert "explain_concept:" not in system_prompt
     assert "source.ingest:" not in system_prompt
     provider_payload = json.loads(request.messages[-1].content)
@@ -177,6 +182,53 @@ def test_decision_adapter_makes_optional_input_fields_provider_strict_and_remove
     _assert_all_object_fields_are_required(schema.schema)
     provider_payload = json.loads(model.requests[0].messages[-1].content)
     _assert_all_object_fields_are_required(provider_payload["decision_schema"])
+
+
+def test_decision_adapter_accepts_atomic_capability_progress_message() -> None:
+    capability = AdvertisedCapability(
+        "explain_concept",
+        "explain_concept@1.0.0",
+        "a" * 64,
+        {
+            "type": "object",
+            "properties": {"topic": {"type": "string"}},
+            "required": ("topic",),
+            "additionalProperties": False,
+        },
+        False,
+    )
+    available = TutorHostContext(
+        "course-1",
+        "session-1",
+        0,
+        0,
+        {"course_id": "course-1", "session_id": "session-1"},
+        {"course_id": "course-1", "through_sequence": 0, "estimates": ()},
+        (capability,),
+    )
+    model = Model(
+        response(
+            {
+                "decision": {
+                    "kind": "start_capability",
+                    "capability_id": "explain_concept",
+                    "inputs": {"topic": "Anatomia"},
+                    "progress_message": "Preparo la spiegazione",
+                }
+            }
+        )
+    )
+
+    result = asyncio.run(ModelTutorDecisionPort(model).decide(available, Token()))
+
+    assert isinstance(result, StartCapabilityDecision)
+    assert result.progress_message == "Preparo la spiegazione"
+    provider_payload = json.loads(model.requests[0].messages[-1].content)
+    serialized_schema = json.dumps(provider_payload["decision_schema"], sort_keys=True)
+    assert "progress_message" in serialized_schema
+    schema = model.requests[0].structured_output
+    assert schema is not None
+    _assert_all_object_fields_are_required(schema.schema)
 
 
 def test_system_prompt_catalog_contains_only_advertised_operations() -> None:

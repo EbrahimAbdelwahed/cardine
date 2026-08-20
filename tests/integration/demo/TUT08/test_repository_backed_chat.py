@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import platform
 import re
+import shutil
+import sys
 from collections.abc import AsyncIterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from hashlib import sha256
@@ -54,6 +57,12 @@ from study_agent.repository_config import LocalRepositoryConfig, ModelAdapterCon
 COURSE = CourseId("cardine-course")
 SESSION = SessionId("cardine-session")
 _EVIDENCE_ID = re.compile(r'"evidence_id":"([^"]+)"')
+_VERIFIED_ANYDOC_WORKER = (
+    sys.platform == "darwin"
+    and platform.machine() == "arm64"
+    and sys.version_info[:2] in {(3, 12), (3, 13)}
+    and shutil.which("sandbox-exec") == "/usr/bin/sandbox-exec"
+)
 
 
 class _LunaWireTransport:
@@ -91,8 +100,15 @@ class _LunaWireTransport:
         else:
             content = {
                 "decision": {
-                    "kind": "assistant_message",
-                    "message": "Partiamo dal concetto che vuoi chiarire.",
+                    "kind": "start_capability",
+                    "capability_id": "explain_concept",
+                    "inputs": {
+                        "query": "aortic valve",
+                        "target": "aortic valve",
+                        "language": "en",
+                        "learner_goal": None,
+                        "continuation_summary_json": None,
+                    },
                 }
             }
         return HttpResponse(
@@ -153,6 +169,24 @@ class _FixtureModel:
                             "text": "A" * 4_001,
                             "evidence_ids": (match.group(1),),
                         },
+                    ),
+                    "unsupported_information_note": None,
+                }
+            elif explain_output == {"fixture": "long-cited-lesson-answer"}:
+                evidence_ids = tuple(dict.fromkeys(_EVIDENCE_ID.findall(rendered)))
+                assert len(evidence_ids) >= 10
+                explain_output = {
+                    "status": "answered",
+                    "segments": tuple(
+                        {
+                            "kind": "supported_claim",
+                            "text": f"Punto didattico {index}: "
+                            + ("contenuto verificato " * 9).strip(),
+                            "evidence_ids": tuple(
+                                dict.fromkeys((evidence_ids[0], evidence_id))
+                            ),
+                        }
+                        for index, evidence_id in enumerate(evidence_ids[:10], start=1)
                     ),
                     "unsupported_information_note": None,
                 }
@@ -389,11 +423,13 @@ def test_tutor_invokes_the_same_harness_source_adapter_and_records_timeline(tmp_
                     "learning_goals": ("Impostare il percorso",),
                 },
             },
+            {"kind": "assistant_message", "message": "Corso creato."},
             {
                 "kind": "invoke_tool",
                 "tool_name": "session.start",
                 "arguments": {"session_id": str(SESSION)},
             },
+            {"kind": "assistant_message", "message": "Sessione avviata."},
             {
                 "kind": "invoke_tool",
                 "tool_name": "source.ingest",
@@ -403,11 +439,13 @@ def test_tutor_invokes_the_same_harness_source_adapter_and_records_timeline(tmp_
                     "content": "Il ventricolo sinistro genera pressione sistemica.",
                 },
             },
+            {"kind": "assistant_message", "message": "Fonte registrata."},
             {"kind": "invoke_tool", "tool_name": "evidence.get", "arguments": {}},
             {
                 "kind": "assistant_message",
                 "message": "Connessione verificata.",
             },
+            {"kind": "assistant_message", "message": "Modello pronto."},
         ),
     )
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
@@ -549,6 +587,27 @@ def test_repository_source_upload_ingests_text_and_reconciles_retry(tmp_path: Pa
     assert {item["title"] for item in materials} == {"Valve notes", "Lezione uno"}
 
 
+def test_repository_source_viewer_returns_the_bound_markdown_revision(tmp_path: Path) -> None:
+    root, adapters, _model = _repository(tmp_path)
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    materials = cast(tuple[dict[str, object], ...], app.get("/api/v1/materials")["items"])
+    material = next(item for item in materials if item["title"] == "Valve notes")
+    assert material["viewer"] == {"kind": "markdown", "page_count": None}
+
+    document = app.read_source_document(
+        cast(str, material["source_id"]),
+        cast(str, material["revision_id"]),
+    )
+
+    assert document.title == "Valve notes"
+    assert document.viewer_kind == "markdown"
+    assert document.media_type == "text/markdown; charset=utf-8"
+    assert document.content == b"The aortic valve has three cusps."
+
+    with pytest.raises(UiRequestError, match="source revision"):
+        app.read_source_document(cast(str, material["source_id"]), "revision-mismatch")
+
+
 def test_repository_source_upload_rejects_unsupported_files(tmp_path: Path) -> None:
     root, adapters, _model = _repository(tmp_path)
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
@@ -564,6 +623,10 @@ def test_repository_source_upload_rejects_unsupported_files(tmp_path: Path) -> N
         )
 
 
+@pytest.mark.skipif(
+    not _VERIFIED_ANYDOC_WORKER,
+    reason="canonical AnyDoc PDF import requires verified macOS arm64 sandbox containment",
+)
 def test_repository_pdf_import_is_canonical_and_restart_safe(tmp_path: Path) -> None:
     from tests.integration.adapters.workarounds.test_pdf_markdown_real import (
         _minimal_text_pdf,
@@ -673,7 +736,9 @@ def test_repository_chat_is_durable_idempotent_and_stale_safe(tmp_path: Path) ->
     calls_before_retry = len(model.requests)
     events_before_retry = _event_count(root, adapters)
     retry = fresh.post("/api/v1/session/turns", command)
-    assert retry == receipt
+    assert retry["status"] == receipt["status"]
+    assert retry["presentation_id"] == receipt["presentation_id"]
+    assert retry["high_water_sequence"] == receipt["high_water_sequence"]
     assert len(model.requests) == calls_before_retry
     assert _event_count(root, adapters) == events_before_retry
 
@@ -746,7 +811,7 @@ def test_grounded_completion_is_recovered_and_persisted_as_canonical_presentatio
     sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
     receipt = app.post(
         "/api/v1/session/turns",
-        _command("grounded-completion", sequence, "Spiegami la valvola aortica"),
+        _command("grounded-completion", sequence, "aortic valve"),
     )
     assert receipt["status"] == "completed"
     session = app.get("/api/v1/session")
@@ -787,15 +852,84 @@ def test_unrenderable_grounded_completion_still_returns_a_visible_chat_message(
 
     receipt = app.post(
         "/api/v1/session/turns",
-        _command("grounded-fallback", sequence, "Spiegami la valvola aortica"),
+        _command("grounded-fallback", sequence, "aortic valve"),
     )
 
     assert receipt["status"] == "completed"
     assert receipt["presentation_id"] is not None
     timeline = cast(tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"])
     assert timeline[-1]["role"] == "assistant"
-    assert "Non sono riuscito" in str(timeline[-1]["content"])
+    assert "non è riuscito a pubblicarne il risultato" in str(timeline[-1]["content"])
     assert len(model.requests) == 2
+
+
+def test_attached_long_lesson_publishes_complete_answer_with_compact_sources(
+    tmp_path: Path,
+) -> None:
+    lesson = "# Lezione 1\n\n" + "\n\n".join(
+        f"Concetto canonico {index}. " * 30
+        for index in range(1, 13)
+    ) + "\n\n# Lezione 2\n\nContenuto estraneo.\n"
+    root, adapters, _model = _repository(
+        tmp_path,
+        (
+            {
+                "kind": "start_capability",
+                "capability_id": "explain_concept",
+                "inputs": {
+                    "query": "avvia una spiegazione",
+                    "target": "avvia una spiegazione",
+                    "language": "it",
+                    "learner_goal": None,
+                    "continuation_summary_json": None,
+                },
+            },
+        ),
+        explain_output={"fixture": "long-cited-lesson-answer"},
+        source_content=lesson.encode(),
+    )
+    with LocalRepository.open(root, model_adapters=adapters) as repository:
+        repository.queue_indexing()
+        repository.reconcile_indexing()
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+    search = app.post(
+        "/api/v1/lessons/search",
+        _workspace_command("long-lesson-search", sequence, {"query": "Lezione 1"}),
+    )
+    candidate = cast(tuple[dict[str, object], ...], search["candidates"])[0]
+    selected = app.post(
+        "/api/v1/lessons/select",
+        _workspace_command(
+            "long-lesson-select",
+            sequence,
+            {"query": "Lezione 1", "candidate_id": candidate["candidate_id"]},
+        ),
+    )
+    command = _command("long-pinned-turn", sequence, "Avvia una spiegazione")
+    cast(dict[str, object], command["payload"])["lesson_pin"] = selected["pin"]
+
+    receipt = app.post("/api/v1/session/turns", command)
+
+    assert receipt["status"] == "completed"
+    timeline = cast(tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"])
+    answer = str(timeline[-1]["content"])
+    expected_body = "\n\n".join(
+        f"Punto didattico {index}: " + ("contenuto verificato " * 9).strip()
+        for index in range(1, 11)
+    )
+    body, sources = answer.split("\n\nFonti verificate:", 1)
+    assert body == expected_body
+    source_lines = tuple(
+        line.removeprefix("- ")
+        for line in sources.splitlines()
+        if line.startswith("- ") and not line.startswith("- Altre ")
+    )
+    assert source_lines
+    assert len(source_lines) == len(set(source_lines))
+    assert "Non sono riuscito" not in answer
+    assert answer.count("Fonti verificate:") == 1
+    assert len(answer) <= 4_000
 
 
 @pytest.mark.parametrize(
@@ -808,12 +942,9 @@ def test_unrenderable_grounded_completion_still_returns_a_visible_chat_message(
 def test_source_directed_question_cannot_end_without_grounded_content(
     tmp_path: Path, decision: JsonObject
 ) -> None:
-    """An explicit source request is grounded regardless of the model's first decision."""
+    """An explicit source request bypasses a terminal model decision and is grounded."""
 
-    root, adapters, model = _repository(
-        tmp_path,
-        (decision,),
-    )
+    root, adapters, model = _repository(tmp_path, (decision,))
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
     sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
 
@@ -826,9 +957,6 @@ def test_source_directed_question_cannot_end_without_grounded_content(
         ),
     )
 
-    decision_context = json.loads(model.requests[0].messages[-1].content)
-    assert decision_context["tutor_snapshot"]["timeline"][-1]["kind"] == "learner"
-    assert "source" in decision_context["tutor_snapshot"]["timeline"][-1]["content"]
     assert receipt["status"] == "completed"
     timeline = cast(tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"])
     answer = str(timeline[-1]["content"])
@@ -836,10 +964,17 @@ def test_source_directed_question_cannot_end_without_grounded_content(
     assert "three cusps" in answer
     assert "Valve notes" in answer
     assert "chars " in answer
+    citations = cast(tuple[dict[str, object], ...], timeline[-1]["citations"])
+    assert len(citations) == 1
+    assert citations[0]["label"] in answer
+    assert citations[0]["source_id"]
+    assert citations[0]["revision_id"]
+    assert citations[0]["viewer_kind"] == "markdown"
+    assert citations[0]["page"] is None
     assert [request.metadata.get("prompt_id") for request in model.requests] == [
-        "tutor_decision.v1",
-        "explain_concept.v1",
+        "explain_concept.v1"
     ]
+    assert model._decision_calls == 0
 
 
 def test_read_request_with_course_materials_enters_the_grounded_flow(
@@ -864,14 +999,14 @@ def test_read_request_with_course_materials_enters_the_grounded_flow(
     timeline = cast(tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"])
     assert "three cusps" in str(timeline[-1]["content"])
     assert [request.metadata.get("prompt_id") for request in model.requests] == [
-        "tutor_decision.v1",
-        "explain_concept.v1",
+        "explain_concept.v1"
     ]
     diagnostics = app.turn_traces.snapshot()
     trace = cast(tuple[dict[str, object], ...], diagnostics["turn_traces"])[-1]
-    # Diagnostics report the validated model decision, not the host-side
-    # source-grounding rewrite that subsequently enforces capability routing.
-    assert trace["decision"] == {"kind": "assistant_message"}
+    assert trace["decision"] == {
+        "kind": "start_capability",
+        "capability_id": "explain_concept",
+    }
     assert {
         "events",
         "final_status",
@@ -891,18 +1026,14 @@ def test_invalid_tutor_decision_returns_a_visible_safe_fallback(
 ) -> None:
     root, adapters, _model = _repository(
         tmp_path,
-        (
-            {
-                "kind": "not-a-real-decision",
-            },
-        ),
+        ({"kind": "not-a-real-decision"},),
     )
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
     sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
 
     receipt = app.post(
         "/api/v1/session/turns",
-        _command("invalid-tutor-decision", sequence, "Leggi biochimica"),
+        _command("invalid-tutor-decision", sequence, "biochimica"),
     )
 
     assert receipt["status"] == "failed"
@@ -987,7 +1118,7 @@ def test_luna_wire_response_completes_a_repository_backed_chat_turn(
 
     receipt = app.post(
         "/api/v1/session/turns",
-        _command("luna-wire-turn", sequence, "Leggi biochimica"),
+        _command("luna-wire-turn", sequence, "aortic valve"),
     )
 
     assert receipt["status"] == "completed"
@@ -1042,7 +1173,7 @@ def test_missing_runtime_key_has_a_configuration_diagnostic_not_a_generic_503(
 def test_source_grounding_provider_rejection_returns_a_visible_safe_fallback(
     tmp_path: Path,
 ) -> None:
-    root, adapters, _model = _repository(
+    root, adapters, model = _repository(
         tmp_path,
         (
             {
@@ -1073,28 +1204,22 @@ def test_source_grounding_provider_rejection_returns_a_visible_safe_fallback(
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
     sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
 
-    command = _command(
-        "grounding-provider-rejected", sequence, "Leggi e spiega le cuspidi aortiche"
-    )
+    command = _command("grounding-provider-rejected", sequence, "aortic valve")
     rejected = app.post("/api/v1/session/turns", command)
 
     assert rejected["status"] == "failed"
     assert rejected["presentation_id"] is not None
     first_timeline = cast(tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"])
     assert first_timeline[-1]["role"] == "assistant"
-    assert "Non sono riuscito" in str(first_timeline[-1]["content"])
+    assert "modello non è disponibile" in str(first_timeline[-1]["content"])
     assert "fixture-secret" not in str(rejected)
     assert "fixture-secret" not in str(first_timeline)
 
-    _model._explain_error = None
+    model._explain_error = None
     retry_sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
     retry = app.post(
         "/api/v1/session/turns",
-        _command(
-            "grounding-provider-retry",
-            retry_sequence,
-            "Leggi e spiega le cuspidi aortiche",
-        ),
+        _command("grounding-provider-retry", retry_sequence, "aortic valve"),
     )
     assert retry["status"] == "completed"
     timeline = cast(tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"])
@@ -1109,7 +1234,7 @@ def test_source_grounding_provider_rejection_returns_a_visible_safe_fallback(
 def test_source_grounding_schema_rejection_returns_a_visible_safe_fallback(
     tmp_path: Path,
 ) -> None:
-    """A malformed second structured response is not an opaque tutor failure."""
+    """A malformed structured response is surfaced as a safe fallback."""
 
     root, adapters, _model = _repository(
         tmp_path,
@@ -1133,7 +1258,7 @@ def test_source_grounding_schema_rejection_returns_a_visible_safe_fallback(
 
     receipt = app.post(
         "/api/v1/session/turns",
-        _command("grounding-schema-rejected", sequence, "Leggi e spiega le cuspidi aortiche"),
+        _command("grounding-schema-rejected", sequence, "aortic valve"),
     )
 
     assert receipt["status"] == "failed"
@@ -1170,11 +1295,7 @@ def test_repository_chat_serializes_new_requests_at_one_sequence(tmp_path: Path)
         try:
             return "completed", app.post(
                 "/api/v1/session/turns",
-                _command(
-                    request_id,
-                    initial_sequence,
-                    "aortic",
-                ),
+                _command(request_id, initial_sequence, "aortic"),
             )
         except UiRequestError as error:
             return "error", error
@@ -1225,6 +1346,30 @@ def test_second_tutor_decision_receives_redacted_canonical_presentation_history(
     assert "idempotency_key" not in json.dumps(second_context)
 
 
+def test_tutor_decision_receives_only_the_bounded_recent_conversation(
+    tmp_path: Path,
+) -> None:
+    root, adapters, model = _repository(tmp_path)
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+
+    for index in range(15):
+        receipt = app.post(
+            "/api/v1/session/turns",
+            _command(f"bounded-history-{index}", sequence, f"topic-{index}"),
+        )
+        sequence = cast(int, receipt["high_water_sequence"])
+
+    context = json.loads(model.requests[-1].messages[-1].content)["tutor_snapshot"]
+    timeline = context["timeline"]
+    presentations = context["tutor_presentations"]
+
+    assert len(timeline) + len(presentations) <= 24
+    assert timeline[-1]["content"] == "topic-14"
+    assert presentations[-1]["kind"] == "assistant_message"
+    assert presentations[-1]["course_sequence"] < timeline[-1]["course_sequence"]
+
+
 def test_repository_continuation_is_restored_resolved_and_exactly_retryable(
     tmp_path: Path,
 ) -> None:
@@ -1242,9 +1387,7 @@ def test_repository_continuation_is_restored_resolved_and_exactly_retryable(
                     "continuation_summary_json": None,
                 },
             },
-            {
-                "kind": "__answer_pending",
-            },
+            {"kind": "__answer_pending"},
         ),
     )
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
@@ -1252,7 +1395,7 @@ def test_repository_continuation_is_restored_resolved_and_exactly_retryable(
 
     suspended = app.post(
         "/api/v1/session/turns",
-        _command("clarify-start", initial, "Spiegami la valvola aortica"),
+        _command("clarify-start", initial, "aortic valve"),
     )
 
     assert suspended["status"] == "suspended"
@@ -1337,7 +1480,7 @@ def test_source_change_invalidates_suspended_capability_dependencies(
     initial = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
     suspended = app.post(
         "/api/v1/session/turns",
-        _command("source-stale-start", initial, "Spiegami la valvola aortica"),
+        _command("source-stale-start", initial, "aortic valve"),
     )
     continuation = cast(
         dict[str, object], cast(dict[str, object], suspended["result"])["continuation"]

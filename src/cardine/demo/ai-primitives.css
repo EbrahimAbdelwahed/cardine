@@ -216,31 +216,71 @@
 
   /* ---- Answer ----------------------------------------------------------- */
   .ai-answer__body { max-width: var(--measure); font-size: var(--text-base); line-height: var(--leading-normal); }
-  .ai-answer__body p { overflow-wrap: anywhere; white-space: pre-wrap; }
+  .ai-answer__markdown { display: grid; gap: var(--space-3); overflow-wrap: anywhere; }
+  .ai-answer__markdown h2,
+  .ai-answer__markdown h3,
+  .ai-answer__markdown h4 {
+    font-family: var(--font-body);
+    font-weight: var(--weight-semibold);
+    line-height: var(--leading-tight);
+    letter-spacing: 0;
+    text-wrap: balance;
+  }
+  .ai-answer__markdown h2 { margin-top: var(--space-3); font-size: var(--text-xl); }
+  .ai-answer__markdown h3 { margin-top: var(--space-2); font-size: var(--text-lg); }
+  .ai-answer__markdown h4 { font-size: var(--text-base); }
+  .ai-answer__markdown p { margin: 0; }
+  .ai-answer__markdown ul,
+  .ai-answer__markdown ol { display: grid; gap: var(--space-1); padding-inline-start: var(--space-5); }
+  .ai-answer__markdown blockquote {
+    padding-inline-start: var(--space-3);
+    color: var(--ink-soft);
+    box-shadow: inset 3px 0 0 var(--line-strong);
+  }
+  .ai-answer__markdown code { padding: 1px var(--space-1); background: var(--paper-deep); border-radius: var(--radius-xs); font-family: var(--font-mono); font-size: .9em; }
+  .ai-answer__markdown pre { max-width: 100%; padding: var(--space-3); overflow-x: auto; background: var(--paper-deep); border-radius: var(--radius-sm); }
+  .ai-answer__markdown pre code { padding: 0; background: transparent; border-radius: 0; }
+  .ai-answer__markdown hr { height: 1px; background: var(--line); border: 0; }
   /* A fade, not a wipe: text should not be revealed by a moving edge. */
-  .ai-answer__body p.is-revealing { animation: ai-reveal var(--duration-slow) var(--ease-out) both; }
-  .ai-answer__sources { display: flex; flex-wrap: wrap; gap: var(--space-2); padding-top: var(--space-3); box-shadow: inset 0 1px 0 var(--line); }
-  .ai-citation {
+  .ai-answer__markdown.is-revealing { animation: ai-reveal var(--duration-slow) var(--ease-out) both; }
+  .ai-answer__source-disclosure { width: 100%; max-width: 100%; justify-self: start; }
+  .ai-answer__source-disclosure > summary {
     display: inline-flex;
+    min-height: 32px;
     align-items: center;
-    min-height: 28px;
     gap: var(--space-2);
-    padding-inline: var(--space-2);
+    padding-inline: var(--space-3);
+    color: var(--ink-soft);
+    background: var(--paper-deep);
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    font-size: var(--text-sm);
+    list-style: none;
+  }
+  .ai-answer__source-disclosure > summary:hover { color: var(--ink); background: var(--surface-hover); }
+  .ai-answer__source-disclosure > summary .icon { width: var(--icon-size-sm); height: var(--icon-size-sm); }
+  .ai-answer__source-disclosure[open] .ai-disclosure-caret { transform: rotate(45deg); }
+  .ai-answer__sources { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .ai-answer__source-disclosure[open] .ai-answer__sources { margin-top: var(--space-3); }
+  .ai-citation {
+    appearance: none;
+    border: 0;
+    font: inherit;
+    display: inline-flex;
+    max-width: min(100%, 24rem);
+    align-items: center;
+    min-height: 30px;
+    gap: var(--space-1);
+    padding: 0 var(--space-3) 0 var(--space-2);
     color: var(--ink-soft);
     background: var(--paper-deep);
     border-radius: var(--radius-full);
     font-size: var(--text-xs);
+    white-space: nowrap;
   }
-  .ai-citation__index {
-    display: grid;
-    width: 18px;
-    height: 18px;
-    place-items: center;
-    color: var(--accent-text);
-    background: var(--accent-soft);
-    border-radius: var(--radius-full);
-    font-size: var(--text-xs);
-  }
+  button.ai-citation { cursor: pointer; }
+  .ai-citation .icon { width: var(--icon-size-sm); height: var(--icon-size-sm); }
+  .ai-citation__label { overflow: hidden; text-overflow: ellipsis; }
   .ai-answer__follow-ups { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 
   /* ---- Buttons ---------------------------------------------------------- */
@@ -331,6 +371,43 @@
   .ai-tool-stack__item strong, .ai-task-list__copy strong { display: block; font-size: var(--text-md); font-weight: var(--weight-semibold); }
   .ai-tool-stack__item small, .ai-task-list__copy small { display: block; color: var(--muted); font-size: var(--text-sm); overflow-wrap: anywhere; }
   .ai-task-list__copy { min-width: 0; }
+
+  /* ---- Live tool chips -------------------------------------------------- */
+  .ai-tool-chips { margin-block: var(--space-3); }
+  .ai-tool-chips > summary {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: var(--control-height);
+    padding: var(--space-1) var(--space-2);
+    color: var(--muted);
+    background: var(--paper-deep);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: var(--text-sm);
+    font-weight: var(--weight-semibold);
+  }
+  .ai-tool-chips > summary:hover { color: var(--ink); background: var(--surface-hover); }
+  .ai-tool-chips > summary .icon { width: var(--icon-size-sm); height: var(--icon-size-sm); }
+  .ai-tool-chips__list { display: grid; gap: var(--space-2); margin-block: var(--space-2) 0; padding: 0; list-style: none; }
+  .ai-tool-chips__chip {
+    display: grid;
+    grid-template-columns: var(--icon-size-sm) auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    padding: var(--space-2) var(--space-3);
+    color: var(--ink-soft);
+    background: var(--paper-deep);
+    border-radius: var(--radius-sm);
+  }
+  .ai-tool-chips__chip[data-state="running"] { animation: ai-tool-chip-running var(--duration-slow) var(--ease-out) infinite; }
+  .ai-tool-chips__chip[data-state="failed"] { color: var(--danger); }
+  .ai-tool-chips__verb { font-weight: var(--weight-semibold); white-space: nowrap; }
+  .ai-tool-chips__target { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ai-tool-chips__count { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .ai-tool-chips__chip .icon { width: var(--icon-size-sm); height: var(--icon-size-sm); color: var(--muted); }
+  @keyframes ai-tool-chip-running { 0% { opacity: 1; } 50% { opacity: .72; } 100% { opacity: 1; } }
 
   /* ---- Chat panel ------------------------------------------------------- */
   .ai-chat-panel { gap: 0; padding: 0; overflow: hidden; }

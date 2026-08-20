@@ -223,6 +223,153 @@ def test_repository_chat_publishes_verified_pending_flashcard_proposal(tmp_path:
     assert flashcard_requests[-1].metadata["prompt_id"] == "hybrid_flashcards.v1"
 
 
+def test_repository_chat_recovers_live_flashcard_promise_into_lesson_one_proposals(
+    tmp_path: Path,
+) -> None:
+    promise = "Ok, allora preparo le flashcard richieste."
+    source = (
+        b"# Lezione 1\nLa glicolisi converte il glucosio in piruvato.\n"
+        b"# Lezione 2\nIl ciclo di Krebs produce equivalenti riducenti."
+    )
+    root, adapters, model = _repository(
+        tmp_path,
+        decisions=(
+            {"kind": "assistant_message", "message": promise},
+        ),
+        source_content=source,
+    )
+    # Keep the fixture's provider output identical to the live failure: the
+    # host router, rather than the model, must select the capability.
+    flashcard_requests = _install_hybrid_flashcard_model(model)
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+
+    receipt = app.post(
+        "/api/v1/session/turns",
+        _command(
+            "live-event-183",
+            sequence,
+            "voglio che generi 15 flashcards sulla lezione 1 di biochimica unificato",
+        ),
+    )
+
+    assert receipt["status"] == "completed", receipt
+    activity = cast(dict[str, object], receipt["activity"])
+    assert activity["kind"] == "flashcard_generation"
+    assert activity["status"] == "completed"
+    assert cast(int, activity["proposal_count"]) >= 1
+    assert len(flashcard_requests) == 1
+    prompt = "\n".join(message.content for message in flashcard_requests[0].messages)
+    assert "Lezione 1" in prompt
+    assert "Lezione 2" not in prompt
+
+    artifacts = cast(tuple[dict[str, object], ...], app.get("/api/v1/artifacts")["items"])
+    assert artifacts
+    assert all(item["status"] == "proposed" for item in artifacts)
+    timeline = cast(tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"])
+    assert not any(item.get("content") == promise for item in timeline)
+
+
+def test_repository_chat_flashcards_respect_the_attached_lesson_scope(tmp_path: Path) -> None:
+    source = "\n".join(
+        f"# Lezione {position}\nLa valvola della lezione {position} ha tre cuspidi."
+        for position in range(1, 261)
+    ).encode()
+    root, adapters, model = _repository(tmp_path, source_content=source)
+    flashcard_requests = _install_hybrid_flashcard_model(model)
+    with LocalRepository.open(root, model_adapters=adapters) as repository:
+        result = repository.search_lessons(COURSE, "Lezione 1")
+        candidate = next(
+            item for item in result.candidates if item.section_title == "Lezione 1"
+        )
+        pin = repository.select_lesson(COURSE, "Lezione 1", candidate.candidate_id)
+
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+    command = _command(
+        "create-pinned-flashcard",
+        sequence,
+        "Crea una flashcard sulla lezione allegata",
+    )
+    command["payload"] = {
+        "content": "Crea una flashcard sulla lezione allegata",
+        "lesson_pin": {
+            "course_id": pin.course_id,
+            "source_id": pin.source_id,
+            "revision_id": pin.revision_id,
+            "section_title": pin.section_title,
+            "start_offset": pin.start_offset,
+            "end_offset": pin.end_offset,
+            "content_sha256": pin.content_sha256,
+            "catalog_fingerprint": pin.catalog_fingerprint,
+        },
+    }
+
+    receipt = app.post("/api/v1/session/turns", command)
+
+    assert receipt["status"] == "completed", receipt
+    activity = cast(dict[str, object], receipt["activity"])
+    assert activity["kind"] == "flashcard_generation"
+    assert cast(int, activity["proposal_count"]) >= 1
+    assert len(flashcard_requests) == 1
+    prompt = "\n".join(message.content for message in flashcard_requests[0].messages)
+    assert "Lezione 1" in prompt
+    assert "Lezione 2" not in prompt
+
+
+def test_repository_chat_flashcards_reuse_the_recent_resolved_lesson_scope(
+    tmp_path: Path,
+) -> None:
+    source = "\n".join(
+        f"# Lezione {position}\nLa valvola della lezione {position} ha tre cuspidi."
+        for position in range(1, 261)
+    ).encode()
+    root, adapters, model = _repository(
+        tmp_path,
+        decisions=(
+            {"kind": "assistant_message", "message": "Leggo la lezione."},
+            {
+                "kind": "start_capability",
+                "capability_id": "propose_flashcards",
+                "inputs": {
+                    "query": "questa lezione",
+                    "scope": "questa lezione",
+                    "language": "it",
+                    "candidate_ceiling": 15,
+                    "continuation_summary_json": None,
+                },
+            },
+        ),
+        source_content=source,
+    )
+    flashcard_requests = _install_hybrid_flashcard_model(model)
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+
+    before = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+    studied = app.post(
+        "/api/v1/session/turns",
+        _command("study-lesson-one", before, "Leggi la lezione 1"),
+    )
+    assert studied["status"] == "completed", studied
+
+    receipt = app.post(
+        "/api/v1/session/turns",
+        _command(
+            "create-recent-lesson-flashcards",
+            cast(int, studied["high_water_sequence"]),
+            "Genera 15 flashcard su questa lezione",
+        ),
+    )
+
+    assert receipt["status"] == "completed", receipt
+    activity = cast(dict[str, object], receipt["activity"])
+    assert cast(int, activity["proposal_count"]) >= 1
+    assert len(flashcard_requests) == 1
+    prompt = "\n".join(message.content for message in flashcard_requests[0].messages)
+    assert "Lezione 1" in prompt
+    assert "Lezione 2" not in prompt
+
+
 def test_direct_selected_lesson_flashcards_create_human_interaction_before_generation(
     tmp_path: Path,
 ) -> None:

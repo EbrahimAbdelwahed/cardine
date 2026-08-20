@@ -184,6 +184,15 @@ def _repository(
                 session_id=SESSION,
             )
         )
+        repository.provider_consent_service.grant(
+            ExecutionContext(
+                PrincipalKind.HUMAN,
+                "browser-session",
+                COURSE,
+                CorrelationId("browser-provider-consent"),
+            ),
+            "browser-provider-consent",
+        )
     return root, adapters, model
 
 
@@ -481,7 +490,7 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
             " && document.querySelector('#global-alert-title').textContent"
             " === 'Messaggio salvato, risposta non completata'"
         )
-        assert len(model.requests) == 2
+        assert len(model.requests) == 1
         assert browser.evaluate(
             "document.querySelectorAll('.thread-message--learner').length"
         ) == 1
@@ -513,7 +522,7 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
             "!document.querySelector('[data-optimistic-turn]')"
             " && document.querySelectorAll('.thread-message--assistant').length === 1"
         )
-        assert len(model.requests) == 4
+        assert len(model.requests) == 2
         assert browser.evaluate(
             "document.querySelectorAll('.thread-message--learner').length"
         ) == 1
@@ -529,9 +538,7 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
                 "document.querySelector('[data-turn-trace][data-highlighted=true]').innerText"
             ),
         )
-        # Advanced diagnostics intentionally expose only the validated tutor
-        # decision, not the internal phase timeline or turn payload metadata.
-        assert "assistant_message" in trace_text
+        assert "start_capability" in trace_text
         for excluded in (
             "model.grounding",
             "timeout",
@@ -625,7 +632,7 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
         assert "three cusps" in cast(
             str, browser.evaluate("document.querySelector('#view-root').innerText")
         )
-        assert len(model.requests) == 4
+        assert len(model.requests) == 2
         _assert_no_browser_errors(browser)
 
 
@@ -678,9 +685,7 @@ def test_repository_browser_retry_binds_original_request_across_interleaved_turn
 
         browser.call("Input.insertText", text="first learner")
         _press(browser, "Enter", 13)
-        browser.wait_for(
-            "window.__terminalRequests.length===1"
-        )
+        browser.wait_for("window.__terminalRequests.length===1")
         browser.wait_for(
             "Array.from(document.querySelectorAll('#global-alert-actions button'))"
             ".some(button=>button.textContent==='Riprova')"
@@ -787,4 +792,4 @@ def test_browser_has_no_stateless_demo_routes(tmp_path: Path) -> None:
             "path,status:(await fetch(path,{method:'POST'})).status})))))()",
             await_promise=True,
         )
-        assert '"status":404' in cast(str, statuses)
+        assert '\"status\":404' in cast(str, statuses)

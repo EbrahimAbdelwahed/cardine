@@ -79,6 +79,31 @@ class CountingEventStore:
         return self.inner.append(course_id, expected_sequence, events)
 
 
+class ProjectionAwareEventStore:
+    def __init__(self, inner: SQLiteEventStore) -> None:
+        self.inner = inner
+        self.read_count = 0
+        self.projection_count = 0
+
+    def read(
+        self, course_id: CourseId, after_sequence: int = 0
+    ) -> Sequence[DomainEvent]:
+        self.read_count += 1
+        return self.inner.read(course_id, after_sequence)
+
+    def projection(self, course_id: CourseId):
+        self.projection_count += 1
+        return self.inner.projection(course_id)
+
+    def append(
+        self,
+        course_id: CourseId,
+        expected_sequence: int,
+        events: Sequence[DomainEvent],
+    ) -> int:
+        return self.inner.append(course_id, expected_sequence, events)
+
+
 def _context(
     key: str | None = None, *, session_id: SessionId | None = SESSION
 ) -> ExecutionContext:
@@ -174,6 +199,62 @@ def test_local_repository_exposes_public_snapshot_reader(tmp_path: Path) -> None
     assert snapshot.high_water_sequence == 2
     assert snapshot.timeline == ()
     assert len(snapshot.learner_context) == 5
+
+
+def test_snapshot_reuses_a_coherent_persisted_projection_without_reducing_events(
+    tmp_path: Path,
+) -> None:
+    registry = EventRegistry()
+    reductions = 0
+
+    def decode(payload: JsonObject) -> JsonObject:
+        return payload
+
+    def reduce(
+        state: JsonObject, _event: DomainEvent, _payload: JsonObject
+    ) -> Mapping[str, JsonValue]:
+        nonlocal reductions
+        reductions += 1
+        return state
+
+    register_course_events(registry)
+    register_session_events(registry)
+    register_study_context_events(registry)
+    registry.register("test.snapshot_probe", 1, decode, reduce)
+    events = SQLiteEventStore(tmp_path / "projection-aware.sqlite3", registry)
+    courses = ProjectionCourseView(events.projection)
+    CourseService(events, Clock(), courses).create(
+        CourseProfile(COURSE, "Anatomy", "en", learning_goals=("Learn",)),
+        _context(session_id=None),
+    )
+    sessions = ProjectionSessionView(events.projection)
+    SessionService(events, Clock(), sessions, courses).start(_context())
+    events.append(
+        COURSE,
+        2,
+        (
+            DomainEvent(
+                EventId("event-snapshot-probe"),
+                COURSE,
+                3,
+                "test.snapshot_probe",
+                1,
+                Actor(PrincipalKind.SERVICE, "snapshot-contract"),
+                NOW,
+                CorrelationId("correlation-snapshot-probe"),
+                {},
+            ),
+        ),
+    )
+    reductions_before_read = reductions
+    observed = ProjectionAwareEventStore(events)
+
+    snapshot = TutorSnapshotReader(observed, registry).get(COURSE, SESSION)
+
+    assert snapshot.high_water_sequence == 3
+    assert observed.read_count == 1
+    assert observed.projection_count == 1
+    assert reductions == reductions_before_read
 
 
 def test_snapshot_reader_fails_closed_on_corrupt_current_material(tmp_path: Path) -> None:

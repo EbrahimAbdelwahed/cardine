@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-DEMO_DIR = Path(__file__).parents[3] / "src" / "study_agent" / "demo"
+DEMO_DIR = Path(__file__).parents[3] / "src" / "cardine" / "demo"
 SHELL_CSS = (DEMO_DIR / "browser.css").read_text(encoding="utf-8")
 PRIMITIVES_CSS = (DEMO_DIR / "ai-primitives.css").read_text(encoding="utf-8")
 ALL_CSS = SHELL_CSS + "\n" + PRIMITIVES_CSS
@@ -103,7 +103,9 @@ def test_a_closed_disclosure_occupies_and_paints_nothing() -> None:
 
 def test_the_shell_has_one_tooltip_mechanism_and_no_native_ones() -> None:
     assert 'title="' not in PAGE
-    assert 'title="' not in SHELL_JS
+    # iframe title is an accessibility name, not a hover-tooltip mechanism.
+    shell_without_iframe_titles = re.sub(r'<iframe\b[^>]*\btitle="[^"]*"[^>]*>', "<iframe>", SHELL_JS)
+    assert 'title="' not in shell_without_iframe_titles
     assert 'title="' not in PRIMITIVES_JS
     assert "content: attr(data-tooltip)" in SHELL_CSS
 

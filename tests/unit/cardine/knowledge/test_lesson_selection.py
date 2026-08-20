@@ -87,3 +87,18 @@ def test_ambiguity_requires_explicit_choice_and_plain_text_uses_exact_evidence()
 def test_search_result_rejects_false_unique_disposition() -> None:
     with pytest.raises(ValueError, match="cardinality"):
         LessonSearchResult(SearchDisposition.UNIQUE, ())
+
+
+@pytest.mark.parametrize("heading", ("L01_04/03/2025", "L_01", "L-01"))
+def test_natural_lesson_title_matches_converted_heading_aliases(heading: str) -> None:
+    text = f"# {heading}\nContenuto uno.\n# L02\nContenuto due.\n"
+    result = LessonSelectionService(_Evidence()).search(
+        "course-1", "Lezione 1", (_source(text),)
+    )
+
+    assert result.disposition is SearchDisposition.UNIQUE
+    pin = LessonSelectionService(_Evidence()).select(
+        result.candidates[0].candidate_id, result
+    )
+    assert pin.section_title == heading
+    assert "Contenuto due" not in text[pin.start_offset : pin.end_offset]

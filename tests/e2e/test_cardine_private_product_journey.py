@@ -245,6 +245,16 @@ def _serve_private() -> Iterator[str]:
                     session_id=SESSION,
                 )
             )
+            local.provider_consent_service.grant(
+                ExecutionContext(
+                    PrincipalKind.HUMAN,
+                    "private-e2e-session",
+                    COURSE,
+                    CorrelationId("private-e2e-provider-consent"),
+                    session_id=SESSION,
+                ),
+                "private-e2e-provider-consent",
+            )
         try:
             server = _private_server(repository, model_adapters)
         except PermissionError as error:
@@ -612,7 +622,6 @@ def test_private_browser_routes_composer_scope_keyboard_draft_and_mobile() -> No
         browser.wait("!document.querySelector('#login-form')")
         browser.wait("Boolean(document.querySelector('[data-route=\"oggi\"].is-active'))")
 
-        # Tool sections carry no composer.
         for route in ROUTES:
             _click_route(browser, route)
             browser.wait(
@@ -620,14 +629,10 @@ def test_private_browser_routes_composer_scope_keyboard_draft_and_mobile() -> No
             )
             assert browser.evaluate("document.querySelectorAll('[data-entry-form]').length") == 0
 
-        # Chat always does, and exactly once. Oggi shows the source-first
-        # setup wizard until the course has materials, so it is not asserted
-        # to carry a composer here.
         _click_route(browser, "sessione")
         browser.wait("Boolean(document.querySelector('#session-entry-text'))")
         assert browser.evaluate("document.querySelectorAll('[data-entry-form]').length") == 1
 
-        # A draft written in Chat survives a trip through a tool section.
         _click_route(browser, "sessione")
         browser.wait("Boolean(document.querySelector('#session-entry-text'))")
         browser.evaluate(
@@ -642,8 +647,6 @@ def test_private_browser_routes_composer_scope_keyboard_draft_and_mobile() -> No
         browser.wait("Boolean(document.querySelector('#session-entry-text'))")
         assert _entry_value(browser) == "draft survives route change"
 
-        # A failed send restores the text instead of losing it, and reports
-        # the failure somewhere the reader can actually see.
         browser.evaluate(
             "document.querySelector('#session-entry-text').value='line one';"
             "document.querySelector('#session-entry-text')"
@@ -664,9 +667,6 @@ def test_private_browser_routes_composer_scope_keyboard_draft_and_mobile() -> No
         assert cast(
             str, browser.evaluate("document.querySelector('#global-alert-title').innerText")
         ).strip() != ""
-        # A validated tutor protocol failure is not a key failure.  Exercise
-        # the same browser transport envelope emitted by the repository turn
-        # endpoint and ensure the user sees the specific next diagnosis.
         browser.evaluate(
             "window.fetch=()=>Promise.resolve(new Response("
             "JSON.stringify({code:'tutor_protocol_error'}),"
@@ -727,7 +727,6 @@ def test_private_browser_routes_composer_scope_keyboard_draft_and_mobile() -> No
                 )
                 <= 1
             )
-            # Nothing in the shell may be drawn outside the viewport.
             assert (
                 browser.evaluate(
                     "[...document.querySelectorAll('#view-root button,#view-root input,"
@@ -796,8 +795,6 @@ def test_settings_labels_write_only_empty_after_save_and_pending_continuation_ro
 
         _click(browser, '[data-route="sessione"]')
         browser.wait("Boolean(document.querySelector('#conversation-heading'))")
-        # A waiting tutor is surfaced by the shell alert with a route back to
-        # Chat, not by a composer parked under an unrelated section.
         _click_route(browser, "fonti")
         browser.wait("Boolean(document.querySelector('[data-route=\"fonti\"].is-active'))")
         pending = browser.evaluate("document.querySelector('#global-alert').hidden === false")

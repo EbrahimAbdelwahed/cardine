@@ -12,6 +12,7 @@ from study_agent.domain.source import (
     SourceDocument,
 )
 from study_agent.ingestion import (
+    GENERATED_SOURCE_REVISION_SCHEMA_VERSION,
     SOURCE_REVISION_INGESTED,
     SOURCE_REVISION_SCHEMA_VERSION,
     SOURCE_REVISION_SELECTED,
@@ -20,8 +21,10 @@ from study_agent.ingestion import (
     decode_source_revision_event,
     decode_source_revision_selected_event,
 )
+from study_agent.ingestion.projection import validate_generated_source_admission
 from study_agent.ports.retrieval import RetrievalDocument
 from study_agent.ports.storage import BlobStore, EventStore
+from study_agent.state import Projection
 
 from .errors import SourceContentError, SourceContentErrorCode
 
@@ -36,6 +39,31 @@ class SourceRevisionRecord:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "chunks", tuple(self.chunks))
+
+
+def canonical_source_locator(
+    record: SourceRevisionRecord,
+    chunk: SourceChunk,
+    start: int,
+    end: int,
+) -> str:
+    """Build the canonical human-readable locator for a source span."""
+    section = " > ".join(chunk.section_path) or f"chunk {chunk.ordinal + 1}"
+    page_label = ""
+    provenance = record.source.conversion_provenance
+    if provenance is not None and provenance.page_spans:
+        pages = tuple(
+            span.page
+            for span in provenance.page_spans
+            if start < span.end_offset and end > span.start_offset
+        )
+        if pages:
+            page_label = (
+                f" · page {pages[0]}"
+                if len(pages) == 1
+                else f" · pages {pages[0]}-{pages[-1]}"
+            )
+    return f"{record.source.title} · {section}{page_label} · chars {start}-{end}"
 
 
 class CourseSourceContent:
@@ -55,7 +83,32 @@ class CourseSourceContent:
         decoded: list[tuple[SourceRevisionIngested, str]] = []
         seen: dict[tuple[SourceId, RevisionId], SourceRevisionIngested] = {}
         current: dict[SourceId, RevisionId] = {}
-        for event in self._events.read(self._course_id):
+        stream = tuple(self._events.read(self._course_id))
+        has_generated = any(
+            event.event_type == SOURCE_REVISION_INGESTED
+            and event.schema_version == GENERATED_SOURCE_REVISION_SCHEMA_VERSION
+            for event in stream
+        )
+        projection: Projection | None = None
+        if has_generated:
+            load_projection = getattr(self._events, "projection", None)
+            if not callable(load_projection):
+                raise SourceContentError(
+                    SourceContentErrorCode.INTEGRITY_ERROR,
+                    "generated source content requires a canonical projection",
+                )
+            projection = load_projection(self._course_id)
+            expected_sequence = stream[-1].course_sequence if stream else 0
+            if (
+                not isinstance(projection, Projection)
+                or projection.course_id != self._course_id
+                or projection.sequence != expected_sequence
+            ):
+                raise SourceContentError(
+                    SourceContentErrorCode.INTEGRITY_ERROR,
+                    "generated source projection is missing or stale",
+                )
+        for event in stream:
             if (
                 event.event_type == SOURCE_REVISION_SELECTED
                 and event.schema_version == SOURCE_REVISION_SELECTED_SCHEMA_VERSION
@@ -75,11 +128,15 @@ class CourseSourceContent:
                 continue
             if (
                 event.event_type != SOURCE_REVISION_INGESTED
-                or event.schema_version != SOURCE_REVISION_SCHEMA_VERSION
+                or event.schema_version
+                not in (SOURCE_REVISION_SCHEMA_VERSION, GENERATED_SOURCE_REVISION_SCHEMA_VERSION)
             ):
                 continue
             try:
                 revision = decode_source_revision_event(event, self._blobs.get)
+                if event.schema_version == GENERATED_SOURCE_REVISION_SCHEMA_VERSION:
+                    assert projection is not None
+                    validate_generated_source_admission(projection.state, event, revision)
                 normalized = self._blobs.get(revision.source.normalized_blob)
                 text = normalized.decode("utf-8", errors="strict")
             except LookupError as error:
@@ -162,25 +219,6 @@ class CourseSourceContent:
             f"source chunk {chunk_id} was not found in course {self._course_id}",
         )
 
-    @staticmethod
-    def _locator(record: SourceRevisionRecord, chunk: SourceChunk, start: int, end: int) -> str:
-        section = " > ".join(chunk.section_path) or f"chunk {chunk.ordinal + 1}"
-        page_label = ""
-        provenance = record.source.conversion_provenance
-        if provenance is not None and provenance.page_spans:
-            pages = tuple(
-                span.page
-                for span in provenance.page_spans
-                if start < span.end_offset and end > span.start_offset
-            )
-            if pages:
-                page_label = (
-                    f" · page {pages[0]}"
-                    if len(pages) == 1
-                    else f" · pages {pages[0]}-{pages[-1]}"
-                )
-        return f"{record.source.title} · {section}{page_label} · chars {start}-{end}"
-
     def resolve(self, citation: Citation) -> ResolvedCitation:
         record = self._record(citation.revision_id)
         if record.source.source_id != citation.source_id:
@@ -217,7 +255,9 @@ class CourseSourceContent:
             citation.chunk_id,
             citation.start_offset,
             citation.end_offset,
-            self._locator(record, chunk, citation.start_offset, citation.end_offset),
+            canonical_source_locator(
+                record, chunk, citation.start_offset, citation.end_offset
+            ),
             text,
         )
         return ResolvedCitation(canonical, text)

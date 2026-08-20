@@ -65,23 +65,15 @@
         <a class="brand brand--compact" href="#oggi" data-route="oggi">Cardine</a>
         <button class="rail__control" type="button" data-open-command-search aria-label="Cerca in Cardine"><span class="icon icon--magnifying-glass" aria-hidden="true"></span></button>
       </header>
-
-      <!-- The only surface that reports failure. It lives outside #view-root,
-           so it survives every view swap and can never be rendered into a
-           node that has already been detached from the document. -->
       <div class="alert-region" id="alert-region">
         <div class="alert" id="global-alert" data-tone="danger" hidden>
           <span class="alert__icon icon icon--warning-circle" aria-hidden="true"></span>
-          <div class="alert__copy">
-            <strong class="alert__title" id="global-alert-title"></strong>
-            <p class="alert__detail" id="global-alert-detail"></p>
-          </div>
+          <div class="alert__copy"><strong class="alert__title" id="global-alert-title"></strong><p class="alert__detail" id="global-alert-detail"></p></div>
           <div class="alert__actions" id="global-alert-actions"></div>
           <button class="alert__dismiss" type="button" id="global-alert-dismiss" aria-label="Chiudi avviso"><span aria-hidden="true">×</span></button>
         </div>
       </div>
       <p class="visually-hidden" id="global-status" role="status" aria-live="polite"></p>
-
       <div id="view-root" class="view-root">
         <section class="chat-home" aria-labelledby="entry-heading" aria-busy="true">
           <div class="chat-home__center">
@@ -100,11 +92,7 @@
                 </div>
               </div>
             </form>
-            <div class="skeleton-stack" aria-hidden="true">
-              <span class="skeleton"></span>
-              <span class="skeleton"></span>
-              <span class="skeleton"></span>
-            </div>
+            <div class="skeleton-stack" aria-hidden="true"><span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span></div>
           </div>
         </section>
       </div>
@@ -114,6 +102,11 @@
   <dialog class="sheet" id="provenance-drawer" aria-labelledby="drawer-heading">
     <header class="sheet__header"><div><p class="eyebrow">margine · provenienza</p><h2 id="drawer-heading">Fonte selezionata</h2></div><button class="sheet__close" type="button" data-close-drawer aria-label="Chiudi"><span aria-hidden="true">×</span></button></header>
     <div class="sheet__body" id="drawer-content"><p class="empty-state">Seleziona una fonte per vedere i metadati consentiti.</p></div>
+  </dialog>
+  <dialog class="sheet source-viewer" id="source-viewer" aria-labelledby="source-viewer-title">
+    <header class="sheet__header"><div><p class="eyebrow" id="source-viewer-kind">fonte del corso</p><h2 id="source-viewer-title">Documento</h2></div><button class="sheet__close" type="button" data-close-drawer aria-label="Chiudi documento"><span aria-hidden="true">×</span></button></header>
+    <div class="source-viewer__content" id="source-viewer-content" aria-live="polite"><p class="empty-state">Seleziona una fonte per aprire il documento.</p></div>
+    <button class="source-viewer__resize" type="button" data-source-viewer-resize aria-label="Ridimensiona il visualizzatore" data-tooltip="Trascina per ridimensionare il visualizzatore"></button>
   </dialog>
   <dialog class="sheet" id="trust-drawer" aria-labelledby="trust-heading">
     <header class="sheet__header"><div><p class="eyebrow">confini di fiducia</p><h2 id="trust-heading">Il browser non è il proprietario dello stato</h2></div><button class="sheet__close" type="button" data-close-drawer aria-label="Chiudi"><span aria-hidden="true">×</span></button></header>
@@ -125,12 +118,7 @@
     <div class="sheet__body account-menu__body" id="account-menu-body"><p>Controllo della sessione in corso…</p></div>
   </dialog>
   <dialog class="modal ai-command-search" id="command-search" aria-labelledby="command-search-heading">
-    <div class="ai-command-search__header">
-      <span class="icon icon--magnifying-glass ai-command-search__icon" aria-hidden="true"></span>
-      <label class="visually-hidden" for="command-search-input" id="command-search-heading">Cerca in Cardine</label>
-      <input id="command-search-input" type="search" autocomplete="off" placeholder="Cerca sezioni, fonti o un suggerimento…" aria-controls="command-search-results">
-      <kbd>esc</kbd>
-    </div>
+    <div class="ai-command-search__header"><span class="icon icon--magnifying-glass ai-command-search__icon" aria-hidden="true"></span><label class="visually-hidden" for="command-search-input" id="command-search-heading">Cerca in Cardine</label><input id="command-search-input" type="search" autocomplete="off" placeholder="Cerca sezioni, fonti o un suggerimento…" aria-controls="command-search-results"><kbd>esc</kbd></div>
     <div class="ai-command-search__results" id="command-search-results" role="listbox" aria-label="Risultati"></div>
     <p class="ai-command-search__empty" id="command-search-empty" hidden>Nessun risultato. Prova con un altro termine.</p>
   </dialog>

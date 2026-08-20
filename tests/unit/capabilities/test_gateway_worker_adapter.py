@@ -332,7 +332,7 @@ def _run[T](awaitable: Coroutine[object, object, T]) -> T:
 
 def test_public_definition_and_worker_authority_helpers_preserve_golden_bytes() -> None:
     assert playbook_definition_fingerprint(_binding().playbook) == (
-        "558fc944ed6c36f4fc951db7e5119d288ef3f466f368c74d4133998636041dae"
+        "5db0d32dd3d19d302c59dd67237fc7e254366a2bef2ca986daee4712672b9565"
     )
     assert generation_worker_authority_fingerprint(_task(), _parent()) == (
         "ccbfde52476ca8a702fe2779622c9bb9a1ae8f947838706e87725e46ec21f204"

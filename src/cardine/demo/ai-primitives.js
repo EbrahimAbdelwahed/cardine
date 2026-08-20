@@ -68,6 +68,118 @@
       escapeText(value(label, normalized.replace(/_/g, " "))) + "</span>";
   }
 
+  function renderInlineMarkdown(input) {
+    var code = [];
+    var tokenized = value(input, "").replace(/`([^`\n]+)`/g, function (_match, content) {
+      var index = code.push(escapeText(content)) - 1;
+      return "CARDINECODETOKEN" + index + "END";
+    });
+    var rendered = escapeText(tokenized)
+      .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/__([^_\n]+)__/g, "<strong>$1</strong>")
+      .replace(/(^|[\s(])\*([^*\n]+)\*/g, "$1<em>$2</em>")
+      .replace(/(^|[\s(])_([^_\n]+)_/g, "$1<em>$2</em>");
+    return rendered.replace(/CARDINECODETOKEN(\d+)END/g, function (match, index) {
+      return code[Number(index)] === undefined ? match : "<code>" + code[Number(index)] + "</code>";
+    });
+  }
+
+  function markdownBlockStart(line) {
+    return /^(?:#{1,4}\s+|```|>\s?|[-*+]\s+|\d+[.)]\s+|(?:---+|___+|\*\*\*+)\s*$)/.test(line);
+  }
+
+  function renderMarkdown(input) {
+    var lines = value(input, "").replace(/\r\n?/g, "\n").split("\n");
+    var output = [];
+    var index = 0;
+    while (index < lines.length) {
+      var line = lines[index];
+      if (!line.trim()) { index += 1; continue; }
+      if (/^```[^\n]*$/.test(line)) {
+        var code = [];
+        index += 1;
+        while (index < lines.length && !/^```\s*$/.test(lines[index])) {
+          code.push(lines[index]);
+          index += 1;
+        }
+        if (index < lines.length) index += 1;
+        output.push("<pre><code>" + escapeText(code.join("\n")) + "</code></pre>");
+        continue;
+      }
+      var heading = line.match(/^(#{1,4})\s+(.+)$/);
+      if (heading) {
+        var level = Math.min(heading[1].length + 1, 4);
+        output.push("<h" + level + ">" + renderInlineMarkdown(heading[2]) + "</h" + level + ">");
+        index += 1;
+        continue;
+      }
+      if (/^(?:---+|___+|\*\*\*+)\s*$/.test(line)) {
+        output.push("<hr>");
+        index += 1;
+        continue;
+      }
+      if (/^>\s?/.test(line)) {
+        var quote = [];
+        while (index < lines.length && /^>\s?/.test(lines[index])) {
+          quote.push(lines[index].replace(/^>\s?/, ""));
+          index += 1;
+        }
+        output.push("<blockquote><p>" + renderInlineMarkdown(quote.join(" ")) + "</p></blockquote>");
+        continue;
+      }
+      var unordered = line.match(/^[-*+]\s+(.+)$/);
+      var ordered = line.match(/^\d+[.)]\s+(.+)$/);
+      if (unordered || ordered) {
+        var tag = unordered ? "ul" : "ol";
+        var matcher = unordered ? /^[-*+]\s+(.+)$/ : /^\d+[.)]\s+(.+)$/;
+        var items = [];
+        while (index < lines.length) {
+          var item = lines[index].match(matcher);
+          if (!item) break;
+          items.push("<li>" + renderInlineMarkdown(item[1]) + "</li>");
+          index += 1;
+        }
+        output.push("<" + tag + ">" + items.join("") + "</" + tag + ">");
+        continue;
+      }
+      var paragraph = [line.trim()];
+      index += 1;
+      while (index < lines.length && lines[index].trim() && !markdownBlockStart(lines[index])) {
+        paragraph.push(lines[index].trim());
+        index += 1;
+      }
+      output.push("<p>" + renderInlineMarkdown(paragraph.join(" ")) + "</p>");
+    }
+    return output.join("");
+  }
+
+  function verifiedSourcePresentation(input) {
+    var answer = bounded(input, "");
+    var legacySources = [];
+    answer = answer.replace(
+      /\n\nFonti: [^\n]+\n«[\s\S]*?»(?:, [^\n]+\n«[\s\S]*?»)*/g,
+      function (block) {
+        var locator = /(?:Fonti: |», )([^\n]+)\n«/g;
+        var match;
+        while ((match = locator.exec(block)) !== null) legacySources.push(match[1].trim());
+        return "";
+      }
+    );
+    var marker = "\n\nFonti verificate:";
+    var markerIndex = answer.lastIndexOf(marker);
+    if (markerIndex < 0) return { answer: answer.trim(), sources: legacySources };
+    var lines = answer.slice(markerIndex + marker.length).trim().split("\n");
+    if (!lines.length || lines.some(function (line) { return !/^-\s+\S/.test(line); })) {
+      return { answer: answer.trim(), sources: legacySources };
+    }
+    return {
+      answer: answer.slice(0, markerIndex).trim(),
+      sources: legacySources.concat(
+        lines.map(function (line) { return line.replace(/^-\s+/, "").trim(); })
+      )
+    };
+  }
+
   function renderLoading(options) {
     var config = options || {};
     var label = bounded(config.label, "Preparazione del tutor");
@@ -99,15 +211,49 @@
 
   function renderAnswer(options) {
     var config = options || {};
-    var answer = bounded(read(config, ["answer", "text", "content"], ""), "");
-    var citations = list(config.citations || config.sources);
+    var presentation = verifiedSourcePresentation(read(config, ["answer", "text", "content"], ""));
+    var answer = presentation.answer;
+    var citations = list(config.citations || config.sources).concat(presentation.sources);
     var followUps = list(config.followUps || config.follow_ups);
-    var citationHtml = citations.map(function (citation, index) {
+    var seenCitations = Object.create(null);
+    var omittedCitationCount = 0;
+    var citationRows = citations.map(function (citation) {
       var item = typeof citation === "object" && citation !== null ? citation : { label: citation };
-      return '<span class="ai-citation" data-citation-index="' + escapeAttribute(index) + '">' +
-        '<span class="ai-citation__index" aria-hidden="true">' + escapeText(index + 1) + '</span>' +
-        escapeText(read(item, ["label", "title", "locator", "path"], "Fonte")) + "</span>";
-    }).join("");
+      var label = bounded(read(item, ["label", "title", "locator", "path"], "Fonte"), "Fonte");
+      var omitted = label.match(/^Altre (\d+) citazioni verificate\.$/i);
+      if (omitted) {
+        omittedCitationCount += Number(omitted[1]);
+        return "";
+      }
+      if (seenCitations[label]) return "";
+      seenCitations[label] = true;
+      var sourceId = read(item, ["source_id"], "");
+      var revisionId = read(item, ["revision_id"], "");
+      var viewerKind = value(read(item, ["viewer_kind"], ""), "");
+      var page = read(item, ["page"], null);
+      var viewerReference = sourceId && revisionId ? {
+        title: read(item, ["title", "label"], label),
+        source_id: sourceId,
+        revision_id: revisionId,
+        viewer_kind: viewerKind,
+        page: typeof page === "number" && page > 0 ? page : null
+      } : null;
+      var opening = viewerReference
+        ? '<button type="button" class="ai-citation" data-source-viewer="' + escapeAttribute(JSON.stringify(viewerReference)) + '" data-tooltip="' + escapeAttribute(label) + '">'
+        : '<span class="ai-citation" data-tooltip="' + escapeAttribute(label) + '">';
+      var closing = viewerReference ? "</button>" : "</span>";
+      return opening +
+        '<span class="icon icon--book-open" aria-hidden="true"></span>' +
+        '<span class="ai-citation__label">' + escapeText(label) + "</span>" + closing;
+    }).filter(Boolean);
+    var citationCount = citationRows.length + omittedCitationCount;
+    var citationLabel = citationCount === 1 ? "1 fonte verificata" : citationCount + " fonti verificate";
+    var citationHtml = citationRows.join("");
+    var sourceDisclosure = citationCount ? '<details class="ai-answer__source-disclosure"><summary>' +
+      '<span class="icon icon--book-open" aria-hidden="true"></span><span>' + escapeText(citationLabel) +
+      '</span><span class="ai-disclosure-caret" aria-hidden="true"></span></summary>' +
+      (citationHtml ? '<footer class="ai-answer__sources" aria-label="Fonti">' + citationHtml + "</footer>" : "") +
+      "</details>" : "";
     var followHtml = followUps.map(function (followUp) {
       var label = bounded(read(followUp, ["label", "title", "text"], followUp), "Continua");
       var prompt = bounded(read(followUp, ["prompt", "value", "text"], label), label);
@@ -115,8 +261,8 @@
     }).join("");
     var reveal = config.reveal === true ? ' data-ai-reveal="true"' : "";
     return '<article class="ai-answer"><div class="ai-answer__header"><p class="ai-eyebrow">risposta</p>' + statusPill(config.status, config.statusLabel) +
-      '</div><div class="ai-answer__body">' + (answer ? '<p' + reveal + '>' + escapeText(answer) + "</p>" : '<p class="ai-empty">Nessuna risposta disponibile.</p>') +
-      '</div>' + (citationHtml ? '<footer class="ai-answer__sources" aria-label="Fonti">' + citationHtml + "</footer>" : "") +
+      '</div><div class="ai-answer__body">' + (answer ? '<div class="ai-answer__markdown"' + reveal + '>' + renderMarkdown(answer) + "</div>" : '<p class="ai-empty">Nessuna risposta disponibile.</p>') +
+      "</div>" + sourceDisclosure +
       (followHtml ? '<div class="ai-answer__follow-ups" aria-label="Continua lo studio">' + followHtml + "</div>" : "") + "</article>";
   }
 
@@ -146,6 +292,44 @@
     }).join("");
     return '<section class="ai-tool-stack" aria-labelledby="ai-tool-stack-title"><header><div><p class="ai-eyebrow">attività</p><h2 id="ai-tool-stack-title">' + escapeText(config.title || "Strumenti usati") +
       '</h2></div>' + statusPill(config.status, config.statusLabel) + '</header><ul>' + (chips || '<li class="ai-empty">Nessuna attività dichiarata.</li>') + "</ul></section>";
+  }
+
+  function renderToolChips(options) {
+    var config = options || {};
+    var records = list(config.records || config.items);
+    if (!records.length) return "";
+    var state = value(config.state, "settled");
+    var failed = records.filter(function (record) {
+      return value(read(record, ["status", "state"], "done"), "done") === "failed";
+    }).length;
+    var countLabel = records.length === 1 ? "1 attività" : records.length + " attività";
+    var suffix = (state === "running" ? " · in corso" : "") +
+      (failed ? " · " + failed + " errore" + (failed === 1 ? "" : "i") : "");
+    var icons = {
+      retrieval: "book-open",
+      capability: "note-pencil",
+      verification: "shield-check",
+      tool: "gear",
+      model: "chat-circle"
+    };
+    var rows = records.map(function (record) {
+      var item = record && typeof record === "object" ? record : { label: record };
+      var itemState = value(read(item, ["status", "state"], "done"), "done");
+      var kind = value(item.kind, "model");
+      var icon = icons[kind] || "gear";
+      var target = bounded(read(item, ["target", "title"], ""), "");
+      var count = item.count === null || item.count === undefined || item.count === "" ? "" : '<span class="ai-tool-chips__count">' + escapeText(item.count) + " risultati</span>";
+      return '<li class="ai-tool-chips__chip" data-state="' + escapeAttribute(itemState) + '" data-tone="' + escapeAttribute(kind) + '">' +
+        '<span class="icon icon--' + escapeAttribute(icon) + '" aria-hidden="true"></span>' +
+        '<span class="ai-tool-chips__verb">' + escapeText(read(item, ["label", "verb", "title"], "Attività")) + "</span>" +
+        (target ? '<span class="ai-tool-chips__target">' + escapeText(target) + "</span>" : "") + count + "</li>";
+    }).join("");
+    var rootState = state === "running" ? "running" : state === "failed" || failed ? "failed" : "settled";
+    return '<details class="ai-tool-chips" data-ai-disclosure data-state="' + escapeAttribute(rootState) + '">' +
+      '<summary data-ai-disclosure-trigger><span class="icon icon--gear" aria-hidden="true"></span>' +
+      '<span class="ai-tool-chips__summary">' + escapeText(countLabel + suffix) + '</span>' +
+      '<span class="ai-disclosure-caret" aria-hidden="true"></span></summary>' +
+      '<ul class="ai-tool-chips__list" aria-label="Attività registrate">' + rows + "</ul></details>";
   }
 
   function renderTaskList(options) {
@@ -290,6 +474,7 @@
       answer: renderAnswer,
       approval: renderApproval,
       toolStack: renderToolStack,
+      toolChips: renderToolChips,
       taskList: renderTaskList,
       chatPanel: renderChatPanel,
       recommendation: renderRecommendation,
@@ -588,12 +773,14 @@
   global.CardineAI = Object.freeze({
     escape: escapeText,
     escapeAttribute: escapeAttribute,
+    markdown: renderMarkdown,
     render: render,
     loading: renderLoading,
     thinking: renderThinking,
     answer: renderAnswer,
     approval: renderApproval,
     toolStack: renderToolStack,
+    toolChips: renderToolChips,
     taskList: renderTaskList,
     chatPanel: renderChatPanel,
     recommendation: renderRecommendation,

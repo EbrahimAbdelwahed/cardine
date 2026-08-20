@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from hashlib import sha256
-from typing import Protocol
+from typing import Protocol, cast
 
 from cardine.courses import course_profile_manifest
 from cardine.knowledge import SourcePin
@@ -170,6 +171,7 @@ class GroundingAskService:
         run_store: RunStore,
         configuration: GroundingAskConfiguration,
         events: EventStore | None = None,
+        private_summary_notes: Callable[[CourseId], frozenset[str]] | None = None,
     ) -> None:
         self._courses = courses
         self._session_service = session_service
@@ -182,6 +184,7 @@ class GroundingAskService:
         self._run_store = run_store
         self._configuration = configuration
         self._events = events
+        self._private_summary_notes = private_summary_notes
 
     async def ask(
         self,
@@ -240,9 +243,21 @@ class GroundingAskService:
         profile_json = freeze_object(course_profile_manifest(profile))
         try:
             summary = self._session_service.get_context(context)
-            summary_json: JsonValue = (
-                None if summary is None else summary_payload(summary)["summary"]
-            )
+            if summary is None:
+                summary_json: JsonValue = None
+            else:
+                from cardine.application.study_memory import (
+                    without_study_memory_summary,
+                )
+
+                summary_json = without_study_memory_summary(
+                    cast(JsonObject, summary_payload(summary)["summary"]),
+                    (
+                        frozenset()
+                        if self._private_summary_notes is None
+                        else self._private_summary_notes(context.course_id)
+                    ),
+                )
             dependencies = self._read_dependencies(
                 context.course_id,
                 session,
