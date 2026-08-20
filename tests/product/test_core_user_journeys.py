@@ -54,7 +54,9 @@ def test_learner_can_open_course_see_sources_chat_and_resume_after_restart(tmp_p
     assert len(model.requests) == 1
 
 
-def test_explicit_source_question_is_grounded_without_routing_model_guesswork(tmp_path: Path) -> None:
+def test_explicit_source_question_is_grounded_without_routing_model_guesswork(
+    tmp_path: Path,
+) -> None:
     root, adapters, model = _repository(tmp_path)
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
     sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
