@@ -538,7 +538,7 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
                 "document.querySelector('[data-turn-trace][data-highlighted=true]').innerText"
             ),
         )
-        assert "explain_concept" in trace_text
+        assert "start_capability" in trace_text
         for excluded in (
             "model.grounding",
             "timeout",
@@ -792,4 +792,4 @@ def test_browser_has_no_stateless_demo_routes(tmp_path: Path) -> None:
             "path,status:(await fetch(path,{method:'POST'})).status})))))()",
             await_promise=True,
         )
-        assert '"status":404' in cast(str, statuses)
+        assert '\"status\":404' in cast(str, statuses)
