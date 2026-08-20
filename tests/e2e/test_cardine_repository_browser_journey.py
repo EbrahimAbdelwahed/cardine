@@ -490,7 +490,7 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
             " && document.querySelector('#global-alert-title').textContent"
             " === 'Messaggio salvato, risposta non completata'"
         )
-        assert len(model.requests) == 2
+        assert len(model.requests) == 1
         assert browser.evaluate(
             "document.querySelectorAll('.thread-message--learner').length"
         ) == 1
@@ -522,7 +522,7 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
             "!document.querySelector('[data-optimistic-turn]')"
             " && document.querySelectorAll('.thread-message--assistant').length === 1"
         )
-        assert len(model.requests) == 4
+        assert len(model.requests) == 2
         assert browser.evaluate(
             "document.querySelectorAll('.thread-message--learner').length"
         ) == 1
@@ -538,7 +538,7 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
                 "document.querySelector('[data-turn-trace][data-highlighted=true]').innerText"
             ),
         )
-        assert "assistant_message" in trace_text
+        assert "explain_concept" in trace_text
         for excluded in (
             "model.grounding",
             "timeout",
@@ -632,7 +632,7 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
         assert "three cusps" in cast(
             str, browser.evaluate("document.querySelector('#view-root').innerText")
         )
-        assert len(model.requests) == 4
+        assert len(model.requests) == 2
         _assert_no_browser_errors(browser)
 
 
