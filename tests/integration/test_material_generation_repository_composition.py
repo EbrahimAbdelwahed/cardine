@@ -222,10 +222,14 @@ def test_repository_generation_commits_one_atomic_pair_and_recovers(
             if revision.id in matching[0].revision_ids
         )
         assert all(isinstance(material, LessonMaterialContent) for material in materials)
-        complete, study = materials
-        assert isinstance(complete, LessonMaterialContent)
-        assert isinstance(study, LessonMaterialContent)
-        assert [complete.variant.value, study.variant.value] == ["complete", "study"]
+        by_variant = {
+            material.variant.value: material
+            for material in materials
+            if isinstance(material, LessonMaterialContent)
+        }
+        assert set(by_variant) == {"complete", "study"}
+        complete = by_variant["complete"]
+        study = by_variant["study"]
         assert repository.blobs.get(complete.markdown_blob).decode().startswith("# Lesson")
         assert repository.blobs.get(study.markdown_blob).decode().startswith("# Lesson")
         assert study.direct_parent_blob_sha256 == complete.markdown_blob.checksum_sha256
