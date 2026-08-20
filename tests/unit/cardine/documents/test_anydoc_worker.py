@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import platform
+import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -7,6 +10,18 @@ import pytest
 import cardine.documents.anydoc_runtime as anydoc_runtime
 from cardine.documents import AnyDocErrorCode, AnyDocWorkerError, convert_pdf_in_worker
 from cardine.documents.config import DocumentImportPolicy
+
+
+_WORKER_SUPPORTED = (
+    sys.platform == "darwin"
+    and platform.machine() == "arm64"
+    and sys.version_info[:2] in {(3, 12), (3, 13)}
+    and shutil.which("sandbox-exec") == "/usr/bin/sandbox-exec"
+)
+_requires_verified_worker = pytest.mark.skipif(
+    not _WORKER_SUPPORTED,
+    reason="verified AnyDoc worker containment requires macOS arm64 with sandbox-exec",
+)
 
 
 def _text_pdf(*page_texts: str) -> bytes:
@@ -61,6 +76,7 @@ def _minimal_text_pdf() -> bytes:
     return _text_pdf("Hello PDF")
 
 
+@_requires_verified_worker
 def test_verified_anydoc_converts_text_pdf_in_isolated_worker(tmp_path: Path) -> None:
     source = tmp_path / "lesson.pdf"
     source.write_bytes(_minimal_text_pdf())
@@ -73,6 +89,7 @@ def test_verified_anydoc_converts_text_pdf_in_isolated_worker(tmp_path: Path) ->
     assert tuple(tmp_path.iterdir()) == (source,)
 
 
+@_requires_verified_worker
 def test_non_pdf_fails_without_derived_output(tmp_path: Path) -> None:
     source = tmp_path / "lesson.pdf"
     source.write_bytes(b"not a pdf")
@@ -84,6 +101,7 @@ def test_non_pdf_fails_without_derived_output(tmp_path: Path) -> None:
     assert tuple(tmp_path.iterdir()) == (source,)
 
 
+@_requires_verified_worker
 def test_page_map_binds_each_pdf_page_to_exact_markdown_offsets(tmp_path: Path) -> None:
     source = tmp_path / "two-pages.pdf"
     source.write_bytes(_text_pdf("First page", "Second page"))
@@ -102,6 +120,7 @@ def test_page_map_binds_each_pdf_page_to_exact_markdown_offsets(tmp_path: Path) 
     assert receipt.page_spans[0].end_offset <= receipt.page_spans[1].start_offset
 
 
+@_requires_verified_worker
 def test_mixed_pdf_marks_page_without_extractable_text_and_keeps_page_map(
     tmp_path: Path,
 ) -> None:
@@ -129,6 +148,7 @@ def test_missing_input_is_a_closed_worker_failure(tmp_path: Path) -> None:
     assert tuple(tmp_path.iterdir()) == ()
 
 
+@_requires_verified_worker
 def test_malformed_and_scanned_pdfs_fail_without_derived_output(tmp_path: Path) -> None:
     malformed = tmp_path / "malformed.pdf"
     malformed.write_bytes(b"%PDF-1.4\nnot a document")
@@ -144,6 +164,7 @@ def test_malformed_and_scanned_pdfs_fail_without_derived_output(tmp_path: Path) 
     assert set(tmp_path.iterdir()) == {malformed, scanned}
 
 
+@_requires_verified_worker
 def test_input_page_and_output_limits_fail_closed(tmp_path: Path) -> None:
     source = tmp_path / "bounded.pdf"
     source.write_bytes(_text_pdf("First page", "Second page"))
@@ -169,6 +190,7 @@ def _install_fake_anydoc(destination: Path, source: str) -> None:
     (package / "__init__.py").write_text(source, encoding="utf-8")
 
 
+@_requires_verified_worker
 @pytest.mark.parametrize(
     ("module_source", "expected"),
     (
@@ -212,6 +234,7 @@ def test_worker_maps_encryption_and_denies_network(
     assert tuple(tmp_path.iterdir()) == (source,)
 
 
+@_requires_verified_worker
 def test_timed_out_worker_is_terminated_and_leaves_no_output(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
