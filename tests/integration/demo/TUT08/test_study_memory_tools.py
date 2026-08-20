@@ -103,9 +103,11 @@ def test_failed_capability_does_not_record_a_covered_topic(tmp_path) -> None:
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
     sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
 
+    # Keep this on the model-routed path so the test exercises a failed
+    # capability, rather than the deterministic explicit-explanation fast path.
     receipt = app.post(
         "/api/v1/session/turns",
-        _command("study-memory-failed-turn", sequence, "Spiegami la valvola aortica"),
+        _command("study-memory-failed-turn", sequence, "aortic valve"),
     )
 
     assert receipt["status"] == "failed"
