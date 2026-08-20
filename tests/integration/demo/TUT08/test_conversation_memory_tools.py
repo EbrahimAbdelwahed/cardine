@@ -110,6 +110,7 @@ def test_long_chat_can_search_memory_before_source_grounded_flashcards(tmp_path)
         tuple[dict[str, object], ...], app.turn_traces.snapshot()["turn_traces"]
     )[-1]
     assert trajectory["steps"] == (
+        {"kind": "invoke_tool", "tool_name": "conversation.read"},
         {"kind": "invoke_tool", "tool_name": "conversation.search"},
         {"kind": "start_capability", "capability_id": "propose_flashcards"},
     )
