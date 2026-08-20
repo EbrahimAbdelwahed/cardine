@@ -104,7 +104,11 @@ def test_a_closed_disclosure_occupies_and_paints_nothing() -> None:
 def test_the_shell_has_one_tooltip_mechanism_and_no_native_ones() -> None:
     assert 'title="' not in PAGE
     # iframe title is an accessibility name, not a hover-tooltip mechanism.
-    shell_without_iframe_titles = re.sub(r'<iframe\b[^>]*\btitle="[^"]*"[^>]*>', "<iframe>", SHELL_JS)
+    shell_without_iframe_titles = re.sub(
+        r'<iframe\b[^>]*\btitle="[^"]*"[^>]*>',
+        "<iframe>",
+        SHELL_JS,
+    )
     assert 'title="' not in shell_without_iframe_titles
     assert 'title="' not in PRIMITIVES_JS
     assert "content: attr(data-tooltip)" in SHELL_CSS
