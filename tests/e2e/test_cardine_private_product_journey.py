@@ -251,7 +251,6 @@ def _serve_private() -> Iterator[str]:
                     "private-e2e-session",
                     COURSE,
                     CorrelationId("private-e2e-provider-consent"),
-                    session_id=SESSION,
                 ),
                 "private-e2e-provider-consent",
             )
