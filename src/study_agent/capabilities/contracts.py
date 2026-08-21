@@ -212,9 +212,7 @@ class CapabilityContinuation:
 class CompletedCapabilityOutcome:
     run: VerifiedRunRecord
     output: JsonValue
-    status: CapabilityOutcomeStatus = field(
-        default=CapabilityOutcomeStatus.COMPLETED, init=False
-    )
+    status: CapabilityOutcomeStatus = field(default=CapabilityOutcomeStatus.COMPLETED, init=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.run, VerifiedRunRecord):
@@ -230,9 +228,7 @@ class SuspendedCapabilityOutcome:
     dialogue_request: str
     continuation: CapabilityContinuation
     response_schema: JsonObject
-    status: CapabilityOutcomeStatus = field(
-        default=CapabilityOutcomeStatus.SUSPENDED, init=False
-    )
+    status: CapabilityOutcomeStatus = field(default=CapabilityOutcomeStatus.SUSPENDED, init=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.run_id, RunId):
@@ -251,9 +247,7 @@ class SuspendedCapabilityOutcome:
 @dataclass(frozen=True, slots=True)
 class TerminatedCapabilityOutcome:
     run: VerifiedRunRecord
-    status: CapabilityOutcomeStatus = field(
-        default=CapabilityOutcomeStatus.TERMINATED, init=False
-    )
+    status: CapabilityOutcomeStatus = field(default=CapabilityOutcomeStatus.TERMINATED, init=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.run, VerifiedRunRecord):
@@ -266,9 +260,7 @@ class TerminatedCapabilityOutcome:
 class CancelledCapabilityOutcome:
     run_id: RunId
     message: str
-    status: CapabilityOutcomeStatus = field(
-        default=CapabilityOutcomeStatus.CANCELLED, init=False
-    )
+    status: CapabilityOutcomeStatus = field(default=CapabilityOutcomeStatus.CANCELLED, init=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.run_id, RunId):
@@ -280,9 +272,7 @@ class CancelledCapabilityOutcome:
 class StaleCapabilityOutcome:
     run_id: RunId
     message: str
-    status: CapabilityOutcomeStatus = field(
-        default=CapabilityOutcomeStatus.STALE, init=False
-    )
+    status: CapabilityOutcomeStatus = field(default=CapabilityOutcomeStatus.STALE, init=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.run_id, RunId):
@@ -295,9 +285,7 @@ class FailedCapabilityOutcome:
     run_id: RunId
     message: str
     failure_reason: str | None = None
-    status: CapabilityOutcomeStatus = field(
-        default=CapabilityOutcomeStatus.FAILED, init=False
-    )
+    status: CapabilityOutcomeStatus = field(default=CapabilityOutcomeStatus.FAILED, init=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.run_id, RunId):
@@ -305,12 +293,19 @@ class FailedCapabilityOutcome:
         require_text(self.message, "failed outcome message")
         if self.failure_reason is not None and self.failure_reason not in {
             "authentication",
+            "authorization",
             "model_unavailable",
             "endpoint_incompatible",
+            "schema_incompatible",
             "rate_limited",
             "timeout",
             "protocol_error",
             "unavailable",
+            "capability_execution_failed",
+            "capability_validation_failed",
+            "scope_missing",
+            "scope_stale",
+            "publication_failed",
         }:
             raise ValueError("failed outcome failure reason is invalid")
 
@@ -352,8 +347,7 @@ def _pins_json(pins: VersionPins) -> JsonObject:
         "playbook": {"id": pins.playbook.id, "version": str(pins.playbook.version)},
         "prompt": {"id": pins.prompt.id, "version": str(pins.prompt.version)},
         "tool_behaviors": tuple(
-            {"name": item.tool_name, "version": str(item.version)}
-            for item in pins.tool_behaviors
+            {"name": item.tool_name, "version": str(item.version)} for item in pins.tool_behaviors
         ),
         "model_adapter": {
             "id": pins.model_adapter.id,

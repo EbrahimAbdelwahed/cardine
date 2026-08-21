@@ -16,13 +16,18 @@ from study_agent.domain.provenance import (
     DocumentConversionProvenance,
     DocumentPageSpan,
     StructureOrigin,
+    generated_document_provenance_from_json,
 )
 from study_agent.domain.source import BlobRef, SourceChunk, SourceDocument, SourceKind
 
 from .chunking import CHUNKER_VERSION, ChunkingConfig, chunk_text
 from .identity import (
+    GENERATED_MARKDOWN_INGESTION_METHOD,
     NORMALIZATION_POLICY_VERSION,
     chunk_id_for,
+    generated_revision_id_for,
+    generated_source_event_id_for,
+    generated_source_id_for,
     legacy_revision_id_for,
     revision_id_for,
     source_event_id_for,
@@ -33,6 +38,7 @@ from .normalization import normalize_utf8
 
 SOURCE_REVISION_INGESTED = "source.revision_ingested"
 SOURCE_REVISION_SCHEMA_VERSION = 1
+GENERATED_SOURCE_REVISION_SCHEMA_VERSION = 2
 SOURCE_REVISION_SELECTED = "source.revision_selected"
 SOURCE_REVISION_SELECTED_SCHEMA_VERSION = 1
 
@@ -58,6 +64,7 @@ _SOURCE_KEYS = frozenset(
         "content_origin",
     }
 )
+_GENERATED_SOURCE_KEYS = _SOURCE_KEYS | {"generated_provenance"}
 _CONVERSION_KEYS = frozenset(
     {
         "pdf_sha256",
@@ -260,11 +267,16 @@ def _conversion(value: JsonValue | None) -> DocumentConversionProvenance:
     )
 
 
-def _source(value: JsonValue | None) -> SourceDocument:
+def _source(
+    value: JsonValue | None, *, allow_generated: bool
+) -> SourceDocument:
     if not isinstance(value, Mapping):
         raise ValueError("source must be an object")
     actual = frozenset(value)
-    if actual not in {_SOURCE_KEYS, _SOURCE_KEYS | {"conversion_provenance"}}:
+    allowed = {_SOURCE_KEYS, _SOURCE_KEYS | {"conversion_provenance"}}
+    if allow_generated:
+        allowed.add(_GENERATED_SOURCE_KEYS)
+    if actual not in allowed:
         raise ValueError("source fields mismatch")
     payload = value
     try:
@@ -303,6 +315,13 @@ def _source(value: JsonValue | None) -> SourceDocument:
         conversion_provenance=(
             _conversion(payload.get("conversion_provenance"))
             if "conversion_provenance" in payload
+            else None
+        ),
+        generated_provenance=(
+            generated_document_provenance_from_json(
+                cast(Mapping[str, JsonValue], payload.get("generated_provenance"))
+            )
+            if "generated_provenance" in payload
             else None
         ),
     )
@@ -368,7 +387,25 @@ def _validate_chunks(
         previous_end = chunk.end_offset
 
 
-def decode_source_revision_ingested(payload: JsonObject) -> SourceRevisionIngested:
+def _opaque_generated_chunk(chunk: SourceChunk) -> SourceChunk:
+    """Strip heading-derived data before a generated source enters an event."""
+    return SourceChunk(
+        chunk.chunk_id,
+        chunk.source_id,
+        chunk.revision_id,
+        chunk.start_offset,
+        chunk.end_offset,
+        (),
+        chunk.ordinal,
+        chunk.checksum_sha256,
+        chunk.chunker_version,
+        {"block_kind": "opaque"},
+    )
+
+
+def _decode_source_revision_payload(
+    payload: JsonObject, *, allow_generated: bool
+) -> SourceRevisionIngested:
     if frozenset(payload) != {
         "source",
         "chunks",
@@ -378,7 +415,7 @@ def decode_source_revision_ingested(payload: JsonObject) -> SourceRevisionIngest
         raise ValueError(
             "payload must contain exactly source, chunks, normalized_character_length, and chunking"
         )
-    source = _source(payload.get("source"))
+    source = _source(payload.get("source"), allow_generated=allow_generated)
     chunks_value = payload.get("chunks")
     if not isinstance(chunks_value, tuple):
         raise ValueError("chunks must be an array")
@@ -389,6 +426,17 @@ def decode_source_revision_ingested(payload: JsonObject) -> SourceRevisionIngest
         _integer(payload.get("normalized_character_length"), "normalized_character_length"),
         _chunking(payload.get("chunking")),
     )
+
+
+def decode_source_revision_ingested(payload: JsonObject) -> SourceRevisionIngested:
+    """Decode the strict original/extracted source-revision v1 payload shape."""
+
+    decoded = _decode_source_revision_payload(payload, allow_generated=False)
+    if decoded.source.content_origin is ContentOrigin.GENERATED:
+        raise ValueError("v1 source payload cannot use GENERATED content origin")
+    if decoded.source.generated_provenance is not None:
+        raise ValueError("v1 source payload cannot carry generated provenance")
+    return decoded
 
 
 def _verified_blob(load_blob: BlobLoader, ref: BlobRef, name: str) -> bytes:
@@ -402,7 +450,7 @@ def _verified_blob(load_blob: BlobLoader, ref: BlobRef, name: str) -> bytes:
     return content
 
 
-def decode_source_revision_event(
+def _decode_source_revision_event_v1(
     event: DomainEvent, load_blob: BlobLoader
 ) -> SourceRevisionIngested:
     if (
@@ -501,3 +549,167 @@ def decode_source_revision_event(
     if decoded.chunks != reconstructed:
         raise ValueError("supplied chunks do not exactly match canonical chunking output")
     return decoded
+
+
+def decode_generated_source_revision_ingested(payload: JsonObject) -> SourceRevisionIngested:
+    """Decode the strict generated-source v2 payload shape."""
+
+    decoded = _decode_source_revision_payload(payload, allow_generated=True)
+    source = decoded.source
+    if source.content_origin is not ContentOrigin.GENERATED:
+        raise ValueError("generated source payload requires GENERATED content origin")
+    if source.generated_provenance is None:
+        raise ValueError("generated source payload requires generated provenance")
+    if source.conversion_provenance is not None:
+        raise ValueError("generated source payload cannot carry conversion provenance")
+    if source.kind is not SourceKind.MARKDOWN:
+        raise ValueError("generated source payload requires Markdown kind")
+    if (
+        source.media_type != "text/markdown"
+        or source.ingestion_method != GENERATED_MARKDOWN_INGESTION_METHOD
+    ):
+        raise ValueError("generated source payload has an unsupported Markdown contract")
+    if source.structure_origin is not StructureOrigin.HUMAN_APPROVED:
+        raise ValueError("generated source payload requires human-approved structure")
+    if source.blob != source.normalized_blob:
+        raise ValueError("generated source blob and normalized blob must be identical")
+    if source.generated_provenance.root_source_id == source.source_id:
+        raise ValueError("generated source cannot use its root source identity")
+    if any(
+        chunk.section_path != () or chunk.metadata != {"block_kind": "opaque"}
+        for chunk in decoded.chunks
+    ):
+        raise ValueError("generated chunks must use opaque non-content metadata")
+    return decoded
+
+
+def decode_generated_source_revision_event(
+    event: DomainEvent, load_blob: BlobLoader
+) -> SourceRevisionIngested:
+    decoded = decode_generated_source_revision_ingested(event.payload)
+    validate_generated_source_revision_identity(event, decoded)
+    source = decoded.source
+    provenance = source.generated_provenance
+    assert provenance is not None
+    original = _verified_blob(load_blob, source.blob, "source.blob")
+    normalized_bytes = _verified_blob(load_blob, source.normalized_blob, "source.normalized_blob")
+    if original != normalized_bytes:
+        raise ValueError("generated source bytes must be identical to normalized bytes")
+    try:
+        normalized_text = normalized_bytes.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as error:
+        raise ValueError("generated source blob must contain strict UTF-8") from error
+    if normalize_utf8(normalized_bytes).content != normalized_bytes:
+        raise ValueError("generated source blob is not canonical newline-normalized NFC text")
+    if sha256(normalized_bytes).hexdigest() != source.checksum_sha256:
+        raise ValueError("generated source checksum does not match canonical bytes")
+    if decoded.normalized_character_length != len(normalized_text):
+        raise ValueError("generated source normalized character length is invalid")
+    for chunk in decoded.chunks:
+        span = normalized_text[chunk.start_offset : chunk.end_offset]
+        digest = sha256(span.encode("utf-8")).hexdigest()
+        if chunk.checksum_sha256 != digest:
+            raise ValueError("generated chunk checksum does not match normalized text span")
+    reconstructed = chunk_text(
+        normalized_text,
+        source_id=source.source_id,
+        revision_id=source.revision_id,
+        kind=source.kind,
+        config=ChunkingConfig(
+            max_characters=decoded.chunking.max_characters,
+            version=decoded.chunking.version,
+        ),
+    )
+    sanitized = tuple(_opaque_generated_chunk(chunk) for chunk in reconstructed)
+    if decoded.chunks != sanitized:
+        raise ValueError("generated chunks do not exactly match canonical chunking output")
+    return decoded
+
+
+def validate_generated_source_revision_identity(
+    event: DomainEvent, decoded: SourceRevisionIngested
+) -> None:
+    """Validate v2 envelope and immutable identities without loading blob bytes."""
+
+    if (
+        event.event_type != SOURCE_REVISION_INGESTED
+        or event.schema_version != GENERATED_SOURCE_REVISION_SCHEMA_VERSION
+    ):
+        raise ValueError("event envelope does not match source.revision_ingested@2")
+    if event.session_id is not None:
+        raise ValueError("generated source ingestion cannot be session-scoped")
+    from study_agent.domain.events import PrincipalKind
+
+    if event.actor.kind is not PrincipalKind.SERVICE:
+        raise ValueError("generated source ingestion requires SERVICE authority")
+    source = decoded.source
+    provenance = source.generated_provenance
+    assert provenance is not None
+    if event.causation_id != provenance.human_decision_event_id:
+        raise ValueError(
+            "generated source ingestion causation must equal the HUMAN decision event"
+        )
+    if source.normalization_version != NORMALIZATION_POLICY_VERSION:
+        raise ValueError("unsupported generated normalization version")
+    if decoded.chunking.version != CHUNKER_VERSION:
+        raise ValueError("unsupported generated chunking version")
+    if source.created_at != event.occurred_at:
+        raise ValueError("generated source.created_at must equal event.occurred_at")
+    expected_source_id = generated_source_id_for(
+        course_id=event.course_id,
+        root_source_id=provenance.root_source_id,
+        root_revision_id=provenance.root_revision_id,
+        artifact_revision_id=provenance.artifact_revision_id,
+        material_run_id=provenance.material_run_id,
+        variant=provenance.variant,
+    )
+    if source.source_id != expected_source_id:
+        raise ValueError("generated source_id does not match canonical lineage")
+    expected_revision = generated_revision_id_for(
+        source_id=source.source_id,
+        root_source_id=provenance.root_source_id,
+        root_revision_id=provenance.root_revision_id,
+        artifact_revision_id=provenance.artifact_revision_id,
+        material_run_id=provenance.material_run_id,
+        variant=provenance.variant,
+        markdown_sha256=source.checksum_sha256,
+        title=source.title,
+        normalization_version=source.normalization_version,
+        chunker_version=decoded.chunking.version,
+        max_characters=decoded.chunking.max_characters,
+        trust_level=source.trust_level,
+        source_role=source.source_role,
+        root_normalized_blob_sha256=provenance.root_normalized_blob_sha256,
+        artifact_provenance_sha256=provenance.artifact_provenance_sha256,
+        direct_parent_blob_sha256=provenance.direct_parent_blob_sha256,
+        human_decision_event_id=provenance.human_decision_event_id,
+        human_decision_at=provenance.human_decision_at,
+    )
+    if source.revision_id != expected_revision:
+        raise ValueError("generated revision_id does not match canonical approval lineage")
+    expected_event = generated_source_event_id_for(
+        event.course_id, source.source_id, source.revision_id
+    )
+    if event.event_id != expected_event:
+        raise ValueError("generated source event id does not match canonical identity")
+    for chunk in decoded.chunks:
+        expected_chunk = chunk_id_for(
+            source_id=chunk.source_id,
+            revision_id=chunk.revision_id,
+            start_offset=chunk.start_offset,
+            end_offset=chunk.end_offset,
+            checksum_sha256=chunk.checksum_sha256,
+            chunker_version=chunk.chunker_version,
+        )
+        if chunk.chunk_id != expected_chunk:
+            raise ValueError("generated chunk_id does not match canonical span identity")
+
+
+def decode_source_revision_event(
+    event: DomainEvent, load_blob: BlobLoader
+) -> SourceRevisionIngested:
+    if event.schema_version == SOURCE_REVISION_SCHEMA_VERSION:
+        return _decode_source_revision_event_v1(event, load_blob)
+    if event.schema_version == GENERATED_SOURCE_REVISION_SCHEMA_VERSION:
+        return decode_generated_source_revision_event(event, load_blob)
+    raise ValueError("event envelope does not match a supported source revision schema")

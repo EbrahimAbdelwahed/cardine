@@ -7,10 +7,12 @@ owned by the canonical repository services or by their shared harness surface.
 from __future__ import annotations
 
 import asyncio
+import re
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
+from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 from threading import Lock, Thread
@@ -29,7 +31,7 @@ from cardine.cli.repository import (
     ModelAdapterRegistry,
 )
 from cardine.courses import ProjectionCourseView
-from cardine.diagnostics import TurnTraceStore
+from cardine.diagnostics import TurnActivityStore, TurnTraceStore
 from cardine.documents import (
     AnyDocErrorCode,
     AnyDocWorkerError,
@@ -107,6 +109,7 @@ from study_agent.domain import (
     GradeLifecycle,
     PresentationId,
     PrincipalKind,
+    RevisionId,
     SessionId,
     SourceId,
     StatementId,
@@ -139,7 +142,7 @@ from study_agent.recall import (
     RetryableRecallConflictError,
 )
 from study_agent.recall.events import REVIEW_RECORDED, SCHEDULE_APPLIED
-from study_agent.retrieval import SourceContentError
+from study_agent.retrieval import SourceContentError, SourceRevisionRecord
 from study_agent.sessions import ProjectionTutorPresentationView
 from study_agent.sessions.events import grounded_answer_manifest
 from study_agent.state import PayloadValidationError, Projection
@@ -173,6 +176,31 @@ MAX_SOURCE_TITLE_CHARS = 240
 
 _REPOSITORY_LOCKS_GUARD = Lock()
 _REPOSITORY_MUTATION_LOCKS: dict[Path, Lock] = {}
+
+
+@dataclass(frozen=True, slots=True)
+class SourceDocumentView:
+    """Verified bytes and bounded display metadata for one source revision."""
+
+    title: str
+    viewer_kind: str
+    media_type: str
+    content: bytes
+    page_count: int | None = None
+
+    def __post_init__(self) -> None:
+        if not self.title or self.title != self.title.strip():
+            raise ValueError("source document title is invalid")
+        if self.viewer_kind not in {"pdf", "markdown", "text"}:
+            raise ValueError("source document viewer kind is invalid")
+        if not self.media_type or self.media_type != self.media_type.strip():
+            raise ValueError("source document media type is invalid")
+        if not isinstance(self.content, bytes) or not self.content:
+            raise ValueError("source document content is invalid")
+        if self.page_count is not None and (
+            type(self.page_count) is not int or self.page_count < 1
+        ):
+            raise ValueError("source document page count is invalid")
 
 
 class UiApplicationPort(Protocol):
@@ -223,7 +251,10 @@ class UiRequestError(ValueError):
 
 
 def _source_grounding_status(
-    repository: LocalRepository, course_id: CourseId, snapshot: TutorSnapshotV1
+    repository: LocalRepository,
+    course_id: CourseId,
+    snapshot: TutorSnapshotV1,
+    records: Sequence[SourceRevisionRecord] | None = None,
 ) -> JsonObject:
     """Expose grounding only when every displayed source has readable text."""
 
@@ -233,16 +264,21 @@ def _source_grounding_status(
     if expected_chunks == 0:
         return {"status": "empty", "indexed_chunks": 0}
     try:
-        documents = tuple(
-            item
-            for item in repository.for_course(course_id).content.documents()
-            if item.source_id not in retired
+        catalog = (
+            tuple(records)
+            if records is not None
+            else repository.for_course(course_id).content.catalog()
+        )
+        indexed_chunks = sum(
+            len(item.chunks)
+            for item in catalog
+            if item.is_current_revision and item.source.source_id not in retired
         )
     except (SourceContentError, OSError, ValueError):
         return {"status": "unavailable", "indexed_chunks": 0}
-    if len(documents) != expected_chunks:
-        return {"status": "unavailable", "indexed_chunks": len(documents)}
-    return {"status": "available", "indexed_chunks": len(documents)}
+    if indexed_chunks != expected_chunks:
+        return {"status": "unavailable", "indexed_chunks": indexed_chunks}
+    return {"status": "available", "indexed_chunks": indexed_chunks}
 
 
 def _flashcard_capability_available(
@@ -281,6 +317,7 @@ class RepositoryUiApplication(UiApplicationPort):
             LocalRepository.open
         ),
         turn_traces: TurnTraceStore | None = None,
+        turn_activity: TurnActivityStore | None = None,
         document_policy: DocumentImportPolicy | None = None,
     ) -> None:
         self._repository = Path(repository)
@@ -304,6 +341,7 @@ class RepositoryUiApplication(UiApplicationPort):
         self._lock = _repository_mutation_lock(self._repository)
         self._indexing_worker_lock = Lock()
         self._turn_traces = turn_traces if turn_traces is not None else TurnTraceStore()
+        self._turn_activity = turn_activity if turn_activity is not None else TurnActivityStore()
         self._document_policy = document_policy or document_import_policy()
         self._indexing_view: JsonObject = {
             "status": "empty",
@@ -345,6 +383,10 @@ class RepositoryUiApplication(UiApplicationPort):
         return self._turn_traces
 
     @property
+    def turn_activity(self) -> TurnActivityStore:
+        return self._turn_activity
+
+    @property
     def document_policy(self) -> DocumentImportPolicy:
         return self._document_policy
 
@@ -380,6 +422,12 @@ class RepositoryUiApplication(UiApplicationPort):
             }
 
     def get(self, path: str) -> JsonObject:
+        prefix = "/api/v1/turns/"
+        suffix = "/activity"
+        if path.startswith(prefix) and path.endswith(suffix):
+            request_id = path[len(prefix) : -len(suffix)]
+            if request_id and "/" not in request_id:
+                return self._turn_activity.snapshot(request_id)
         if path == "/api/v1/workspace":
             return self._workspace()
         if path == "/api/v1/indexing/status":
@@ -400,8 +448,9 @@ class RepositoryUiApplication(UiApplicationPort):
         if route is None:
             raise UiRequestError("route not found", status_code=404)
         try:
-            with self._lock, self._open() as repository:
+            with self._open() as repository:
                 readiness_projection, snapshot = self._captured_state(repository)
+                source_records = repository.for_course(self._course_id).content.catalog()
 
                 def captured(_course_id: CourseId) -> Projection:
                     return readiness_projection
@@ -448,7 +497,12 @@ class RepositoryUiApplication(UiApplicationPort):
                         "context": context,
                         "presentations": presentations,
                         "source_grounding": _source_grounding_status(
-                            repository, self._course_id, snapshot
+                            repository, self._course_id, snapshot, source_records
+                        ),
+                        "source_records": (
+                            source_records
+                            if path in {"/api/v1/materials", "/api/v1/session"}
+                            else ()
                         ),
                         "pageindex": repository.pageindex_summary(self._course_id),
                         "indexing": self._indexing_record_payload(
@@ -466,6 +520,10 @@ class RepositoryUiApplication(UiApplicationPort):
                             self._course_id,
                             self._session_id,
                             presentations,
+                        ),
+                        "study_memory_ids": repository.study_memory.validated_memory_ids(
+                            self._course_id,
+                            through_sequence=snapshot.high_water_sequence,
                         ),
                     },
                 )
@@ -497,6 +555,69 @@ class RepositoryUiApplication(UiApplicationPort):
                 "selected course or session was not found", status_code=404
             ) from error
         except (LocalRepositoryError, OSError, ValueError, RuntimeError) as error:
+            raise UiRequestError("repository runtime is unavailable", status_code=503) from error
+
+    def read_source_document(
+        self, source_id: str, revision_id: str
+    ) -> SourceDocumentView:
+        """Resolve one course-owned immutable revision to verified display bytes."""
+
+        try:
+            selected_source = SourceId(source_id)
+            selected_revision = RevisionId(revision_id)
+        except (TypeError, ValueError):
+            raise UiRequestError("source revision was not found", status_code=404) from None
+        try:
+            with self._open() as repository:
+                if selected_source in repository.source_lifetime.retired_source_ids(
+                    self._course_id
+                ):
+                    raise UiRequestError("source revision was not found", status_code=404)
+                record = next(
+                    (
+                        item
+                        for item in repository.for_course(self._course_id).content.catalog()
+                        if item.source.source_id == selected_source
+                        and item.source.revision_id == selected_revision
+                    ),
+                    None,
+                )
+                if record is None:
+                    raise UiRequestError("source revision was not found", status_code=404)
+                provenance = record.source.conversion_provenance
+                if provenance is not None:
+                    return SourceDocumentView(
+                        title=record.source.title,
+                        viewer_kind="pdf",
+                        media_type="application/pdf",
+                        content=repository.blobs.get(record.source.blob),
+                        page_count=provenance.page_count,
+                    )
+                viewer_kind = "markdown" if record.source.kind.value == "markdown" else "text"
+                media_type = (
+                    "text/markdown; charset=utf-8"
+                    if viewer_kind == "markdown"
+                    else "text/plain; charset=utf-8"
+                )
+                return SourceDocumentView(
+                    title=record.source.title,
+                    viewer_kind=viewer_kind,
+                    media_type=media_type,
+                    content=record.text.encode("utf-8"),
+                )
+        except UiRequestError:
+            raise
+        except SourceContentError:
+            raise UiRequestError(
+                "source content is unavailable", status_code=503,
+                diagnostic_code="source_content_unavailable",
+            ) from None
+        except (LookupError, OSError, UnicodeError, ValueError):
+            raise UiRequestError(
+                "source content is unavailable", status_code=503,
+                diagnostic_code="source_content_unavailable",
+            ) from None
+        except (LocalRepositoryError, RuntimeError) as error:
             raise UiRequestError("repository runtime is unavailable", status_code=503) from error
 
     def post(self, path: str, command: Mapping[str, object]) -> JsonObject:
@@ -567,16 +688,40 @@ class RepositoryUiApplication(UiApplicationPort):
         if context_kind is not None:
             return self._post_context_resolution(context_kind, command)
         payload_key = "content" if continuation_fingerprint is None else "response"
-        request_id, expected_sequence, payload = _command(command, payload_key=payload_key)
+        request_id, expected_sequence, payload = _command(
+            command, payload_key=payload_key, optional_payload_keys={"lesson_pin"}
+        )
         content = _bounded_content(payload.get(payload_key))
-        with self._turn_traces.capture(request_id, expected_sequence) as trace_id, self._lock:
+        # An attached lesson is the learner's explicit source choice for this
+        # turn.  It is decoded before any provider work, and an invalid pin
+        # fails the turn instead of silently widening retrieval.
+        lesson_pin = (
+            _lesson_pin_payload_from_json(payload["lesson_pin"])
+            if payload.get("lesson_pin") is not None
+            else None
+        )
+        activity_status = "done"
+        with self._turn_activity.capture(request_id), self._turn_traces.capture(
+            request_id, expected_sequence
+        ) as trace_id, self._lock:
             try:
                 with self._open() as repository:
                     before_artifacts = repository.artifacts.get(self._course_id)
                     before_revision_ids = {str(item.id) for item in before_artifacts.revisions}
-                    application = repository.tutor_conversation(
-                        self._course_id, session_id=self._session_id
-                    )
+                    try:
+                        application = repository.tutor_conversation(
+                            self._course_id,
+                            session_id=self._session_id,
+                            lesson_pin=lesson_pin,
+                        )
+                    except ValueError as error:
+                        # A foreign or stale attachment is a request problem,
+                        # not a runtime outage, and must say so.
+                        if lesson_pin is None:
+                            raise
+                        raise UiRequestError(
+                            str(error), status_code=400, trace_id=trace_id
+                        ) from error
                     turn = ConversationTurnCommand(
                         content,
                         self._context(request_id, request_id),
@@ -587,6 +732,7 @@ class RepositoryUiApplication(UiApplicationPort):
                         if continuation_fingerprint is None
                         else application.resume_continuation(continuation_fingerprint, turn)
                     )
+                    repository.settle_study_memory(self._course_id, self._session_id)
                     projection, refreshed = self._captured_state(repository)
 
                     def captured(_course_id: CourseId) -> Projection:
@@ -602,6 +748,10 @@ class RepositoryUiApplication(UiApplicationPort):
                                 captured
                             ).presentations(self._course_id, self._session_id),
                             "continuation": result.pending_continuation,
+                            "study_memory_ids": repository.study_memory.validated_memory_ids(
+                                self._course_id,
+                                through_sequence=refreshed.high_water_sequence,
+                            ),
                         },
                     )
                     settled_artifacts = ProjectionArtifactView(captured).get(self._course_id)
@@ -612,6 +762,17 @@ class RepositoryUiApplication(UiApplicationPort):
                         and item.status is ArtifactRevisionStatus.PROPOSED
                         and item.kind is StudyArtifactKind.FLASHCARD
                     )
+                    settled_activity = self._turn_activity.settle(request_id, status="done")
+                    timeline = list(cast(Sequence[JsonObject], session.get("timeline", ())))
+                    for index in range(len(timeline) - 1, -1, -1):
+                        if timeline[index].get("role") in {"assistant", "tutor"}:
+                            timeline[index] = {
+                                **timeline[index],
+                                "activity_records": settled_activity["records"],
+                                "activity_state": settled_activity["state"],
+                            }
+                            break
+                    session = {**session, "timeline": tuple(timeline)}
                     return {
                         "schema_version": 1,
                         "request_id": request_id,
@@ -634,20 +795,25 @@ class RepositoryUiApplication(UiApplicationPort):
                                 "destination": "proposte",
                             }
                         ),
+                        "activity_records": settled_activity["records"],
                     }
             except UiRequestError:
+                activity_status = "failed"
                 raise
             except ConversationTurnError as error:
+                activity_status = "failed"
                 raise _conversation_ui_error(
                     error, request_id=request_id, trace_id=trace_id
                 ) from error
             except (CourseNotFoundError, SessionNotFoundError, FileNotFoundError) as error:
+                activity_status = "failed"
                 raise UiRequestError(
                     "selected course or session was not found",
                     status_code=404,
                     trace_id=trace_id,
                 ) from error
             except ModelAdapterConfigurationError as error:
+                activity_status = "failed"
                 raise UiRequestError(
                     "configured model credential is unavailable",
                     status_code=503,
@@ -660,11 +826,14 @@ class RepositoryUiApplication(UiApplicationPort):
                 ValueError,
                 RuntimeError,
             ) as error:
+                activity_status = "failed"
                 raise UiRequestError(
                     "repository runtime is unavailable",
                     status_code=503,
                     trace_id=trace_id,
                 ) from error
+            finally:
+                self._turn_activity.settle(request_id, status=activity_status)
 
     def _lesson_search(self, command: Mapping[str, object]) -> JsonObject:
         request_id, _expected, payload = _workspace_command(
@@ -2138,11 +2307,21 @@ class RepositoryUiApplication(UiApplicationPort):
     @staticmethod
     def _session(snapshot: TutorSnapshotV1, metadata: Mapping[str, object]) -> JsonObject:
         presentations = metadata.get("presentations", ())
+        source_records = cast(
+            tuple[SourceRevisionRecord, ...], metadata.get("source_records", ())
+        )
         readiness = metadata.get("readiness")
-        canonical_timeline = [_timeline_item(item) for item in snapshot.timeline]
+        private_note_ids = frozenset(
+            str(item) for item in cast(Sequence[object], metadata.get("study_memory_ids", ()))
+        )
+        canonical_timeline = [
+            _timeline_item(item)
+            for item in snapshot.timeline
+            if str(getattr(item, "interaction_id", "")) not in private_note_ids
+        ]
         if isinstance(presentations, Sequence):
             canonical_timeline.extend(
-                _presentation_timeline_item(item)
+                _presentation_timeline_item(item, source_records)
                 for item in presentations
                 if hasattr(item, "course_sequence")
             )
@@ -2172,6 +2351,10 @@ class RepositoryUiApplication(UiApplicationPort):
     def _materials(snapshot: TutorSnapshotV1, metadata: Mapping[str, object]) -> JsonObject:
         grounding = cast(Mapping[str, object], metadata["source_grounding"])
         groundable = grounding["status"] == "available"
+        records = {
+            (str(item.source.source_id), str(item.source.revision_id)): item
+            for item in cast(tuple[SourceRevisionRecord, ...], metadata.get("source_records", ()))
+        }
         retired = {
             str(item) for item in cast(tuple[object, ...], metadata.get("retired_source_ids", ()))
         }
@@ -2188,6 +2371,9 @@ class RepositoryUiApplication(UiApplicationPort):
                     "trust_level": item.trust_level,
                     "chunk_count": item.chunk_count,
                     "groundable": groundable,
+                    "viewer": _source_viewer_payload(
+                        records.get((str(item.source_id), str(item.current_revision_id)))
+                    ),
                     "provenance": {
                         "source_role": item.source_role,
                         "trust_level": item.trust_level,
@@ -3205,22 +3391,87 @@ def _timeline_item(item: object) -> JsonObject:
     }
 
 
-def _presentation_timeline_item(item: object) -> JsonObject:
+def _presentation_timeline_item(
+    item: object, source_records: Sequence[SourceRevisionRecord] = ()
+) -> JsonObject:
     kind = str(getattr(getattr(item, "kind", None), "value", "assistant_message"))
     occurred_at = getattr(item, "occurred_at", None)
     reply_id = getattr(item, "in_reply_to_interaction_id", None)
+    content = str(getattr(item, "content", ""))
     return {
         "role": "assistant",
         "kind": kind,
         "interaction_id": str(getattr(item, "id", "")),
         "occurred_at": None if occurred_at is None else occurred_at.isoformat(),
-        "content": str(getattr(item, "content", "")),
+        "content": content,
+        "citations": _source_viewer_citations(content, source_records),
         "event_id": str(getattr(item, "event_id", "")),
         "course_sequence": getattr(item, "course_sequence", 0),
         "run_id": None,
         "status": "pending" if kind == "continuation_request" else "completed",
         "in_reply_to_interaction_id": None if reply_id is None else str(reply_id),
     }
+
+
+def _source_viewer_payload(record: SourceRevisionRecord | None) -> JsonObject:
+    if record is None:
+        return {"kind": "unavailable", "page_count": None}
+    provenance = record.source.conversion_provenance
+    return {
+        "kind": (
+            "pdf"
+            if provenance is not None
+            else "markdown"
+            if record.source.kind.value == "markdown"
+            else "text"
+        ),
+        "page_count": None if provenance is None else provenance.page_count,
+    }
+
+
+def _source_viewer_citations(
+    content: str, source_records: Sequence[SourceRevisionRecord]
+) -> tuple[JsonObject, ...]:
+    marker = "\n\nFonti verificate:\n"
+    if marker not in content:
+        return ()
+    raw_sources = content.rsplit(marker, 1)[1]
+    citations: list[JsonObject] = []
+    seen: set[tuple[str, str, str]] = set()
+    for raw_line in raw_sources.splitlines():
+        locator = raw_line.removeprefix("- ").strip() if raw_line.startswith("- ") else ""
+        if not locator or locator.startswith("Altre "):
+            continue
+        matches = tuple(
+            record
+            for record in source_records
+            if locator == record.source.title
+            or locator.startswith(record.source.title + " ·")
+        )
+        if len(matches) != 1:
+            continue
+        record = matches[0]
+        identity = (
+            str(record.source.source_id),
+            str(record.source.revision_id),
+            locator,
+        )
+        if identity in seen:
+            continue
+        seen.add(identity)
+        page_match = re.search(r" · pages? (\d+)(?:-| ·|$)", locator)
+        viewer = _source_viewer_payload(record)
+        citations.append(
+            {
+                "label": locator,
+                "title": record.source.title,
+                "source_id": identity[0],
+                "revision_id": identity[1],
+                "viewer_kind": viewer["kind"],
+                "page": None if page_match is None else int(page_match.group(1)),
+            }
+        )
+    return tuple(citations)
 
 
 def _active_continuation(
@@ -3403,6 +3654,7 @@ def _command(
     *,
     payload_key: str | None = "content",
     allow_empty_payload: bool = False,
+    optional_payload_keys: set[str] | None = None,
 ) -> tuple[str, int, Mapping[str, object]]:
     if not isinstance(command, Mapping) or set(command) != {
         "schema_version",
@@ -3427,11 +3679,17 @@ def _command(
     if type(expected) is not int or expected < 0:
         raise UiRequestError("expected_sequence is invalid")
     expected_payload_keys = set() if payload_key is None else {payload_key}
+    allowed_payload_keys = expected_payload_keys | (optional_payload_keys or set())
     actual_payload_keys = set(payload) if isinstance(payload, Mapping) else None
     if allow_empty_payload:
         valid_payload = actual_payload_keys in (set(), {"supersedes_grade_id"})
     else:
-        valid_payload = actual_payload_keys == expected_payload_keys
+        # Required keys must all be present; declared optional keys may be, and
+        # nothing else is admitted.
+        valid_payload = actual_payload_keys is not None and (
+            expected_payload_keys <= actual_payload_keys
+            and not actual_payload_keys - allowed_payload_keys
+        )
     if not isinstance(payload, Mapping) or not valid_payload:
         raise UiRequestError("command payload is invalid")
     return request_id, expected, payload

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-DEMO_DIR = Path(__file__).parents[3] / "src" / "study_agent" / "demo"
+DEMO_DIR = Path(__file__).parents[3] / "src" / "cardine" / "demo"
 
 
 def test_cardine_assets_are_split_and_reference_each_other() -> None:
@@ -117,6 +117,25 @@ def test_public_demo_discovers_mode_before_private_auth_probe() -> None:
     assert 'fetchJson("/api/v1/auth/session")' in javascript
 
 
+def test_local_repository_hides_the_private_account_control() -> None:
+    javascript = (DEMO_DIR / "browser.js").read_text(encoding="utf-8")
+
+    assert 'state.auth.mode === "local_repository"' in javascript
+    assert "control.hidden = true" in javascript
+
+
+def test_local_settings_copy_omits_private_account_and_logout_controls() -> None:
+    javascript = (DEMO_DIR / "browser.js").read_text(encoding="utf-8")
+    start = javascript.index("function renderSettings")
+    end = javascript.index("async function loadSettings", start)
+    settings_renderer = javascript[start:end]
+
+    assert 'const localMode = settingsMode === "local_repository"' in settings_renderer
+    assert 'const accountCard = localMode ? ""' in settings_renderer
+    assert 'const eyebrow = localMode ? "ambiente locale · impostazioni"' in settings_renderer
+    assert 'data-auth-logout' in settings_renderer
+
+
 def test_private_workspace_and_model_check_surfaces_are_wired() -> None:
     javascript = (DEMO_DIR / "browser.js").read_text(encoding="utf-8")
 
@@ -158,6 +177,39 @@ def test_private_chat_can_open_and_confirm_course_creation() -> None:
         "Crea e inizia a studiare",
     ):
         assert marker in javascript
+
+
+def test_sources_and_chat_share_one_canonical_document_viewer() -> None:
+    page = (DEMO_DIR / "browser.html").read_text(encoding="utf-8")
+    css = (DEMO_DIR / "browser.css").read_text(encoding="utf-8")
+    javascript = (DEMO_DIR / "browser.js").read_text(encoding="utf-8")
+    primitives = (DEMO_DIR / "ai-primitives.js").read_text(encoding="utf-8")
+
+    assert 'id="source-viewer"' in page
+    assert 'id="source-viewer-content"' in page
+    assert 'id="materials-viewer"' in javascript
+    assert 'data-source-viewer-mode="page"' in javascript
+    assert "data-source-viewer" in javascript + primitives
+    assert "openSourceViewer" in javascript
+    assert 'viewer_kind === "pdf"' in javascript
+    assert "CardineAI.markdown" in javascript
+    assert "markdown: renderMarkdown" in primitives
+    assert ".source-viewer" in css
+
+
+def test_source_viewer_is_lateral_on_sources_and_resizable_from_chat() -> None:
+    page = (DEMO_DIR / "browser.html").read_text(encoding="utf-8")
+    css = (DEMO_DIR / "browser.css").read_text(encoding="utf-8")
+    javascript = (DEMO_DIR / "browser.js").read_text(encoding="utf-8")
+
+    assert 'class="section-grid section-grid--materials"' in javascript
+    assert 'class="section-grid__side materials-pane"' in javascript
+    assert 'class="materials-viewer"' in javascript
+    assert 'data-source-viewer-resize' in page
+    assert 'aria-label="Ridimensiona il visualizzatore"' in page
+    assert "bindSourceViewerResize" in javascript
+    assert ".source-viewer__resize" in css
+    assert ".materials-pane .materials-viewer" in css
 
 
 def test_collapsed_sidebar_keeps_search_and_account_controls_on_same_grid() -> None:

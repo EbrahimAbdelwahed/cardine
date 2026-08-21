@@ -128,7 +128,9 @@ class ModelErrorCode(StrEnum):
     UNAVAILABLE = "unavailable"
     MODEL_UNAVAILABLE = "model_unavailable"
     ENDPOINT_INCOMPATIBLE = "endpoint_incompatible"
+    SCHEMA_INCOMPATIBLE = "schema_incompatible"
     AUTHENTICATION = "authentication"
+    AUTHORIZATION = "authorization"
     RATE_LIMITED = "rate_limited"
     TIMEOUT = "timeout"
     PROTOCOL_ERROR = "protocol_error"
@@ -180,9 +182,7 @@ class ModelResponse:
         if self.tool_calls and self.finish_reason is not ModelFinishReason.TOOL_CALLS:
             raise ValueError("tool call responses require the tool_calls finish reason")
         if self.structured_output is not None:
-            object.__setattr__(
-                self, "structured_output", freeze_object(self.structured_output)
-            )
+            object.__setattr__(self, "structured_output", freeze_object(self.structured_output))
 
 
 class ModelStreamEventKind(StrEnum):

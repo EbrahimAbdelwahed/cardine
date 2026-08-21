@@ -76,7 +76,34 @@ _TOOL_FINGERPRINTS = {
     "source.search": "f66b9bf4a901367ab9867efeab53bd749218e8d01f1639282300abb55b2f5c97",
 }
 _PARSER_INVOCATIONS = {
+    "artifact.decisions": (
+        "artifact",
+        "decisions",
+        "course-1",
+        "[]",
+        "--session-id",
+        "session-1",
+        "--request-id",
+        "request-1",
+        "--expected-sequence",
+        "1",
+    ),
     "ask": ("ask", "course-1", "question"),
+    "consent.grant": (
+        "consent",
+        "grant",
+        "course-1",
+        "--request-id",
+        "request-1",
+    ),
+    "consent.revoke": (
+        "consent",
+        "revoke",
+        "course-1",
+        "--request-id",
+        "request-1",
+    ),
+    "consent.status": ("consent", "status", "course-1"),
     "course.create": (
         "course",
         "create",
@@ -90,12 +117,48 @@ _PARSER_INVOCATIONS = {
     "doctor": ("doctor",),
     "export": ("export", "course-1", "--output", "export"),
     "init": ("init", "repository"),
+    "lesson.flashcards": (
+        "lesson",
+        "flashcards",
+        "course-1",
+        "lesson",
+        "--lesson-pin",
+        "{}",
+        "--session-id",
+        "session-1",
+        "--request-id",
+        "request-1",
+    ),
+    "lesson.search": ("lesson", "search", "course-1", "lesson"),
+    "lesson.select": ("lesson", "select", "course-1", "lesson", "candidate-1"),
     "manifest.apply": ("manifest", "apply", "--expect-plan", "0" * 64),
     "manifest.plan": ("manifest", "plan"),
     "manifest.schema": ("manifest", "schema"),
     "manifest.status": ("manifest", "status"),
     "manifest.validate": ("manifest", "validate"),
     "operator.skill": ("operator", "skill", "--output", "operator-skill.md"),
+    "pageindex.disable": (
+        "pageindex",
+        "disable",
+        "course-1",
+        "source-1",
+        "revision-1",
+    ),
+    "pageindex.enable": (
+        "pageindex",
+        "enable",
+        "course-1",
+        "source-1",
+        "revision-1",
+    ),
+    "pageindex.rebuild": (
+        "pageindex",
+        "rebuild",
+        "course-1",
+        "source-1",
+        "revision-1",
+    ),
+    "pageindex.status": ("pageindex", "status", "course-1"),
     "session.list": ("session", "list", "course-1"),
     "session.get": ("session", "get", "course-1", "session-1"),
     "session.resume": ("session", "resume", "course-1", "session-1"),
@@ -108,6 +171,23 @@ _PARSER_INVOCATIONS = {
     ),
     "source.add": ("source", "add", "course-1", "source.md"),
     "source.list": ("source", "list", "course-1"),
+    "source.restore": (
+        "source",
+        "restore",
+        "course-1",
+        "source-1",
+        "--request-id",
+        "request-1",
+    ),
+    "source.retire": (
+        "source",
+        "retire",
+        "course-1",
+        "source-1",
+        "--request-id",
+        "request-1",
+    ),
+    "source.status": ("source", "status", "course-1", "source-1"),
     "tool.describe": ("tool", "describe", "grounding.ask"),
     "tool.list": ("tool", "list"),
 }
@@ -143,7 +223,6 @@ def _success_document(capsys: pytest.CaptureFixture[str]) -> dict[str, Any]:
 
 
 def _assert_closed_manifest(manifest: Mapping[str, Any]) -> None:
-    """Assert the public discovery schema, including every closed object shape."""
     assert set(manifest) == _ROOT_KEYS
     assert manifest["contract_version"] == "agent-operations@1"
     assert manifest["offline_default"] is True
@@ -178,9 +257,9 @@ def _assert_closed_manifest(manifest: Mapping[str, Any]) -> None:
     tools = manifest["study_tools"]
     tool_names = [item["manifest"]["name"] for item in tools]
     assert tool_names == sorted(_TOOL_FINGERPRINTS)
-    assert {item["manifest"]["name"]: item["fingerprint"] for item in tools} == (
-        _TOOL_FINGERPRINTS
-    )
+    assert {
+        item["manifest"]["name"]: item["fingerprint"] for item in tools
+    } == _TOOL_FINGERPRINTS
     for tool in tools:
         assert set(tool) == _TOOL_ENTRY_KEYS
         assert set(tool["manifest"]) == _TOOL_MANIFEST_KEYS
@@ -192,7 +271,6 @@ def test_describe_has_the_exact_closed_contract_and_stable_order(
     assert main(("--json", "describe")) == 0
     manifest = _success_document(capsys)["data"]
     _assert_closed_manifest(manifest)
-
     assert main(("--json", "describe")) == 0
     assert _success_document(capsys)["data"] == manifest
 
@@ -202,10 +280,13 @@ def test_describe_models_repeated_init_settings_as_cli_strings(
 ) -> None:
     assert main(("--json", "describe")) == 0
     manifest = _success_document(capsys)["data"]
-
-    init_command = next(item for item in manifest["commands"] if item["name"] == "init")
+    init_command = next(
+        item for item in manifest["commands"] if item["name"] == "init"
+    )
     model_setting = next(
-        item for item in init_command["arguments"] if item["name"] == "model_setting"
+        item
+        for item in init_command["arguments"]
+        if item["name"] == "model_setting"
     )
     assert {
         "value_type": model_setting["value_type"],
@@ -227,7 +308,6 @@ def test_each_discovered_command_maps_to_exactly_one_parser_leaf(
     command_names = {
         item["name"] for item in _success_document(capsys)["data"]["commands"]
     }
-
     parser = build_parser()
     parsed_names = [
         parser.parse_args(arguments).command_name
@@ -237,11 +317,15 @@ def test_each_discovered_command_maps_to_exactly_one_parser_leaf(
     assert len(parsed_names) == len(set(parsed_names))
 
     expected_groups = {
+        "artifact": "{decisions}",
+        "consent": "{status,grant,revoke}",
         "course": "{create,list}",
+        "lesson": "{search,select,flashcards}",
         "manifest": "{schema,validate,plan,status,apply}",
         "operator": "{skill}",
+        "pageindex": "{status,rebuild,disable,enable}",
         "session": "{list,start,get,resume}",
-        "source": "{add,list}",
+        "source": "{add,list,status,retire,restore}",
         "tool": "{list,describe}",
     }
     for group, choices in expected_groups.items():
@@ -274,20 +358,16 @@ def test_discovery_is_offline_and_side_effect_free_in_an_empty_directory(
     monkeypatch.setattr(socket, "socket", _NoNetworkSocket)
     monkeypatch.setattr(socket, "create_connection", forbidden)
     monkeypatch.setattr(sqlite3, "connect", forbidden)
-
     assert main(("--json", *arguments), environment=_UnreadableEnvironment()) == 0
     document = _success_document(capsys)
     assert document["command"] == command
     assert tuple(tmp_path.iterdir()) == before == ()
 
 
-def test_tool_list_and_describe_are_consistent(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
+def test_tool_list_and_describe_are_consistent(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(("--json", "tool", "list")) == 0
     listed = _success_document(capsys)["data"]["tools"]
     assert [item["manifest"]["name"] for item in listed] == sorted(_TOOL_FINGERPRINTS)
-
     assert main(("--json", "tool", "describe", "grounding.ask")) == 0
     described = _success_document(capsys)["data"]["tool"]
     assert described == next(

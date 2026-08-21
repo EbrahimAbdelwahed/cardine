@@ -14,6 +14,12 @@ _MAX_TEXT_BYTES = 16 * 1024 * 1024
 _ATX = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*$")
 _CLOSING_HASHES = re.compile(r"[ \t]+#+[ \t]*$")
 _FENCE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})(.*)$")
+_NATURAL_LESSON_TITLE = re.compile(
+    r"^lezione\s+(?:numero\s+)?0*(\d+)$", re.IGNORECASE
+)
+_CONVERTED_LESSON_TITLE = re.compile(
+    r"^l[\s_-]*0*(\d+)(?=$|[\s_./-])", re.IGNORECASE
+)
 
 
 class SearchDisposition(StrEnum):
@@ -154,6 +160,31 @@ def _candidate(source: LessonSource, title: str, start: int, end: int) -> Lesson
     )
 
 
+def lesson_title_matches(title: str, query: str) -> bool:
+    """Match a natural lesson reference to one mechanically converted heading."""
+
+    if title.casefold().strip() == query.casefold().strip():
+        return True
+    query_match = _NATURAL_LESSON_TITLE.fullmatch(query.strip())
+    if query_match is None:
+        query_match = _CONVERTED_LESSON_TITLE.match(query.strip())
+    title_match = _NATURAL_LESSON_TITLE.fullmatch(title.strip())
+    if title_match is None:
+        title_match = _CONVERTED_LESSON_TITLE.match(title.strip())
+    return bool(
+        query_match is not None
+        and title_match is not None
+        and int(query_match.group(1)) == int(title_match.group(1))
+    )
+
+
+def _lesson_number(value: str) -> int | None:
+    match = _NATURAL_LESSON_TITLE.fullmatch(value.strip())
+    if match is None:
+        match = _CONVERTED_LESSON_TITLE.match(value.strip())
+    return None if match is None else int(match.group(1))
+
+
 def _markdown_sections(source: LessonSource, query: str) -> tuple[LessonCandidate, ...]:
     headings: list[tuple[int, int, str]] = []
     fence_character: str | None = None
@@ -178,13 +209,18 @@ def _markdown_sections(source: LessonSource, query: str) -> tuple[LessonCandidat
                     headings.append((offset, len(match.group(1)), title))
         offset += len(line_with_end)
     matches: list[LessonCandidate] = []
-    needle = query.casefold()
     for index, (start, level, title) in enumerate(headings):
-        if title.casefold() != needle:
+        if not lesson_title_matches(title, query):
             continue
         end = len(source.text)
-        for next_start, next_level, _ in headings[index + 1 :]:
-            if next_level <= level:
+        lesson_number = _lesson_number(title)
+        for next_start, next_level, next_title in headings[index + 1 :]:
+            next_lesson_number = _lesson_number(next_title)
+            if (
+                lesson_number is not None
+                and next_lesson_number is not None
+                and next_lesson_number != lesson_number
+            ) or (lesson_number is None and next_level <= level):
                 end = next_start
                 break
         matches.append(_candidate(source, title, start, end))

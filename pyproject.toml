@@ -72,3 +72,7 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/integration/test_conversation_turn_application.py" = ["E501"]
+"tests/integration/test_reference_cli_release.py" = ["E501"]

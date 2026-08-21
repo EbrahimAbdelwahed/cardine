@@ -37,7 +37,10 @@ from study_agent.domain import (
     TutorTimelineStatus,
 )
 from study_agent.domain._validation import JsonValue
-from study_agent.ingestion import decode_source_revision_ingested
+from study_agent.ingestion import (
+    decode_generated_source_revision_ingested,
+    decode_source_revision_ingested,
+)
 from study_agent.ports import EventStore
 from study_agent.sessions import (
     SESSION_ANSWER_RECORDED,
@@ -62,7 +65,7 @@ class TutorSnapshotReader:
 
     def get(self, course_id: CourseId, session_id: SessionId) -> TutorSnapshotV1:
         captured = tuple(self._events.read(course_id))
-        projection = replay(course_id, captured, self._registry)
+        projection = self._coherent_projection(course_id, captured)
         load = _captured_loader(course_id, projection)
 
         course = ProjectionCourseView(load).get(course_id)
@@ -112,6 +115,23 @@ class TutorSnapshotReader:
             ),
             materials=_materials(projection),
         )
+
+    def _coherent_projection(
+        self, course_id: CourseId, captured: tuple[DomainEvent, ...]
+    ) -> Projection:
+        """Reuse a persisted projection only when it matches this exact capture."""
+
+        load_projection = getattr(self._events, "projection", None)
+        if callable(load_projection):
+            candidate = load_projection(course_id)
+            captured_sequence = captured[-1].course_sequence if captured else 0
+            if (
+                isinstance(candidate, Projection)
+                and candidate.course_id == course_id
+                and candidate.sequence == captured_sequence
+            ):
+                return candidate
+        return replay(course_id, captured, self._registry)
 
 
 def _captured_loader(
@@ -364,16 +384,22 @@ def _materials(projection: Projection) -> tuple[TutorMaterialSummary, ...]:
                         key=lambda item: _ordinal(item[1].get("ordinal")),
                     )
                 )
-                decoded = decode_source_revision_ingested(
-                    {
-                        "source": raw_revision["source"],
-                        "chunks": ordered_chunks,
-                        "normalized_character_length": raw_revision[
-                            "normalized_character_length"
-                        ],
-                        "chunking": raw_revision["chunking"],
-                    }
-                )
+                revision_payload = {
+                    "source": raw_revision["source"],
+                    "chunks": ordered_chunks,
+                    "normalized_character_length": raw_revision[
+                        "normalized_character_length"
+                    ],
+                    "chunking": raw_revision["chunking"],
+                }
+                source_manifest = raw_revision["source"]
+                if (
+                    isinstance(source_manifest, Mapping)
+                    and source_manifest.get("content_origin") == "generated"
+                ):
+                    decoded = decode_generated_source_revision_ingested(revision_payload)
+                else:
+                    decoded = decode_source_revision_ingested(revision_payload)
             except (KeyError, TypeError, ValueError) as error:
                 raise ValueError("source revision projection is corrupt") from error
             if (

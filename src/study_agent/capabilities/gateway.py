@@ -46,12 +46,19 @@ from .registry import StudyCapabilityRegistry
 _SAFE_MODEL_FAILURE_REASONS = frozenset(
     {
         "authentication",
+        "authorization",
         "model_unavailable",
         "endpoint_incompatible",
+        "schema_incompatible",
         "rate_limited",
         "timeout",
         "protocol_error",
         "unavailable",
+        "capability_execution_failed",
+        "capability_validation_failed",
+        "scope_missing",
+        "scope_stale",
+        "publication_failed",
     }
 )
 
@@ -243,9 +250,7 @@ class StudyCapabilityGateway:
             ) from error
 
         if inspected.status is not RunStatus.SUSPENDED:
-            self._require_persisted_resume(
-                binding, continuation, inspected, frozen_response
-            )
+            self._require_persisted_resume(binding, continuation, inspected, frozen_response)
             return self._observed(binding, inspected, authority, retry)
 
         if (
@@ -278,9 +283,7 @@ class StudyCapabilityGateway:
             if error.failure.code is EngineErrorCode.INCOMPATIBLE_CHECKPOINT:
                 raced = self._inspect_required(binding, continuation.run_id)
                 self._require_continuation_bindings(binding, continuation, raced)
-                self._require_persisted_resume(
-                    binding, continuation, raced, frozen_response
-                )
+                self._require_persisted_resume(binding, continuation, raced, frozen_response)
                 return self._observed(binding, raced, authority, retry)
             return self._engine_error(continuation.run_id, error)
         inspected = self._inspect_required(binding, continuation.run_id)
@@ -307,9 +310,7 @@ class StudyCapabilityGateway:
             raise TypeError("capability context must be ExecutionContext")
         if not isinstance(context.course_id, CourseId):
             raise TypeError("capability context course_id must be CourseId")
-        if context.session_id is not None and not isinstance(
-            context.session_id, SessionId
-        ):
+        if context.session_id is not None and not isinstance(context.session_id, SessionId):
             raise TypeError("capability context session_id must be SessionId")
         if not isinstance(context.principal_kind, PrincipalKind):
             raise TypeError("capability context principal_kind must be PrincipalKind")
@@ -393,9 +394,7 @@ class StudyCapabilityGateway:
         inspected: InspectedRunRecord,
         inputs: JsonObject,
     ) -> None:
-        if inspected.definition_fingerprint != playbook_definition_fingerprint(
-            binding.playbook
-        ):
+        if inspected.definition_fingerprint != playbook_definition_fingerprint(binding.playbook):
             self._conflict("persisted capability definition differs from trusted binding")
         if _json_identity_fingerprint(inspected.inputs) != _json_identity_fingerprint(inputs):
             self._conflict("idempotency identity was reused with different inputs")
@@ -427,8 +426,7 @@ class StudyCapabilityGateway:
     ) -> None:
         if (
             continuation.definition_fingerprint != inspected.definition_fingerprint
-            or inspected.definition_fingerprint
-            != playbook_definition_fingerprint(binding.playbook)
+            or inspected.definition_fingerprint != playbook_definition_fingerprint(binding.playbook)
             or _json_identity_fingerprint(continuation.inputs)
             != _json_identity_fingerprint(inspected.inputs)
             or _pins_payload(continuation.pins) != _pins_payload(inspected.pins)
@@ -582,9 +580,7 @@ def _dependencies(
     inputs: JsonObject,
 ) -> tuple[ReadDependency, ...]:
     try:
-        dependencies = tuple(
-            binding.dependency_resolver(context=context, inputs=inputs)
-        )
+        dependencies = tuple(binding.dependency_resolver(context=context, inputs=inputs))
     except Exception as error:
         raise CapabilityGatewayError(
             CapabilityGatewayErrorCode.INCOMPATIBLE_RUNTIME,
@@ -647,10 +643,7 @@ def _pins_payload(pins: VersionPins) -> tuple[object, ...]:
         artifact(pins.skill),
         artifact(pins.playbook),
         artifact(pins.prompt),
-        tuple(
-            (item.tool_name, str(item.version))
-            for item in pins.tool_behaviors
-        ),
+        tuple((item.tool_name, str(item.version)) for item in pins.tool_behaviors),
         artifact(pins.model_adapter),
         artifact(pins.state_contract),
     )
@@ -663,15 +656,11 @@ def _fingerprint(domain: str, value: JsonObject) -> str:
     return sha256(domain.encode("utf-8") + b"\0" + encoded).hexdigest()
 
 
-
-
 def _json_identity_fingerprint(value: JsonValue) -> str:
     encoded = json.dumps(
         _plain(value), sort_keys=True, separators=(",", ":"), ensure_ascii=False
     ).encode("utf-8")
     return sha256(b"study-agent-capability-json-identity-v1\0" + encoded).hexdigest()
-
-
 
 
 def _plain(value: JsonValue) -> object:

@@ -6,7 +6,7 @@ import json
 from collections.abc import Mapping
 from typing import cast
 
-from cardine.diagnostics import record_turn_decision
+from cardine.diagnostics import begin_activity
 from cardine.hosts import (
     TutorDecision,
     TutorHostContext,
@@ -148,7 +148,7 @@ class ModelTutorDecisionPort(TutorDecisionPort):
                 separators=(",", ":"),
             ).encode("utf-8")
             decision = decision_from_bytes(encoded, context)
-            record_turn_decision(decision)
+            _observe_decision(decision)
             return decision
         except (TypeError, ValueError, OverflowError):
             raise ModelTutorDecisionError(
@@ -157,6 +157,24 @@ class ModelTutorDecisionPort(TutorDecisionPort):
             ) from None
 
 
+def _observe_decision(decision: TutorDecision) -> None:
+    """Expose only the closed, human-readable operation discriminator."""
+
+    kind = getattr(getattr(decision, "kind", None), "value", None)
+    if kind == "assistant_message":
+        begin_activity(kind="model", ref="model.assistant_message")
+        return
+    if kind == "ask_learner":
+        begin_activity(kind="model", ref="model.ask_learner")
+        return
+    if kind == "start_capability":
+        capability_id = getattr(decision, "capability_id", None)
+        if isinstance(capability_id, str):
+            ref = f"capability.{capability_id}"
+            try:
+                begin_activity(kind="capability", ref=ref)
+            except ValueError:
+                return
 def _advertised_capability_ids(schema: JsonObject) -> tuple[str, ...]:
     return _advertised_operation_names(
         schema, kind_value="start_capability", name_field="capability_id"

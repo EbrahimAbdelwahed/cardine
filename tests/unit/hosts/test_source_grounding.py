@@ -64,6 +64,8 @@ def _context(learner_text: str) -> TutorHostContext:
     [
         ("Avvia una spiegazione della lezione 1", "lezione 1"),
         ("Parliamo di legame peptidico", "legame peptidico"),
+        ("Studiamo L01_04/03/2025", "l01 04 03 2025"),
+        ("Facciamo la lezione 1", "lezione 1"),
     ],
 )
 def test_source_study_request_starts_grounded_explanation_instead_of_promising_it(
@@ -78,3 +80,20 @@ def test_source_study_request_starts_grounded_explanation_instead_of_promising_i
     assert isinstance(decision, StartCapabilityDecision)
     assert decision.capability_id == "explain_concept"
     assert decision.inputs["query"] == expected_query
+
+
+@pytest.mark.parametrize(
+    "learner_text",
+    (
+        "La lezione 1 la facciamo domani",
+        "Cosa posso fare prima della lezione 1?",
+    ),
+)
+def test_lesson_planning_mentions_do_not_force_an_explanation(learner_text: str) -> None:
+    decision = asyncio.run(
+        SourceGroundedTutorDecisionPort(_AcknowledgingDecisionPort()).decide(
+            _context(learner_text), _Token()
+        )
+    )
+
+    assert isinstance(decision, AssistantMessageDecision)
