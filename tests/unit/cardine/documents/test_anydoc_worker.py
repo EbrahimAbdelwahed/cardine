@@ -5,7 +5,7 @@ import shutil
 import sys
 from pathlib import Path
 
-import pytest
+import pytest  # noqa: I001
 
 import cardine.documents.anydoc_runtime as anydoc_runtime
 from cardine.documents import AnyDocErrorCode, AnyDocWorkerError, convert_pdf_in_worker
