@@ -75,6 +75,7 @@ def _context(learner_text: str) -> TutorHostContext:
     "learner_text",
     (
         "genera 3 cards sul legamento peptidico",
+        "generiamo le flashcards a partire da questa lezione.",
         "crea 3 cards sul legame peptidico",
         "generate 3 cards about the peptide bond",
         "create some flashcards about the peptide bond",

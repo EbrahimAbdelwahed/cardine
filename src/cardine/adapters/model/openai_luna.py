@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from study_agent.adapters.model.openai_compatible import (
@@ -9,6 +10,7 @@ from study_agent.adapters.model.openai_compatible import (
     OpenAICompatibleConfig,
     OpenAICompatibleModel,
 )
+from study_agent.domain._validation import JsonObject
 from study_agent.ports.model import (
     ModelCapabilities,
     ModelError,
@@ -22,6 +24,21 @@ GPT_5_6_LUNA_ADAPTER_VERSION = "1.0.0"
 GPT_5_6_LUNA_MODEL_ID = "gpt-5.6-luna"
 GPT_5_6_LUNA_ENDPOINT = "https://api.openai.com/v1/chat/completions"
 GPT_5_6_LUNA_REASONING_EFFORT = "none"
+_UNSUPPORTED_STRICT_SCHEMA_KEYWORDS = frozenset({"uniqueItems"})
+
+
+def _provider_strict_schema(value: object) -> object:
+    """Remove provider-unsupported validation keywords from a copied schema."""
+
+    if isinstance(value, Mapping):
+        return {
+            str(key): _provider_strict_schema(item)
+            for key, item in value.items()
+            if key not in _UNSUPPORTED_STRICT_SCHEMA_KEYWORDS
+        }
+    if isinstance(value, tuple):
+        return tuple(_provider_strict_schema(item) for item in value)
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +92,9 @@ class OpenAIGpt56LunaModel(OpenAICompatibleModel):
             ),
             transport,
         )
+
+    def _structured_output_schema(self, schema: JsonObject) -> object:
+        return _provider_strict_schema(schema)
 
     async def generate(self, request: ModelRequest) -> ModelResponse:
         if (

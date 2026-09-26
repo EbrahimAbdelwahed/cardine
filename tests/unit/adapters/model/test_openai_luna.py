@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -25,6 +25,7 @@ from study_agent.ports import (
     ModelRequest,
     StructuredOutputConstraint,
 )
+from study_agent.skills.builtin.hybrid_flashcards import HYBRID_FLASHCARDS_MODEL_SCHEMA
 
 SECRET = "openai-secret-sentinel"
 
@@ -162,6 +163,50 @@ def test_luna_adapter_rejects_non_strict_structured_output_before_network_io() -
 
     assert raised.value.code is ModelErrorCode.PROTOCOL_ERROR
     assert transport.calls == []
+
+
+def test_luna_adapter_projects_local_unique_items_out_of_provider_schema() -> None:
+    transport = FakeTransport(
+        HttpResponse(
+            200,
+            json.dumps(
+                {
+                    "choices": [
+                        {
+                            "message": {"content": '{"candidate_keys":["card-1"]}'},
+                            "finish_reason": "stop",
+                        }
+                    ]
+                }
+            ).encode(),
+        )
+    )
+    adapter = OpenAIGpt56LunaModel(
+        OpenAIGpt56LunaConfig(SECRET),
+        transport=transport,
+    )
+    schema = cast(dict[str, Any], HYBRID_FLASHCARDS_MODEL_SCHEMA.value)
+    request = ModelRequest(
+        (ModelMessage(MessageRole.USER, "Generate cards."),),
+        StructuredOutputConstraint("hybrid_flashcards", schema),
+    )
+
+    result = asyncio.run(adapter.generate(request))
+    sent = json.loads(transport.calls[0][2])
+    provider_array = sent["response_format"]["json_schema"]["schema"]["properties"][
+        "topic_plan"
+    ]["items"]["properties"]["candidate_keys"]
+
+    assert provider_array == {
+        "type": "array",
+        "items": {"type": "string", "minLength": 1},
+        "maxItems": 24,
+    }
+    local_array = schema["properties"]["topic_plan"]["items"]["properties"][
+        "candidate_keys"
+    ]
+    assert local_array["uniqueItems"] is True
+    assert result.structured_output == {"candidate_keys": ("card-1",)}
 
 
 def test_luna_chat_completion_structured_decision_reaches_the_tutor_port() -> None:

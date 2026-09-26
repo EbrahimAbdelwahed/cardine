@@ -23,7 +23,7 @@ from .contracts import (
 
 _PROPOSE_FLASHCARDS = "propose_flashcards"
 _FLASHCARD_ACTION = (
-    r"(?:crea(?:re|mi|te|ta)?|genera(?:re|mi|te|ta|i|no)?|generi|"
+    r"(?:crea(?:re|mi|te|ta)?|generiamo|genera(?:re|mi|te|ta|i|no)?|generi|"
     r"prepara(?:re|mi|te|ta)?|produci|costruisci|proponi|fammi|dammi|"
     r"fai(?=\s+(?:\d+\s+)?(?:(?:le|la|i|gli|delle|della|dei|degli|una|un)\s+)?"
     r"(?:flash\s*cards?|cards?|falsh\s*cards?|schede(?:\s+(?:di|per)\s+studio)?|"
@@ -52,7 +52,7 @@ _FLASHCARD_META_PREFIX = re.compile(
 _FLASHCARD_NEGATION = re.compile(r"\b(?:non|don't|do\s+not|never)\b", re.IGNORECASE)
 _FLASHCARD_CLAUSE_BOUNDARY = re.compile(r"[,;.!?:\n]")
 _ITALIAN = re.compile(
-    r"\b(?:crea|genera|prepara|fai|lezione|questa|delle|schede|fonti|anatomia|"
+    r"\b(?:crea|genera|generiamo|prepara|fai|lezione|questa|delle|schede|fonti|anatomia|"
     r"morfologia|ricostruzione|rapporti)\b",
     re.IGNORECASE,
 )
