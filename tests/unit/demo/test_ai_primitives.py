@@ -16,7 +16,7 @@ from pathlib import Path
 # ruff: noqa: E501
 
 
-DEMO_DIR = Path(__file__).parents[3] / "src" / "study_agent" / "demo"
+DEMO_DIR = Path(__file__).parents[3] / "src" / "cardine" / "demo"
 PRIMITIVES = DEMO_DIR / "ai-primitives.js"
 
 
