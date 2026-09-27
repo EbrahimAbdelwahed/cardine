@@ -149,7 +149,7 @@ jobs:
               executable = str(Path(sys.executable).resolve())
               args = ["/usr/bin/sandbox-exec", "-D", "PYTHON_ROOT=" + str(Path(sys.base_prefix).resolve()),
                       "-D", "PRIVATE_ROOT=" + str(Path(private).resolve()), "-D", "PYTHON=" + executable,
-                      "-p", _sandbox_profile(), executable, "-I", "-S", "-B", "-c", "import encodings; print('sandbox startup OK')"]
+                      "-p", _sandbox_profile(python=Path(executable), private=Path(private).resolve()), executable, "-I", "-S", "-B", "-c", "import encodings; print('sandbox startup OK')"]
               print("Python runtime:", sys.base_prefix, executable)
               result = subprocess.run(args, env={"PATH": "/usr/bin:/bin", "TMPDIR": private}, capture_output=True, text=True)
               print(result.stdout, result.stderr)

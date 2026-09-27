@@ -276,3 +276,22 @@ def test_framework_python_runtime_root_includes_stdlib(
     with pytest.raises(AnyDocWorkerError) as captured:
         convert_pdf_in_worker(source)
     assert captured.value.code == AnyDocErrorCode.WORKER_UNAVAILABLE.value
+
+
+def test_runtime_ancestors_allow_metadata_without_broadening_content_access(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base = tmp_path / "framework" / "version"
+    python = base / "bin" / "python"
+    private = tmp_path / "isolated"
+    monkeypatch.setattr(anydoc_runtime.sys, "base_prefix", str(base))
+
+    profile = anydoc_runtime._sandbox_profile(python=python, private=private)
+
+    assert f'(literal "{base.parent}")' in profile
+    assert "(allow file-read-metadata (literal " in profile
+    assert "(deny network*)" in profile
+    assert "(deny process-fork)" in profile
+    assert '(subpath (param "PYTHON_ROOT"))' in profile
+    assert '(subpath (param "PRIVATE_ROOT"))' in profile
+    assert "(allow file-read-metadata)" not in profile

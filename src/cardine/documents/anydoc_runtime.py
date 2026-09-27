@@ -208,7 +208,12 @@ def _copy_input(source: Path, target: Path, maximum: int) -> str:
     return digest.hexdigest()
 
 
-def _sandbox_profile() -> str:
+def _sandbox_profile(*, python: Path, private: Path) -> str:
+    # realpath traverses parent directories before opening allowed runtime files.
+    # Permit metadata only on these exact ancestors, never their file contents.
+    roots = (python, Path(sys.base_prefix).resolve(), private)
+    ancestors = sorted({str(parent) for root in roots for parent in root.parents})
+    metadata = " ".join(f"(literal {json.dumps(path)})" for path in ancestors)
     return """(version 1)
 (deny default)
 (import \"system.sb\")
@@ -221,7 +226,7 @@ def _sandbox_profile() -> str:
 (allow signal (target self))
 (deny process-fork)
 (deny network*)
-"""
+""" + f"(allow file-read-metadata {metadata})\n"
 
 
 def _resident_bytes(pid: int) -> int | None:
@@ -317,7 +322,7 @@ def _convert_pdf_in_worker(
             "-D",
             f"PYTHON={python}",
             "-p",
-            _sandbox_profile(),
+            _sandbox_profile(python=python, private=private),
             str(python),
             "-I",
             "-S",
