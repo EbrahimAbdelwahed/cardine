@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import platform
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -7,6 +11,17 @@ import pytest
 import cardine.documents.anydoc_runtime as anydoc_runtime
 from cardine.documents import AnyDocErrorCode, AnyDocWorkerError, convert_pdf_in_worker
 from cardine.documents.config import DocumentImportPolicy
+
+_VERIFIED_ANYDOC_WORKER = (
+    sys.platform == "darwin"
+    and platform.machine() == "arm64"
+    and sys.version_info[:2] in {(3, 12), (3, 13)}
+    and shutil.which("sandbox-exec") == "/usr/bin/sandbox-exec"
+)
+_requires_verified_worker = pytest.mark.skipif(
+    not _VERIFIED_ANYDOC_WORKER,
+    reason="verified AnyDoc containment requires macOS arm64 with sandbox-exec",
+)
 
 
 def _text_pdf(*page_texts: str) -> bytes:
@@ -61,6 +76,7 @@ def _minimal_text_pdf() -> bytes:
     return _text_pdf("Hello PDF")
 
 
+@_requires_verified_worker
 def test_verified_anydoc_converts_text_pdf_in_isolated_worker(tmp_path: Path) -> None:
     source = tmp_path / "lesson.pdf"
     source.write_bytes(_minimal_text_pdf())
@@ -73,6 +89,7 @@ def test_verified_anydoc_converts_text_pdf_in_isolated_worker(tmp_path: Path) ->
     assert tuple(tmp_path.iterdir()) == (source,)
 
 
+@_requires_verified_worker
 def test_non_pdf_fails_without_derived_output(tmp_path: Path) -> None:
     source = tmp_path / "lesson.pdf"
     source.write_bytes(b"not a pdf")
@@ -84,6 +101,7 @@ def test_non_pdf_fails_without_derived_output(tmp_path: Path) -> None:
     assert tuple(tmp_path.iterdir()) == (source,)
 
 
+@_requires_verified_worker
 def test_page_map_binds_each_pdf_page_to_exact_markdown_offsets(tmp_path: Path) -> None:
     source = tmp_path / "two-pages.pdf"
     source.write_bytes(_text_pdf("First page", "Second page"))
@@ -129,6 +147,7 @@ def test_missing_input_is_a_closed_worker_failure(tmp_path: Path) -> None:
     assert tuple(tmp_path.iterdir()) == ()
 
 
+@_requires_verified_worker
 def test_malformed_and_scanned_pdfs_fail_without_derived_output(tmp_path: Path) -> None:
     malformed = tmp_path / "malformed.pdf"
     malformed.write_bytes(b"%PDF-1.4\nnot a document")
@@ -144,6 +163,7 @@ def test_malformed_and_scanned_pdfs_fail_without_derived_output(tmp_path: Path) 
     assert set(tmp_path.iterdir()) == {malformed, scanned}
 
 
+@_requires_verified_worker
 def test_input_page_and_output_limits_fail_closed(tmp_path: Path) -> None:
     source = tmp_path / "bounded.pdf"
     source.write_bytes(_text_pdf("First page", "Second page"))
@@ -190,6 +210,7 @@ def to_markdown_bytes(data, kind):
         ),
     ),
 )
+@_requires_verified_worker
 def test_worker_maps_encryption_and_denies_network(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -212,6 +233,7 @@ def test_worker_maps_encryption_and_denies_network(
     assert tuple(tmp_path.iterdir()) == (source,)
 
 
+@_requires_verified_worker
 def test_timed_out_worker_is_terminated_and_leaves_no_output(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -237,3 +259,72 @@ def to_markdown_bytes(data, kind):
 
     assert captured.value.code == AnyDocErrorCode.WORKER_TIMEOUT.value
     assert tuple(tmp_path.iterdir()) == (source,)
+
+
+def test_unqualified_platform_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "lesson.pdf"
+    source.write_bytes(_minimal_text_pdf())
+    monkeypatch.setattr(sys, "platform", "linux")
+
+    with pytest.raises(AnyDocWorkerError) as captured:
+        convert_pdf_in_worker(source)
+
+    assert captured.value.code == AnyDocErrorCode.WORKER_UNAVAILABLE.value
+    assert tuple(tmp_path.iterdir()) == (source,)
+
+
+def test_framework_python_runtime_root_includes_stdlib(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base = tmp_path / "Python.framework" / "Versions" / "3.13"
+    executable = base / "Resources" / "Python.app" / "Contents" / "MacOS" / "Python"
+    monkeypatch.setattr(sys, "base_prefix", str(base))
+    monkeypatch.setattr(sys, "executable", str(executable))
+    monkeypatch.setattr(anydoc_runtime, "_verified_wheel", lambda: b"fixture")
+    monkeypatch.setattr(anydoc_runtime, "_extract_verified_wheel", lambda *_args: None)
+    source = tmp_path / "input.pdf"
+    source.write_bytes(_minimal_text_pdf())
+
+    def inspect_spawn(command: list[str], **_kwargs: object) -> None:
+        assert f"PYTHON_ROOT={base.resolve()}" in command
+        assert f"PYTHON={executable.resolve()}" in command
+        raise OSError("fixture stops before actual sandbox execution")
+
+    monkeypatch.setattr(subprocess, "Popen", inspect_spawn)
+    with pytest.raises(AnyDocWorkerError) as captured:
+        convert_pdf_in_worker(source)
+    assert captured.value.code == AnyDocErrorCode.WORKER_UNAVAILABLE.value
+
+
+def test_runtime_ancestors_allow_metadata_without_broadening_content_access(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base = tmp_path / "framework" / "version"
+    python = base / "bin" / "python"
+    private = tmp_path / "isolated"
+    monkeypatch.setattr(sys, "base_prefix", str(base))
+
+    profile = anydoc_runtime._sandbox_profile(python=python, private=private)
+
+    assert f'(literal "{base.parent}")' in profile
+    assert "(allow file-read-metadata (literal " in profile
+    assert "(deny network*)" in profile
+    assert "(deny process-fork)" in profile
+    assert '(subpath (param "PYTHON_ROOT"))' in profile
+    assert '(subpath (param "PRIVATE_ROOT"))' in profile
+    assert "(allow file-read-metadata)" not in profile
+
+
+def test_framework_launcher_is_replaced_with_real_interpreter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base = tmp_path / "framework" / "3.13"
+    real = base / "Resources/Python.app/Contents/MacOS/Python"
+    real.parent.mkdir(parents=True)
+    real.write_bytes(b"fixture interpreter")
+    monkeypatch.setattr(sys, "base_prefix", str(base))
+    monkeypatch.setattr(sys, "executable", str(base / "bin/python3.13"))
+
+    assert anydoc_runtime._worker_python() == real.resolve()

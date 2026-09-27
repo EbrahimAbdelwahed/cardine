@@ -14,9 +14,13 @@ from cardine.adapters.pageindex.worker_child import QUALIFIED_FUNCTION_AST_SHA25
 def test_worker_executes_only_qualified_subset() -> None:
     tree = PageIndexWorker().run("# Lezione 1\nA\n## Dettaglio\nB\n")
 
-    assert tree[0]["title"] == "Lezione 1"
-    assert tree[0]["nodes"][0]["title"] == "Dettaglio"
-    assert set(tree[0]) == {"title", "node_id", "text", "line_num", "nodes"}
+    root = tree[0]
+    assert isinstance(root, dict)
+    assert root["title"] == "Lezione 1"
+    child = root["nodes"][0]
+    assert isinstance(child, dict)
+    assert child["title"] == "Dettaglio"
+    assert set(root) == {"title", "node_id", "text", "line_num", "nodes"}
 
 
 def test_worker_rejects_oversized_input_before_process() -> None:

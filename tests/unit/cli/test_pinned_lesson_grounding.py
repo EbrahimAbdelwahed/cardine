@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -12,19 +13,25 @@ from cardine.cli import (
     ModelAdapterRegistry,
     initialize_local_repository,
 )
-from cardine.cli.repository import _PinnedRetrieval
+from cardine.cli.repository import ModelAdapterBuilder, _PinnedRetrieval
 from cardine.knowledge import SourcePin
 from study_agent.domain import CorrelationId, CourseId, ExecutionContext, PrincipalKind, SourceId
-from study_agent.ports import RetrievalQuery
+from study_agent.ports import ModelPort, RetrievalQuery
 from tests.course_fixtures import create_canonical_course
+
+
+def _recording_builder(builds: list[int]) -> ModelAdapterBuilder:
+    def build(config: ModelAdapterConfig, credential: str | None) -> ModelPort:
+        del config, credential
+        builds.append(1)
+        # These tests assert that invalid pins never reach adapter construction.
+        return cast(ModelPort, object())
+
+    return build
 
 
 def _repository(tmp_path: Path, builds: list[int]) -> tuple[Path, CourseId]:
     root = tmp_path / "repository"
-
-    def build(_config: ModelAdapterConfig, _credential: str | None) -> object:
-        builds.append(1)
-        return object()
 
     initialize_local_repository(
         root,
@@ -33,7 +40,7 @@ def _repository(tmp_path: Path, builds: list[int]) -> tuple[Path, CourseId]:
     course_id = CourseId("course-pinned-lesson")
     with LocalRepository.open(
         root,
-        model_adapters=ModelAdapterRegistry({"fixture-adapter": build}),
+        model_adapters=ModelAdapterRegistry({"fixture-adapter": _recording_builder(builds)}),
         environment={},
     ) as repository:
         create_canonical_course(repository.events, course_id)
@@ -72,7 +79,7 @@ def test_invalid_foreign_and_partial_pins_fail_before_provider_construction(
     with LocalRepository.open(
         root,
         model_adapters=ModelAdapterRegistry(
-            {"fixture-adapter": lambda _config, _credential: builds.append(1) or object()}
+            {"fixture-adapter": _recording_builder(builds)}
         ),
         environment={},
     ) as repository:
@@ -97,7 +104,7 @@ def test_whole_source_pin_is_not_a_current_lesson_candidate(tmp_path: Path) -> N
     with LocalRepository.open(
         root,
         model_adapters=ModelAdapterRegistry(
-            {"fixture-adapter": lambda _config, _credential: builds.append(1) or object()}
+            {"fixture-adapter": _recording_builder(builds)}
         ),
         environment={},
     ) as repository:

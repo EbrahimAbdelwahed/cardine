@@ -3,12 +3,16 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import platform
 import re
+import shutil
 import subprocess
 import sys
 from collections.abc import AsyncIterator, Mapping
 from pathlib import Path
 from typing import Any, cast
+
+import pytest
 
 from cardine.cli.main import main
 from cardine.cli.repository import LocalRepository, ModelAdapterRegistry
@@ -35,6 +39,18 @@ from study_agent.tools import StudyEvent
 
 _EVIDENCE_ID = re.compile(r'"evidence_id":"([^"]+)"')
 _PROJECT_ROOT = Path(__file__).parents[2]
+
+
+_VERIFIED_ANYDOC_WORKER = (
+    sys.platform == "darwin"
+    and platform.machine() == "arm64"
+    and sys.version_info[:2] in {(3, 12), (3, 13)}
+    and shutil.which("sandbox-exec") == "/usr/bin/sandbox-exec"
+)
+_requires_verified_worker = pytest.mark.skipif(
+    not _VERIFIED_ANYDOC_WORKER,
+    reason="verified AnyDoc containment requires macOS arm64 with sandbox-exec",
+)
 
 
 class _FixtureModel:
@@ -369,6 +385,7 @@ def test_offline_release_journey_survives_restart_and_is_deterministic(
     assert doctor["data"]["status"] == "ok"
 
 
+@_requires_verified_worker
 def test_cli_admits_pdf_through_the_same_canonical_source_ledger(
     tmp_path: Path, capsys: Any
 ) -> None:
