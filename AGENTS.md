@@ -50,11 +50,11 @@
   to the current Codex chat and keep title, description, base, and validation
   accurate as scope changes. Routine documentation-only changes need diff and
   link inspection, not invented runtime tests; applicable CI still runs.
-- Use automatic Codex GitHub review as the ordinary semantic review after
-  publication. Do not duplicate it with a mandatory local reviewer chain.
-  Add specialist review only for a concrete risk or requested acceptance gate,
-  especially authentication, untrusted input, persistence, migration, or data
-  loss. Explain the added gate. Do not weaken existing product acceptance rules.
+- Use only automatic Codex GitHub review for semantic code review. Do not
+  launch a local reviewer or specialist reviewer chain. Put repository-specific
+  correctness, security, migration, and data-loss rules in the automatic review
+  instructions and cover them with executable CI. Keep human product decisions
+  and existing acceptance criteria explicit.
 - Before an authorized merge, require applicable CI and review evidence for the
   current submitted commit, resolve actionable findings, and check dependencies.
   A missing review, absent check, failed run, or old green commit is not approval.
