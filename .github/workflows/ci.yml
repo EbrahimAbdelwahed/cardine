@@ -144,9 +144,9 @@ jobs:
           uv run --frozen --extra dev python - <<'PY_STARTUP'
           import os, subprocess, sys, tempfile
           from pathlib import Path
-          from cardine.documents.anydoc_runtime import _sandbox_profile
+          from cardine.documents.anydoc_runtime import _sandbox_profile, _worker_python
           with tempfile.TemporaryDirectory() as private:
-              executable = str(Path(sys.executable).resolve())
+              executable = str(_worker_python())
               args = ["/usr/bin/sandbox-exec", "-D", "PYTHON_ROOT=" + str(Path(sys.base_prefix).resolve()),
                       "-D", "PRIVATE_ROOT=" + str(Path(private).resolve()), "-D", "PYTHON=" + executable,
                       "-p", _sandbox_profile(python=Path(executable), private=Path(private).resolve()), executable, "-I", "-S", "-B", "-c", "import encodings; print('sandbox startup OK')"]

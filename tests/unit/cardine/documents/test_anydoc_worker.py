@@ -295,3 +295,16 @@ def test_runtime_ancestors_allow_metadata_without_broadening_content_access(
     assert '(subpath (param "PYTHON_ROOT"))' in profile
     assert '(subpath (param "PRIVATE_ROOT"))' in profile
     assert "(allow file-read-metadata)" not in profile
+
+
+def test_framework_launcher_is_replaced_with_real_interpreter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base = tmp_path / "framework" / "3.13"
+    real = base / "Resources/Python.app/Contents/MacOS/Python"
+    real.parent.mkdir(parents=True)
+    real.write_bytes(b"fixture interpreter")
+    monkeypatch.setattr(anydoc_runtime.sys, "base_prefix", str(base))
+    monkeypatch.setattr(anydoc_runtime.sys, "executable", str(base / "bin/python3.13"))
+
+    assert anydoc_runtime._worker_python() == real.resolve()
