@@ -540,7 +540,9 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
         )
         # Advanced diagnostics intentionally expose only the validated tutor
         # decision, not the internal phase timeline or turn payload metadata.
-        assert "assistant_message" in trace_text
+        # The terminal answer may be synthesized after a validated capability
+        # decision; diagnostics show that decision, not the answer text.
+        assert "start_capability" in trace_text
         for excluded in (
             "model.grounding",
             "timeout",

@@ -53,6 +53,7 @@ from study_agent.ports import (
     ModelStreamEventKind,
 )
 from study_agent.repository_config import LocalRepositoryConfig, ModelAdapterConfig
+from tests.receipt_assertions import without_transient_activity
 
 COURSE = CourseId("cardine-course")
 SESSION = SessionId("cardine-session")
@@ -732,7 +733,8 @@ def test_repository_chat_is_durable_idempotent_and_stale_safe(tmp_path: Path) ->
     calls_before_retry = len(model.requests)
     events_before_retry = _event_count(root, adapters)
     retry = fresh.post("/api/v1/session/turns", command)
-    assert retry == receipt
+    assert without_transient_activity(retry) == without_transient_activity(receipt)
+    assert retry["activity_records"] == ()
     assert len(model.requests) == calls_before_retry
     assert _event_count(root, adapters) == events_before_retry
 
