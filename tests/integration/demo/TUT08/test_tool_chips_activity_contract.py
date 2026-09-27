@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -16,7 +17,7 @@ from tests.integration.demo.TUT08.test_repository_backed_chat import (
 )
 
 
-def test_pinned_turn_receipt_exposes_only_sanitized_retrieval_activity(tmp_path) -> None:
+def test_pinned_turn_receipt_exposes_only_sanitized_retrieval_activity(tmp_path: Path) -> None:
     root, adapters, _model = _repository(
         tmp_path,
         (
@@ -73,7 +74,7 @@ def test_pinned_turn_receipt_exposes_only_sanitized_retrieval_activity(tmp_path)
         assert forbidden not in serialized
 
 
-def test_dialogue_turn_receipt_exposes_truthful_model_activity(tmp_path) -> None:
+def test_dialogue_turn_receipt_exposes_truthful_model_activity(tmp_path: Path) -> None:
     """Ordinary tutor dialogue must not leave the activity area permanently empty."""
 
     root, adapters, _model = _repository(
@@ -104,7 +105,7 @@ def test_dialogue_turn_receipt_exposes_truthful_model_activity(tmp_path) -> None
     assert records[0]["status"] == "done"
 
 
-def test_learner_question_receipt_exposes_truthful_model_activity(tmp_path) -> None:
+def test_learner_question_receipt_exposes_truthful_model_activity(tmp_path: Path) -> None:
     root, adapters, _model = _repository(
         tmp_path,
         (
@@ -133,7 +134,7 @@ def test_learner_question_receipt_exposes_truthful_model_activity(tmp_path) -> N
     assert records[0]["status"] == "done"
 
 
-def test_failed_capability_settles_a_verification_activity(tmp_path) -> None:
+def test_failed_capability_settles_a_verification_activity(tmp_path: Path) -> None:
     root, adapters, _model = _repository(
         tmp_path,
         (

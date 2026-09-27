@@ -726,7 +726,7 @@ def decision_schema(context: TutorHostContext) -> JsonObject:
 def decision_fingerprint(decision: TutorDecision) -> str:
     # Progress is transient presentation.  It must not alter operational
     # idempotency or retry identity.
-    payload = decision_to_json(decision)
+    payload = dict(decision_to_json(decision))
     if isinstance(decision, StartCapabilityDecision):
         payload.pop("progress_message", None)
     return _fingerprint("study-agent-tutor-decision-v1", payload)

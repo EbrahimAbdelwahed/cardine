@@ -1,6 +1,6 @@
 # Cardine development memory
 
-Updated: 2026-08-15 00:40 CEST
+Updated: 2026-09-28 CEST
 
 This file is the authoritative entrypoint for Cardine development memory.
 Cardine-specific plans, logs, notes, and handoffs belong in this repository's
@@ -8,6 +8,8 @@ Cardine-specific plans, logs, notes, and handoffs belong in this repository's
 archive and must not be treated as Cardine's current state.
 
 ## Start here
+
+- [Recovery CI alignment and decision feedback](logs/2026-09-28--cardine--recovery-ci-alignment--log.md) — current development branch includes main; flashcard acceptance feedback is fixed, typing and package checks pass, ownership approval and live generation reproduction remain pending.
 
 - [Page-aware flashcard locator fix](logs/2026-08-15-0040--cardine--page-aware-flashcard-locator-fix--log.md) — repeated live flashcard turns selected the correct capability but failed before Luna because planning omitted immutable PDF page provenance from the locator; planner and resolver now share one canonical formatter while exact integrity validation remains fail-closed.
 - [Password-free runtime API key UI](logs/2026-08-14-2352--cardine--password-free-runtime-api-key-ui--log.md) — the loopback `local_repository` shell has no password gate but exposes write-only, process-local OpenAI credential settings backed by the same store used by Luna; local mutations require exact same-origin requests.

@@ -63,6 +63,7 @@ from study_agent.domain import (
     VersionPins,
     artifact_event_id_for,
 )
+from study_agent.domain._validation import JsonValue
 from study_agent.domain.source import SourceDocument, SourceKind
 from study_agent.ingestion import (
     CHUNKER_VERSION,
@@ -98,6 +99,9 @@ PROOF = GeneratedBatchProofReceipt("material-verifier", "1.0.0", "e" * 64)
 class MemoryBlobs:
     values: dict[BlobRef, bytes]
 
+    def put(self, content: bytes) -> BlobRef:
+        raise AssertionError("materialization must not write source blobs")
+
     def get(self, ref: BlobRef) -> bytes:
         try:
             return self.values[ref]
@@ -129,7 +133,7 @@ class MemoryEvents:
 
 
 def _projection(events: MemoryEvents, blobs: MemoryBlobs) -> Projection:
-    state = {
+    state: dict[str, JsonValue] = {
         "course": {},
         "sessions": {str(SESSION): {"course_id": str(COURSE)}},
     }

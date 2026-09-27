@@ -968,7 +968,7 @@ def test_source_directed_question_cannot_end_without_grounded_content(
     assert "chars " in answer
     citations = cast(tuple[dict[str, object], ...], timeline[-1]["citations"])
     assert len(citations) == 1
-    assert citations[0]["label"] in answer
+    assert str(citations[0]["label"]) in answer
     assert citations[0]["source_id"]
     assert citations[0]["revision_id"]
     assert citations[0]["viewer_kind"] == "markdown"

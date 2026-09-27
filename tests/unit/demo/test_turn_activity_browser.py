@@ -86,10 +86,10 @@ def test_activity_route_remains_behind_existing_api_authentication() -> None:
     session = access.login("correct horse battery staple", client_id="test")
     payload = surface.api_get("/api/v1/turns/request/activity", session_token=session.session_token)
     assert payload["state"] == "unknown"
-    assert payload["records"] == []
+    assert cast(list[object], payload["records"]) == []
 
 
-def test_repository_activity_get_is_independent_of_mutation_lock(tmp_path) -> None:
+def test_repository_activity_get_is_independent_of_mutation_lock(tmp_path: Path) -> None:
     """The real application route is checked before normal locked reads."""
     from cardine.demo.ui_application import RepositoryUiApplication
     from tests.integration.demo.TUT08.test_repository_backed_chat import _repository
@@ -98,7 +98,7 @@ def test_repository_activity_get_is_independent_of_mutation_lock(tmp_path) -> No
     application = RepositoryUiApplication(
         root, "cardine-course", "cardine-session", model_adapters=adapters
     )
-    application._lock.acquire()  # type: ignore[attr-defined]
+    application._lock.acquire()
     result: list[object] = []
 
     def read_activity() -> None:
@@ -110,7 +110,7 @@ def test_repository_activity_get_is_independent_of_mutation_lock(tmp_path) -> No
     worker = Thread(target=read_activity, daemon=True)
     worker.start()
     worker.join(timeout=0.5)
-    application._lock.release()  # type: ignore[attr-defined]
+    application._lock.release()
     assert not worker.is_alive(), "activity polling must not wait on the repository lock"
     assert result and not isinstance(result[0], Exception)
     assert result[0] == {
@@ -122,7 +122,7 @@ def test_repository_activity_get_is_independent_of_mutation_lock(tmp_path) -> No
 
 
 def test_repository_session_read_is_independent_of_long_tutor_mutation_lock(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     from cardine.demo.ui_application import RepositoryUiApplication
     from tests.integration.demo.TUT08.test_repository_backed_chat import _repository
@@ -131,7 +131,7 @@ def test_repository_session_read_is_independent_of_long_tutor_mutation_lock(
     application = RepositoryUiApplication(
         root, "cardine-course", "cardine-session", model_adapters=adapters
     )
-    application._lock.acquire()  # type: ignore[attr-defined]
+    application._lock.acquire()
     result: list[object] = []
 
     def read_session() -> None:
@@ -143,7 +143,7 @@ def test_repository_session_read_is_independent_of_long_tutor_mutation_lock(
     worker = Thread(target=read_session, daemon=True)
     worker.start()
     worker.join(timeout=0.5)
-    application._lock.release()  # type: ignore[attr-defined]
+    application._lock.release()
 
     assert not worker.is_alive(), "session reads must not wait for the model call lock"
     assert result and not isinstance(result[0], Exception)

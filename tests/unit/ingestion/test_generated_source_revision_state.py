@@ -321,7 +321,12 @@ def test_generated_v2_requires_service_unscoped_admission_event(
     mutation: dict[str, object],
 ) -> None:
     event, blobs = _v2_event()
-    forged = replace(event, **mutation)
+    if "causation_id" in mutation:
+        forged = replace(event, causation_id=cast(EventId | None, mutation["causation_id"]))
+    elif "session_id" in mutation:
+        forged = replace(event, session_id=cast(SessionId, mutation["session_id"]))
+    else:
+        forged = replace(event, actor=cast(Actor, mutation["actor"]))
 
     with pytest.raises(ValueError, match=r"session|caus|caused|SERVICE"):
         decode_source_revision_event(forged, blobs.__getitem__)

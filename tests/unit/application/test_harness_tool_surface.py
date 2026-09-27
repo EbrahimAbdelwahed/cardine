@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from pathlib import Path
 
 from cardine.cli.repository import LocalRepository
@@ -263,7 +264,9 @@ def test_study_memory_tools_record_and_search_canonical_learner_signal(
     assert conflicting.error.code.value == "conflict"
     assert found.error is None
     assert found.value is not None
-    assert tuple(item["topic"] for item in found.value["entries"]) == (
+    entries = found.value["entries"]
+    assert isinstance(entries, tuple)
+    assert tuple(item["topic"] for item in entries if isinstance(item, Mapping)) == (
         "cinetica enzimatica",
     )
     assert len(covered) == 1

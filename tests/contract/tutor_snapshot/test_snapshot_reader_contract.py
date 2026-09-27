@@ -35,7 +35,7 @@ from study_agent.sessions import (
     SessionTurnService,
     register_session_events,
 )
-from study_agent.state import EventRegistry, canonical_json_bytes
+from study_agent.state import EventRegistry, Projection, canonical_json_bytes
 from study_agent.study_context import (
     ProjectionStudyContextView,
     StudyContextService,
@@ -91,7 +91,7 @@ class ProjectionAwareEventStore:
         self.read_count += 1
         return self.inner.read(course_id, after_sequence)
 
-    def projection(self, course_id: CourseId):
+    def projection(self, course_id: CourseId) -> Projection:
         self.projection_count += 1
         return self.inner.projection(course_id)
 

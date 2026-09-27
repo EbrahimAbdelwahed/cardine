@@ -301,7 +301,8 @@ class _ObservedToolExecutor:
             )
         try:
             output = await self._inner.invoke(arguments)
-            count = len(output.get("items", ())) if isinstance(output, Mapping) else None
+            items = output.get("items") if isinstance(output, Mapping) else None
+            count = len(items) if isinstance(items, (tuple, list)) else None
             finish_activity(token, status="done", count=count)
             return output
         except Exception:

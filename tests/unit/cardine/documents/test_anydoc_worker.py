@@ -120,6 +120,7 @@ def test_page_map_binds_each_pdf_page_to_exact_markdown_offsets(tmp_path: Path) 
     assert receipt.page_spans[0].end_offset <= receipt.page_spans[1].start_offset
 
 
+@_requires_verified_worker
 def test_mixed_pdf_marks_page_without_extractable_text_and_keeps_page_map(
     tmp_path: Path,
 ) -> None:

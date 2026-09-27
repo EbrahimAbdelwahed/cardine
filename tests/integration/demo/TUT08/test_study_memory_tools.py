@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import cast
 
 from cardine.cli.repository import LocalRepository
@@ -14,7 +15,7 @@ from tests.integration.demo.TUT08.test_repository_backed_chat import (
 
 
 def test_agent_signal_and_completed_topic_are_canonical_but_prompt_private(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     root, adapters, model = _repository(
         tmp_path,
@@ -82,7 +83,7 @@ def test_agent_signal_and_completed_topic_are_canonical_but_prompt_private(
     assert all(entry.origin_sequence > 0 for entry in all_entries)
 
 
-def test_failed_capability_does_not_record_a_covered_topic(tmp_path) -> None:
+def test_failed_capability_does_not_record_a_covered_topic(tmp_path: Path) -> None:
     root, adapters, _model = _repository(
         tmp_path,
         (

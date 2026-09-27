@@ -2,14 +2,18 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, datetime
+from pathlib import Path
 
 from cardine.application.conversation_history import ConversationHistoryReader
+from cardine.hosts.context import CapabilityManifestView
 from study_agent.domain import (
     CourseId,
     EventId,
     InteractionId,
     RunId,
     SessionId,
+    TutorPresentationRecord,
+    TutorSnapshotV1,
     TutorTimelineEntry,
     TutorTimelineKind,
     TutorTimelineStatus,
@@ -22,22 +26,24 @@ from tests.contract.tutor_snapshot.test_snapshot_reader_contract import (
 
 
 class _SnapshotView:
-    def __init__(self, snapshot: object) -> None:
+    def __init__(self, snapshot: TutorSnapshotV1) -> None:
         self.snapshot = snapshot
 
-    def get(self, course_id: CourseId, session_id: SessionId) -> object:
+    def get(self, course_id: CourseId, session_id: SessionId) -> TutorSnapshotV1:
         assert (course_id, session_id) == (COURSE, SESSION)
         return self.snapshot
 
 
 class _PresentationView:
-    def presentations(self, course_id: CourseId, session_id: SessionId) -> tuple[object, ...]:
+    def presentations(
+        self, course_id: CourseId, session_id: SessionId
+    ) -> tuple[TutorPresentationRecord, ...]:
         assert (course_id, session_id) == (COURSE, SESSION)
         return ()
 
 
 def test_history_searches_canonical_timeline_through_snapshot_high_water(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     """The first public tracer for bounded, course/session-owned history search."""
     from cardine.cli.repository import LocalRepository
@@ -188,7 +194,7 @@ def test_context_exposes_omitted_older_conversation_entries() -> None:
             return evidence
 
     class _Capabilities:
-        def discover(self) -> tuple[object, ...]:
+        def discover(self) -> tuple[CapabilityManifestView, ...]:
             return ()
 
     context = TutorHostContextAssembler(

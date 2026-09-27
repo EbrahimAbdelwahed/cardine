@@ -217,7 +217,7 @@ def test_repository_generation_commits_one_atomic_pair_and_recovers(
         assert len(matching) == 1
         assert len(matching[0].revision_ids) == 2
         materials = tuple(
-            revision.content.content
+            cast(LessonMaterialContent, revision.content.content)
             for revision in snapshot.revisions
             if revision.id in matching[0].revision_ids
         )

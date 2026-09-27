@@ -135,10 +135,10 @@ def test_page_aware_flashcard_plan_uses_the_canonical_resolved_locator() -> None
     document = SimpleNamespace(source_id=SOURCE, revision_id=revision, chunk=chunk)
 
     class PageAwareContent:
-        def catalog(self):
+        def catalog(self) -> tuple[SimpleNamespace, ...]:
             return (record,)
 
-        def documents(self, *, include_superseded: bool = False):
+        def documents(self, *, include_superseded: bool = False) -> tuple[SimpleNamespace, ...]:
             del include_superseded
             return (document,)
 
@@ -164,7 +164,7 @@ def test_page_aware_flashcard_plan_uses_the_canonical_resolved_locator() -> None
         plan,
         bundle,
         (),
-        SimpleNamespace(),
+        cast(ExecutionContext, SimpleNamespace()),
     )
 
     assert resolved.envelope.items[0].evidence.citation.locator == bundle.slots[0].span.locator

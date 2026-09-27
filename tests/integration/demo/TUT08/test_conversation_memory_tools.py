@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from pathlib import Path
 from typing import cast
 
 from cardine.demo.ui_application import RepositoryUiApplication
@@ -17,7 +18,7 @@ from tests.integration.demo.TUT08.test_repository_backed_chat import (
 )
 
 
-def test_long_chat_can_search_memory_before_source_grounded_flashcards(tmp_path) -> None:
+def test_long_chat_can_search_memory_before_source_grounded_flashcards(tmp_path: Path) -> None:
     """A long chat is recoverable without treating its prose as source evidence."""
     decisions: tuple[JsonObject, ...] = (
         *(
