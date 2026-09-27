@@ -53,7 +53,7 @@ jobs:
           clean-install/bin/python docs/examples/external_agent.py
           clean-install/example-project
         env:
-          STUDY_AGENT_BIN: ${{ github.workspace }}/clean-install/bin/cardine
+          CARDINE_BIN: ${{ github.workspace }}/clean-install/bin/cardine
 
   recall:
     runs-on: ubuntu-latest
