@@ -37,7 +37,17 @@ Automatic approval review rejected writing that wider baseline; it has not been
 applied. Keep the audit and historical ledgers unchanged until specific owner
 approval. CI is not claimed green before that decision and current-head results.
 
-Live generation is not yet revalidated. Offline generation/router/Luna fixtures
-pass. No Cardine preview listener was present during the port inspection; the
-active URL and exact generation error are still needed. Do not claim that a
-provider-backed request succeeded or restart another owner's process blindly.
+The local runtime had two confirmed setup blockers: its stale console script
+imported the removed study_agent.demo.browser path, and the OpenAI SDK was absent.
+Reinstalling the current checkout editable with its declared openai extra repaired
+both. cardine-shell-web --help and cardine --json describe now work; SDK 2.54.0 is
+installed. The 49 Luna/router/runtime-settings offline tests pass.
+
+The documented durable store remains at Desktop/Med/Lezioni/Audio_to_Sbobina/
+cardine-wave-a-live, configured for openai-gpt-5.6-luna. The updated checkout serves
+it on http://127.0.0.1:8765 with course-wave-a/session-live. Health and Settings
+return HTTP 200 in local_repository mode. credential_configured is false; the
+owner must enter the key through browser Settings before a live provider-backed
+generation can be verified. No key, model call or human artifact decision was
+made by these setup checks. The unrelated node preview on port 3100 belongs to
+sbobby-web and was left untouched.
