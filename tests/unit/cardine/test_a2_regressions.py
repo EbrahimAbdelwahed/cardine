@@ -28,7 +28,7 @@ from study_agent.domain import (
     TutorSnapshotV1,
 )
 
-from study_agent.flashcards import FlashcardLessonPlan, PlannedFlashcardBundle
+from study_agent.flashcards.planning import FlashcardLessonPlan, PlannedFlashcardBundle
 from study_agent.retrieval import CourseSourceContent
 
 COURSE = CourseId("a2-regression-course")
