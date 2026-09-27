@@ -134,6 +134,15 @@ def _repository(tmp_path: Path) -> tuple[Path, ModelAdapterRegistry, _ClosureMod
                 session_id=SESSION,
             )
         )
+        repository.provider_consent_service.grant(
+            ExecutionContext(
+                PrincipalKind.HUMAN,
+                "closure-session",
+                COURSE,
+                CorrelationId("closure-provider-consent"),
+            ),
+            "closure-provider-consent",
+        )
     return root, adapters, model
 
 
