@@ -253,3 +253,26 @@ def test_unqualified_platform_fails_closed(
 
     assert captured.value.code == AnyDocErrorCode.WORKER_UNAVAILABLE.value
     assert tuple(tmp_path.iterdir()) == (source,)
+
+
+def test_framework_python_runtime_root_includes_stdlib(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base = tmp_path / "Python.framework" / "Versions" / "3.13"
+    executable = base / "Resources" / "Python.app" / "Contents" / "MacOS" / "Python"
+    monkeypatch.setattr(anydoc_runtime.sys, "base_prefix", str(base))
+    monkeypatch.setattr(anydoc_runtime.sys, "executable", str(executable))
+    monkeypatch.setattr(anydoc_runtime, "_verified_wheel", lambda: b"fixture")
+    monkeypatch.setattr(anydoc_runtime, "_extract_verified_wheel", lambda *_args: None)
+    source = tmp_path / "input.pdf"
+    source.write_bytes(_minimal_text_pdf())
+
+    def inspect_spawn(command: list[str], **_kwargs: object) -> None:
+        assert f"PYTHON_ROOT={base.resolve()}" in command
+        assert f"PYTHON={executable.resolve()}" in command
+        raise OSError("fixture stops before actual sandbox execution")
+
+    monkeypatch.setattr(anydoc_runtime.subprocess, "Popen", inspect_spawn)
+    with pytest.raises(AnyDocWorkerError) as captured:
+        convert_pdf_in_worker(source)
+    assert captured.value.code == AnyDocErrorCode.WORKER_UNAVAILABLE.value

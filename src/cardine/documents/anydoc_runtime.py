@@ -311,7 +311,7 @@ def _convert_pdf_in_worker(
         command = [
             "/usr/bin/sandbox-exec",
             "-D",
-            f"PYTHON_ROOT={python.parent.parent}",
+            f"PYTHON_ROOT={Path(sys.base_prefix).resolve()}",
             "-D",
             f"PRIVATE_ROOT={private}",
             "-D",

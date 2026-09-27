@@ -68,14 +68,30 @@ REVIEWED_NON_IMPORT_AST_VARIANCE = {
 # Exact bytes from committed Wave A product evolution after the historical
 # CA-01/CA-02 snapshots. Preserve the frozen ledgers and reject further drift.
 POST_BASELINE_SHA256 = {
-    "src/study_agent/adapters/sqlite/fts_retrieval.py": "6478e496fa957b601866fbe5561a96bea1f92b61adc707c4e1dddef125188b5c",
-    "src/study_agent/prompts/explain_concept_v1.py": "00957942586239a396bae507593b687b1896fee120eba83e37feae592a95ff48",
-    "src/study_agent/prompts/tutor_decision_v1.py": "828072504ce14499f604fa3951b796e25a1422b4784f72a496ab16b5accf220b",
-    "src/cardine/cli/repository.py": "eadd4ed0448a40c37f80d81277a512bb8a7aa195f0f1d8ecfd43cad1f977f00f",
-    "src/cardine/demo/browser.js": "66e3c9107c7f25295a03aa10e776a3ae1ea3a55b88ceacc06ba0c42c86bc92f4",
-    "src/cardine/demo/ui_application.py": "6fc6a7623d3ae6418110750ff1d6ae14e4f73988f9bbd2d601c693f9c687cb2d",
-    "src/cardine/hosts/flashcard_routing.py": "e91a8ce48b54469829f1f8c5bc808c739d86279ad037e9957965dfc8c801683c",
-    "src/cardine/hosts/source_grounding.py": "dce83af15586066e48306ddcfe755a469836e2eeb3fe381d3d32610d6f4ea1f0",
+    "src/study_agent/adapters/sqlite/fts_retrieval.py": (
+        "6478e496fa957b601866fbe5561a96bea1f92b61adc707c4e1dddef125188b5c"
+    ),
+    "src/study_agent/prompts/explain_concept_v1.py": (
+        "00957942586239a396bae507593b687b1896fee120eba83e37feae592a95ff48"
+    ),
+    "src/study_agent/prompts/tutor_decision_v1.py": (
+        "828072504ce14499f604fa3951b796e25a1422b4784f72a496ab16b5accf220b"
+    ),
+    "src/cardine/cli/repository.py": (
+        "eadd4ed0448a40c37f80d81277a512bb8a7aa195f0f1d8ecfd43cad1f977f00f"
+    ),
+    "src/cardine/demo/browser.js": (
+        "66e3c9107c7f25295a03aa10e776a3ae1ea3a55b88ceacc06ba0c42c86bc92f4"
+    ),
+    "src/cardine/demo/ui_application.py": (
+        "6fc6a7623d3ae6418110750ff1d6ae14e4f73988f9bbd2d601c693f9c687cb2d"
+    ),
+    "src/cardine/hosts/flashcard_routing.py": (
+        "e91a8ce48b54469829f1f8c5bc808c739d86279ad037e9957965dfc8c801683c"
+    ),
+    "src/cardine/hosts/source_grounding.py": (
+        "dce83af15586066e48306ddcfe755a469836e2eeb3fe381d3d32610d6f4ea1f0"
+    ),
 }
 
 COPIED_IMPORT_PATHS = {
