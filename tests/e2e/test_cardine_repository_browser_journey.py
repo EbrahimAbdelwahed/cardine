@@ -184,6 +184,15 @@ def _repository(
                 session_id=SESSION,
             )
         )
+        repository.provider_consent_service.grant(
+            ExecutionContext(
+                PrincipalKind.HUMAN,
+                "browser-session",
+                COURSE,
+                CorrelationId("browser-provider-consent"),
+            ),
+            "browser-provider-consent",
+        )
     return root, adapters, model
 
 

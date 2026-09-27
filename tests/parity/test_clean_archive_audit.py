@@ -62,3 +62,18 @@ def test_classification_rejects_mutated_successor_and_blank_columns(tmp_path: Pa
     )
     assert result.returncode != 0
     assert "forbidden bare study_agent.api" in result.stderr
+
+
+def test_post_baseline_byte_commitments_reject_further_drift(tmp_path: Path) -> None:
+    clean_root = _clean_archive(tmp_path)
+    path = clean_root / "src/cardine/hosts/source_grounding.py"
+    path.write_text(path.read_text(encoding="utf-8") + "\n# unexpected drift\n", encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, "scripts/audit_harness_ownership.py", "--check"],
+        cwd=clean_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "CA-02 transition sha256 mismatch" in result.stderr

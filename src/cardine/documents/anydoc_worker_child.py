@@ -10,6 +10,7 @@ import re
 import socket
 import sys
 import unicodedata
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 
@@ -192,7 +193,7 @@ def main() -> int:
         if pages > max_pages:
             raise ValueError("pdf_resource_limit")
         sys.path.insert(0, vendor)
-        import anydoc
+        anydoc = import_module("anydoc")
 
         data = Path(input_name).read_bytes()
         if anydoc.format_from_bytes(data) != "pdf":

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import platform
 import re
+import shutil
+import sys
 from collections.abc import AsyncIterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from hashlib import sha256
@@ -54,6 +57,18 @@ from study_agent.repository_config import LocalRepositoryConfig, ModelAdapterCon
 COURSE = CourseId("cardine-course")
 SESSION = SessionId("cardine-session")
 _EVIDENCE_ID = re.compile(r'"evidence_id":"([^"]+)"')
+
+
+_VERIFIED_ANYDOC_WORKER = (
+    sys.platform == "darwin"
+    and platform.machine() == "arm64"
+    and sys.version_info[:2] in {(3, 12), (3, 13)}
+    and shutil.which("sandbox-exec") == "/usr/bin/sandbox-exec"
+)
+_requires_verified_worker = pytest.mark.skipif(
+    not _VERIFIED_ANYDOC_WORKER,
+    reason="verified AnyDoc containment requires macOS arm64 with sandbox-exec",
+)
 
 
 class _LunaWireTransport:
@@ -564,6 +579,7 @@ def test_repository_source_upload_rejects_unsupported_files(tmp_path: Path) -> N
         )
 
 
+@_requires_verified_worker
 def test_repository_pdf_import_is_canonical_and_restart_safe(tmp_path: Path) -> None:
     from tests.integration.adapters.workarounds.test_pdf_markdown_real import (
         _minimal_text_pdf,

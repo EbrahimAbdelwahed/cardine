@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
+
+import pytest
 
 from cardine.application.conversation_turn import (
     ConversationTurnError,
@@ -8,6 +12,7 @@ from cardine.application.conversation_turn import (
 )
 from cardine.application.flashcard_proposals import _lesson_plan, _LessonEvidenceResolver
 from cardine.cli import main as cli_main
+from cardine.cli.repository import LocalRepository
 from cardine.demo.ui_application import _conversation_ui_error, _source_grounding_status
 from cardine.hosts import TutorHostRunResult, TutorHostRunStatus
 from cardine.integrations.study_agent.course_policy import ProviderConsentRequiredError
@@ -15,11 +20,15 @@ from study_agent.domain import (
     ChunkId,
     Citation,
     CourseId,
+    ExecutionContext,
     ResolvedCitation,
     RevisionId,
     SourceChunk,
     SourceId,
+    TutorSnapshotV1,
 )
+from study_agent.flashcards.planning import FlashcardLessonPlan, PlannedFlashcardBundle
+from study_agent.retrieval import CourseSourceContent
 
 COURSE = CourseId("a2-regression-course")
 SOURCE = SourceId("a2-regression-source")
@@ -38,7 +47,7 @@ def test_retired_sources_are_excluded_from_flashcard_lesson_plan() -> None:
     record = SimpleNamespace(source=source, chunks=(chunk,), is_current_revision=True)
     content = SimpleNamespace(catalog=lambda: (record,))
 
-    plan = _lesson_plan(content, frozenset({SOURCE}))
+    plan = _lesson_plan(cast(CourseSourceContent, content), frozenset({SOURCE}))
 
     assert plan.index == ()
     assert plan.bundles == ()
@@ -64,7 +73,7 @@ def test_retired_source_keeps_raw_historical_flashcard_evidence_resolvable() -> 
     )
 
     class HistoricalContent:
-        def documents(self, *, include_superseded: bool = False):
+        def documents(self, *, include_superseded: bool = False) -> tuple[SimpleNamespace, ...]:
             return (document,) if include_superseded else ()
 
         def get_text(self, revision_id: RevisionId) -> str:
@@ -83,12 +92,12 @@ def test_retired_source_keeps_raw_historical_flashcard_evidence_resolvable() -> 
     )
     slot = SimpleNamespace(span=span)
     evidence = _LessonEvidenceResolver(
-        HistoricalContent(), lambda: frozenset({SOURCE})
+        cast(CourseSourceContent, HistoricalContent()), lambda: frozenset({SOURCE})
     ).resolve(
-        SimpleNamespace(plan_fingerprint="a" * 64),
-        SimpleNamespace(slots=(slot,), bundle_id="bundle-historical"),
+        cast(FlashcardLessonPlan, SimpleNamespace(plan_fingerprint="a" * 64)),
+        cast(PlannedFlashcardBundle, SimpleNamespace(slots=(slot,), bundle_id="bundle-historical")),
         (),
-        SimpleNamespace(),
+        cast(ExecutionContext, SimpleNamespace()),
     )
 
     assert evidence.envelope.items[0].evidence.text == text
@@ -102,7 +111,9 @@ def test_all_retired_sources_report_empty_grounding_status() -> None:
     source_lifetime = SimpleNamespace(retired_source_ids=lambda course_id: frozenset({SOURCE}))
     repository = SimpleNamespace(source_lifetime=source_lifetime)
 
-    status = _source_grounding_status(repository, COURSE, snapshot)
+    status = _source_grounding_status(
+        cast(LocalRepository, repository), COURSE, cast(TutorSnapshotV1, snapshot)
+    )
 
     assert status == {"status": "empty", "indexed_chunks": 0}
 
@@ -124,8 +135,10 @@ def test_consent_required_host_result_is_not_runtime_failure() -> None:
     assert str(ui_error) == "provider consent is required before tutor execution"
 
 
-def test_cli_maps_provider_consent_to_truthful_error(monkeypatch, capsys, tmp_path) -> None:
-    async def fail(*args, **kwargs):
+def test_cli_maps_provider_consent_to_truthful_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    async def fail(*args: object, **kwargs: object) -> None:
         raise ProviderConsentRequiredError("provider consent is required")
 
     monkeypatch.setattr(cli_main, "execute", fail)

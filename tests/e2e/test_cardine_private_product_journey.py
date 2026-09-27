@@ -245,6 +245,15 @@ def _serve_private() -> Iterator[str]:
                     session_id=SESSION,
                 )
             )
+            local.provider_consent_service.grant(
+                ExecutionContext(
+                    PrincipalKind.HUMAN,
+                    "private-e2e-session",
+                    COURSE,
+                    CorrelationId("private-e2e-provider-consent"),
+                ),
+                "private-e2e-provider-consent",
+            )
         try:
             server = _private_server(repository, model_adapters)
         except PermissionError as error:
