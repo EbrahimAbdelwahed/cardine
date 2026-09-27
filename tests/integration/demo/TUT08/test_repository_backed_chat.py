@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import sys
-
-import shutil
-
-import platform
-
 import json
+import platform
 import re
+import shutil
+import sys
 from collections.abc import AsyncIterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from hashlib import sha256

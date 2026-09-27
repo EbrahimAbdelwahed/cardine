@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import sys
-
-import shutil
-
 import platform
-
+import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -13,7 +10,6 @@ import pytest
 import cardine.documents.anydoc_runtime as anydoc_runtime
 from cardine.documents import AnyDocErrorCode, AnyDocWorkerError, convert_pdf_in_worker
 from cardine.documents.config import DocumentImportPolicy
-
 
 _VERIFIED_ANYDOC_WORKER = (
     sys.platform == "darwin"
@@ -242,4 +238,18 @@ def to_markdown_bytes(data, kind):
         convert_pdf_in_worker(source, policy=DocumentImportPolicy(timeout_seconds=1))
 
     assert captured.value.code == AnyDocErrorCode.WORKER_TIMEOUT.value
+    assert tuple(tmp_path.iterdir()) == (source,)
+
+
+def test_unqualified_platform_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "lesson.pdf"
+    source.write_bytes(_minimal_text_pdf())
+    monkeypatch.setattr(anydoc_runtime.sys, "platform", "linux")
+
+    with pytest.raises(AnyDocWorkerError) as captured:
+        convert_pdf_in_worker(source)
+
+    assert captured.value.code == AnyDocErrorCode.WORKER_UNAVAILABLE.value
     assert tuple(tmp_path.iterdir()) == (source,)

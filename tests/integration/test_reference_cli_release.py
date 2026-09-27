@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import shutil
-
-import platform
-
 import asyncio
 import json
 import os
+import platform
 import re
+import shutil
 import subprocess
 import sys
 from collections.abc import AsyncIterator, Mapping

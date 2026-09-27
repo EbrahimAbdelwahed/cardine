@@ -119,3 +119,29 @@ jobs:
           cd /tmp &&
           ${{ github.workspace }}/clean-pdf-install/bin/python -c
           'import base64,pypdf; from study_agent.adapters.workarounds.worker import parse_in_worker; output=parse_in_worker(base64.b64decode("JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvUmVzb3VyY2VzIDw8IC9Gb250IDw8IC9GMSA1IDAgUiA+PiA+PiAvQ29udGVudHMgNCAwIFIgPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA0MSA+PgpzdHJlYW0KQlQgL0YxIDEyIFRmIDcyIDcyMCBUZCAoSGVsbG8gUERGKSBUaiBFVAplbmRzdHJlYW0KZW5kb2JqCjUgMCBvYmoKPDwgL1R5cGUgL0ZvbnQgL1N1YnR5cGUgL1R5cGUxIC9CYXNlRm9udCAvSGVsdmV0aWNhID4+CmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMDkgMDAwMDAgbiAKMDAwMDAwMDA1OCAwMDAwMCBuIAowMDAwMDAwMTE1IDAwMDAwIG4gCjAwMDAwMDAyNDEgMDAwMDAgbiAKMDAwMDAwMDMzMSAwMDAwMDAgbiAKdHJhaWxlcgo8PCAvU2l6ZSA2IC9Sb290IDEgMCBSID4+CnN0YXJ0eHJlZgo0MDEKJSVFT0YK"),5.0); assert b"Hello PDF" in output and pypdf.__version__=="6.14.2" and parse_in_worker.__module__=="study_agent.adapters.workarounds.worker"'
+
+  anydoc:
+    runs-on: macos-15
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Require qualified native containment
+        run: >-
+          python -c 'import platform, shutil, sys;
+          assert sys.platform == "darwin" and platform.machine() == "arm64";
+          assert shutil.which("sandbox-exec") == "/usr/bin/sandbox-exec"'
+      - run: python -m pip install --disable-pip-version-check 'uv==0.9.15'
+      - run: uv sync --frozen --extra dev
+      - name: Native PDF import and containment contracts
+        run: >-
+          uv run --frozen --extra dev python -m pytest
+          tests/unit/cardine/documents/test_anydoc_worker.py
+          tests/integration/demo/TUT08/test_repository_backed_chat.py::test_repository_pdf_import_is_canonical_and_restart_safe
+          tests/integration/test_reference_cli_release.py::test_cli_admits_pdf_through_the_same_canonical_source_ledger
