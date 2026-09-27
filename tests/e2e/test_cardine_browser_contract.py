@@ -472,3 +472,14 @@ console.log(JSON.stringify(cases));
         assert cases[name]["submits"] == 0, name
     for name in ("shiftEnter", "composing", "imeKeyCode"):
         assert cases[name]["prevented"] is False, name
+
+
+def test_decided_flashcards_leave_queue_with_visible_feedback() -> None:
+    """Run the real browser render and command functions after a canonical decision."""
+    result = subprocess.run(
+        ["node", str(DEMO_DIR.parents[2] / "tests/e2e/fixtures/proposal_decision_ui.cjs")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "PASS: accepted card leaves queue and user sees confirmation" in result.stdout

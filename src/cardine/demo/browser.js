@@ -1253,7 +1253,7 @@
     renderLoading(route);
     try {
       const payload = suppliedData || await fetchJson(ROUTES[route].endpoint);
-      if (navigationVersion !== state.navigationVersion) return;
+      if (navigationVersion !== state.navigationVersion) return false;
       state.viewData = payload;
       updateContinuation(payload);
       if (route === "oggi") {
@@ -1273,10 +1273,12 @@
       if (route === "ripasso") renderRipasso(payload);
       if (route === "piano") renderPlan(payload);
       if (route === "conflitti") renderConflitti(payload);
+      return true;
     } catch (error) {
-      if (navigationVersion !== state.navigationVersion) return;
-      if (error.authExpired) return;
+      if (navigationVersion !== state.navigationVersion) return false;
+      if (error.authExpired) return false;
       renderError(route, error);
+      return false;
     }
   }
 
@@ -1673,13 +1675,14 @@
 
   function renderProposte(payload) {
     const proposals = array(payload);
-    const rows = proposals.length ? proposals.map(renderProposal).join("") : emptyState("Nessuna proposta da decidere", "Le proposte generate non vengono considerate accettate finché non esiste una decisione esplicita.");
-    const bulkCount = proposals.filter((item) => {
-      const proposal = object(item);
-      return (text(first(proposal, ["status", "state"], "pending"), "pending") === "pending" || text(first(proposal, ["status", "state"], "pending"), "pending") === "proposed") && proposal.reviewable === true;
-    }).length;
+    const isPending = (item) => ["pending", "proposed"].includes(text(first(object(item), ["status", "state"], "pending"), "pending"));
+    const pending = proposals.filter(isPending);
+    const decided = proposals.filter((item) => !isPending(item));
+    const rows = pending.length ? pending.map(renderProposal).join("") : emptyState("Nessuna proposta da decidere", "Le proposte generate non vengono considerate accettate finché non esiste una decisione esplicita.");
+    const decidedView = decided.length ? `<details class="decided-proposals"><summary>Già decise (${decided.length})</summary><div class="card-list">${decided.map(renderProposal).join("")}</div></details>` : "";
+    const bulkCount = pending.filter((item) => object(item).reviewable === true).length;
     const bulkView = bulkCount ? `<form data-artifact-bulk novalidate><p class="field-note">Seleziona una o più flashcard e assegna a ciascuna una decisione. L'invio è un'unica operazione atomica.</p><button class="button button--quiet" type="submit">Applica decisioni selezionate (<span data-bulk-count>${bulkCount}</span> disponibili)</button></form>` : "";
-    const diffRows = proposals.slice(0, 12).map((item) => {
+    const diffRows = pending.slice(0, 12).map((item) => {
       const proposal = object(item);
       const status = text(first(proposal, ["status", "state"], "pending"), "pending");
       const revisionId = first(proposal, ["revision_id", "id"], "non dichiarata");
@@ -1687,9 +1690,9 @@
     });
     const diffView = aiDiffTable({ title: "Confronto delle proposte", rows: diffRows, status: proposals.length ? "ready" : "neutral" });
     const approvalView = aiApproval({ title: "Decidi con calma", detail: "La decisione canonica resta nei pulsanti della singola proposta; questo follow-up serve solo a chiedere chiarimenti.", choices: [{ label: "Spiegami cosa cambia", action: "spiega proposta", prompt: "Spiegami cosa cambia nella proposta corrente" }] });
-    const pendingCount = proposals.filter((item) => ["pending", "proposed"].includes(text(first(object(item), ["status", "state"], "pending")))).length;
+    const pendingCount = pending.length;
     const recommendationView = pendingCount ? aiRecommendation({ title: "Rivedi una proposta", detail: `${pendingCount} proposte attendono una decisione esplicita.`, prompt: "Aiutami a rivedere una proposta", actionLabel: "Chiedimi un riepilogo" }) : "";
-    setView("proposte", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="proposal-heading"><p class="section-kicker">proposte · decisione tua</p><h1 class="section-title" id="proposal-heading">Proposte</h1><p class="section-copy">Generato non significa approvato. Ogni decisione è legata a revisione, sequenza e request ID.</p>${bulkView}<div class="card-list">${rows}</div><div class="ai-proposals-diff">${diffView}</div>${approvalView}${recommendationView}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">regola di stato</p><h2 class="side-card__title">Decisioni esplicite</h2><p class="side-card__copy">Puoi decidere singolarmente oppure inviare una selezione in un'unica operazione atomica.</p></div></aside></section>`);
+    setView("proposte", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="proposal-heading"><p class="section-kicker">proposte · decisione tua</p><h1 class="section-title" id="proposal-heading">Proposte</h1><p class="section-copy">Generato non significa approvato. Ogni decisione è legata a revisione, sequenza e request ID.</p>${bulkView}<div class="card-list">${rows}</div>${decidedView}<div class="ai-proposals-diff">${diffView}</div>${approvalView}${recommendationView}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">regola di stato</p><h2 class="side-card__title">Decisioni esplicite</h2><p class="side-card__copy">Puoi decidere singolarmente oppure inviare una selezione in un'unica operazione atomica.</p></div></aside></section>`);
   }
 
   function renderProposal(item) {
@@ -1982,6 +1985,7 @@
         state.continuationDraft = "";
       }
       const originIsStillActive = commandNavigationVersion === state.navigationVersion;
+      let routeRefreshed = false;
       if (originIsStillActive && status === "demo_completed" && refreshRoute === "sessione") {
         state.route = "sessione";
         state.viewData = object(receipt.result);
@@ -2000,12 +2004,22 @@
         state.viewData = object(receipt.result);
         renderSessione(state.viewData);
       } else if (originIsStillActive) {
-        await loadRoute((isFlashcardCommand || flashcardCompleted) && status === "completed" ? "proposte" : refreshRoute);
+        routeRefreshed = await loadRoute((isFlashcardCommand || flashcardCompleted) && status === "completed" ? "proposte" : refreshRoute);
       }
       if (isTutorTurn) {
         void refreshBootstrapCounts();
       } else {
         await refreshBootstrapCounts();
+      }
+      if (routeRefreshed && refreshRoute === "proposte" && endpoint.includes("/artifacts/") && endpoint.endsWith("/decisions")) {
+        const decisions = endpoint === "/api/v1/artifacts/decisions" ? array(payload.decisions) : [payload];
+        const accepted = decisions.filter((item) => text(object(item).decision) === "accepted").length;
+        const rejected = decisions.filter((item) => text(object(item).decision) === "rejected").length;
+        const summary = [
+          accepted ? `${accepted} flashcard ${accepted === 1 ? "accettata" : "accettate"}` : "",
+          rejected ? `${rejected} flashcard ${rejected === 1 ? "rifiutata" : "rifiutate"}` : "",
+        ].filter(Boolean).join(" · ");
+        setStatus("committed", `${summary}. La coda delle proposte è aggiornata.`);
       }
       if (isTutorTurn && originIsStillActive && receipt.result) {
         const assistant = $$(".thread-message--assistant", root).at(-1);
