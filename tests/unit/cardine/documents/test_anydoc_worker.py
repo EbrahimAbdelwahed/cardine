@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import platform
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -246,7 +247,7 @@ def test_unqualified_platform_fails_closed(
 ) -> None:
     source = tmp_path / "lesson.pdf"
     source.write_bytes(_minimal_text_pdf())
-    monkeypatch.setattr(anydoc_runtime.sys, "platform", "linux")
+    monkeypatch.setattr(sys, "platform", "linux")
 
     with pytest.raises(AnyDocWorkerError) as captured:
         convert_pdf_in_worker(source)
@@ -260,8 +261,8 @@ def test_framework_python_runtime_root_includes_stdlib(
 ) -> None:
     base = tmp_path / "Python.framework" / "Versions" / "3.13"
     executable = base / "Resources" / "Python.app" / "Contents" / "MacOS" / "Python"
-    monkeypatch.setattr(anydoc_runtime.sys, "base_prefix", str(base))
-    monkeypatch.setattr(anydoc_runtime.sys, "executable", str(executable))
+    monkeypatch.setattr(sys, "base_prefix", str(base))
+    monkeypatch.setattr(sys, "executable", str(executable))
     monkeypatch.setattr(anydoc_runtime, "_verified_wheel", lambda: b"fixture")
     monkeypatch.setattr(anydoc_runtime, "_extract_verified_wheel", lambda *_args: None)
     source = tmp_path / "input.pdf"
@@ -272,7 +273,7 @@ def test_framework_python_runtime_root_includes_stdlib(
         assert f"PYTHON={executable.resolve()}" in command
         raise OSError("fixture stops before actual sandbox execution")
 
-    monkeypatch.setattr(anydoc_runtime.subprocess, "Popen", inspect_spawn)
+    monkeypatch.setattr(subprocess, "Popen", inspect_spawn)
     with pytest.raises(AnyDocWorkerError) as captured:
         convert_pdf_in_worker(source)
     assert captured.value.code == AnyDocErrorCode.WORKER_UNAVAILABLE.value
@@ -284,7 +285,7 @@ def test_runtime_ancestors_allow_metadata_without_broadening_content_access(
     base = tmp_path / "framework" / "version"
     python = base / "bin" / "python"
     private = tmp_path / "isolated"
-    monkeypatch.setattr(anydoc_runtime.sys, "base_prefix", str(base))
+    monkeypatch.setattr(sys, "base_prefix", str(base))
 
     profile = anydoc_runtime._sandbox_profile(python=python, private=private)
 
@@ -304,7 +305,7 @@ def test_framework_launcher_is_replaced_with_real_interpreter(
     real = base / "Resources/Python.app/Contents/MacOS/Python"
     real.parent.mkdir(parents=True)
     real.write_bytes(b"fixture interpreter")
-    monkeypatch.setattr(anydoc_runtime.sys, "base_prefix", str(base))
-    monkeypatch.setattr(anydoc_runtime.sys, "executable", str(base / "bin/python3.13"))
+    monkeypatch.setattr(sys, "base_prefix", str(base))
+    monkeypatch.setattr(sys, "executable", str(base / "bin/python3.13"))
 
     assert anydoc_runtime._worker_python() == real.resolve()

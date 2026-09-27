@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from cardine.adapters.pageindex import PageIndexCoordinator, PageIndexRevision
+from cardine.adapters.pageindex import PageIndexCoordinator, PageIndexRevision, PageIndexWorker
 from cardine.adapters.pageindex.coordinator import _encode, _key
 from cardine.knowledge import PageIndexProjection, PageIndexStatus
 from study_agent.adapters.sqlite import NamespacedSQLiteRunStore, SQLiteRunStore
@@ -31,7 +31,7 @@ def test_projection_is_restart_safe_and_maps_canonical_offsets(tmp_path: Path) -
 def test_duplicate_or_unmappable_nodes_degrade_without_evidence(tmp_path: Path) -> None:
     revision = _revision("# Lezione 1\nA\n")
 
-    class EmptyWorker:
+    class EmptyWorker(PageIndexWorker):
         def run(self, _content: str) -> list[object]:
             return [{"node_id": "0001", "title": "x", "text": "not canonical", "line_num": 1}]
 
@@ -45,7 +45,7 @@ def test_duplicate_or_unmappable_nodes_degrade_without_evidence(tmp_path: Path) 
 def test_rebuild_disable_enable_and_bounded_retry(tmp_path: Path) -> None:
     revision = _revision()
 
-    class FailingWorker:
+    class FailingWorker(PageIndexWorker):
         def run(self, _content: str) -> list[object]:
             raise RuntimeError("not called")
 

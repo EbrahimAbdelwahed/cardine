@@ -84,7 +84,7 @@ POST_BASELINE_SHA256 = {
         "66e3c9107c7f25295a03aa10e776a3ae1ea3a55b88ceacc06ba0c42c86bc92f4"
     ),
     "src/cardine/demo/ui_application.py": (
-        "6fc6a7623d3ae6418110750ff1d6ae14e4f73988f9bbd2d601c693f9c687cb2d"
+        "a3099df6a060ea0c927de35ee07fd68a597b84f3c21400e1dfd45776f68c43d9"
     ),
     "src/cardine/hosts/flashcard_routing.py": (
         "e91a8ce48b54469829f1f8c5bc808c739d86279ad037e9957965dfc8c801683c"
