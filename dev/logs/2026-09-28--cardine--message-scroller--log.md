@@ -45,7 +45,12 @@ Delivery verification:
   transcript/composer stay within bounds and outer scroll remains zero.
 - Added regression protection for a stale initial `scrollend` arriving during
   a smooth rail jump: it cannot resume following until the jump reaches its
-  clamped target. This final correction is undergoing full-suite verification.
+  clamped target. Full suite after this correction: 2491 passed, 4 skipped.
+- Owner refinement reduces rail width and height cap by roughly 18% and shrinks
+  marks while retaining pointer target heights. Transcript content is unchanged;
+  numbered question/answer prefixes existed only in the synthetic preview and
+  were removed there. Focused behavior/design/assets checks: 31 passed; Ruff and
+  mypy remain green. The CSS custody binding was refreshed for this refinement.
 
 Published PR: https://github.com/EbrahimAbdelwahed/cardine/pull/6, attached to
 this chat. Base remains `codex/cardine-wave-a-recovery` (PR #5 dependency).

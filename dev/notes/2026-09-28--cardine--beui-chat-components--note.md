@@ -27,6 +27,12 @@ Smooth navigation respects reduced motion. The composer remains outside the
 scrollable transcript. Nothing in this feature writes canonical state, sends
 transcript text to a third party, or invokes a provider.
 
+Owner refinement: reduce the rail's visual footprint by roughly 18% (26px
+width, 82% of the previous height cap, and smaller marks). Pointer targets stay
+at least 24px tall, or 44px for coarse pointers. Navigation reads message text;
+it never adds numbered question/answer prefixes to the transcript. Those prefixes
+were only synthetic preview content and have been removed from that preview.
+
 ## Citations — adopt presentation selectively in a later change
 
 Current flow:
