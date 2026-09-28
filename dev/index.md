@@ -9,6 +9,8 @@ archive and must not be treated as Cardine's current state.
 
 ## Start here
 
+- [Combined recent-PR test preview](logs/2026-09-28--cardine--combined-pr-preview--log.md) — isolated integration of PRs #3/#5/#6/#7, copied study data, local port 8766 and the remaining custody gate.
+
 - [Compact Thinking and Streaming Text](logs/2026-09-28--cardine--compact-thinking-streaming--log.md) — compact activity renderers, progressive verified answers and response actions.
 
 - [Message Scroller and BeUI evaluation](logs/2026-09-28--cardine--message-scroller--log.md) — reader-aware chat navigation implemented; Citations and Prompt Input assessed with canonical source boundaries.
