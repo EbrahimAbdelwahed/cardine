@@ -75,6 +75,14 @@ f.content.messages.push({...f.content.messages[5], surface: {textContent:'New an
 observers[1].callback(); flush();
 assert.equal(f.rail.children.length, 7);
 assert.equal(f.rail.children[0], firstButton, 'Growing output preserves focused controls');
+const normalScrollTo = f.viewport.scrollTo;
+f.viewport.scrollTop = f.viewport.scrollHeight;
+f.viewport.scrollTo = options => { f.viewport.lastScroll = options; };
+f.rail.events.click({target:firstButton});
+f.viewport.events.scrollend();
+observers[0].callback(); flush();
+assert.equal(c.following, false, 'Stale initial scrollend must not cancel a rail jump');
+f.viewport.scrollTo = normalScrollTo;
 f.rail.events.click({target: firstButton}); flush();
 assert.equal(f.viewport.lastScroll.behavior, 'smooth'); assert.equal(f.viewport.scrollTop, 0);
 f.viewport.events.scrollend(); flush(); assert.equal(c.following, false);

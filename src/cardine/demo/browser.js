@@ -1153,6 +1153,7 @@
     let targets = [];
     let signature = "";
     let navigating = false;
+    let navigationTarget = 0;
     let activeIndex = -1;
 
     function atEnd() {
@@ -1261,7 +1262,8 @@
       following = false;
       navigating = true;
       const top = viewport.scrollTop + message.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 24;
-      viewport.scrollTo({ top: Math.max(0, top), behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+      navigationTarget = Math.max(0, Math.min(top, viewport.scrollHeight - viewport.clientHeight));
+      viewport.scrollTo({ top: navigationTarget, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
       schedule();
     }
 
@@ -1275,6 +1277,9 @@
     }
 
     function onScrollEnd() {
+      // An initial follow can queue scrollend just before a rail jump starts.
+      // That stale event must not re-enable following during the new jump.
+      if (navigating && Math.abs(viewport.scrollTop - navigationTarget) > 2) return;
       navigating = false;
       following = atEnd();
       schedule();
