@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from cardine.adapters.model.diagnostic_transport import DiagnosticHttpTransport
+from cardine.diagnostics.turn_trace import trace_operation
 from study_agent.adapters.model.openai_compatible import (
     HttpTransport,
     OpenAICompatibleConfig,
@@ -96,12 +97,16 @@ class OpenAIGpt56LunaModel(OpenAICompatibleModel):
         return _provider_strict_schema(schema)
 
     async def generate(self, request: ModelRequest) -> ModelResponse:
-        if request.structured_output is not None and request.structured_output.strict is not True:
-            raise ModelError(
-                ModelErrorCode.PROTOCOL_ERROR,
-                "GPT-5.6 Luna structured output must be strict",
-            )
-        return await super().generate(request)
+        with trace_operation("model_generation"):
+            if (
+                request.structured_output is not None
+                and request.structured_output.strict is not True
+            ):
+                raise ModelError(
+                    ModelErrorCode.PROTOCOL_ERROR,
+                    "GPT-5.6 Luna structured output must be strict",
+                )
+            return await super().generate(request)
 
 
 __all__ = [

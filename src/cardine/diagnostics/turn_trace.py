@@ -32,6 +32,7 @@ _PHASES = frozenset(
         "application_turn",
         "host_decision",
         "model_decision",
+        "model_generation",
         "provider_http",
         "capability_start",
         "capability_resume",
@@ -267,6 +268,7 @@ class TurnTraceStore:
                 or operation._outcome
                 in {
                     "failed",
+                    "terminated",
                     "stale",
                     "cancelled",
                     "budget_exhausted",

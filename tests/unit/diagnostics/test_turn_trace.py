@@ -88,9 +88,11 @@ def test_luna_transport_preserves_safe_failure_detail_across_worker_thread(
     )
     assert raised.value.code is expected_code
     records = operations(latest(store))
-    assert records[1]["phase"] == "provider_http"
-    assert records[1]["error_kind"] == kind
-    assert cast(int, records[1]["duration_ms"]) >= 0
+    assert records[2]["phase"] == "provider_http"
+    assert records[2]["error_kind"] == kind
+    assert cast(int, records[2]["duration_ms"]) >= 0
+    assert records[1]["phase"] == "model_generation"
+    assert records[1]["error_code"] == expected_code.value
     assert records[0]["error_code"] == expected_code.value
     encoded = json.dumps(store.snapshot())
     for private in ("secret", "private", "Authorization", "api.openai.com"):
@@ -119,8 +121,9 @@ def test_provider_http_status_is_recorded_without_the_response_body(
         )
     assert raised.value.code is code
     records = operations(latest(store))
-    assert records[1]["http_status"] == status
-    assert records[1]["status"] == "failed"
+    assert records[2]["http_status"] == status
+    assert records[2]["status"] == "failed"
+    assert records[1]["error_code"] == code.value
     assert records[0]["error_code"] == code.value
     assert "secret" not in json.dumps(store.snapshot())
 
@@ -185,17 +188,18 @@ def test_diagnostic_metadata_cannot_mask_the_original_exception_or_leak_its_name
     assert "secret" not in json.dumps(store.snapshot())
 
 
-def test_returned_failure_is_not_reported_as_success_and_metadata_is_closed() -> None:
+@pytest.mark.parametrize("outcome", ["failed", "terminated", "budget_exhausted"])
+def test_returned_failure_is_not_reported_as_success_and_metadata_is_closed(outcome: str) -> None:
     store = TurnTraceStore()
     with store.capture("request", 0) as trace_id:
-        store.record_outcome(trace_id, "failed")
+        store.record_outcome(trace_id, outcome)
         with trace_operation("capability_start") as operation:
-            operation.observe_outcome("failed", "protocol_error")
+            operation.observe_outcome(outcome, "protocol_error")
             operation.observe_outcome("secret prompt", "secret-key")
             operation.observe_http_status(True)
     trace = latest(store)
     assert trace["status"] == "failed"
-    assert operations(trace)[0]["outcome"] == "failed"
+    assert operations(trace)[0]["outcome"] == outcome
     assert operations(trace)[1]["error_code"] == "protocol_error"
     assert "http_status" not in operations(trace)[1]
     assert "secret" not in json.dumps(store.snapshot())

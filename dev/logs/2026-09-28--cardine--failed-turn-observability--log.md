@@ -46,3 +46,14 @@ Verification:
   verifications pass.
 - Live preview restarted with schema 5. Canonical session remained at sequence
   252. No provider generation or artifact decision was performed by this patch.
+
+The owner's subsequent live retry selected `propose_flashcards` after a successful
+HTTP 200 decision. Three generation HTTP calls returned 400 and the capability
+terminated after about 107 seconds (129 seconds for the whole turn). This confirms
+the failure moved beyond routing and is a rejected generation request, not an
+unavailable provider. The trace does not contain its raw provider response.
+Follow-up instrumentation keeps the existing portable error code on every Luna
+generation call, and reports `terminated` outcomes as failed rather than completed.
+Final follow-up verification: 82 affected tests passed; Ruff, mypy and rebuilt
+wheel/sdist artifact verification passed. The sanitized live trace was preserved
+outside the repository before restarting the preview with this follow-up.
