@@ -30,9 +30,12 @@ The live preview requires a process restart to load Python changes. Its API key
 is process-local and must be re-entered afterward; historical failed traces
 cannot be reconstructed after a restart.
 
-The approved recovery custody overlay still freezes the previous exact bytes
-of six modified Cardine files. This change does not edit or bypass that gate.
-The patch needs a separately approved custody update before CI can be green.
+The owner explicitly approved updating the six trace-patch hashes and pushing
+PR #5 on 2026-09-28. The recovery overlay now binds those exact bytes from
+20d19e4; the other 40 rows, original recovery origin commit, CA-01/CA-02 ledgers,
+and audit logic remain unchanged. The recovery origin remains 50cb0cb, while
+this log records the separately authorized six-path evolution. The standalone
+ownership audit passes (322 historical rows).
 
 Verification:
 - The pre-fix regression failed because a failed decisionless turn disappeared.
