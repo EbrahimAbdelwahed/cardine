@@ -18,6 +18,8 @@ categories:
    [`src/study_agent/demo/fonts/LICENSE.txt`](src/study_agent/demo/fonts/LICENSE.txt)
    and
    [`src/study_agent/demo/icons/LICENSE.phosphor.txt`](src/study_agent/demo/icons/LICENSE.phosphor.txt).
+   Beautiful UI Thinking and Streaming Text adaptations retain the MIT notice in
+   [`src/cardine/demo/icons/LICENSE.beautifului.txt`](src/cardine/demo/icons/LICENSE.beautifului.txt).
    Those notices govern the corresponding asset files and are not replaced by
    Cardine's private ownership notice.
 3. **Private Cardine product work.** Cardine's product shell, private auth and
