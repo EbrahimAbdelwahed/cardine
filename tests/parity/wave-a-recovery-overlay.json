@@ -40,7 +40,7 @@
     },
     {
       "path": "src/cardine/demo/browser.css",
-      "sha256": "6875fc482b2a614b6956c733fbf113ccdcb6dad0db941a50508b918432978d31"
+      "sha256": "29e76d8e99280186584ac313777c58019a95fba7a1f24d245dc0047523e9be52"
     },
     {
       "path": "src/cardine/demo/browser.html",
@@ -48,7 +48,7 @@
     },
     {
       "path": "src/cardine/demo/browser.js",
-      "sha256": "d426a7e41d088b1e35d9572c98034017dfd902c27403f1aa5dd5c3aac9cd65b1"
+      "sha256": "5cc09536daaf9ba1c9dd9c47eb109982bdee6dcf66e4e39a795efc6c5ddfd56e"
     },
     {
       "path": "src/cardine/demo/browser.py",

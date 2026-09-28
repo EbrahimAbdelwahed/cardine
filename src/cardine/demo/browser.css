@@ -1088,10 +1088,10 @@
     width: 10px;
     height: 3px;
     margin-inline: auto;
-    border-radius: 2px;
+    border-radius: var(--radius-full);
     background: var(--muted);
     opacity: .4;
-    transition: width 160ms ease, opacity 160ms ease;
+    transition: width var(--duration-fast) var(--ease-out), opacity var(--duration-fast) var(--ease-out);
   }
   .message-scroller__tick[data-sender="learner"]::before { width: 16px; }
   .message-scroller__tick[aria-current], .message-scroller__tick:hover { color: var(--ink); }
@@ -1124,7 +1124,7 @@
     transform: translateX(-50%);
     padding: var(--space-2) var(--space-3);
     border: 1px solid var(--line);
-    border-radius: 999px;
+    border-radius: var(--radius-full);
     background: var(--paper);
     color: var(--ink);
     box-shadow: var(--elevation-2);

@@ -1239,9 +1239,11 @@
       schedule();
     }
 
-    function interrupt() {
+    function interrupt(event) {
       navigating = false;
-      following = false;
+      const movingBack = (event?.type === "wheel" && event.deltaY < 0)
+        || ["ArrowUp", "PageUp", "Home"].includes(event?.key);
+      following = movingBack ? false : atEnd();
       // Cancel an in-flight smooth jump before handing control to the reader.
       viewport.scrollTo({ top: viewport.scrollTop, behavior: "instant" });
       schedule();
@@ -1249,7 +1251,7 @@
 
     function onKey(event) {
       if (event.target !== viewport) return;
-      if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) interrupt();
+      if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) interrupt(event);
     }
 
     function jump(event) {

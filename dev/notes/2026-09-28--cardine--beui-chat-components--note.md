@@ -51,8 +51,10 @@ should wait for a structured claim-to-citation mapping from the service: the
 current footer alone cannot identify which individual sentence is supported.
 
 Concrete existing weaknesses, outside the scroller patch:
-- Renderer deduplication uses the display label (title takes precedence over
-  locator), so different pages/revisions with the same title can collapse.
+- Renderer deduplication uses the display label (`label`, then `title`, then
+  `locator`), so distinct canonical revisions sharing the same label collapse.
+  A Node reproduction with two revisions and one identical page label produced
+  one viewer button. Distinct locator labels from the current DTO are retained.
 - Viewer resolution depends on a unique title prefix; ambiguity becomes an inert
   locator rather than an openable canonical reference.
 - A singular legacy `citation` can appear in both the answer disclosure and the
