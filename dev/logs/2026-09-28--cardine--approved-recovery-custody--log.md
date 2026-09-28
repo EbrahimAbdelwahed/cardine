@@ -13,3 +13,13 @@ Cardine adapters; consume a released pinned Harness package; prove installed
 artifact parity at CA-08; remove copied-core/transition paths at CA-10. Later
 package upgrades must be verified and reproducible. Passing this custody audit
 does not complete adoption. No merge is authorized by this decision.
+
+Verification:
+- Ownership audit: OK (322 historical rows), with the separate 46-path overlay.
+- Complete pytest: 2462 passed, 13 skipped, including clean-archive custody and
+  mutation checks. No failing case was excluded.
+- Ruff passes; mypy passes on 618 source files.
+- Wheel and sdist build and artifact verification pass.
+- Historical classification, ledger and CA-02 overlay match the parent commit.
+- Publication was rejected by automatic permission review: explicit remote push
+  authorization is required. GitHub CI/review of this change are not yet run.
