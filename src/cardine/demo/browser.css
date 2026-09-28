@@ -304,7 +304,7 @@
     overscroll-behavior: contain;
     scroll-padding-block: var(--space-5);
   }
-  .view-root[data-scroll-owner="conversation"] { overflow: hidden; }
+  .view-root[data-scroll-owner="conversation"] { overflow: clip; }
 
   /* Two-column section: one text column, one aside, both on the same
      baseline and both starting on the same left edge as the page title. */
@@ -1054,6 +1054,86 @@
   }
   .conversation-header p { color: var(--muted); font-size: var(--text-xs); }
   .conversation-header__actions { display: flex; flex: none; align-items: center; gap: var(--space-2); }
+  .message-scroller { position: relative; min-height: 0; min-width: 0; overflow: clip; }
+  .message-scroller .conversation-scroll { height: 100%; padding-inline: max(var(--layout-inline), 48px); }
+  .chat-session .conversation-composer-dock { padding-inline: max(var(--layout-inline), 48px); }
+  .message-scroller__rail {
+    position: absolute;
+    inset-inline-end: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    max-height: calc((100% - 80px) * .82);
+    width: 26px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+    z-index: 1;
+  }
+  .message-scroller__rail[hidden], .message-scroller__latest[hidden] { display: none; }
+  .message-scroller__tick {
+    position: relative;
+    flex: none;
+    width: 26px;
+    height: 24px;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+  }
+  .message-scroller__tick::before {
+    content: "";
+    display: block;
+    width: 8px;
+    height: 2.5px;
+    margin-inline: auto;
+    border-radius: var(--radius-full);
+    background: var(--muted);
+    opacity: .4;
+    transition: width var(--duration-fast) var(--ease-out), opacity var(--duration-fast) var(--ease-out);
+  }
+  .message-scroller__tick[data-sender="learner"]::before { width: 13px; }
+  .message-scroller__tick[aria-current], .message-scroller__tick:hover { color: var(--ink); }
+  .message-scroller__tick[aria-current]::before,
+  .message-scroller__tick:is(:hover, :focus-visible)::before { width: 20px; opacity: 1; background: var(--ink); }
+  .message-scroller__preview { display: none; }
+  /* Native title-free previews stay inside the chat, clear of its scroll rail. */
+  .message-scroller[data-message-preview]:has(.message-scroller__tick:is(:hover, :focus-visible))::after {
+    content: attr(data-message-preview);
+    position: absolute;
+    inset-inline-end: 48px;
+    top: 50%;
+    transform: translateY(-50%);
+    max-width: min(320px, calc(100% - 64px));
+    padding: var(--space-3);
+    color: var(--ink);
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    box-shadow: var(--elevation-2);
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .message-scroller__latest {
+    position: absolute;
+    bottom: var(--space-3);
+    left: 50%;
+    transform: translateX(-50%);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-full);
+    background: var(--paper);
+    color: var(--ink);
+    box-shadow: var(--elevation-2);
+    white-space: nowrap;
+    z-index: 2;
+  }
+  @media (pointer: coarse) {
+    .message-scroller__tick { height: 44px; }
+  }
   .conversation-scroll {
     min-width: 0;
     min-height: 0;

@@ -946,6 +946,7 @@
 
   function setBusy(busy) {
     state.loading = busy;
+    $(".conversation-scroll", root)?.setAttribute("aria-busy", String(busy));
     $$('[data-command]').forEach((control) => {
       if (busy) {
         control.dataset.disabledBeforeBusy = String(control.disabled);
@@ -1049,7 +1050,8 @@
   /* ------------------------------------------------------------------ */
 
   const PRESERVE_VALUE = new Set(["INPUT", "TEXTAREA"]);
-  const NEAR_BOTTOM = 64;
+  const NEAR_BOTTOM = 56;
+  let conversationScroller = null;
 
   function nodeKey(node) {
     return node.getAttribute("data-key") || node.id || "";
@@ -1137,12 +1139,208 @@
     morphChildren(container, template.content);
   }
 
+  // BeUI Message Scroller interaction pattern, implemented for Cardine's
+  // dependency-free shell: reader-owned scrolling, message rail and live edge.
+  function enhanceMessageScroller(container) {
+    const viewport = $(".conversation-scroll", container);
+    const rail = $(".message-scroller__rail", container);
+    const latest = $(".message-scroller__latest", container);
+    const content = viewport?.firstElementChild;
+    if (!viewport || !rail || !latest || !content) return null;
+    let following = atEnd();
+    let frame = 0;
+    let messages = [];
+    let targets = [];
+    let signature = "";
+    let navigating = false;
+    let navigationTarget = 0;
+    let activeIndex = -1;
+
+    function atEnd() {
+      return viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= NEAR_BOTTOM;
+    }
+
+    function update() {
+      frame = 0;
+      const overflowing = viewport.scrollHeight > viewport.clientHeight + 1;
+      const nextMessages = $$(".session-thread > .thread-message", content);
+      const previews = nextMessages.map((message, index) => {
+        const learner = message.classList.contains("thread-message--learner");
+        const surface = $(".thread-message__text, .ai-answer__markdown", message);
+        const excerpt = text(surface?.innerText || surface?.textContent).replace(/\s+/g, " ").trim().slice(0, 144);
+        return { label: `${learner ? "tu" : "tutor"} · ${index + 1} di ${nextMessages.length}`, excerpt, learner };
+      });
+      const nextSignature = JSON.stringify(previews);
+      messages = nextMessages;
+      if (signature !== nextSignature) {
+        signature = nextSignature;
+        // Keep the focused rail control alive when output grows.
+        previews.forEach((preview, index) => {
+          let button = rail.children[index];
+          if (!button) {
+            button = document.createElement("button");
+            button.type = "button";
+            button.id = `message-navigation-${index}`;
+            button.className = "message-scroller__tick";
+            const card = document.createElement("span");
+            card.className = "message-scroller__preview";
+            card.setAttribute("aria-hidden", "true");
+            button.appendChild(card);
+            rail.appendChild(button);
+          }
+          button.dataset.messageIndex = String(index);
+          button.dataset.sender = preview.learner ? "learner" : "assistant";
+          button.setAttribute("aria-label", `Vai al messaggio di ${preview.label}: ${preview.excerpt}`);
+          button.setAttribute("aria-controls", "conversation-viewport");
+          button.firstElementChild.textContent = `${preview.label} — ${preview.excerpt}`;
+        });
+        while (rail.children.length > previews.length) rail.lastElementChild.remove();
+        targets = Array.from(rail.children);
+      }
+      rail.hidden = !overflowing || messages.length < 2;
+      latest.hidden = !overflowing || following;
+      viewport.setAttribute("aria-busy", String(state.loading));
+      const bounds = viewport.getBoundingClientRect();
+      let active = 0;
+      let distance = Infinity;
+      messages.forEach((message, index) => {
+        const rect = message.getBoundingClientRect();
+        const delta = Math.abs(rect.top + rect.height / 2 - (bounds.top + bounds.height / 2));
+        if (delta < distance) { distance = delta; active = index; }
+      });
+      if (viewport.scrollTop <= NEAR_BOTTOM) active = 0;
+      else if (atEnd()) active = messages.length - 1;
+      if (active !== activeIndex) {
+        activeIndex = active;
+        const tick = targets[active];
+        if (tick && tick.offsetTop < rail.scrollTop) rail.scrollTop = tick.offsetTop;
+        else if (tick && tick.offsetTop + tick.offsetHeight > rail.scrollTop + rail.clientHeight) {
+          rail.scrollTop = tick.offsetTop + tick.offsetHeight - rail.clientHeight;
+        }
+      }
+      targets.forEach((button, index) => {
+        if (index === active) button.setAttribute("aria-current", "true");
+        else button.removeAttribute("aria-current");
+      });
+    }
+
+    function schedule() {
+      if (!frame) frame = requestAnimationFrame(update);
+    }
+
+    function grow() {
+      // Reflow may happen after rendering (answer reveal, fonts, disclosures).
+      // Follow only the state recorded before the content grew.
+      if (following && !navigating) viewport.scrollTop = viewport.scrollHeight;
+      schedule();
+    }
+
+    function onScroll() {
+      if (!navigating) following = atEnd();
+      schedule();
+    }
+
+    function interrupt(event) {
+      navigating = false;
+      const movingBack = (event?.type === "wheel" && event.deltaY < 0)
+        || ["ArrowUp", "PageUp", "Home"].includes(event?.key);
+      following = movingBack ? false : atEnd();
+      // Cancel an in-flight smooth jump before handing control to the reader.
+      viewport.scrollTo({ top: viewport.scrollTop, behavior: "instant" });
+      schedule();
+    }
+
+    function onKey(event) {
+      if (event.target !== viewport) return;
+      if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) interrupt(event);
+    }
+
+    function jump(event) {
+      const button = event.target.closest("[data-message-index]");
+      const message = button && messages[Number(button.dataset.messageIndex)];
+      if (!message) return;
+      following = false;
+      navigating = true;
+      const top = viewport.scrollTop + message.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 24;
+      navigationTarget = Math.max(0, Math.min(top, viewport.scrollHeight - viewport.clientHeight));
+      viewport.scrollTo({ top: navigationTarget, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+      schedule();
+    }
+
+    function preview(event) {
+      const button = event.target.closest("[data-message-index]");
+      if (button) rail.parentElement.dataset.messagePreview = button.firstElementChild.textContent;
+    }
+
+    function dismissPreview(event) {
+      if (event.type !== "keydown" || event.key === "Escape") delete rail.parentElement.dataset.messagePreview;
+    }
+
+    function onScrollEnd() {
+      // An initial follow can queue scrollend just before a rail jump starts.
+      // That stale event must not re-enable following during the new jump.
+      if (navigating && Math.abs(viewport.scrollTop - navigationTarget) > 2) return;
+      navigating = false;
+      following = atEnd();
+      schedule();
+    }
+
+    function resume() {
+      navigating = false;
+      following = true;
+      viewport.scrollTo({ top: viewport.scrollHeight, behavior: "instant" });
+      schedule();
+    }
+
+    // Latest is hidden after activation; move keyboard focus into the transcript.
+    function returnToLatest() { resume(); viewport.focus({ preventScroll: true }); }
+    viewport.addEventListener("scroll", onScroll, { passive: true });
+    viewport.addEventListener("scrollend", onScrollEnd);
+    viewport.addEventListener("wheel", interrupt, { passive: true });
+    viewport.addEventListener("touchstart", interrupt, { passive: true });
+    viewport.addEventListener("keydown", onKey);
+    rail.addEventListener("click", jump);
+    rail.addEventListener("pointerover", preview);
+    rail.addEventListener("focusin", preview);
+    rail.addEventListener("pointerleave", dismissPreview);
+    rail.addEventListener("focusout", dismissPreview);
+    rail.addEventListener("keydown", dismissPreview);
+    latest.addEventListener("click", returnToLatest);
+    const resize = new ResizeObserver(grow);
+    resize.observe(content);
+    resize.observe(viewport);
+    const mutation = new MutationObserver(grow);
+    mutation.observe(content, { childList: true, subtree: true, characterData: true });
+    update();
+    return {
+      get following() { return following; },
+      resume,
+      destroy() {
+        resize.disconnect();
+        mutation.disconnect();
+        cancelAnimationFrame(frame);
+        viewport.removeEventListener("scroll", onScroll);
+        viewport.removeEventListener("scrollend", onScrollEnd);
+        viewport.removeEventListener("wheel", interrupt);
+        viewport.removeEventListener("touchstart", interrupt);
+        viewport.removeEventListener("keydown", onKey);
+        rail.removeEventListener("click", jump);
+        rail.removeEventListener("pointerover", preview);
+        rail.removeEventListener("focusin", preview);
+        rail.removeEventListener("pointerleave", dismissPreview);
+        rail.removeEventListener("focusout", dismissPreview);
+        rail.removeEventListener("keydown", dismissPreview);
+        latest.removeEventListener("click", returnToLatest);
+      },
+    };
+  }
+
   function captureScroll() {
     const conversation = $(".conversation-scroll", root);
     return {
       view: root.scrollTop,
       conversation: conversation ? conversation.scrollTop : 0,
-      pinned: conversation
+      pinned: conversationScroller ? conversationScroller.following : conversation
         ? conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight <= NEAR_BOTTOM
         : true,
     };
@@ -1166,6 +1364,8 @@
     root.dataset.scrollOwner = route === "sessione" ? "conversation" : "view";
     navActive(route);
     destroyPrimitiveEnhancements();
+    conversationScroller?.destroy();
+    conversationScroller = null;
     patch(root, html);
     bindDynamicControls();
     destroyPrimitiveEnhancements = typeof CardineAI.enhance === "function"
@@ -1178,6 +1378,7 @@
     syncComposers();
     root.removeAttribute("aria-busy");
     restoreScroll(snapshot, routeChanged);
+    conversationScroller = enhanceMessageScroller(root);
     if (!routeChanged) {
       const restored = activeId ? document.getElementById(activeId) : null;
       if (restored && restored !== document.activeElement) restored.focus({ preventScroll: true });
@@ -1588,7 +1789,7 @@
      session render the same markup, so they cannot drift apart or invent a
      subtitle that contradicts the real state. */
   function sessionShell({ title, subtitle, thread, extras = "", actions = "", placeholder }) {
-    return `<section class="chat-session" data-ai-chat-ready="true" aria-labelledby="conversation-heading"><header class="conversation-header"><div><h1 id="conversation-heading">${esc(title)}</h1><p>${esc(subtitle)}</p></div><div class="conversation-header__actions">${actions}</div></header><div class="conversation-scroll"><div class="conversation-column"><div class="session-thread">${thread}</div>${extras}</div></div><div class="conversation-composer-dock"><div class="conversation-column">${lessonPinAttachment()}${entryForm("session-entry", "Scrivi al tutor", placeholder)}</div></div></section>`;
+    return `<section class="chat-session" data-ai-chat-ready="true" aria-labelledby="conversation-heading"><header class="conversation-header"><div><h1 id="conversation-heading">${esc(title)}</h1><p>${esc(subtitle)}</p></div><div class="conversation-header__actions">${actions}</div></header><div class="message-scroller"><section id="conversation-viewport" class="conversation-scroll" aria-label="Conversazione" tabindex="0"><div class="conversation-column"><div class="session-thread">${thread}</div>${extras}</div></section><nav class="message-scroller__rail" aria-label="Navigazione messaggi" hidden></nav><button class="message-scroller__latest" type="button" hidden>Vai all’ultimo messaggio <span aria-hidden="true">↓</span></button></div><div class="conversation-composer-dock"><div class="conversation-column">${lessonPinAttachment()}${entryForm("session-entry", "Scrivi al tutor", placeholder)}</div></div></section>`;
   }
 
   function renderMessage(message, showFineTune = false) {
@@ -2092,6 +2293,7 @@
       thread.insertAdjacentHTML("beforeend", outgoing + pending);
       const scroller = $(".conversation-scroll", root);
       if (scroller) scroller.scrollTop = scroller.scrollHeight;
+      conversationScroller?.resume();
       return;
     }
     setView("sessione", sessionShell({
