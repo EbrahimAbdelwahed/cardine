@@ -5,10 +5,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
+from cardine.adapters.model.diagnostic_transport import DiagnosticHttpTransport
 from study_agent.adapters.model.openai_compatible import (
     HttpTransport,
     OpenAICompatibleConfig,
     OpenAICompatibleModel,
+    StdlibHttpTransport,
 )
 from study_agent.domain._validation import JsonObject
 from study_agent.ports.model import (
@@ -52,10 +54,7 @@ class OpenAIGpt56LunaConfig:
         if (
             not isinstance(self.api_key, str)
             or not self.api_key
-            or any(
-                ord(character) < 32 or ord(character) == 127
-                for character in self.api_key
-            )
+            or any(ord(character) < 32 or ord(character) == 127 for character in self.api_key)
         ):
             raise ValueError("api_key must be non-empty bounded text")
         if (
@@ -90,17 +89,14 @@ class OpenAIGpt56LunaModel(OpenAICompatibleModel):
                 reasoning_effort=GPT_5_6_LUNA_REASONING_EFFORT,
                 max_output_tokens_field="max_completion_tokens",
             ),
-            transport,
+            DiagnosticHttpTransport(transport if transport is not None else StdlibHttpTransport()),
         )
 
     def _structured_output_schema(self, schema: JsonObject) -> object:
         return _provider_strict_schema(schema)
 
     async def generate(self, request: ModelRequest) -> ModelResponse:
-        if (
-            request.structured_output is not None
-            and request.structured_output.strict is not True
-        ):
+        if request.structured_output is not None and request.structured_output.strict is not True:
             raise ModelError(
                 ModelErrorCode.PROTOCOL_ERROR,
                 "GPT-5.6 Luna structured output must be strict",

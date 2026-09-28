@@ -15,6 +15,7 @@ from enum import StrEnum
 from hashlib import sha256
 from typing import TYPE_CHECKING
 
+from cardine.diagnostics.turn_trace import trace_operation
 from study_agent.capabilities.contracts import (
     CancelledCapabilityOutcome,
     CapabilityContinuation,
@@ -1390,9 +1391,13 @@ class TutorHostRunner:
                 if _interrupted(interruption):
                     return _interrupted_result(selected, retry_action)
                 try:
-                    outcome = await self._gateway.start(
-                        capability_id, decision.inputs, trusted_context
-                    )
+                    with trace_operation("capability_start") as operation:
+                        outcome = await self._gateway.start(
+                            capability_id, decision.inputs, trusted_context
+                        )
+                        operation.observe_outcome(
+                            outcome.status.value, getattr(outcome, "failure_reason", None)
+                        )
                 except CapabilityGatewayError as error:
                     if _interrupted(interruption):
                         return _interrupted_result(selected, retry_action)
@@ -1464,11 +1469,15 @@ class TutorHostRunner:
                 if _interrupted(interruption):
                     return _interrupted_result(selected, retry_action)
                 try:
-                    outcome = await self._gateway.resume(
-                        selected.continuation,
-                        decision.response,
-                        selected.execution_context,
-                    )
+                    with trace_operation("capability_resume") as operation:
+                        outcome = await self._gateway.resume(
+                            selected.continuation,
+                            decision.response,
+                            selected.execution_context,
+                        )
+                        operation.observe_outcome(
+                            outcome.status.value, getattr(outcome, "failure_reason", None)
+                        )
                 except CapabilityGatewayError as error:
                     if _interrupted(interruption):
                         return _interrupted_result(selected, retry_action)
@@ -1785,7 +1794,8 @@ class TutorHostRunner:
                 raise ScriptedDecisionError("decision interrupted")
             attempts += 1
             try:
-                return await self._decision_port.decide(context, interruption)
+                with trace_operation("host_decision"):
+                    return await self._decision_port.decide(context, interruption)
             except RetryableTutorDecisionError as error:
                 if attempts >= self._limits.max_provider_attempts_per_decision:
                     raise _DecisionBudgetExhausted(

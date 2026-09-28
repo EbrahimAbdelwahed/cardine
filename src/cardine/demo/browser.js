@@ -903,9 +903,21 @@
         const reason = kind === "stop" && text(decision.reason, "")
           ? ` · ${esc(text(decision.reason))}`
           : "";
-        return `<article class="turn-trace" data-turn-trace="${esc(traceId)}" data-highlighted="${highlighted}"><header><div><strong>${esc(traceId)}</strong><span>decisione tutor</span></div></header><p><code>${esc(kind)}</code>${reason}</p></article>`;
+        const operations = array(trace.operations).map((item) => {
+          const operation = object(item);
+          const details = [
+            text(operation.phase), text(operation.status),
+            `tentativo ${text(operation.attempt)}`, `${text(operation.duration_ms, "…")} ms`,
+            operation.http_status == null ? "" : `HTTP ${text(operation.http_status)}`,
+            text(operation.outcome, ""), text(operation.error_code, ""), text(operation.error_kind, ""),
+            text(operation.error_type, ""), text(operation.error_location, ""),
+          ].filter(Boolean).map(esc).join(" · ");
+          return `<li><code>${details}</code></li>`;
+        }).join("");
+        const omitted = Number(trace.omitted_operations) || 0;
+        return `<article class="turn-trace" data-turn-trace="${esc(traceId)}" data-highlighted="${highlighted}"><header><div><strong>${esc(traceId)}</strong><span>${esc(text(trace.status, ""))}</span></div></header><p><code>${esc(kind)}</code>${reason}</p>${operations ? `<ol>${operations}</ol>` : ""}${omitted ? `<p class="field-note">Operazioni precedenti omesse: ${esc(String(omitted))}</p>` : ""}</article>`;
       }).join("") : `<p class="field-note">Nessun turno registrato in questa esecuzione.</p>`;
-      patch(target, `<p class="field-note">Memoria locale: ultime ${esc(text(retention.max_traces, "24"))} decisioni validate. Payload acquisiti: no. Telemetria esterna: no.</p>${traceHtml}`);
+      patch(target, `<p class="field-note">Memoria locale: ultimi ${esc(text(retention.max_traces, "24"))} turni, inclusi i fallimenti. Payload acquisiti: no. Telemetria esterna: no.</p>${traceHtml}`);
       if (state.diagnosticTraceId) {
         target.querySelector('[data-highlighted="true"]')?.scrollIntoView({ block: "nearest" });
       }

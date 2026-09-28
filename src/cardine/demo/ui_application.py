@@ -732,6 +732,7 @@ class RepositoryUiApplication(UiApplicationPort):
                         if continuation_fingerprint is None
                         else application.resume_continuation(continuation_fingerprint, turn)
                     )
+                    self._turn_traces.record_outcome(trace_id, result.status.value)
                     repository.settle_study_memory(self._course_id, self._session_id)
                     projection, refreshed = self._captured_state(repository)
 

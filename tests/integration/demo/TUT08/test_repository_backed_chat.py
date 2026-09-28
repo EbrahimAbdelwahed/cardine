@@ -718,7 +718,15 @@ def test_repository_chat_is_durable_idempotent_and_stale_safe(tmp_path: Path) ->
 
     decision_before_retry = app.turn_traces.snapshot()
     assert app.post("/api/v1/session/turns", command) == receipt
-    assert app.turn_traces.snapshot() == decision_before_retry
+    before_trace = cast(tuple[JsonObject, ...], decision_before_retry["turn_traces"])[-1]
+    retry_trace = cast(tuple[JsonObject, ...], app.turn_traces.snapshot()["turn_traces"])[-1]
+    assert retry_trace["decision"] == before_trace["decision"]
+    assert retry_trace["steps"] == before_trace["steps"]
+    assert retry_trace["attempts"] == 2
+    # A reconciled retry has an application span, but never another model call.
+    assert len(cast(tuple[JsonObject, ...], retry_trace["operations"])) == len(
+        cast(tuple[JsonObject, ...], before_trace["operations"])
+    ) + 1
     assert len(model.requests) == 1
 
     fresh = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)

@@ -9,6 +9,8 @@ archive and must not be treated as Cardine's current state.
 
 ## Start here
 
+- [Failed-turn observability](logs/2026-09-28--cardine--failed-turn-observability--log.md) — correlated, bounded failure/retry traces with safe transport and execution metadata; recovery custody update remains separate.
+
 - [Approved recovery custody and package target](logs/2026-09-28--cardine--approved-recovery-custody--log.md) — owner accepted the exact recovery bytes; installed-package parity and copied-core removal remain required.
 
 - [Recovery CI alignment and decision feedback](logs/2026-09-28--cardine--recovery-ci-alignment--log.md) — current development branch includes main; flashcard acceptance feedback is fixed, typing and package checks pass, ownership approval is recorded in the newer custody log; publication and live generation reproduction remain pending.
