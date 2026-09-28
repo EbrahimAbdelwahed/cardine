@@ -187,3 +187,59 @@ def test_repository_route_control_matrix_and_restart_safe_chat(tmp_path: Path) -
     assert [item["role"] for item in timeline] == ["learner", "assistant"]
     assert timeline[-1]["content"] == "Which valve should we focus on?"
 
+    # Exact retry is a no-op after restart; a different request at the old
+    # sequence is rejected before model invocation or canonical writes.
+    retry = restarted.post("/api/v1/session/turns", command)
+    assert without_transient_activity(retry) == without_transient_activity(receipt)
+    assert retry["activity_records"] == ()
+    with pytest.raises(UiRequestError) as stale:
+        restarted.post(
+            "/api/v1/session/turns",
+            _command("closure-stale", sequence, {"content": "new question"}),
+        )
+    assert stale.value.status_code == 409
+    assert len(model.requests) == 1
+
+
+def test_browser_control_matrix_keyboard_and_responsive_contracts() -> None:
+    page = (DEMO_DIR / "browser.html").read_text(encoding="utf-8")
+    javascript = (DEMO_DIR / "browser.js").read_text(encoding="utf-8")
+    css = (DEMO_DIR / "browser.css").read_text(encoding="utf-8")
+
+    routes = set(re.findall(r'data-route="([^"]+)"', page))
+    assert set(ROUTES).issubset(routes)
+    assert 'id="entry-form"' in page
+    assert 'id="global-status" role="status" aria-live="polite"' in page
+    assert '<div id="view-root" class="view-root">' in page
+    assert 'id="view-root" class="view-root" aria-live="polite"' not in page
+    assert 'id="rail-toggle" aria-expanded="false" aria-controls="rail"' in page
+
+    for command in (
+        "artifact",
+        "enroll",
+        "assessment-present",
+        "assessment-attempt",
+        "assessment-grade",
+        "review",
+        "context",
+    ):
+        assert f'data-command="{command}"' in javascript
+    assert "$$('[data-command]')" in javascript
+    assert "submitComposerFromKeyboard" in javascript
+    assert "navigationVersion: 0" in javascript
+    assert "navigationVersion !== state.navigationVersion" in javascript
+    assert "commandNavigationVersion === state.navigationVersion" in javascript
+    assert "bootstrapNavigationVersion === state.navigationVersion" in javascript
+    assert "disabledBeforeBusy" in javascript
+    assert 'data-command="assessment-attempt"' in javascript
+    assert '${hasResponse ? "" : " disabled"}' in javascript
+    assert "submit.disabled = control.type === \"checkbox\"" in javascript
+    assert "if (submit) submit.disabled = !text(control.value).trim();" in javascript
+    for token in ("--ink-soft:", "--surface-hover:"):
+        assert token in css
+        assert token in css.split("@media (prefers-color-scheme: dark)", 1)[1]
+    assert 'event.key === "Escape"' in javascript
+    assert "@media (prefers-reduced-motion: reduce)" in css
+    assert "overflow-wrap: anywhere" in css
+    assert "@media (max-width: 1080px)" in css
+    assert "@media (max-width: 700px)" in css
