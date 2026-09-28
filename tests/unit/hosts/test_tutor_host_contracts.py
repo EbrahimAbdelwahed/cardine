@@ -170,20 +170,28 @@ def test_start_capability_progress_message_is_closed_capability_template() -> No
     assert isinstance(properties, Mapping)
     decision = properties["decision"]
     assert isinstance(decision, Mapping)
-    branch = next(
-        item
-        for item in decision["anyOf"]
-        if isinstance(item, Mapping)
-        and isinstance(item.get("properties"), Mapping)
-        and item["properties"].get("kind", {}).get("enum") == ("start_capability",)
-    )
+    branches = decision["anyOf"]
+    assert isinstance(branches, tuple)
+    branch = None
+    for item in branches:
+        assert isinstance(item, Mapping)
+        item_properties = item["properties"]
+        assert isinstance(item_properties, Mapping)
+        kind = item_properties["kind"]
+        assert isinstance(kind, Mapping)
+        if kind.get("enum") == ("start_capability",):
+            branch = item
+            break
+    assert branch is not None
     branch_properties = branch["properties"]
     assert isinstance(branch_properties, Mapping)
     progress = branch_properties["progress_message"]
     assert isinstance(progress, Mapping)
     assert progress["type"] == "string"
     assert progress["enum"] == ("Preparo la spiegazione",)
-    assert "progress_message" not in branch["required"]
+    required = branch["required"]
+    assert isinstance(required, tuple)
+    assert "progress_message" not in required
 
     trimmed = StartCapabilityDecision(
         "grounding.ask",

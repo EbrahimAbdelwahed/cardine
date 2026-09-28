@@ -9,7 +9,7 @@ from hashlib import sha256
 from typing import Protocol
 from unicodedata import normalize
 
-from cardine.integrations.study_agent.course_policy import (  # type: ignore[import-untyped]
+from cardine.integrations.study_agent.course_policy import (
     ProviderConsentRequiredError,
 )
 from study_agent.artifacts.service import RetryableArtifactConflictError

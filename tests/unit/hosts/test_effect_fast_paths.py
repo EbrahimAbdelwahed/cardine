@@ -13,6 +13,7 @@ from cardine.hosts import (
 from cardine.hosts.clarification_recovery import ClarificationRecoveryTutorDecisionPort
 from cardine.hosts.flashcard_routing import FlashcardProfileRoutingTutorDecisionPort
 from cardine.hosts.source_grounding import SourceGroundedTutorDecisionPort
+from study_agent.domain._validation import JsonObject
 from study_agent.ports.tutor_host import TutorInterruptionToken
 
 
@@ -54,7 +55,7 @@ def _capability(identifier: str) -> AdvertisedCapability:
 def _context(
     learner_text: str,
     *,
-    presentations: tuple[Mapping[str, object], ...] = (),
+    presentations: tuple[JsonObject, ...] = (),
     learner_sequence: int = 2,
 ) -> TutorHostContext:
     return TutorHostContext(

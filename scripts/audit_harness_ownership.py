@@ -302,18 +302,18 @@ def _transition_contract() -> tuple[set[str], set[str]]:
         if relative.startswith("src/cardine/_transition/"):
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=relative)
-        for node in ast.walk(tree):
-            imports_transition = isinstance(node, ast.ImportFrom) and (
-                node.module == "cardine._transition.study_agent"
+        for descendant in ast.walk(tree):
+            imports_transition = isinstance(descendant, ast.ImportFrom) and (
+                descendant.module == "cardine._transition.study_agent"
                 or (
-                    node.module == "cardine._transition"
-                    and any(alias.name == "study_agent" for alias in node.names)
+                    descendant.module == "cardine._transition"
+                    and any(alias.name == "study_agent" for alias in descendant.names)
                 )
             )
             imports_transition = imports_transition or (
-                isinstance(node, ast.Import)
+                isinstance(descendant, ast.Import)
                 and any(
-                    alias.name == "cardine._transition.study_agent" for alias in node.names
+                    alias.name == "cardine._transition.study_agent" for alias in descendant.names
                 )
             )
             if imports_transition:

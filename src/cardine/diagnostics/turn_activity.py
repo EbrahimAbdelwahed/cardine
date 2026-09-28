@@ -317,6 +317,8 @@ class TurnActivityStore:
                 return
             value = cast(Mapping[str, object], request_id)
             request_id = current[1]
+        if not isinstance(request_id, str):
+            raise TypeError("request id must be a string")
         if not isinstance(value, Mapping):
             raise TypeError("settled activity record must be an object")
         kind = _validate_kind(value.get("kind"))
@@ -369,7 +371,7 @@ class TurnActivityStore:
     def _snapshot_locked(self, request_id: str) -> JsonObject:
         turn = self._turn(request_id)
         if turn is None:
-            return {"schema_version": 2, "state": "unknown", "records": [], "omitted": 0}
+            return {"schema_version": 2, "state": "unknown", "records": (), "omitted": 0}
         records = tuple(cast(JsonObject, dict(item)) for item in turn.records)
         snapshot: dict[str, JsonValue] = {
             "schema_version": 2,

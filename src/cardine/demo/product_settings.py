@@ -7,7 +7,7 @@ from collections.abc import Iterator, Mapping
 from threading import RLock
 from typing import Literal, TypeVar, cast, overload
 
-from study_agent.domain._validation import JsonObject
+from study_agent.domain._validation import JsonObject, JsonValue
 
 from .ui_application import UiApplicationPort, UiRequestError
 
@@ -160,7 +160,7 @@ class SettingsApplication(UiApplicationPort):
         return self._credential_result("configured")
 
     def _settings(self) -> JsonObject:
-        settings: JsonObject = {
+        settings: dict[str, JsonValue] = {
             "schema_version": 1,
             "data": {
                 "repository": {"configured": True, "kind": "local_repository"},

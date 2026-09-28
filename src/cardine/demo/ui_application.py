@@ -356,9 +356,9 @@ class RepositoryUiApplication(UiApplicationPort):
             "error_code": None,
         }
         try:
-            with self._lock, self._open() as repository:
+            with self._lock, self._open() as local_repository:
                 self._indexing_view = self._indexing_record_payload(
-                    repository, repository.indexing_status()
+                    local_repository, local_repository.indexing_status()
                 )
         except CardineSourceContentUnavailableError:
             # A missing canonical blob is surfaced by the existing materials
@@ -1441,7 +1441,7 @@ class RepositoryUiApplication(UiApplicationPort):
         return {
             "schema_version": 1,
             "course_id": str(self._course_id),
-            "indexing": cast(JsonObject, self._indexing_view),
+            "indexing": self._indexing_view,
         }
 
     def _indexing_record_payload(

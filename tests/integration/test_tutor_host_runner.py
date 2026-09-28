@@ -662,7 +662,9 @@ def test_handoff_drops_progress_message_and_reads_v1_to_v3_without_one() -> None
     )
     record = TutorCompletionHandoff.from_bytes(handoffs.values[handoff_key])
     assert "progress_message" not in record.action
-    assert record.decision(context).progress_message is None
+    replayed = record.decision(context)
+    assert isinstance(replayed, StartCapabilityDecision)
+    assert replayed.progress_message is None
 
     old_action = dict(record.action)
     old_action.pop("progress_message", None)
@@ -682,7 +684,9 @@ def test_handoff_drops_progress_message_and_reads_v1_to_v3_without_one() -> None
             replay_context_fingerprint=record.replay_context_fingerprint if version == 3 else None,
         )
         recovered = TutorCompletionHandoff.from_bytes(legacy.to_bytes())
-        assert recovered.decision(context).progress_message is None
+        recovered_decision = recovered.decision(context)
+        assert isinstance(recovered_decision, StartCapabilityDecision)
+        assert recovered_decision.progress_message is None
 
 
 def test_progress_is_published_after_handoff_and_before_capability_execution() -> None:

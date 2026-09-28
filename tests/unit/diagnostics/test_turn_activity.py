@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from cardine.diagnostics.turn_activity import (
     TurnActivityStore,
     add_settled,
     begin_activity,
     finish_activity,
 )
+from study_agent.domain._validation import JsonObject
+
+
+def _records(snapshot: JsonObject) -> tuple[JsonObject, ...]:
+    records = snapshot["records"]
+    assert isinstance(records, tuple)
+    assert all(isinstance(record, Mapping) for record in records)
+    return tuple(record for record in records if isinstance(record, Mapping))
 
 
 def test_activity_is_private_deduplicated_and_settles_running_records() -> None:
@@ -39,18 +49,22 @@ def test_activity_is_private_deduplicated_and_settles_running_records() -> None:
 
         snapshot = store.snapshot("request-1")
         assert snapshot["state"] == "running"
-        assert len(snapshot["records"]) == 2
-        assert snapshot["records"][0]["status"] == "done"
-        assert snapshot["records"][1]["status"] == "running"
-        assert "label" in snapshot["records"][0]
-        assert snapshot["records"][0]["target"] == "Lezione 4 · Emostasi"
-        assert snapshot["records"][0]["count"] == 8
+        assert len(_records(snapshot)) == 2
+        assert _records(snapshot)[0]["status"] == "done"
+        assert _records(snapshot)[1]["status"] == "running"
+        assert "label" in _records(snapshot)[0]
+        assert _records(snapshot)[0]["target"] == "Lezione 4 · Emostasi"
+        assert _records(snapshot)[0]["count"] == 8
 
     settled = store.settle("request-1", status="done")
     assert settled["state"] == "settled"
-    assert all(record["status"] == "done" for record in settled["records"])
-    assert all(record["ended_at"] for record in settled["records"])
-    assert settled["records"][1]["sequence"] > settled["records"][0]["sequence"]
+    assert all(record["status"] == "done" for record in _records(settled))
+    assert all(record["ended_at"] for record in _records(settled))
+    first_sequence = _records(settled)[0]["sequence"]
+    second_sequence = _records(settled)[1]["sequence"]
+    assert isinstance(first_sequence, int)
+    assert isinstance(second_sequence, int)
+    assert second_sequence > first_sequence
 
 
 def test_contextvar_binds_helpers_to_the_capturing_store_instance() -> None:
@@ -75,11 +89,11 @@ def test_contextvar_binds_helpers_to_the_capturing_store_instance() -> None:
             target="First store again",
         )
 
-    assert [item["target"] for item in first.snapshot("same-request")["records"]] == [
+    assert [item["target"] for item in _records(first.snapshot("same-request"))] == [
         "First store",
         "First store again",
     ]
-    assert [item["target"] for item in second.snapshot("same-request")["records"]] == [
+    assert [item["target"] for item in _records(second.snapshot("same-request"))] == [
         "Second store",
     ]
 
@@ -92,7 +106,7 @@ def test_record_policy_rejects_model_text_and_uncompiled_labels() -> None:
                 kind="retrieval",
                 ref="retrieval.search",
                 target="<script>prompt and quoted evidence</script>",
-                label="model supplied label",  # type: ignore[call-arg]
+                label="model supplied label",
             )
         except (TypeError, ValueError):
             pass
@@ -150,7 +164,7 @@ def test_ring_retention_and_record_limit_expose_omitted_count() -> None:
     assert store.snapshot("old")["state"] == "unknown"
     current = store.snapshot("new")
     assert current["state"] == "running"
-    assert len(current["records"]) == 1
+    assert len(_records(current)) == 1
     assert current["omitted"] == 1
 
 
@@ -167,12 +181,12 @@ def test_settled_records_are_inserted_closed_and_unknown_ids_are_empty() -> None
             }
         )
 
-    record = store.snapshot("request-settled")["records"][0]
+    record = _records(store.snapshot("request-settled"))[0]
     assert record["status"] == "done"
     assert record["ended_at"]
     assert record["started_at"] == record["ended_at"]
 
     unknown = store.snapshot("not-captured")
     assert unknown["state"] == "unknown"
-    assert unknown["records"] == []
+    assert unknown["records"] == ()
     assert unknown["omitted"] == 0

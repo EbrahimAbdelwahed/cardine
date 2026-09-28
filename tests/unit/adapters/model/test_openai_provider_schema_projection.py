@@ -128,7 +128,11 @@ def test_provider_projection_removes_validation_only_keyword_without_mutating_lo
     assert provider_schema["properties"]["items"]["maxItems"] == 3
     assert "uniqueItems" in provider_schema["properties"]
     assert request.structured_output is not None
-    assert request.structured_output.schema["properties"]["items"]["uniqueItems"] is True
+    local_properties = request.structured_output.schema["properties"]
+    assert isinstance(local_properties, Mapping)
+    local_items = local_properties["items"]
+    assert isinstance(local_items, Mapping)
+    assert local_items["uniqueItems"] is True
     assert result.structured_output is not None
     assert result.structured_output["items"] == ("a",)
     assert result.structured_output["uniqueItems"] is True

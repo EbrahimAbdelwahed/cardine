@@ -19,7 +19,7 @@ from cardine.cli import (
     ModelAdapterRegistry,
     initialize_local_repository,
 )
-from cardine.cli.repository import _RepositoryTutorGateway
+from cardine.cli.repository import ModelAdapterBuilder, _RepositoryTutorGateway
 from cardine.demo.ui_application import UiRequestError, _command
 from cardine.knowledge import SourcePin
 from study_agent.domain import (
@@ -30,18 +30,26 @@ from study_agent.domain import (
     SessionId,
     SourceId,
 )
+from study_agent.ports import ModelPort
 from study_agent.skills import ArtifactReference, SemanticVersion
 from tests.course_fixtures import create_canonical_course
 
 COURSE = CourseId("course-chat-attached-lesson")
 
 
+def _unexpected_provider(builds: list[int]) -> ModelAdapterBuilder:
+    def build(config: ModelAdapterConfig, credential: str | None) -> ModelPort:
+        del config, credential
+        builds.append(1)
+        raise AssertionError("provider must not be constructed for invalid lesson pins")
+
+    return build
+
+
 def _repository(tmp_path: Path, builds: list[int]) -> Path:
     root = tmp_path / "repository"
 
-    def build(_config: ModelAdapterConfig, _credential: str | None) -> object:
-        builds.append(1)
-        return object()
+    build = _unexpected_provider(builds)
 
     initialize_local_repository(root, LocalRepositoryConfig(ModelAdapterConfig("fixture-adapter")))
     with LocalRepository.open(
@@ -88,7 +96,7 @@ def test_foreign_attachment_fails_before_provider_construction(tmp_path: Path) -
     with LocalRepository.open(
         root,
         model_adapters=ModelAdapterRegistry(
-            {"fixture-adapter": lambda _config, _credential: builds.append(1) or object()}
+            {"fixture-adapter": _unexpected_provider(builds)}
         ),
         environment={},
     ) as repository, pytest.raises(ValueError, match="another course"):
@@ -107,7 +115,7 @@ def test_stale_attachment_fails_before_provider_construction(tmp_path: Path) -> 
     with LocalRepository.open(
         root,
         model_adapters=ModelAdapterRegistry(
-            {"fixture-adapter": lambda _config, _credential: builds.append(1) or object()}
+            {"fixture-adapter": _unexpected_provider(builds)}
         ),
         environment={},
     ) as repository, pytest.raises(ValueError):

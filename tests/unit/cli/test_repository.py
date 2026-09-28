@@ -40,6 +40,7 @@ from study_agent.ports import (
     ModelStreamEvent,
     RetrievalQuery,
 )
+from study_agent.ports.retrieval import RetrievalDocument
 from study_agent.retrieval import CourseSourceContent
 from tests.course_fixtures import create_canonical_course
 
@@ -468,7 +469,7 @@ def test_search_reuses_its_verified_catalog_snapshot_for_all_candidates(
 
         def tracked_documents(
             content: CourseSourceContent, *, include_superseded: bool = False
-        ):
+        ) -> tuple[RetrievalDocument, ...]:
             nonlocal calls
             calls += 1
             return original(content, include_superseded=include_superseded)

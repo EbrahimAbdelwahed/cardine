@@ -250,7 +250,9 @@ class OpenAIResponsesTutorDecisionPort(TutorDecisionPort):
                 raise ValueError
             decision = decoded["decision"]
             local_schema = decision_schema(context)
-            decision_schema_value = local_schema["properties"]["decision"]
+            schema_properties = local_schema["properties"]
+            assert isinstance(schema_properties, Mapping)
+            decision_schema_value = schema_properties["decision"]
             cleaned_decision = _remove_provider_null_optionals(
                 decision, decision_schema_value
             )

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
+from typing import NoReturn, cast
+
+import pytest
 
 from cardine.application.conversation_turn import (
     ConversationTurnError,
@@ -9,18 +13,26 @@ from cardine.application.conversation_turn import (
 )
 from cardine.application.flashcard_proposals import _lesson_plan, _LessonEvidenceResolver
 from cardine.cli import main as cli_main
+from cardine.cli.repository import LocalRepository
 from cardine.demo.ui_application import _conversation_ui_error, _source_grounding_status
 from cardine.hosts import TutorHostRunResult, TutorHostRunStatus
 from cardine.integrations.study_agent.course_policy import ProviderConsentRequiredError
 from study_agent.domain import (
     ChunkId,
     Citation,
+    CorrelationId,
     CourseId,
+    ExecutionContext,
+    PrincipalKind,
     ResolvedCitation,
     RevisionId,
     SourceChunk,
     SourceId,
+    TutorSnapshotV1,
 )
+from study_agent.flashcards.planning import FlashcardLessonPlan, PlannedFlashcardBundle
+from study_agent.ports.retrieval import RetrievalDocument
+from study_agent.retrieval import CourseSourceContent, SourceRevisionRecord
 
 COURSE = CourseId("a2-regression-course")
 SOURCE = SourceId("a2-regression-source")
@@ -39,7 +51,8 @@ def test_retired_sources_are_excluded_from_flashcard_lesson_plan() -> None:
     record = SimpleNamespace(source=source, chunks=(chunk,), is_current_revision=True)
     content = SimpleNamespace(catalog=lambda: (record,))
 
-    plan = _lesson_plan(content, frozenset({SOURCE}))
+    # This fixture exercises the retired-record guard before full content is needed.
+    plan = _lesson_plan(cast(CourseSourceContent, content), frozenset({SOURCE}))
 
     assert plan.index == ()
     assert plan.bundles == ()
@@ -65,8 +78,8 @@ def test_retired_source_keeps_raw_historical_flashcard_evidence_resolvable() -> 
     )
 
     class HistoricalContent:
-        def documents(self, *, include_superseded: bool = False):
-            return (document,) if include_superseded else ()
+        def documents(self, *, include_superseded: bool = False) -> tuple[RetrievalDocument, ...]:
+            return (cast(RetrievalDocument, document),) if include_superseded else ()
 
         def get_text(self, revision_id: RevisionId) -> str:
             assert revision_id == chunk.revision_id
@@ -83,13 +96,14 @@ def test_retired_source_keeps_raw_historical_flashcard_evidence_resolvable() -> 
         locator="historical locator",
     )
     slot = SimpleNamespace(span=span)
+    # Partial plan and bundle doubles isolate historical evidence resolution.
     evidence = _LessonEvidenceResolver(
-        HistoricalContent(), lambda: frozenset({SOURCE})
+        cast(CourseSourceContent, HistoricalContent()), lambda: frozenset({SOURCE})
     ).resolve(
-        SimpleNamespace(plan_fingerprint="a" * 64),
-        SimpleNamespace(slots=(slot,), bundle_id="bundle-historical"),
+        cast(FlashcardLessonPlan, SimpleNamespace(plan_fingerprint="a" * 64)),
+        cast(PlannedFlashcardBundle, SimpleNamespace(slots=(slot,), bundle_id="bundle-historical")),
         (),
-        SimpleNamespace(),
+        ExecutionContext(PrincipalKind.SERVICE, "fixture", COURSE, CorrelationId("a2-evidence")),
     )
 
     assert evidence.envelope.items[0].evidence.text == text
@@ -126,12 +140,12 @@ def test_page_aware_flashcard_plan_uses_the_canonical_resolved_locator() -> None
     document = SimpleNamespace(source_id=SOURCE, revision_id=revision, chunk=chunk)
 
     class PageAwareContent:
-        def catalog(self):
-            return (record,)
+        def catalog(self) -> tuple[SourceRevisionRecord, ...]:
+            return (cast(SourceRevisionRecord, record),)
 
-        def documents(self, *, include_superseded: bool = False):
+        def documents(self, *, include_superseded: bool = False) -> tuple[RetrievalDocument, ...]:
             del include_superseded
-            return (document,)
+            return (cast(RetrievalDocument, document),)
 
         def get_text(self, revision_id: RevisionId) -> str:
             assert revision_id == revision
@@ -148,14 +162,14 @@ def test_page_aware_flashcard_plan_uses_the_canonical_resolved_locator() -> None
             return ResolvedCitation(canonical, text)
 
     content = PageAwareContent()
-    plan = _lesson_plan(content)  # type: ignore[arg-type]
+    plan = _lesson_plan(cast(CourseSourceContent, content))
     bundle = plan.bundles[0]
 
-    resolved = _LessonEvidenceResolver(content, frozenset).resolve(  # type: ignore[arg-type]
+    resolved = _LessonEvidenceResolver(cast(CourseSourceContent, content), frozenset).resolve(
         plan,
         bundle,
         (),
-        SimpleNamespace(),
+        ExecutionContext(PrincipalKind.SERVICE, "fixture", COURSE, CorrelationId("a2-evidence")),
     )
 
     assert resolved.envelope.items[0].evidence.citation.locator == bundle.slots[0].span.locator
@@ -169,7 +183,10 @@ def test_all_retired_sources_report_empty_grounding_status() -> None:
     source_lifetime = SimpleNamespace(retired_source_ids=lambda course_id: frozenset({SOURCE}))
     repository = SimpleNamespace(source_lifetime=source_lifetime)
 
-    status = _source_grounding_status(repository, COURSE, snapshot)
+    # Minimal doubles exercise the retired-material guard, without opening a repository.
+    status = _source_grounding_status(
+        cast(LocalRepository, repository), COURSE, cast(TutorSnapshotV1, snapshot)
+    )
 
     assert status == {"status": "empty", "indexed_chunks": 0}
 
@@ -191,8 +208,10 @@ def test_consent_required_host_result_is_not_runtime_failure() -> None:
     assert str(ui_error) == "provider consent is required before tutor execution"
 
 
-def test_cli_maps_provider_consent_to_truthful_error(monkeypatch, capsys, tmp_path) -> None:
-    async def fail(*args, **kwargs):
+def test_cli_maps_provider_consent_to_truthful_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    async def fail(*args: object, **kwargs: object) -> NoReturn:
         raise ProviderConsentRequiredError("provider consent is required")
 
     monkeypatch.setattr(cli_main, "execute", fail)

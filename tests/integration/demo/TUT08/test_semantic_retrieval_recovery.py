@@ -5,7 +5,7 @@ from pathlib import Path
 from types import MethodType
 from typing import Protocol, cast
 
-from cardine.application.conversation_turn import ConversationTurnCommand
+from cardine.application.conversation_turn import ConversationTurnCommand, ConversationTurnResult
 from cardine.cli.repository import LocalRepository
 from cardine.hosts import TutorHostRunStatus
 from study_agent.domain import CorrelationId, CourseId, ExecutionContext, PrincipalKind, SessionId
@@ -41,7 +41,9 @@ def _install_recovery_model(model: object, queries: tuple[str, ...]) -> list[Mod
     return requests
 
 
-def _turn(repository: LocalRepository, content: str, request_id: str):
+def _turn(
+    repository: LocalRepository, content: str, request_id: str
+) -> ConversationTurnResult:
     sequence = repository.tutor_snapshots.get(COURSE, SESSION).high_water_sequence
     return asyncio.run(
         repository.tutor_conversation(COURSE, session_id=SESSION).turn(
