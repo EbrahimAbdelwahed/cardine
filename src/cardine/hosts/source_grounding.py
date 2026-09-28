@@ -51,12 +51,60 @@ _ITALIAN_REQUEST = re.compile(
 )
 _RETRIEVAL_STOP_WORDS = frozenset(
     {
-        "a", "about", "and", "avvia", "avviare", "che", "cosa", "dalla", "dalle", "del", "della",
-        "delle", "di", "does", "e", "explain", "fonte", "from", "ha", "how", "i",
-        "il", "in", "inizia", "iniziare", "it", "la", "le", "leggi", "materiale", "me",
-        "many", "parliamo", "quante", "read", "say", "source", "spiega", "spiegami",
-        "spiegazione", "studiamo", "studiare", "facciamo", "fare", "riprendiamo",
-        "riprendere", "parla", "tratta", "the", "this", "to", "una", "what", "with",
+        "a",
+        "about",
+        "and",
+        "avvia",
+        "avviare",
+        "che",
+        "cosa",
+        "dalla",
+        "dalle",
+        "del",
+        "della",
+        "delle",
+        "di",
+        "does",
+        "e",
+        "explain",
+        "fonte",
+        "from",
+        "ha",
+        "how",
+        "i",
+        "il",
+        "in",
+        "inizia",
+        "iniziare",
+        "it",
+        "la",
+        "le",
+        "leggi",
+        "materiale",
+        "me",
+        "many",
+        "parliamo",
+        "quante",
+        "read",
+        "say",
+        "source",
+        "spiega",
+        "spiegami",
+        "spiegazione",
+        "studiamo",
+        "studiare",
+        "facciamo",
+        "fare",
+        "riprendiamo",
+        "riprendere",
+        "parla",
+        "tratta",
+        "the",
+        "this",
+        "to",
+        "una",
+        "what",
+        "with",
     }
 )
 
@@ -72,34 +120,23 @@ class SourceGroundedTutorDecisionPort(TutorDecisionPort):
     async def decide(
         self, context: TutorHostContext, interruption: TutorInterruptionToken
     ) -> TutorDecision:
-        decision = await self._delegate.decide(context, interruption)
-        return _require_grounded_explanation(decision, context)
+        if context.pending_continuation is None:
+            direct = _grounded_explanation_decision(context)
+            if direct is not None:
+                return direct
+        return await self._delegate.decide(context, interruption)
 
 
-def _require_grounded_explanation(
-    decision: TutorDecision, context: TutorHostContext
-) -> TutorDecision:
-    """Select the advertised evidence-bound capability for an explicit source request."""
-
-    if context.pending_continuation is not None:
-        return decision
-    if (
-        isinstance(decision, InvokeToolDecision)
-        and decision.tool_name in {"study_memory.record", "study_memory.search"}
-    ):
-        return decision
+def _grounded_explanation_decision(
+    context: TutorHostContext,
+) -> StartCapabilityDecision | None:
     learner_text = _latest_learner_text(context)
     if learner_text is None or not _is_source_explanation_request(learner_text):
-        return decision
+        return None
     if not _has_materials(context) or not any(
         item.id == _EXPLAIN_CAPABILITY_ID for item in context.advertised_capabilities
     ):
-        return decision
-    if (
-        isinstance(decision, StartCapabilityDecision)
-        and decision.capability_id == _EXPLAIN_CAPABILITY_ID
-    ):
-        return decision
+        return None
     return StartCapabilityDecision(
         _EXPLAIN_CAPABILITY_ID,
         {
@@ -110,6 +147,29 @@ def _require_grounded_explanation(
             "continuation_summary_json": None,
         },
     )
+
+
+def _require_grounded_explanation(
+    decision: TutorDecision, context: TutorHostContext
+) -> TutorDecision:
+    """Compatibility helper for callers that already obtained a model decision."""
+
+    if context.pending_continuation is not None:
+        return decision
+    if isinstance(decision, InvokeToolDecision) and decision.tool_name in {
+        "study_memory.record",
+        "study_memory.search",
+    }:
+        return decision
+    direct = _grounded_explanation_decision(context)
+    if direct is None:
+        return decision
+    if (
+        isinstance(decision, StartCapabilityDecision)
+        and decision.capability_id == _EXPLAIN_CAPABILITY_ID
+    ):
+        return decision
+    return direct
 
 
 def _latest_learner_text(context: TutorHostContext) -> str | None:

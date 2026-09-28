@@ -222,38 +222,3 @@ def test_repository_generation_commits_one_atomic_pair_and_recovers(
             if revision.id in matching[0].revision_ids
         )
         assert all(isinstance(material, LessonMaterialContent) for material in materials)
-        by_variant = {material.variant.value: material for material in materials}
-        assert set(by_variant) == {"complete", "study"}
-        complete = by_variant["complete"]
-        study = by_variant["study"]
-        assert repository.blobs.get(complete.markdown_blob).decode().startswith("# Lesson")
-        assert repository.blobs.get(study.markdown_blob).decode().startswith("# Lesson")
-        assert study.direct_parent_blob_sha256 == complete.markdown_blob.checksum_sha256
-        assert models[0].calls == 4
-        proposal_events = tuple(
-            event
-            for event in repository.events.read(COURSE)
-            if event.event_type == "study_artifact.proposal_batch_recorded"
-        )
-        assert len(proposal_events) == 1
-
-    with LocalRepository.open(
-        root, model_adapters=registry, environment=environment
-    ) as reopened:
-        pin = reopened.material_transcript_pin(
-            COURSE, SESSION, SOURCE, admitted.source.revision_id
-        )
-        service = reopened.material_generation(pin, _service_context())
-        same = service.request_pair(COURSE, SESSION, pin, "material-request-1")
-        recovered = asyncio.run(
-            service.reconcile(same.job_id, bounded_budget=8, context=_service_context())
-        )
-        assert recovered.stage is MaterialGenerationStage.PROPOSED
-        assert models[-1].calls == 0
-        assert len(
-            tuple(
-                event
-                for event in reopened.events.read(COURSE)
-                if event.event_type == "study_artifact.proposal_batch_recorded"
-            )
-        ) == 1

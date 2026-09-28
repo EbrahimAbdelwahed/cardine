@@ -37,6 +37,16 @@ _HEADER_NAME = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
 _STRUCTURED_OUTPUT_FORMATS = frozenset({"json_schema", "json_object"})
 _REASONING_EFFORTS = frozenset({"none", "low", "medium", "high", "xhigh", "max"})
 _MAX_OUTPUT_TOKEN_FIELDS = frozenset({"max_tokens", "max_completion_tokens"})
+_PROVIDER_LOCAL_VALIDATION_ONLY_KEYWORDS = frozenset({"minLength", "uniqueItems"})
+_PROVIDER_SCHEMA_ERROR_CODES = frozenset(
+    {
+        "invalid_json_schema",
+        "invalid_schema",
+        "json_schema_invalid",
+        "schema_validation_error",
+        "unsupported_schema",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,13 +135,8 @@ class OpenAICompatibleConfig:
         if self.capabilities.streaming or self.capabilities.cancellation:
             raise ValueError("HTTP streaming and cancellation are unsupported in v0.1")
         if self.structured_output_format not in _STRUCTURED_OUTPUT_FORMATS:
-            raise ValueError(
-                "structured_output_format must be json_schema or json_object"
-            )
-        if (
-            self.reasoning_effort is not None
-            and self.reasoning_effort not in _REASONING_EFFORTS
-        ):
+            raise ValueError("structured_output_format must be json_schema or json_object")
+        if self.reasoning_effort is not None and self.reasoning_effort not in _REASONING_EFFORTS:
             raise ValueError("reasoning_effort is unsupported")
         if self.max_output_tokens_field not in _MAX_OUTPUT_TOKEN_FIELDS:
             raise ValueError("max_output_tokens_field is unsupported")
@@ -153,6 +158,31 @@ def _plain(value: JsonValue) -> object:
         return {key: _plain(item) for key, item in value.items()}
     if isinstance(value, tuple):
         return [_plain(item) for item in value]
+    return value
+
+
+def _provider_schema(value: object, *, property_map: bool = False) -> object:
+    """Compile the full local schema into the provider's generation subset.
+
+    Validation-only constraints remain on the immutable ``ModelRequest`` and
+    are still enforced by Cardine's local validators.  Property names are data,
+    so a user property literally named ``uniqueItems`` is preserved while the
+    unsupported schema keyword is removed.
+    """
+
+    if isinstance(value, Mapping):
+        projected: dict[str, object] = {}
+        for key, item in value.items():
+            name = str(key)
+            if not property_map and name in _PROVIDER_LOCAL_VALIDATION_ONLY_KEYWORDS:
+                continue
+            projected[name] = _provider_schema(
+                item,
+                property_map=not property_map and name == "properties",
+            )
+        return projected
+    if isinstance(value, (tuple, list)):
+        return [_provider_schema(item) for item in value]
     return value
 
 
@@ -193,7 +223,7 @@ class OpenAICompatibleModel:
     def _structured_output_schema(self, schema: JsonObject) -> object:
         """Translate a local schema for this provider without mutating its contract."""
 
-        return _plain(schema)
+        return _provider_schema(schema)
 
     def _body(self, request: ModelRequest) -> bytes:
         messages: list[dict[str, object]] = []
@@ -225,237 +255,3 @@ class OpenAICompatibleModel:
                     "type": "json_schema",
                     "json_schema": {
                         "name": request.structured_output.name,
-                        "schema": self._structured_output_schema(
-                            request.structured_output.schema
-                        ),
-                        "strict": request.structured_output.strict,
-                    },
-                }
-        return json.dumps(
-            payload,
-            ensure_ascii=False,
-            allow_nan=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode()
-
-    def _headers(self) -> Mapping[str, str]:
-        return {
-            "Authorization": f"Bearer {self._config.api_key}",
-            "Content-Type": "application/json",
-            **self._config.extra_headers,
-        }
-
-    @staticmethod
-    def _error_for_status(status: int, body: bytes) -> ModelError:
-        provider_code = _provider_error_code(body)
-        if status in (401, 403):
-            return ModelError(ModelErrorCode.AUTHENTICATION, "model authentication failed")
-        if status == 429:
-            return ModelError(
-                ModelErrorCode.RATE_LIMITED,
-                "model request was rate limited",
-                retryable=True,
-            )
-        if status == 408:
-            return ModelError(
-                ModelErrorCode.TIMEOUT,
-                "model request timed out",
-                retryable=True,
-            )
-        if provider_code in {"model_not_found", "model_not_available"}:
-            return ModelError(
-                ModelErrorCode.MODEL_UNAVAILABLE,
-                "configured model is unavailable",
-            )
-        if status == 404 or provider_code in {
-            "unsupported_parameter",
-            "unsupported_value",
-            "invalid_parameter",
-        }:
-            return ModelError(
-                ModelErrorCode.ENDPOINT_INCOMPATIBLE,
-                "model endpoint does not support this request",
-            )
-        if status < 500:
-            return ModelError(
-                ModelErrorCode.PROTOCOL_ERROR,
-                "model request was rejected",
-            )
-        return ModelError(
-            ModelErrorCode.UNAVAILABLE,
-            "model endpoint is unavailable",
-            retryable=status >= 500,
-        )
-
-    @staticmethod
-    def _validated_response(value: object) -> HttpResponse:
-        if not isinstance(value, HttpResponse):
-            raise ModelError(
-                ModelErrorCode.PROTOCOL_ERROR,
-                "model transport returned an invalid response",
-            )
-        if type(value.status) is not int or not 100 <= value.status <= 599:
-            raise ModelError(
-                ModelErrorCode.PROTOCOL_ERROR,
-                "model transport returned an invalid HTTP status",
-            )
-        if type(value.body) is not bytes or len(value.body) > _MAX_RESPONSE_BYTES:
-            raise ModelError(
-                ModelErrorCode.PROTOCOL_ERROR,
-                "model transport returned an invalid response body",
-            )
-        return value
-
-    @staticmethod
-    def _object(value: Any, name: str) -> dict[str, Any]:
-        if not isinstance(value, dict):
-            raise ModelError(ModelErrorCode.PROTOCOL_ERROR, f"model {name} is invalid")
-        return cast(dict[str, Any], value)
-
-    def _parse(self, body: bytes, request: ModelRequest) -> ModelResponse:
-        try:
-            raw: Any = json.loads(body)
-            payload = self._object(raw, "response")
-            choices = payload.get("choices")
-            if not isinstance(choices, list) or len(choices) != 1:
-                raise ModelError(ModelErrorCode.PROTOCOL_ERROR, "model choices are invalid")
-            choice = self._object(choices[0], "choice")
-            message = self._object(choice.get("message"), "message")
-            content_value = message.get("content")
-            if content_value is None:
-                content = ""
-            elif isinstance(content_value, str):
-                content = content_value
-            else:
-                raise ModelError(ModelErrorCode.PROTOCOL_ERROR, "model content is invalid")
-            tool_calls = self._tool_calls(message.get("tool_calls"))
-            reason_value = choice.get("finish_reason")
-            reason = (
-                ModelFinishReason(reason_value)
-                if reason_value in {item.value for item in ModelFinishReason}
-                else ModelFinishReason.UNKNOWN
-            )
-            usage = self._usage(payload.get("usage"))
-            structured: JsonObject | None = None
-            if request.structured_output is not None and self.capabilities.structured_output:
-                parsed: Any = json.loads(content)
-                if not isinstance(parsed, dict):
-                    raise ModelError(
-                        ModelErrorCode.PROTOCOL_ERROR,
-                        "model structured output must be an object",
-                    )
-                structured = cast(JsonObject, parsed)
-            response_id = payload.get("id")
-            if response_id is not None and not isinstance(response_id, str):
-                raise ModelError(ModelErrorCode.PROTOCOL_ERROR, "model response id is invalid")
-            return ModelResponse(
-                content,
-                usage,
-                reason,
-                ModelInvocation(
-                    self._adapter_id,
-                    self._adapter_version,
-                    self._config.model_id,
-                    response_id,
-                ),
-                tool_calls,
-                structured,
-            )
-        except ModelError:
-            raise
-        except (UnicodeError, json.JSONDecodeError, TypeError, ValueError):
-            raise ModelError(
-                ModelErrorCode.PROTOCOL_ERROR,
-                "model response violated the transport contract",
-            ) from None
-
-    @classmethod
-    def _tool_calls(cls, value: Any) -> tuple[ToolCall, ...]:
-        if value is None:
-            return ()
-        if not isinstance(value, list):
-            raise ModelError(ModelErrorCode.PROTOCOL_ERROR, "model tool calls are invalid")
-        calls: list[ToolCall] = []
-        for raw in value:
-            item = cls._object(raw, "tool call")
-            function = cls._object(item.get("function"), "tool function")
-            arguments = function.get("arguments")
-            if not isinstance(arguments, str):
-                raise ModelError(ModelErrorCode.PROTOCOL_ERROR, "tool arguments are invalid")
-            try:
-                parsed: Any = json.loads(arguments)
-            except json.JSONDecodeError:
-                raise ModelError(
-                    ModelErrorCode.PROTOCOL_ERROR, "tool arguments are malformed"
-                ) from None
-            if not isinstance(parsed, dict):
-                raise ModelError(
-                    ModelErrorCode.PROTOCOL_ERROR, "tool arguments must be an object"
-                )
-            identifier, name = item.get("id"), function.get("name")
-            if not isinstance(identifier, str) or not isinstance(name, str):
-                raise ModelError(ModelErrorCode.PROTOCOL_ERROR, "tool call identity is invalid")
-            calls.append(ToolCall(identifier, name, cast(JsonObject, parsed)))
-        return tuple(calls)
-
-    @staticmethod
-    def _usage(value: Any) -> ModelUsage | None:
-        if value is None:
-            return None
-        if not isinstance(value, dict):
-            raise ModelError(ModelErrorCode.PROTOCOL_ERROR, "model usage is invalid")
-        input_tokens, output_tokens = value.get("prompt_tokens"), value.get("completion_tokens")
-        if (
-            not isinstance(input_tokens, int)
-            or isinstance(input_tokens, bool)
-            or not isinstance(output_tokens, int)
-            or isinstance(output_tokens, bool)
-        ):
-            raise ModelError(ModelErrorCode.PROTOCOL_ERROR, "model usage is invalid")
-        return ModelUsage(input_tokens, output_tokens)
-
-    async def generate(self, request: ModelRequest) -> ModelResponse:
-        try:
-            response = await asyncio.to_thread(
-                self._transport.post,
-                self._config.endpoint_url,
-                self._headers(),
-                self._body(request),
-                self._config.timeout_seconds,
-            )
-        except _TransportFailure:
-            raise ModelError(
-                ModelErrorCode.UNAVAILABLE,
-                "model endpoint is unavailable",
-                retryable=True,
-            ) from None
-        except TimeoutError:
-            raise ModelError(
-                ModelErrorCode.TIMEOUT,
-                "model request timed out",
-                retryable=True,
-            ) from None
-        except Exception:
-            raise ModelError(
-                ModelErrorCode.UNAVAILABLE,
-                "model endpoint is unavailable",
-                retryable=True,
-            ) from None
-        response = self._validated_response(response)
-        if not 200 <= response.status < 300:
-            raise self._error_for_status(response.status, response.body)
-        return self._parse(response.body, request)
-
-    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
-        raise ModelError(
-            ModelErrorCode.UNSUPPORTED_OPERATION,
-            "HTTP model streaming is not supported",
-        )
-        yield  # pragma: no cover
-
-    async def cancel(self, token: CancellationToken) -> None:
-        raise ModelError(
-            ModelErrorCode.UNSUPPORTED_OPERATION,
-            "HTTP model cancellation is not supported",
-        )

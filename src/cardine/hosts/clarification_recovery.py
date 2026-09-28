@@ -7,7 +7,7 @@ from dataclasses import replace
 
 from study_agent.ports.tutor_host import TutorDecisionPort, TutorInterruptionToken
 
-from .contracts import AskLearnerDecision, TutorDecision, TutorHostContext
+from .contracts import TutorDecision, TutorHostContext
 
 _RECOVERY_INSTRUCTION = (
     "Treat the current answer as resolving the previous question. "
@@ -16,7 +16,7 @@ _RECOVERY_INSTRUCTION = (
 
 
 class ClarificationRecoveryTutorDecisionPort(TutorDecisionPort):
-    """Retry one repeated clarification with the latest exchange made explicit."""
+    """Make an answered clarification explicit before the only model call."""
 
     def __init__(self, delegate: TutorDecisionPort) -> None:
         if not hasattr(delegate, "decide"):
@@ -26,16 +26,13 @@ class ClarificationRecoveryTutorDecisionPort(TutorDecisionPort):
     async def decide(
         self, context: TutorHostContext, interruption: TutorInterruptionToken
     ) -> TutorDecision:
-        decision = await self._delegate.decide(context, interruption)
-        if context.pending_continuation is not None or not isinstance(
-            decision, AskLearnerDecision
-        ):
-            return decision
+        if context.pending_continuation is not None:
+            return await self._delegate.decide(context, interruption)
         exchange = _latest_clarification_exchange(context)
         if exchange is None:
-            return decision
+            return await self._delegate.decide(context, interruption)
         previous_question, current_answer = exchange
-        retry_context = replace(
+        resolved_context = replace(
             context,
             tutor_snapshot={
                 **context.tutor_snapshot,
@@ -46,12 +43,7 @@ class ClarificationRecoveryTutorDecisionPort(TutorDecisionPort):
                 },
             },
         )
-        try:
-            return await self._delegate.decide(retry_context, interruption)
-        except Exception:
-            if interruption.is_interrupted():
-                raise
-            return decision
+        return await self._delegate.decide(resolved_context, interruption)
 
 
 def _latest_clarification_exchange(context: TutorHostContext) -> tuple[str, str] | None:
