@@ -5,12 +5,11 @@ import shutil
 import sys
 from pathlib import Path
 
-import pytest  # noqa: I001
+import pytest
 
 import cardine.documents.anydoc_runtime as anydoc_runtime
 from cardine.documents import AnyDocErrorCode, AnyDocWorkerError, convert_pdf_in_worker
 from cardine.documents.config import DocumentImportPolicy
-
 
 _WORKER_SUPPORTED = (
     sys.platform == "darwin"
