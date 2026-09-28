@@ -8,6 +8,8 @@ import stat
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import closing, contextmanager
 from pathlib import Path
+from threading import Lock
+from time import sleep
 from typing import Protocol
 from urllib.parse import quote
 
@@ -56,6 +58,20 @@ class SQLiteConnectionIdentityError(RuntimeError):
     """SQLite did not retain the database identity authorized by its host."""
 
 
+class _AmbiguousSQLiteConnectionIdentityError(SQLiteConnectionIdentityError):
+    """Concurrent file IO prevented attributing a single new descriptor."""
+
+
+# Descriptor snapshots belong to the process, not to an individual guard.
+_CONNECTION_IDENTITY_LOCK = Lock()
+
+
+def _serialized_sqlite_open(opener: Callable[[], sqlite3.Connection]) -> sqlite3.Connection:
+    """Keep unguarded opens out of a guarded descriptor snapshot window."""
+    with _CONNECTION_IDENTITY_LOCK:
+        return opener()
+
+
 class SQLiteConnectionIdentityGuard:
     """Fail closed unless SQLite retains exactly the host-authorized inode."""
 
@@ -68,6 +84,20 @@ class SQLiteConnectionIdentityGuard:
         self._verify_owner = verify_owner
 
     def connect(
+        self, opener: Callable[[], sqlite3.Connection]
+    ) -> sqlite3.Connection:
+        for attempt in range(4):
+            try:
+                with _CONNECTION_IDENTITY_LOCK:
+                    return self._connect_serialized(opener)
+            except _AmbiguousSQLiteConnectionIdentityError:
+                if attempt == 3:
+                    raise
+                # Re-probe after closing the unverified handle, outside the lock.
+                sleep(0.01 * 2**attempt)
+        raise AssertionError("connection identity retry is unreachable")
+
+    def _connect_serialized(
         self, opener: Callable[[], sqlite3.Connection]
     ) -> sqlite3.Connection:
         self._verify_owner()
@@ -84,6 +114,10 @@ class SQLiteConnectionIdentityGuard:
                 connection.execute("PRAGMA schema_version").fetchone()
                 after = _live_file_descriptors()
                 opened_regular = _new_regular_identities(before, after)
+            if len(opened_regular) != 1:
+                raise _AmbiguousSQLiteConnectionIdentityError(
+                    "SQLite connection did not retain the authorized database binding"
+                )
             if opened_regular != (self._expected_identity,):
                 raise SQLiteConnectionIdentityError(
                     "SQLite connection did not retain the authorized database binding"
@@ -165,7 +199,7 @@ class SQLiteEventStore:
                 database, isolation_level=None, timeout=30, uri=uri
             )
         connection = (
-            opener()
+            _serialized_sqlite_open(opener)
             if self._connection_identity_guard is None
             else self._connection_identity_guard.connect(opener)
         )
@@ -389,5 +423,5 @@ def _new_regular_identities(
     return tuple(
         identity
         for descriptor, identity in after.items()
-        if descriptor not in before and identity is not None
+        if identity is not None and (descriptor not in before or before[descriptor] != identity)
     )
