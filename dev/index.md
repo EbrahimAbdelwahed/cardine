@@ -9,6 +9,8 @@ archive and must not be treated as Cardine's current state.
 
 ## Start here
 
+- [Approved recovery custody and package target](logs/2026-09-28--cardine--approved-recovery-custody--log.md) — owner accepted the exact recovery bytes; installed-package parity and copied-core removal remain required.
+
 - [Recovery CI alignment and decision feedback](logs/2026-09-28--cardine--recovery-ci-alignment--log.md) — current development branch includes main; flashcard acceptance feedback is fixed, typing and package checks pass, ownership approval and live generation reproduction remain pending.
 
 - [Page-aware flashcard locator fix](logs/2026-08-15-0040--cardine--page-aware-flashcard-locator-fix--log.md) — repeated live flashcard turns selected the correct capability but failed before Luna because planning omitted immutable PDF page provenance from the locator; planner and resolver now share one canonical formatter while exact integrity validation remains fail-closed.

@@ -24,6 +24,15 @@ ROOT = Path(__file__).resolve().parents[1]
 LEDGER = ROOT / "specs/harness-adoption/assets/ownership-ledger.csv"
 CLASSIFICATION = ROOT / "tests/parity/ownership-classification.json"
 TRANSITION_OVERLAY = ROOT / "tests/parity/ca02-transition-overlay.json"
+RECOVERY_OVERLAY = ROOT / "tests/parity/wave-a-recovery-overlay.json"
+RECOVERY_NEW_CORE_PATHS = {
+    "src/study_agent/ingestion/preparation.py",
+    "src/study_agent/prompts/retrieval_query_recovery_v1.py",
+}
+RECOVERY_AST_VARIANCE = {
+    "src/study_agent/domain/__init__.py",
+    "src/study_agent/tutor_snapshot/reader.py",
+}
 BASELINE_WHEEL = ROOT / "tests/parity/artifacts/cardine-0.2.0-py3-none-any.whl"
 SOURCE_ROOT = ROOT / "src"
 DISPOSITIONS = {"HARNESS_IMPORT", "CARDINE_OWNER", "LEGACY_ORACLE_THEN_REMOVE"}
@@ -154,8 +163,7 @@ def _declared_package_data(config: Mapping[str, object]) -> set[str]:
                 # Qualified third-party artifacts have their own exact
                 # supply-chain verifier and are not CA-01/CA-02 namespace rows.
                 if not path.is_relative_to(ROOT / "src/cardine/documents/_vendor")
-                and path
-                != ROOT / "src/cardine/adapters/pageindex/page_index_md.py.data"
+                and path != ROOT / "src/cardine/adapters/pageindex/page_index_md.py.data"
             )
     return paths
 
@@ -239,6 +247,43 @@ def _load_classification() -> list[dict[str, str]]:
     return loaded
 
 
+def _load_recovery_overlay() -> dict[str, str]:
+    """Owner-approved temporary evolution; historical custody stays unchanged."""
+    raw = json.loads(RECOVERY_OVERLAY.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict) or set(raw) != {"schema_version", "source_commit", "rows"}:
+        raise ValueError("recovery overlay has invalid fields")
+    if raw["schema_version"] != 1 or raw["source_commit"] != (
+        "50cb0cbfeb8e5f66ccd75153e6729b67d8cf1968"
+    ):
+        raise ValueError("recovery overlay has invalid approval checkpoint")
+    rows = raw["rows"]
+    if not isinstance(rows, list) or len(rows) != 46:
+        raise ValueError("recovery overlay must contain exactly 46 approved paths")
+    hashes: dict[str, str] = {}
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != {"path", "sha256"}:
+            raise ValueError("recovery overlay row has invalid fields")
+        path, digest = row["path"], row["sha256"]
+        if (
+            not isinstance(path, str)
+            or not path.startswith(("src/cardine/", "src/study_agent/"))
+            or any(part in {"", ".", ".."} for part in path.split("/"))
+        ):
+            raise ValueError("recovery overlay path is outside the owned universe")
+        if path in hashes:
+            raise ValueError(f"recovery overlay duplicate path: {path}")
+        if (
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(char not in "0123456789abcdef" for char in digest)
+        ):
+            raise ValueError(f"recovery overlay invalid sha256: {path}")
+        hashes[path] = digest
+    if not hashes.keys() >= (RECOVERY_NEW_CORE_PATHS | RECOVERY_AST_VARIANCE):
+        raise ValueError("recovery overlay is missing required core bindings")
+    return hashes
+
+
 def _load_rows() -> list[dict[str, str]]:
     if not LEDGER.is_file():
         raise ValueError(f"missing ownership ledger: {LEDGER}")
@@ -320,6 +365,7 @@ def _baseline_source(path: str) -> str:
 
 def _normalized_ast(source: str, filename: str) -> object:
     tree = ast.parse(source, filename=filename)
+
     class _ImportStripper(ast.NodeTransformer):
         def visit_Import(self, node: ast.Import) -> None:
             return None
@@ -340,8 +386,7 @@ def _transition_contract() -> tuple[set[str], set[str]]:
         if (
             isinstance(node, ast.Assign)
             and any(
-                isinstance(target, ast.Name) and target.id == "__all__"
-                for target in node.targets
+                isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets
             )
             and isinstance(node.value, (ast.List, ast.Tuple))
         ):
@@ -377,8 +422,7 @@ def _transition_contract() -> tuple[set[str], set[str]]:
             ):
                 consumers.add(relative)
             if isinstance(imported_node, ast.Import) and any(
-                alias.name == "cardine._transition.study_agent"
-                for alias in imported_node.names
+                alias.name == "cardine._transition.study_agent" for alias in imported_node.names
             ):
                 consumers.add(relative)
     return exports, consumers
@@ -398,6 +442,7 @@ def _validate_cardine_transition(
     targets: Mapping[str, str],
     transition_rows: list[dict[str, str]],
     transition_entrypoints: list[dict[str, str]],
+    recovery_hashes: Mapping[str, str],
     errors: list[str],
 ) -> None:
     try:
@@ -447,10 +492,7 @@ def _validate_cardine_transition(
             errors.append(f"moved Cardine path remains present: {old_path}")
         if replacement not in current_paths:
             errors.append(f"Cardine replacement path is absent: {replacement}")
-    expected_moved = {
-        row["path"]: row["replacement_import_or_path"]
-        for row in source_rows
-    }
+    expected_moved = {row["path"]: row["replacement_import_or_path"] for row in source_rows}
     expected_copied = set(COPIED_IMPORT_PATHS)
     expected_transition_paths = set(expected_moved) | expected_copied | TRANSITION_CONSUMERS
     if len(transition_rows) != 119:
@@ -464,10 +506,7 @@ def _validate_cardine_transition(
         moved_row = by_path.get(old_path)
         if moved_row is None:
             continue
-        if (
-            moved_row["source_path"] != replacement
-            or moved_row["disposition"] != "CARDINE_OWNER"
-        ):
+        if moved_row["source_path"] != replacement or moved_row["disposition"] != "CARDINE_OWNER":
             errors.append(f"CA-02 moved transition binding is invalid: {old_path}")
     for path in expected_copied:
         copied_row = by_path.get(path)
@@ -487,8 +526,8 @@ def _validate_cardine_transition(
     for row in transition_rows:
         source_path = row["source_path"]
         try:
-            if _digest(source_path, targets) != POST_BASELINE_SHA256.get(
-                source_path, row["transition_sha256"]
+            if _digest(source_path, targets) != recovery_hashes.get(
+                source_path, POST_BASELINE_SHA256.get(source_path, row["transition_sha256"])
             ):
                 errors.append(f"CA-02 transition sha256 mismatch for {source_path}")
             if source_path.endswith(".py"):
@@ -497,14 +536,13 @@ def _validate_cardine_transition(
                 if (
                     row["disposition"] == "HARNESS_IMPORT"
                     and source_path not in REVIEWED_NON_IMPORT_AST_VARIANCE
+                    and source_path not in RECOVERY_AST_VARIANCE
                 ):
                     baseline_source = _baseline_source(source_path)
                     if _normalized_ast(current_source, source_path) != _normalized_ast(
                         baseline_source, f"baseline:{source_path}"
                     ):
-                        errors.append(
-                            f"CA-02 copied-core non-import AST mismatch: {source_path}"
-                        )
+                        errors.append(f"CA-02 copied-core non-import AST mismatch: {source_path}")
         except (OSError, SyntaxError) as error:
             errors.append(f"CA-02 transition source invalid {source_path}: {error}")
     expected_entrypoints = {
@@ -535,14 +573,13 @@ def _validate_cardine_transition(
 def validate(*, live: bool = False) -> list[str]:
     errors: list[str] = []
     try:
+        recovery_hashes = _load_recovery_overlay()
         reviewed = _load_classification()
         reviewed_current_paths = {_current_path(row) for row in reviewed}
         config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
         targets = _entry_point_targets(config)
         current_paths = (
-            _source_paths(reviewed_current_paths)
-            | _declared_package_data(config)
-            | set(targets)
+            _source_paths(reviewed_current_paths) | _declared_package_data(config) | set(targets)
         )
         transition_rows, transition_entrypoints = _load_transition_overlay()
     except (OSError, ValueError, tomllib.TOMLDecodeError, json.JSONDecodeError) as error:
@@ -558,13 +595,18 @@ def validate(*, live: bool = False) -> list[str]:
             and reviewed_by_current_path[path]["path"] == path
         )
     }
-    for path in sorted(current_paths - set(reviewed_by_current_path)):
+    for path, expected_digest in recovery_hashes.items():
+        try:
+            if _digest(path, targets) != expected_digest:
+                errors.append(f"recovery overlay sha256 mismatch for {path}")
+        except OSError as error:
+            errors.append(f"recovery overlay missing source {path}: {error}")
+    for path in sorted(current_paths - set(reviewed_by_current_path) - RECOVERY_NEW_CORE_PATHS):
         errors.append(f"classification is missing current path: {path}")
     for path in sorted(set(reviewed_by_current_path) - current_paths):
         row = reviewed_by_current_path[path]
-        if (
-            row.get("baseline_state", "clean") == "clean"
-            and not (path.startswith("entrypoint:study-agent") and row["removal_slice"] == "CA-02")
+        if row.get("baseline_state", "clean") == "clean" and not (
+            path.startswith("entrypoint:study-agent") and row["removal_slice"] == "CA-02"
         ):
             errors.append(f"classification has undeclared baseline-only path: {path}")
     transition_sources = {row["source_path"] for row in transition_rows}
@@ -573,15 +615,22 @@ def validate(*, live: bool = False) -> list[str]:
             if (
                 path not in transition_sources
                 and not path.startswith("entrypoint:")
-                and _digest(path, targets) != POST_BASELINE_SHA256.get(
-                    path, reviewed_by_current_path[path]["sha256"]
+                and _digest(path, targets)
+                != recovery_hashes.get(
+                    path, POST_BASELINE_SHA256.get(path, reviewed_by_current_path[path]["sha256"])
                 )
             ):
                 errors.append(f"classification sha256 mismatch for committed path: {path}")
         except OSError as error:
             errors.append(f"cannot hash classified path {path}: {error}")
     _validate_cardine_transition(
-        reviewed, current_paths, targets, transition_rows, transition_entrypoints, errors
+        reviewed,
+        current_paths,
+        targets,
+        transition_rows,
+        transition_entrypoints,
+        recovery_hashes,
+        errors,
     )
     if live:
         for path, row in reviewed_by_path.items():
