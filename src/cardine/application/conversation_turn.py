@@ -866,6 +866,7 @@ class ConversationTurnApplication:
                 else handoff.context_fingerprint
             ),
             decision_fingerprint=retry.action_fingerprint,
+            source_refs=product.source_refs,
         )
         self._turns.record_tutor_presentation(
             context=context,

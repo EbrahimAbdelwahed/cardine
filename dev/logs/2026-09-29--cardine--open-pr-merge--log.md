@@ -29,3 +29,23 @@ fixed: a reply that completes after navigation is marked revealed, so returning
 to the session shows its verified answer immediately. The included Beautiful UI
 MIT notice is bound to its exact bytes in the custody audit as a separate
 third-party artifact; the historical CA-01/CA-02 rows remain unchanged.
+
+A later Codex review on #5 found historical generated-source reads used the
+latest projection. Generated admissions now validate against canonical event
+prefix replay at their original sequence; the latest projection is still
+checked for consistency. Post-admission root revision changes cannot make
+valid historical generated sources unreadable.
+
+The same review found that presentation text could forge clickable canonical
+source chips by appending a `Fonti verificate` block. Explanation completion now
+records source, revision, and locator refs from the verified capability output;
+the fingerprinted presentation receipt and canonical event carry them through replay.
+The UI resolves chips only from those refs and matching catalog records. A
+model-authored source heading without refs creates no canonical citation.
+
+The review repairs update exact digests for the touched post-baseline and
+46-path recovery bytes. Two copied session paths have explicit AST variance
+entries bound by those digests; historical CA-01/CA-02 files stay frozen. On
+this checkout the complete suite passed (2489, 13 optional skips), Ruff and
+wheel/sdist build passed. The added historical replay test and final mypy run
+are checked before publication.
