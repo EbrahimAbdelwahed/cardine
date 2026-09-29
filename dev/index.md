@@ -1,6 +1,6 @@
 # Cardine development memory
 
-Updated: 2026-09-28 CEST
+Updated: 2026-09-29 CEST
 
 This file is the authoritative entrypoint for Cardine development memory.
 Cardine-specific plans, logs, notes, and handoffs belong in this repository's
@@ -8,6 +8,8 @@ Cardine-specific plans, logs, notes, and handoffs belong in this repository's
 archive and must not be treated as Cardine's current state.
 
 ## Start here
+
+- [Flashcard generation repair publication](logs/2026-09-29--cardine--flashcard-generation-publication--log.md) — the owner authorized publishing the generation repair to PR #5; empty-array wire schema, truthful failure and new-turn retry regressions verified offline; preview update and live generation remain pending.
 
 - [Message Scroller and BeUI evaluation](logs/2026-09-28--cardine--message-scroller--log.md) — reader-aware chat navigation implemented; Citations and Prompt Input assessed with canonical source boundaries.
 

@@ -482,6 +482,12 @@ class FlashcardProposalComposition:
                 "flashcard lesson generation could not be verified",
                 _failure_reason(error),
             )
+        if compact.status is LessonWorkerStatus.FAILED:
+            return FailedCapabilityOutcome(
+                compact.run_id,
+                "flashcard lesson generation failed",
+                "generation_failed",
+            )
         if compact.status is not LessonWorkerStatus.COMPLETED or compact.candidate_count < 1:
             return _terminated(
                 compact.run_id,
@@ -599,7 +605,12 @@ class FlashcardProposalComposition:
             str(public["scope"] or str(public["query"])),
             str(public["language"]),
             _candidate_ceiling(public["candidate_ceiling"]),
-            None,
+            {
+                "generation_request_fingerprint": sha256(
+                    b"cardine-flashcard-generation-request@1\0"
+                    + str(interaction_id).encode("utf-8")
+                ).hexdigest(),
+            },
             expectation,
             8,
             commitments,
