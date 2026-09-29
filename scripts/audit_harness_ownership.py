@@ -34,7 +34,9 @@ RECOVERY_AST_VARIANCE = {
     "src/study_agent/tutor_snapshot/reader.py",
 }
 THIRD_PARTY_NOTICES = {
-    "src/cardine/demo/icons/LICENSE.beautifului.txt": "65362623b02cdad0e2d8e33a9a399d1d9b2a28412e075108f2f97a9e0cd099de",
+    "src/cardine/demo/icons/LICENSE.beautifului.txt": (
+        "65362623b02cdad0e2d8e33a9a399d1d9b2a28412e075108f2f97a9e0cd099de"
+    ),
 }
 BASELINE_WHEEL = ROOT / "tests/parity/artifacts/cardine-0.2.0-py3-none-any.whl"
 SOURCE_ROOT = ROOT / "src"

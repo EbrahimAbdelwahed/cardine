@@ -29,6 +29,10 @@ fixed: a reply that completes after navigation is marked revealed, so returning
 to the session shows its verified answer immediately. The included Beautiful UI
 MIT notice is bound to its exact bytes in the custody audit as a separate
 third-party artifact; the historical CA-01/CA-02 rows remain unchanged.
+An offline browser fixture verifies that an answer completed after route
+navigation is revealed without a stale streaming animation; a same-route
+answer still streams. The combined PR #7 base passed 2501 tests with four
+optional skips, Ruff, mypy (622 files), ownership audit, and wheel/sdist build.
 
 A later Codex review on #5 found historical generated-source reads used the
 latest projection. Generated admissions now validate against canonical event

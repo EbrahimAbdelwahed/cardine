@@ -28,6 +28,8 @@ def test_stream_actions_disclosure_and_stale_poll_lifecycle() -> None:
             {"content": "Original prompt", "lesson_pin": {"lesson_id": "original"}},
             None, "sessione", "new-key",
         ]],
+        "offRouteAnswer": {"revealed": True, "stream": ""},
+        "onRouteAnswer": {"revealed": False, "stream": "answer-1"},
     }
 
 
