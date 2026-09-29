@@ -1921,7 +1921,7 @@ class LocalRepository:
     ) -> None:
         try:
             self._material_generation_preflight(pin, context, stage)
-        except (ProviderConsentRequiredError, ValueError) as error:
+        except ValueError as error:
             raise MaterialGenerationStale(str(error)) from error
 
     def _material_generation_preflight(

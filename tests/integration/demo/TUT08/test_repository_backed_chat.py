@@ -981,6 +981,9 @@ def test_source_directed_question_cannot_end_without_grounded_content(
     assert citations[0]["revision_id"]
     assert citations[0]["viewer_kind"] == "markdown"
     assert citations[0]["page"] is None
+    immediate = cast(dict[str, object], receipt["result"])
+    immediate_timeline = cast(tuple[dict[str, object], ...], immediate["timeline"])
+    assert immediate_timeline[-1]["citations"] == citations
     assert [request.metadata.get("prompt_id") for request in model.requests] == [
         "tutor_decision.v1",
         "explain_concept.v1",

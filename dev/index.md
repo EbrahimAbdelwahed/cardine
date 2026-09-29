@@ -10,6 +10,8 @@ archive and must not be treated as Cardine's current state.
 ## Start here
 
 - [Compact Thinking and Streaming Text](logs/2026-09-28--cardine--compact-thinking-streaming--log.md) — approved compact activity renderers, progressive verified answers, follow-ups and response actions on the recovery base.
+- [Message Scroller and BeUI evaluation](logs/2026-09-28--cardine--message-scroller--log.md) — reader-aware chat navigation implemented; Citations and Prompt Input assessed with canonical source boundaries.
+
 - [Failed-turn observability](logs/2026-09-28--cardine--failed-turn-observability--log.md) — correlated, bounded failure/retry traces with safe transport and execution metadata; the owner approved the six-path custody update.
 
 - [Approved recovery custody and package target](logs/2026-09-28--cardine--approved-recovery-custody--log.md) — owner accepted the exact recovery bytes; installed-package parity and copied-core removal remain required.
