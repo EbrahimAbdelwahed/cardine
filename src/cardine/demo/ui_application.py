@@ -748,6 +748,9 @@ class RepositoryUiApplication(UiApplicationPort):
                             "presentations": ProjectionTutorPresentationView(
                                 captured
                             ).presentations(self._course_id, self._session_id),
+                            "source_records": repository.for_course(
+                                self._course_id
+                            ).content.catalog(),
                             "continuation": result.pending_continuation,
                             "study_memory_ids": repository.study_memory.validated_memory_ids(
                                 self._course_id,

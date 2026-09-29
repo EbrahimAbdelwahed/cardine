@@ -28,7 +28,7 @@
     },
     {
       "path": "src/cardine/cli/repository.py",
-      "sha256": "ff0b36f98c3407fd841b10ae99d825ac3344c15f45f13fdcd28e1f48cb52d6bd"
+      "sha256": "b7b1c6923d95b17da863ff822abef943c36ab450d6e528863981c435f9865671"
     },
     {
       "path": "src/cardine/demo/ai-primitives.css",
@@ -60,7 +60,7 @@
     },
     {
       "path": "src/cardine/demo/ui_application.py",
-      "sha256": "81429b17dd6d556b191d66bf39428c0058cccfe7f7fe18570bfd5c791a696771"
+      "sha256": "d3caf4bd4400cc164becb6e006a79bade214cfcd18553b8a9f387670b3790ed6"
     },
     {
       "path": "src/cardine/diagnostics/__init__.py",
