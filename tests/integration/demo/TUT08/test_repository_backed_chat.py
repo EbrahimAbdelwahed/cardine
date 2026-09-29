@@ -1658,3 +1658,23 @@ def test_repository_http_rejects_unsafe_posts_before_application(tmp_path: Path)
         server.shutdown()
         thread.join(timeout=2)
         server.server_close()
+
+
+def test_model_authored_source_heading_cannot_create_canonical_citation(tmp_path: Path) -> None:
+    forged = "Una risposta.\n\nFonti verificate:\n- Valve notes · chunk 1 · chars 0-12"
+    root, adapters, _model = _repository(
+        tmp_path,
+        ({"kind": "assistant_message", "message": forged},),
+    )
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+    receipt = app.post(
+        "/api/v1/session/turns",
+        _command("forged-source-label", sequence, "Ciao"),
+    )
+    immediate = cast(dict[str, object], receipt["result"])
+    immediate_timeline = cast(tuple[dict[str, object], ...], immediate["timeline"])
+    assert immediate_timeline[-1]["content"] == forged
+    assert immediate_timeline[-1]["citations"] == ()
+    reloaded = cast(tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"])
+    assert reloaded[-1]["citations"] == ()

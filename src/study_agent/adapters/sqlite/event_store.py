@@ -314,6 +314,22 @@ class SQLiteEventStore:
             current = self._current_sequence(connection, course_id)
             return self._load_projection(connection, course_id, current)
 
+    def projection_at(self, course_id: CourseId, sequence: int) -> Projection:
+        """Replay the canonical prefix, without trusting a later projection."""
+        if type(sequence) is not int or sequence < 0:
+            raise ValueError("projection sequence must be non-negative")
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT envelope FROM events WHERE course_id = ? AND course_sequence <= ? "
+                "ORDER BY course_sequence",
+                (str(course_id), sequence),
+            ).fetchall()
+        events = tuple(event_from_bytes(bytes(row[0])) for row in rows)
+        result = replay(course_id, events, self._registry)
+        if result.sequence != sequence:
+            raise ProjectionConsistencyError("canonical prefix is incomplete")
+        return result
+
     def projection_bytes(self, course_id: CourseId) -> bytes:
         return self.projection(course_id).canonical_bytes()
 

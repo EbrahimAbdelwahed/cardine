@@ -61,6 +61,10 @@ TRANSITION_EXPORTS = {
     "require_text",
 }
 REVIEWED_NON_IMPORT_AST_VARIANCE = {
+    # Current-head review repairs persist verified citation refs through the
+    # copied session contract. Exact post-baseline digests bind both paths.
+    "src/study_agent/sessions/events.py",
+    "src/study_agent/sessions/turn_service.py",
     # Wave A teaches canonical export replay about Cardine-owned policy events
     # so it preserves their audit rows instead of dropping or rejecting them.
     "src/study_agent/application/export.py",
@@ -77,6 +81,42 @@ REVIEWED_NON_IMPORT_AST_VARIANCE = {
 # Exact bytes from committed Wave A product evolution after the historical
 # CA-01/CA-02 snapshots. Preserve the frozen ledgers and reject further drift.
 POST_BASELINE_SHA256 = {
+    "src/cardine/application/capability_completion.py": (
+        "42d9744589bc6c73f05c159af928fb6e5a44699c538ac90c21ea9a408bf139a7"
+    ),
+    "src/cardine/application/conversation_turn.py": (
+        "f0f20859a832fe0eaea16fe06da8d05ca1b8b71155bf4ea4397068d0c9b3a7bc"
+    ),
+    "src/cardine/cli/repository.py": (
+        "01e1c6ed3c9790ea5916b4ba3c80d365eb48fcc520e7a2157682584caa0e6972"
+    ),
+    "src/cardine/demo/ui_application.py": (
+        "dbc49571507081e120540add04ce6c7c7cb1af8be55e99350e8c20e3af1df118"
+    ),
+    "src/cardine/hosts/contracts.py": (
+        "4674b163162b12a6b3f1d49a2ea07e6e479f8cf69cbc1562ebec4c61743bce5f"
+    ),
+    "src/study_agent/adapters/sqlite/event_store.py": (
+        "c465a033d695da61da11cb4f7f79e9fdf1d3be85796e0ec8c9e77c0acd657977"
+    ),
+    "src/study_agent/domain/session.py": (
+        "228ce7621ceb480480f05da9e92383caadaef5bc190482b2b0017454fe283e40"
+    ),
+    "src/study_agent/retrieval/content.py": (
+        "7c711c6bb31935dee7d0b52930553b76d4f47d66ad63fabb5c2c98774b883e19"
+    ),
+    "src/study_agent/sessions/events.py": (
+        "d828360f90506288310c3e7bf2131739193b425b5a97eaf1f0b16736016f4747"
+    ),
+    "src/study_agent/sessions/presentation_view.py": (
+        "5fda79e3af7ab6793ec361035f0d961de59fbd2f7482ec8349d6e05160a0f360"
+    ),
+    "src/study_agent/sessions/projection.py": (
+        "8684a3a8923f540b0ea95fcb804ce7e92c1239652e81feff7d48af4b5f3d671d"
+    ),
+    "src/study_agent/sessions/turn_service.py": (
+        "3be7ae528ff8fb6fd63aa424fa2b19de22faead876ab1972f09f36b33c859e6b"
+    ),
     "src/study_agent/adapters/sqlite/fts_retrieval.py": (
         "6478e496fa957b601866fbe5561a96bea1f92b61adc707c4e1dddef125188b5c"
     ),
@@ -86,14 +126,8 @@ POST_BASELINE_SHA256 = {
     "src/study_agent/prompts/tutor_decision_v1.py": (
         "828072504ce14499f604fa3951b796e25a1422b4784f72a496ab16b5accf220b"
     ),
-    "src/cardine/cli/repository.py": (
-        "eadd4ed0448a40c37f80d81277a512bb8a7aa195f0f1d8ecfd43cad1f977f00f"
-    ),
     "src/cardine/demo/browser.js": (
         "66e3c9107c7f25295a03aa10e776a3ae1ea3a55b88ceacc06ba0c42c86bc92f4"
-    ),
-    "src/cardine/demo/ui_application.py": (
-        "a3099df6a060ea0c927de35ee07fd68a597b84f3c21400e1dfd45776f68c43d9"
     ),
     "src/cardine/hosts/flashcard_routing.py": (
         "e91a8ce48b54469829f1f8c5bc808c739d86279ad037e9957965dfc8c801683c"

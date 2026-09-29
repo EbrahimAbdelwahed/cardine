@@ -876,6 +876,8 @@ def _explanation_product_receipt(
     canonical_ids: set[str] = set()
     locators: list[str] = []
     seen_locators: set[str] = set()
+    source_refs: list[JsonObject] = []
+    seen_refs: set[tuple[str, str, str]] = set()
     for raw_segment in raw_segments:
         if not isinstance(raw_segment, Mapping):
             return None
@@ -914,6 +916,12 @@ def _explanation_product_receipt(
             if locator not in seen_locators:
                 seen_locators.add(locator)
                 locators.append(locator)
+            ref = (source_id, revision_id, locator)
+            if ref not in seen_refs:
+                seen_refs.add(ref)
+                source_refs.append(
+                    {"source_id": source_id, "revision_id": revision_id, "locator": locator}
+                )
             canonical_ids.update((source_id, revision_id, chunk_id))
         pieces.append(text)
     content = _completion_content_with_sources("\n\n".join(pieces).strip(), locators)
@@ -923,6 +931,7 @@ def _explanation_product_receipt(
             reference.run_id,
             content,
             tuple(sorted(canonical_ids)),
+            tuple(source_refs),
         )
     except (TypeError, ValueError):
         return None
