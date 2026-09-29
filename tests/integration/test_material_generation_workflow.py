@@ -303,8 +303,10 @@ def test_fresh_service_resumes_each_checkpoint_in_a_two_segment_run() -> None:
     model = ScriptedMaterialModel(two_segments=True)
     pin = _pin_text(
         blobs,
-        "Lecture 12 is important; this may be uncertain.\n"
-        "The second paragraph preserves the same lesson context.",
+        "Lecture 12 is important; this may be uncertain. "
+        + "context " * 300
+        + "\nThe second paragraph preserves the same lesson context. "
+        + "context " * 300,
     )
     service, _ = _service(blobs, store, model)
     requested = service.request_pair(

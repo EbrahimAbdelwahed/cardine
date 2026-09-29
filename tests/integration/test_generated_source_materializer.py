@@ -537,11 +537,17 @@ def test_study_material_waits_for_complete_source_then_both_materialize() -> Non
 
 
 def test_generated_source_remains_readable_after_root_revision_changes() -> None:
-    materializer, events, blobs, complete_revision, _ = _fixture()
+    materializer, events, blobs, complete_revision, study_revision = _fixture()
     materializer.materialize(
         artifact_revision_id=complete_revision,
         context=ExecutionContext(PrincipalKind.SERVICE, "materializer", COURSE, CORRELATION),
     )
+    materializer.materialize(
+        artifact_revision_id=study_revision,
+        context=ExecutionContext(PrincipalKind.SERVICE, "materializer", COURSE, CORRELATION),
+    )
+
+    replay_calls: list[tuple[int, ...]] = []
 
     class ProjectedEvents:
         def append(
@@ -556,16 +562,24 @@ def test_generated_source_remains_readable_after_root_revision_changes() -> None
             assert course_id == COURSE
             return _projection(events, blobs)
 
-        def projection_at(self, course_id: CourseId, sequence: int) -> Projection:
+        def projections_at(
+            self, course_id: CourseId, sequences: Sequence[int]
+        ) -> dict[int, Projection]:
             assert course_id == COURSE
-            return _projection(MemoryEvents(events.events[:sequence]), blobs)
+            replay_calls.append(tuple(sequences))
+            return {
+                sequence: _projection(MemoryEvents(events.events[:sequence]), blobs)
+                for sequence in sequences
+            }
 
     content = CourseSourceContent(COURSE, ProjectedEvents(), blobs)
     generated_before = tuple(
         row.source for row in content.catalog()
         if row.source.content_origin is ContentOrigin.GENERATED
     )
-    assert len(generated_before) == 1
+    assert len(generated_before) == 2
+    assert len(replay_calls) == 1
+    assert len(replay_calls[0]) == 2
 
     class WritableBlobs:
         def put(self, content: bytes) -> BlobRef:
@@ -595,3 +609,4 @@ def test_generated_source_remains_readable_after_root_revision_changes() -> None
         if row.source.content_origin is ContentOrigin.GENERATED
     )
     assert generated_after == generated_before
+    assert len(replay_calls) == 2

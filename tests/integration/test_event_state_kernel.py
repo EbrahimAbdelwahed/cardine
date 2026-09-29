@@ -152,6 +152,10 @@ def test_projection_at_replays_only_the_requested_canonical_prefix(tmp_path: Pat
     assert first.sequence == 1
     assert first.state["notes"] == ("note-1",)
     assert store.projection_at(course_id, 2).state["notes"] == ("note-1", "note-2")
+    prefixes = store.projections_at(course_id, (0, 1, 2))
+    assert {sequence: state.state.get("notes", ()) for sequence, state in prefixes.items()} == {
+        0: (), 1: ("note-1",), 2: ("note-1", "note-2")
+    }
 
     with pytest.raises(ValueError, match="non-negative"):
         store.projection_at(course_id, -1)

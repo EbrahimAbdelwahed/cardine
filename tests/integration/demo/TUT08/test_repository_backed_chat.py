@@ -255,6 +255,7 @@ def _repository(
     explain_output: JsonObject | None = None,
     credential_env: str | None = None,
     source_content: bytes = b"The aortic valve has three cusps.",
+    source_title: str = "Valve notes",
 ) -> tuple[Path, ModelAdapterRegistry, _FixtureModel]:
     root = tmp_path / "repository"
     initialize_local_repository(
@@ -285,7 +286,7 @@ def _repository(
             filename="valves.md",
             content=source_content,
             source_id=SourceId("valves"),
-            title="Valve notes",
+            title=source_title,
             trust_level=90,
             source_role="primary",
             context=ExecutionContext(
@@ -988,6 +989,37 @@ def test_source_directed_question_cannot_end_without_grounded_content(
         "tutor_decision.v1",
         "explain_concept.v1",
     ]
+
+
+def test_full_length_source_title_keeps_verified_completion_citation(tmp_path: Path) -> None:
+    title = "V" * 240
+    root, adapters, _model = _repository(
+        tmp_path,
+        ({"kind": "assistant_message", "message": "ok"},),
+        source_title=title,
+    )
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+
+    receipt = app.post(
+        "/api/v1/session/turns",
+        _command(
+            "long-source-title",
+            sequence,
+            "Read and explain the source: what does it say about the aortic valve cusps?",
+        ),
+    )
+
+    assert receipt["status"] == "completed"
+    immediate = cast(dict[str, object], receipt["result"])
+    timeline = cast(tuple[dict[str, object], ...], immediate["timeline"])
+    citations = cast(tuple[dict[str, object], ...], timeline[-1]["citations"])
+    assert len(citations) == 1
+    assert str(citations[0]["label"]).startswith(title)
+    assert len(str(citations[0]["label"])) > 256
+    assert cast(tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"])[-1][
+        "citations"
+    ] == citations
 
 
 def test_read_request_with_course_materials_enters_the_grounded_flow(

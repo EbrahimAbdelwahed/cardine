@@ -120,7 +120,6 @@ class TutorPresentationRecord:
         if len(refs) > 64 or any(
             set(ref) != {"source_id", "revision_id", "locator"}
             or any(not isinstance(ref[key], str) or not ref[key] for key in ref)
-            or len(str(ref["locator"])) > 256
             for ref in refs
         ):
             raise ValueError("presentation source refs are invalid")
