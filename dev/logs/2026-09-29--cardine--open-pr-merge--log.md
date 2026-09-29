@@ -42,3 +42,16 @@ entries bound by those digests; historical CA-01/CA-02 files stay frozen. On
 this checkout the complete suite passed (2489, 13 optional skips), Ruff and
 wheel/sdist build passed. The added historical replay test and final mypy run
 are checked before publication.
+
+Review of `0b4aa2f` found three more actionable cases. Short transcript lines
+are now coalesced into bounded units before the 256-unit limit is applied, so
+small multi-line input does not fail generation. Verified canonical locators no
+longer inherit a 256-character display limit that rejected a valid 240-character
+source title. Generated-source catalog reads request all historical projections
+in one SQLite event replay, rather than replaying the full prefix once per
+generated source. Focused tests cover the reported triggers and preserved text,
+canonical citation replay, and multi-prefix SQLite replay. Exact custody
+digests were updated for the touched source files without changing historical
+CA-01/CA-02 ledgers.
+The complete suite now passes (2501 tests, 4 optional skips); Ruff, mypy
+(621 files), ownership audit (322 rows), and wheel/sdist build pass.

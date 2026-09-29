@@ -9,6 +9,7 @@ from cardine.materials.generation_contracts import (
     MaterialGenerationState,
     PinnedTranscriptInput,
 )
+from cardine.materials.planning import build_unit_manifest
 from study_agent.domain import (
     BlobId,
     BlobRef,
@@ -58,3 +59,12 @@ def test_checkpoint_codec_is_strict_and_contains_only_blob_refs_and_receipts() -
     assert b"Lecture" not in encoded
     with pytest.raises(ValueError, match="canonical"):
         MaterialGenerationState.from_bytes(encoded + b" ")
+
+
+def test_many_short_transcript_lines_fit_bounded_units_without_losing_text() -> None:
+    transcript = "short line\n" * 300
+    manifest = build_unit_manifest(transcript, max_unit_characters=128)
+
+    assert len(manifest.units) < 256
+    assert "".join(unit.text for unit in manifest.units) == transcript
+    assert all(len(unit.text) <= 128 for unit in manifest.units)

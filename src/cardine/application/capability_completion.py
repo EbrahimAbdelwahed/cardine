@@ -54,7 +54,6 @@ class CapabilityCompletionProductReceipt:
         if len(refs) > MAX_CANONICAL_IDS or any(
             set(ref) != {"source_id", "revision_id", "locator"}
             or any(not isinstance(ref[key], str) or not ref[key] for key in ref)
-            or len(str(ref["locator"])) > 256
             or ref["source_id"] not in ids
             or ref["revision_id"] not in ids
             for ref in refs

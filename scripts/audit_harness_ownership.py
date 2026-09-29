@@ -82,7 +82,7 @@ REVIEWED_NON_IMPORT_AST_VARIANCE = {
 # CA-01/CA-02 snapshots. Preserve the frozen ledgers and reject further drift.
 POST_BASELINE_SHA256 = {
     "src/cardine/application/capability_completion.py": (
-        "42d9744589bc6c73f05c159af928fb6e5a44699c538ac90c21ea9a408bf139a7"
+        "d40d21d4db52278adf578c96fc0b01d46160d2a2f9a5f21ccd4b445e6dc156a8"
     ),
     "src/cardine/application/conversation_turn.py": (
         "f0f20859a832fe0eaea16fe06da8d05ca1b8b71155bf4ea4397068d0c9b3a7bc"
@@ -94,16 +94,16 @@ POST_BASELINE_SHA256 = {
         "dbc49571507081e120540add04ce6c7c7cb1af8be55e99350e8c20e3af1df118"
     ),
     "src/cardine/hosts/contracts.py": (
-        "4674b163162b12a6b3f1d49a2ea07e6e479f8cf69cbc1562ebec4c61743bce5f"
+        "5dff756c757aa8cb6953792f9d30b485a3671f6ba7456882d4d8d3a8a24822c0"
     ),
     "src/study_agent/adapters/sqlite/event_store.py": (
-        "c465a033d695da61da11cb4f7f79e9fdf1d3be85796e0ec8c9e77c0acd657977"
+        "00257f1218f7b46eb0a9ccb3cc2b68e3cfbdb6827c3ca7c6cf4ea1ab7dbf6c1b"
     ),
     "src/study_agent/domain/session.py": (
-        "228ce7621ceb480480f05da9e92383caadaef5bc190482b2b0017454fe283e40"
+        "92d4217bd4cdff89dc58f191f9daf20332ec80a916ce2213d44b6a826f81254c"
     ),
     "src/study_agent/retrieval/content.py": (
-        "7c711c6bb31935dee7d0b52930553b76d4f47d66ad63fabb5c2c98774b883e19"
+        "abf400ff5c891250b71b5fe8a1d995ba5947973a23b3023b140b03553cecfea7"
     ),
     "src/study_agent/sessions/events.py": (
         "d828360f90506288310c3e7bf2131739193b425b5a97eaf1f0b16736016f4747"
