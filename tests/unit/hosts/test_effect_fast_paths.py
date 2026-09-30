@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from cardine.hosts import (
     AdvertisedCapability,
     AssistantMessageDecision,
+    InvokeToolDecision,
     StartCapabilityDecision,
     TutorDecision,
     TutorHostContext,
@@ -183,3 +184,21 @@ def test_history_scoped_model_promise_cannot_complete_the_effect() -> None:
 
     assert not isinstance(decision, AssistantMessageDecision)
     assert delegate.calls == 1
+
+
+def test_difficulty_explanation_preserves_study_memory_decisions() -> None:
+    for prompt in (
+        "I don't understand glycolysis; explain it",
+        "Non capisco la glicolisi, spiegamela",
+        "Ho difficoltà con la glicolisi, spiegami la fonte",
+        "I am confused; explain glycolysis",
+        "Ricordami le mie difficoltà e spiega la glicolisi",
+    ):
+        for tool in ("study_memory.record", "study_memory.search"):
+            memory = InvokeToolDecision(tool, {})
+            delegate = _CountingPort(memory)
+            decision = asyncio.run(
+                SourceGroundedTutorDecisionPort(delegate).decide(_context(prompt), _Token())
+            )
+            assert decision == memory
+            assert delegate.calls == 1

@@ -3347,6 +3347,8 @@ def _workspace_session(item: object, *, selected: bool) -> JsonObject:
 def _model_check_message(reason: str) -> str:
     return {
         "invalid_credential": "La chiave API non è accettata dal provider.",
+        "permission_denied": "La chiave API non ha i permessi richiesti dal provider.",
+        "schema_incompatible": "Il provider non supporta lo schema strutturato richiesto.",
         "rate_limited": "Il provider ha limitato le richieste. Riprova tra poco.",
         "timeout": "Il provider non ha risposto entro il tempo previsto.",
         "model_unavailable": "Il modello configurato non è disponibile per questa chiave.",
@@ -3363,6 +3365,8 @@ def _model_check_reason(failure_reason: object) -> str:
         return "provider_unavailable"
     return {
         ModelErrorCode.AUTHENTICATION.value: "invalid_credential",
+        ModelErrorCode.AUTHORIZATION.value: "permission_denied",
+        ModelErrorCode.SCHEMA_INCOMPATIBLE.value: "schema_incompatible",
         ModelErrorCode.RATE_LIMITED.value: "rate_limited",
         ModelErrorCode.TIMEOUT.value: "timeout",
         ModelErrorCode.MODEL_UNAVAILABLE.value: "model_unavailable",

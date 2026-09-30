@@ -72,3 +72,5 @@ Final recovery bounds citation display locators to 2,000 characters while retain
 
 The streaming live region is removed after delivering its announcement and cancelled on teardown, preventing a persistent duplicate answer in the accessibility tree. Offline lifecycle regression covers announcement delivery and removal.
 Retry captures replace failed transient activity with a fresh running attempt, preserving monotonic sequence IDs to ignore late completion tokens. Regression covers failed-to-running-to-settled state, retention reset and stale tokens.
+
+Retry polling remains active while the POST is pending even if its first GET observes the previous terminal attempt. The polling loop exits when completion clears pendingTurn, navigation cancels it, failures exceed bounds, or retention timeout expires. Offline regression covers old failure, new running attempt and another failure.
