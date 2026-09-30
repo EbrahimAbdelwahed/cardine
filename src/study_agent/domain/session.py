@@ -43,6 +43,7 @@ class TutorPresentationKind(StrEnum):
 MAX_TUTOR_PRESENTATION_TEXT = 4_000
 MAX_TUTOR_PRESENTATION_QUESTION = 1_000
 MAX_TUTOR_PRESENTATION_SCHEMA_BYTES = 8_192
+MAX_TUTOR_SOURCE_LOCATOR_CHARS = 2_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +68,7 @@ class TutorPresentationRecord:
     command_fingerprint: str
     event_id: EventId
     course_sequence: int
+    source_refs: tuple[JsonObject, ...] = ()
 
     def __post_init__(self) -> None:
         require_aware(self.occurred_at, "occurred_at")
@@ -115,6 +117,15 @@ class TutorPresentationRecord:
                 raise ValueError("capability_identity exceeds its bound")
         if self.response_schema is not None:
             object.__setattr__(self, "response_schema", freeze_object(self.response_schema))
+        refs = tuple(freeze_object(item) for item in self.source_refs)
+        if len(refs) > 64 or any(
+            set(ref) != {"source_id", "revision_id", "locator"}
+            or any(not isinstance(ref[key], str) or not ref[key] for key in ref)
+            or len(str(ref["locator"])) > MAX_TUTOR_SOURCE_LOCATOR_CHARS
+            for ref in refs
+        ):
+            raise ValueError("presentation source refs are invalid")
+        object.__setattr__(self, "source_refs", refs)
         if (
             type(self.observed_host_context_sequence) is not int
             or self.observed_host_context_sequence < 0

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import cast
+from collections.abc import Mapping
 
 from cardine.diagnostics.turn_activity import (
     TurnActivityStore,
@@ -14,8 +14,10 @@ from study_agent.domain._validation import JsonObject
 
 
 def _records(snapshot: JsonObject) -> tuple[JsonObject, ...]:
-    """Narrow the generic JSON envelope at the published records boundary."""
-    return cast(tuple[JsonObject, ...], snapshot["records"])
+    records = snapshot["records"]
+    assert isinstance(records, tuple)
+    assert all(isinstance(record, Mapping) for record in records)
+    return tuple(record for record in records if isinstance(record, Mapping))
 
 
 def test_activity_is_private_deduplicated_and_settles_running_records() -> None:
@@ -58,7 +60,11 @@ def test_activity_is_private_deduplicated_and_settles_running_records() -> None:
     assert settled["state"] == "settled"
     assert all(record["status"] == "done" for record in _records(settled))
     assert all(record["ended_at"] for record in _records(settled))
-    assert cast(int, _records(settled)[1]["sequence"]) > cast(int, _records(settled)[0]["sequence"])
+    first_sequence = _records(settled)[0]["sequence"]
+    second_sequence = _records(settled)[1]["sequence"]
+    assert isinstance(first_sequence, int)
+    assert isinstance(second_sequence, int)
+    assert second_sequence > first_sequence
 
 
 def test_contextvar_binds_helpers_to_the_capturing_store_instance() -> None:
@@ -182,5 +188,5 @@ def test_settled_records_are_inserted_closed_and_unknown_ids_are_empty() -> None
 
     unknown = store.snapshot("not-captured")
     assert unknown["state"] == "unknown"
-    assert cast(list[object], unknown["records"]) == []
+    assert unknown["records"] == ()
     assert unknown["omitted"] == 0

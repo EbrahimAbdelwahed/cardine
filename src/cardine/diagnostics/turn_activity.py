@@ -371,9 +371,7 @@ class TurnActivityStore:
     def _snapshot_locked(self, request_id: str) -> JsonObject:
         turn = self._turn(request_id)
         if turn is None:
-            return cast(
-                JsonObject, {"schema_version": 2, "state": "unknown", "records": [], "omitted": 0}
-            )
+            return {"schema_version": 2, "state": "unknown", "records": (), "omitted": 0}
         records = tuple(cast(JsonObject, dict(item)) for item in turn.records)
         snapshot: dict[str, JsonValue] = {
             "schema_version": 2,

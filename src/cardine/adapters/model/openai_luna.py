@@ -31,14 +31,19 @@ _UNSUPPORTED_STRICT_SCHEMA_KEYWORDS = frozenset({"uniqueItems"})
 
 
 def _provider_strict_schema(value: object) -> object:
-    """Remove provider-unsupported validation keywords from a copied schema."""
+    """Project local constraints into the strict provider schema without mutation."""
 
     if isinstance(value, Mapping):
-        return {
+        projected = {
             str(key): _provider_strict_schema(item)
             for key, item in value.items()
             if key not in _UNSUPPORTED_STRICT_SCHEMA_KEYWORDS
         }
+        # Locally an empty-only array needs no element schema. The provider
+        # still requires one; maxItems=0 preserves the exact accepted values.
+        if value.get("type") == "array" and value.get("maxItems") == 0:
+            projected.setdefault("items", {"type": "string"})
+        return projected
     if isinstance(value, tuple):
         return tuple(_provider_strict_schema(item) for item in value)
     return value

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from typing import cast
 
 import pytest
 
@@ -20,18 +19,19 @@ from study_agent.ports import ModelPort, RetrievalQuery
 from tests.course_fixtures import create_canonical_course
 
 
-def _recording_builder(builds: list[int]) -> ModelAdapterBuilder:
+def _unexpected_provider(builds: list[int]) -> ModelAdapterBuilder:
     def build(config: ModelAdapterConfig, credential: str | None) -> ModelPort:
         del config, credential
         builds.append(1)
-        # These tests assert that invalid pins never reach adapter construction.
-        return cast(ModelPort, object())
+        raise AssertionError("provider must not be constructed for invalid lesson pins")
 
     return build
 
 
 def _repository(tmp_path: Path, builds: list[int]) -> tuple[Path, CourseId]:
     root = tmp_path / "repository"
+
+    build = _unexpected_provider(builds)
 
     initialize_local_repository(
         root,
@@ -40,7 +40,7 @@ def _repository(tmp_path: Path, builds: list[int]) -> tuple[Path, CourseId]:
     course_id = CourseId("course-pinned-lesson")
     with LocalRepository.open(
         root,
-        model_adapters=ModelAdapterRegistry({"fixture-adapter": _recording_builder(builds)}),
+        model_adapters=ModelAdapterRegistry({"fixture-adapter": build}),
         environment={},
     ) as repository:
         create_canonical_course(repository.events, course_id)
@@ -79,7 +79,7 @@ def test_invalid_foreign_and_partial_pins_fail_before_provider_construction(
     with LocalRepository.open(
         root,
         model_adapters=ModelAdapterRegistry(
-            {"fixture-adapter": _recording_builder(builds)}
+            {"fixture-adapter": _unexpected_provider(builds)}
         ),
         environment={},
     ) as repository:
@@ -104,7 +104,7 @@ def test_whole_source_pin_is_not_a_current_lesson_candidate(tmp_path: Path) -> N
     with LocalRepository.open(
         root,
         model_adapters=ModelAdapterRegistry(
-            {"fixture-adapter": _recording_builder(builds)}
+            {"fixture-adapter": _unexpected_provider(builds)}
         ),
         environment={},
     ) as repository:

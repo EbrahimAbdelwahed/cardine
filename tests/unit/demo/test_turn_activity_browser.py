@@ -86,7 +86,7 @@ def test_activity_route_remains_behind_existing_api_authentication() -> None:
     session = access.login("correct horse battery staple", client_id="test")
     payload = surface.api_get("/api/v1/turns/request/activity", session_token=session.session_token)
     assert payload["state"] == "unknown"
-    assert cast(list[object], payload["records"]) == []
+    assert payload["records"] == ()
 
 
 def test_repository_activity_get_is_independent_of_mutation_lock(tmp_path: Path) -> None:
@@ -116,7 +116,7 @@ def test_repository_activity_get_is_independent_of_mutation_lock(tmp_path: Path)
     assert result[0] == {
         "schema_version": 2,
         "state": "unknown",
-        "records": [],
+        "records": (),
         "omitted": 0,
     }
 

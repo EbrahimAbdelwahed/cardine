@@ -238,7 +238,10 @@ def build_unit_manifest(text: str, *, max_unit_characters: int = 4_000) -> UnitM
     for paragraph in text.splitlines(keepends=True):
         end = start + len(paragraph)
         if end - start <= max_unit_characters:
-            spans.append((start, end))
+            if spans and end - spans[-1][0] <= max_unit_characters:
+                spans[-1] = (spans[-1][0], end)
+            else:
+                spans.append((start, end))
         else:
             cursor = start
             while cursor < end:

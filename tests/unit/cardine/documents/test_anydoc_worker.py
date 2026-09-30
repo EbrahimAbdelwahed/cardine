@@ -12,15 +12,15 @@ import cardine.documents.anydoc_runtime as anydoc_runtime
 from cardine.documents import AnyDocErrorCode, AnyDocWorkerError, convert_pdf_in_worker
 from cardine.documents.config import DocumentImportPolicy
 
-_VERIFIED_ANYDOC_WORKER = (
+_WORKER_SUPPORTED = (
     sys.platform == "darwin"
     and platform.machine() == "arm64"
     and sys.version_info[:2] in {(3, 12), (3, 13)}
     and shutil.which("sandbox-exec") == "/usr/bin/sandbox-exec"
 )
 _requires_verified_worker = pytest.mark.skipif(
-    not _VERIFIED_ANYDOC_WORKER,
-    reason="verified AnyDoc containment requires macOS arm64 with sandbox-exec",
+    not _WORKER_SUPPORTED,
+    reason="verified AnyDoc worker containment requires macOS arm64 with sandbox-exec",
 )
 
 

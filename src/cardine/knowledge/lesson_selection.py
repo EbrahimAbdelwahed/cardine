@@ -220,7 +220,10 @@ def _markdown_sections(source: LessonSource, query: str) -> tuple[LessonCandidat
                 lesson_number is not None
                 and next_lesson_number is not None
                 and next_lesson_number != lesson_number
-            ) or (lesson_number is None and next_level <= level):
+            ) or (
+                next_level <= level
+                and (lesson_number is None or next_lesson_number != lesson_number)
+            ):
                 end = next_start
                 break
         matches.append(_candidate(source, title, start, end))

@@ -206,6 +206,14 @@ def test_luna_adapter_projects_local_unique_items_out_of_provider_schema() -> No
         "candidate_keys"
     ]
     assert local_array["uniqueItems"] is True
+    media_array = sent["response_format"]["json_schema"]["schema"]["properties"][
+        "candidates"
+    ]["items"]["properties"]["media_evidence_ids"]
+    assert media_array["items"] == {"type": "string"}
+    assert media_array["maxItems"] == 0
+    assert "items" not in schema["properties"]["candidates"]["items"]["properties"][
+        "media_evidence_ids"
+    ]
     assert result.structured_output == {"candidate_keys": ("card-1",)}
 
 

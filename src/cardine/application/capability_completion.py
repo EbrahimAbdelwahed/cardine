@@ -13,6 +13,8 @@ from typing import Protocol
 
 from cardine.hosts import TutorCapabilityCompletionReference
 from study_agent.domain import ExecutionContext, RunId
+from study_agent.domain._validation import JsonObject, freeze_object
+from study_agent.domain.session import MAX_TUTOR_SOURCE_LOCATOR_CHARS
 
 MAX_COMPLETION_CONTENT_CHARS = 4_000
 MAX_CANONICAL_IDS = 64
@@ -26,6 +28,7 @@ class CapabilityCompletionProductReceipt:
     run_id: RunId
     content: str
     canonical_ids: tuple[str, ...] = ()
+    source_refs: tuple[JsonObject, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.capability_identity, str) or not self.capability_identity:
@@ -48,6 +51,17 @@ class CapabilityCompletionProductReceipt:
         if ids != tuple(sorted(set(ids))):
             raise ValueError("completion receipt canonical ids must be sorted and unique")
         object.__setattr__(self, "canonical_ids", ids)
+        refs = tuple(freeze_object(item) for item in self.source_refs)
+        if len(refs) > MAX_CANONICAL_IDS or any(
+            set(ref) != {"source_id", "revision_id", "locator"}
+            or any(not isinstance(ref[key], str) or not ref[key] for key in ref)
+            or len(str(ref["locator"])) > MAX_TUTOR_SOURCE_LOCATOR_CHARS
+            or ref["source_id"] not in ids
+            or ref["revision_id"] not in ids
+            for ref in refs
+        ):
+            raise ValueError("completion source refs are invalid")
+        object.__setattr__(self, "source_refs", refs)
 
 
 class CapabilityCompletionHandler(Protocol):

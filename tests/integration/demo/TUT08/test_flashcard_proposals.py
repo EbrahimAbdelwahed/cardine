@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 from types import MethodType
@@ -16,12 +17,16 @@ else:
     except ModuleNotFoundError:
         from test_repository_backed_chat import _command, _repository
 
+from cardine.adapters.model.openai_luna import OpenAIGpt56LunaConfig, OpenAIGpt56LunaModel
 from cardine.cli.repository import LocalRepository
 from cardine.demo.ui_application import RepositoryUiApplication
+from study_agent.adapters.model.openai_compatible import HttpResponse
 from study_agent.capabilities import FailedCapabilityOutcome
 from study_agent.domain import CorrelationId, CourseId, ExecutionContext, PrincipalKind, SessionId
 from study_agent.domain._validation import JsonObject
 from study_agent.ports import (
+    ModelError,
+    ModelErrorCode,
     ModelFinishReason,
     ModelInvocation,
     ModelRequest,
@@ -472,3 +477,130 @@ def test_malformed_flashcard_inputs_fail_closed_without_unbound_fallback_state(
         )
 
     assert isinstance(outcome, FailedCapabilityOutcome)
+
+
+def test_repository_flashcard_provider_failure_is_not_missing_evidence(tmp_path: Path) -> None:
+    root, adapters, model = _repository(tmp_path)
+    typed_model = cast(_FixtureModel, model)
+    original = typed_model.generate
+    attempts: list[ModelRequest] = []
+
+    async def generate(self: _FixtureModel, request: ModelRequest) -> ModelResponse:
+        if request.metadata.get("prompt_id") == "hybrid_flashcards.v1":
+            attempts.append(request)
+            raise ModelError(ModelErrorCode.PROTOCOL_ERROR, "private-provider-error")
+        return await original(request)
+
+    object.__setattr__(model, "generate", MethodType(generate, typed_model))
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+    receipt = app.post(
+        "/api/v1/session/turns",
+        _command("failed-flashcards", sequence, "Crea flashcard da queste fonti"),
+    )
+    assert attempts
+    assert receipt["status"] == "failed"
+    assert "evidenze sufficienti" not in json.dumps(receipt, ensure_ascii=False)
+    assert "private-provider-error" not in json.dumps(receipt)
+
+
+def test_repository_new_flashcard_turn_retries_after_provider_failure(tmp_path: Path) -> None:
+    root, adapters, model = _repository(tmp_path)
+    typed_model = cast(_FixtureModel, model)
+    original = typed_model.generate
+
+    async def generate(self: _FixtureModel, request: ModelRequest) -> ModelResponse:
+        if request.metadata.get("prompt_id") == "hybrid_flashcards.v1":
+            raise ModelError(ModelErrorCode.PROTOCOL_ERROR, "private-provider-error")
+        return await original(request)
+
+    object.__setattr__(model, "generate", MethodType(generate, typed_model))
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+    app.post(
+        "/api/v1/session/turns",
+        _command("failed-flashcards", sequence, "Crea flashcard da queste fonti"),
+    )
+    requests = _install_hybrid_flashcard_model(model)
+    # Replaying the original request remains idempotent after a restart.
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    app.post(
+        "/api/v1/session/turns",
+        _command("failed-flashcards", sequence, "Crea flashcard da queste fonti"),
+    )
+    assert requests == []
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+    receipt = app.post(
+        "/api/v1/session/turns",
+        _command("retry-flashcards", sequence, "Crea flashcard da queste fonti"),
+    )
+    assert requests, receipt
+    activity = cast(dict[str, object], receipt["activity"])
+    assert activity["proposal_count"] == 1
+
+
+def test_repository_flashcards_cross_luna_wire_and_publish_verified_proposals(
+    tmp_path: Path,
+) -> None:
+    root, adapters, model = _repository(tmp_path)
+    typed_model = cast(_FixtureModel, model)
+    original = typed_model.generate
+    calls: list[bytes] = []
+
+    class Transport:
+        response: bytes = b""
+
+        def post(
+            self, url: str, headers: Mapping[str, str], body: bytes, timeout_seconds: float,
+        ) -> HttpResponse:
+            del url, headers, timeout_seconds
+            schema = json.loads(body)["response_format"]["json_schema"]["schema"]
+
+            def check(value: object) -> None:
+                if isinstance(value, dict):
+                    if value.get("type") == "array":
+                        assert "items" in value
+                    if value.get("type") == "object":
+                        assert value.get("additionalProperties") is False
+                        assert set(value["properties"]) == set(value["required"])
+                    assert "uniqueItems" not in value
+                    for child in value.values():
+                        check(child)
+                elif isinstance(value, list):
+                    for child in value:
+                        check(child)
+
+            check(schema)
+            calls.append(body)
+            return HttpResponse(200, self.response)
+
+    transport = Transport()
+    luna = OpenAIGpt56LunaModel(OpenAIGpt56LunaConfig("offline-fixture"), transport=transport)
+
+    async def generate(self: _FixtureModel, request: ModelRequest) -> ModelResponse:
+        if request.metadata.get("prompt_id") != "hybrid_flashcards.v1":
+            return await original(request)
+        transport.response = json.dumps({"choices": [{
+            "message": {"content": json.dumps(_flashcard_draft(request))},
+            "finish_reason": "stop",
+        }]}).encode()
+        # The repository fixture pins the outer model as "fixture"; exercise
+        # Luna's wire and parsing beneath that registered fixture adapter.
+        return replace(
+            await luna.generate(request),
+            invocation=ModelInvocation("fixture", "1.0.0", "fixture", "fixture-luna-wire"),
+        )
+
+    object.__setattr__(model, "generate", MethodType(generate, typed_model))
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+    receipt = app.post(
+        "/api/v1/session/turns",
+        _command("luna-flashcards", sequence, "Crea flashcard da queste fonti"),
+    )
+    assert calls
+    assert receipt["status"] == "completed", receipt
+    activity = cast(dict[str, object], receipt["activity"])
+    assert activity["proposal_count"] == 1
+    items = cast(tuple[dict[str, object], ...], app.get("/api/v1/artifacts")["items"])
+    assert items[0]["status"] == "proposed"
