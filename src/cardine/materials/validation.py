@@ -13,7 +13,10 @@ from study_agent.ports.model import ModelFinishReason, ModelResponse
 from .generation_contracts import MAX_OUTPUT_BYTES, GenerationPipelinePins
 
 _UNCERTAINTY = re.compile(
-    r"\b(?:unclear|uncertain|not sure|possibly|maybe|might|may|could)\b", re.I
+    r"\b(?:unclear|uncertain|not sure|possibly|maybe|might|(?-i:may)(?!\s+\d{4})|could|"
+    r"forse|probabilmente|incert[oaie]|possibilmente|potrebbe|potrebbero|"
+    r"non sicur[oaie]|non certo|non certa)\b",
+    re.I,
 )
 _EMPHASIS = re.compile(
     r"\b(?:important|key|remember|emphasized|attenzione|ricorda|fondamentale)\b", re.I
@@ -116,7 +119,7 @@ def validate_markdown(
 
     source_markers = _markers(source_text)
     output_markers = _markers(text)
-    if source_markers[0] and not source_markers[0].intersection(output_markers[0]):
+    if not source_markers[0] <= output_markers[0]:
         raise MaterialValidationError(f"{stage} output dropped uncertainty markers")
     if source_markers[1] and not source_markers[1].intersection(output_markers[1]):
         raise MaterialValidationError(f"{stage} output dropped teacher-emphasis markers")
@@ -176,7 +179,7 @@ def validate_study_markdown(
 def _ensure_commitments(source: str, output: str, stage: str) -> None:
     markers = _markers(source)
     target = _markers(output)
-    if markers[0] and not markers[0].intersection(target[0]):
+    if not markers[0] <= target[0]:
         raise MaterialValidationError(f"{stage} dropped a segment uncertainty marker")
     if markers[1] and not markers[1].intersection(target[1]):
         raise MaterialValidationError(f"{stage} dropped a segment emphasis marker")
