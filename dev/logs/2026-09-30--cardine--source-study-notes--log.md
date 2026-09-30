@@ -83,16 +83,18 @@ publication dispatch, worker completion races and oversized audio rejection.
 Initial implementation: `8f60ec5` (2026-09-30). Final audio containment and
 immutable dispatch-scope corrections are included in the same feature PR.
 
-Full offline pytest: **2503 passed, 14 skipped** in 96.76 seconds. After the
-last dispatch-scope correction, **13 focused tests** passed (product integration,
-raw audio transport, native preparation and browser journey). The clean-archive
-audit is rerun on the final commit. Ruff and mypy
+Full offline pytest on `9af0059`: **2509 passed, 14 skipped** in 97.57 seconds,
+including the clean-archive audit, browser and review regressions. The focused
+product/materializer set passed **19 tests** before that final run. Ruff and mypy
 (628 source files) pass. Ownership audit passes (322 historical rows). Both sdist
 and wheel build and `verify_cardine_wheel.py` pass. Optional recall/CPython 3.13
 qualification checks account for the local skips; CI owns their additional lanes.
 
 Published PR: [#9](https://github.com/EbrahimAbdelwahed/cardine/pull/9),
 based on PR #5. Automatic Codex semantic review and GitHub CI must still be
-inspected for the final submitted commit. No merge or deployment has occurred.
+inspected for the final submitted commit. All eight CI lanes passed on the
+previous head `79e2aa5`; that evidence is superseded by the corrected head and
+cannot authorize a merge. The two Codex findings are covered by the corrections
+and regression tests above. No merge or deployment has occurred.
 Continue on this branch/PR for actionable automatic Codex review or CI findings.
 Do not merge or deploy without owner authorization.

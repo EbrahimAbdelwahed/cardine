@@ -93,8 +93,10 @@ publication, reload, PDF coverage/staleness and audio checkpoint recovery.
 Groq wire/model/timestamp and raw-upload same-origin tests use fixtures.
 Desktop/mobile screenshots received a fresh visual critique; singular labels,
 Italian proposal status, heading hierarchy and reading width were corrected.
-Full offline suite: 2503 passed, 14 optional skips. Final product/audio/browser
-checks: thirteen passed; clean-archive audit rerun on the final commit. Ruff, mypy, custody audit, sdist/wheel build and package
+Full offline suite on the corrected implementation: 2509 passed, 14 skips
+(optional platform/dependency checks and disabled live model tests), including
+clean-archive audit and browser tests. Both automatic-review findings have
+regression coverage. Ruff, mypy, custody audit, sdist/wheel build and package
 verification pass. No live provider call made. Publication and submitted-commit
 CI/review evidence are recorded in the repository development log.
 
