@@ -66,3 +66,5 @@ digests were updated for the touched source files without changing historical
 CA-01/CA-02 ledgers.
 The complete suite now passes (2501 tests, 4 optional skips); Ruff, mypy
 (621 files), ownership audit (322 rows), and wheel/sdist build pass.
+
+Chat rail previews explicitly refresh after each word reveal, including streams that stay on one visual line and produce no resize or text mutation. Offline DOM regression verifies updated accessible labels/previews, stable controls, and preserved history scroll.

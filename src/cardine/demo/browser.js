@@ -1323,6 +1323,7 @@
     return {
       get following() { return following; },
       resume,
+      refresh: schedule,
       destroy() {
         resize.disconnect();
         mutation.disconnect();
@@ -1389,7 +1390,10 @@
         },
         onStreamProgress: (_article, phase) => {
           if (phase === "before") streamScroll = captureScroll();
-          else if (streamScroll) restoreScroll(streamScroll, false);
+          else {
+            if (streamScroll) restoreScroll(streamScroll, false);
+            conversationScroller?.refresh();
+          }
         },
         onStreamStart: (article) => {
           const id = article.closest("[data-message-id]")?.dataset.messageId;
