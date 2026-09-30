@@ -1323,6 +1323,7 @@
     return {
       get following() { return following; },
       resume,
+      refresh: schedule,
       destroy() {
         resize.disconnect();
         mutation.disconnect();
@@ -1389,7 +1390,10 @@
         },
         onStreamProgress: (_article, phase) => {
           if (phase === "before") streamScroll = captureScroll();
-          else if (streamScroll) restoreScroll(streamScroll, false);
+          else {
+            if (streamScroll) restoreScroll(streamScroll, false);
+            conversationScroller?.refresh();
+          }
         },
         onStreamStart: (article) => {
           const id = article.closest("[data-message-id]")?.dataset.messageId;
@@ -2207,7 +2211,11 @@
       const settledRecords = array(receipt.activity_records);
       const presentationId = text(receipt.presentation_id, "");
       if (isTutorTurn && presentationId) {
-        state.streamAnswerId = presentationId;
+        if (commandNavigationVersion === state.navigationVersion && state.route === "sessione") {
+          state.streamAnswerId = presentationId;
+        } else {
+          state.revealedAnswers.add(presentationId);
+        }
         if (endpoint === "/api/v1/session/turns") state.turnCommands[presentationId] = command;
       }
       if (isTutorTurn && presentationId && settledRecords.length) {

@@ -4,7 +4,7 @@ const vm = require('node:vm');
 require(process.argv[2]);
 const timers = new Map();
 let timerId = 0;
-global.setTimeout = (fn) => { const id = ++timerId; timers.set(id, fn); return id; };
+global.setTimeout = (fn, delay) => { fn.delay = delay; const id = ++timerId; timers.set(id, fn); return id; };
 global.clearTimeout = (id) => timers.delete(id);
 let reduced = false;
 global.matchMedia = () => ({ matches: reduced });
@@ -78,8 +78,8 @@ function fixture() {
   });
   return { root, article, copy, strong, controls };
 }
-function flush() {
-  for (let i = 0; timers.size && i < 200; i++) { const [id, fn] = timers.entries().next().value; timers.delete(id); fn(); }
+function flush(includeAnnouncements = true) {
+  for (let i = 0; timers.size && i < 200; i++) { const [id, fn] = timers.entries().next().value; if (!includeAnnouncements && fn.delay === 1000) break; timers.delete(id); fn(); }
 }
 function section(source, start, end) { return source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start))); }
 async function run() {
@@ -88,7 +88,11 @@ async function run() {
   const duplicate = CardineAI.enhance(first.root, { onStreamStart: () => starts++ }); duplicate();
   const streaming = first.article.hasAttribute('data-ai-stream') && first.copy.getAttribute('aria-hidden') === 'true' && timers.size === 1;
   const firstVisible = first.copy.querySelectorAll('.ai-stream-word').filter((word) => word.classList.contains('is-visible')).length;
+  flush(false);
+  const announcement = first.article.children.find(child => child.getAttribute('role') === 'status');
+  const announced = announcement?.textContent === text;
   flush();
+  const announcementRemoved = !first.article.children.includes(announcement);
   const completed = !first.article.hasAttribute('data-ai-stream') && !first.copy.hasAttribute('aria-hidden') && first.copy.textContent === text && first.strong.tagName === 'STRONG';
   destroy();
   const rebind = CardineAI.enhance(first.root, { onStreamStart: () => starts++ }); rebind();
@@ -130,6 +134,35 @@ async function run() {
   vm.createContext(retryContext); vm.runInContext(retrySource, retryContext);
   const control = { closest: () => ({ dataset: { messageId: 'answer' } }) };
   await retryContext.retryAnswer(control); retryContext.state.pendingTurn = {}; await retryContext.retryAnswer(control);
-  console.log(JSON.stringify({ streaming, firstVisible, completed, starts, cancelled, reducedInstant, copies, retry, feedback, exclusive, collapsed, preservedChoice, stalePollIgnored, retryCalls }));
+
+  const commandSource = section(browser, '  async function executeCommand', '\n  function renderOptimisticTurn');
+  async function commandAfterNavigation(navigateAway) {
+    let resolveFetch;
+    const commandState = {
+      navigationVersion: 1, route: 'sessione', lastCommand: null, pendingTurn: null,
+      revealedAnswers: new Set(), streamAnswerId: '', turnCommands: {}, turnActivities: {},
+      activityPollToken: 0, highWaterSequence: 0,
+    };
+    const context = {
+      state: commandState, text: (value, fallback = '') => String(value || fallback),
+      object: (value) => value || {}, array: (value) => value || [],
+      requestId: () => 'turn-request', renderOptimisticTurn: () => {}, pollTurnActivity: async () => {},
+      setBusy: () => {}, setStatus: () => {}, commandPayload: (payload) => payload,
+      fetchJson: () => new Promise((resolve) => { resolveFetch = resolve; }),
+      updateSequence: () => {}, first: (_value, _keys, fallback) => fallback,
+      statusLabel: (status) => status, INCOMPLETE_TURN_STATUSES: new Set(),
+      renderSessione: () => {}, refreshBootstrapCounts: async () => {},
+      $$: () => [], $: () => null, root: {},
+    };
+    vm.createContext(context); vm.runInContext(commandSource, context);
+    const task = context.executeCommand('/api/v1/session/turns', { content: 'Una domanda' }, null, 'sessione');
+    if (navigateAway) { commandState.route = 'fonti'; commandState.navigationVersion += 1; }
+    resolveFetch({ presentation_id: 'answer-1', status: 'completed', result: {} });
+    await task;
+    return { revealed: commandState.revealedAnswers.has('answer-1'), stream: commandState.streamAnswerId };
+  }
+  const offRouteAnswer = await commandAfterNavigation(true);
+  const onRouteAnswer = await commandAfterNavigation(false);
+  console.log(JSON.stringify({ streaming, firstVisible, completed, announced, announcementRemoved, starts, cancelled, reducedInstant, copies, retry, feedback, exclusive, collapsed, preservedChoice, stalePollIgnored, retryCalls, offRouteAnswer, onRouteAnswer }));
 }
 run().catch((error) => { console.error(error); process.exit(1); });

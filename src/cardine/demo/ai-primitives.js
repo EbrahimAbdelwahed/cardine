@@ -748,16 +748,19 @@
       article.appendChild(announcement);
       copy.setAttribute("aria-hidden", "true");
       article.setAttribute("aria-busy", "true");
-      var cursor = 0, timer;
+      var cursor = 0, timer, announcementTimer;
       var batch = Math.max(1, Math.ceil(words.length / 160));
       function finish(announce) {
         clearTimeout(timer);
+        clearTimeout(announcementTimer);
         words.forEach(function (word) { word.classList.add("is-visible"); });
         article.removeAttribute("data-ai-stream");
         article.removeAttribute("aria-busy");
         copy.removeAttribute("aria-hidden");
-        if (announce) announcement.textContent = copy.innerText || copy.textContent || "";
-        else announcement.remove();
+        if (announce) {
+          announcement.textContent = copy.innerText || copy.textContent || "";
+          announcementTimer = setTimeout(function () { announcement.remove(); }, 1000);
+        } else announcement.remove();
       }
       function advance() {
         if (typeof config.onStreamProgress === "function") config.onStreamProgress(article, "before");

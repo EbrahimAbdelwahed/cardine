@@ -19,7 +19,7 @@ def test_stream_actions_disclosure_and_stale_poll_lifecycle() -> None:
     observed = json.loads(result.stdout)
     assert observed == {
         "streaming": True, "firstVisible": 1, "completed": True, "starts": 1,
-        "cancelled": True, "reducedInstant": True,
+        "announced": True, "announcementRemoved": True, "cancelled": True, "reducedInstant": True,
         "copies": ["Una risposta verificata <img> con fonti."], "retry": 1,
         "feedback": ["like", "dislike", ""], "exclusive": True,
         "collapsed": True, "preservedChoice": True, "stalePollIgnored": True,
@@ -28,6 +28,8 @@ def test_stream_actions_disclosure_and_stale_poll_lifecycle() -> None:
             {"content": "Original prompt", "lesson_pin": {"lesson_id": "original"}},
             None, "sessione", "new-key",
         ]],
+        "offRouteAnswer": {"revealed": True, "stream": ""},
+        "onRouteAnswer": {"revealed": False, "stream": "answer-1"},
     }
 
 
