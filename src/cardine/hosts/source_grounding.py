@@ -18,7 +18,7 @@ _EXPLAIN_CAPABILITY_ID = "explain_concept"
 _STUDY_MEMORY_INTENT = re.compile(
     r"\b(?:non\s+(?:capisco|ho\s+capito|ricordo|riesco)|"
     r"difficolt[aà]|confus[oaie]|dimentic\w*|ricord\w*|"
-    r"(?:don['’]t|do\s+not|can['’]t|cannot)\s+(?:understand|remember)|"
+    r"(?:don['\u2019]t|do\s+not|can['\u2019]t|cannot)\s+(?:understand|remember)|"
     r"confus\w*|struggl\w*|forget\w*|forgot\w*|remember)\b",
     re.IGNORECASE,
 )

@@ -92,7 +92,7 @@
     },
     {
       "path": "src/cardine/hosts/source_grounding.py",
-      "sha256": "e25f8091821690801df2a4390fde3ee18cee7c18f12d0515e4fab723d094659f"
+      "sha256": "dc02dc035ef56124b789dcbb6fd5a2b6d41c265a48b45c3b8bf5b05594ed572d"
     },
     {
       "path": "src/study_agent/adapters/model/openai_compatible.py",
