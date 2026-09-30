@@ -60,3 +60,5 @@ Final recovery bounds citation display locators to 2,000 characters while retain
 
 Architecture review repairs retain study-memory tool decisions before grounded explanation, preserve a closed allowlist of typed gateway failures through worker sanitization, and distinguish permission/schema errors in Settings readiness. The worker contract correction has an exact digest and scoped AST variance; frozen custody ledgers remain unchanged.
 Retry captures replace failed transient activity with a fresh running attempt, preserving monotonic sequence IDs to ignore late completion tokens. Regression covers failed-to-running-to-settled state, retention reset and stale tokens.
+
+Retry polling remains active while the POST is pending even if its first GET observes the previous terminal attempt. The polling loop exits when completion clears pendingTurn, navigation cancels it, failures exceed bounds, or retention timeout expires. Offline regression covers old failure, new running attempt and another failure.
