@@ -1112,6 +1112,7 @@ class RepositoryUiApplication(UiApplicationPort):
             self._course_id = course_id
             self._session_id = session_id
             sequence = repository.events.projection(course_id).sequence
+        self._recover_material_jobs(course_id, session_id)
         return {
             "schema_version": 1,
             "request_id": request_id,

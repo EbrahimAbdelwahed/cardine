@@ -681,8 +681,9 @@ def test_resume_during_worker_completion_is_not_lost(
     assert calls == 2
 
 
+@pytest.mark.parametrize("endpoint", ["/api/v1/workspace/select", "/api/v1/workspace/sessions"])
 def test_workspace_selection_recovers_jobs_outside_startup_session(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, endpoint: str
 ) -> None:
     from cardine.demo.ui_application import RepositoryUiApplication
     from study_agent.domain import CourseId, SessionId
@@ -714,7 +715,7 @@ def test_workspace_selection_recovers_jobs_outside_startup_session(
         lambda job, course, session: dispatched.append((job, course, session)),
     )
     app.post(
-        "/api/v1/workspace/select",
+        endpoint,
         {
             "schema_version": 1,
             "request_id": "select-other",
