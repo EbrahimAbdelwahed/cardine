@@ -2373,7 +2373,6 @@
           if (progressNode && progressMessage) progressNode.textContent = progressMessage;
           restoreScroll(scroll, false);
         }
-        if (["settled", "failed"].includes(text(payload.state))) return;
         await new Promise((resolve) => window.setTimeout(resolve, 600));
       } catch (_) {
         failures += 1;

@@ -7,7 +7,7 @@ from pathlib import Path
 DEMO_DIR = Path(__file__).parents[3] / "src" / "cardine" / "demo"
 
 
-def test_browser_polls_activity_by_request_id_and_stops_on_settle() -> None:
+def test_browser_polls_activity_while_the_command_is_pending() -> None:
     source = (DEMO_DIR / "browser.js").read_text(encoding="utf-8")
 
     assert "function pollTurnActivity" in source
@@ -18,7 +18,7 @@ def test_browser_polls_activity_by_request_id_and_stops_on_settle() -> None:
     assert "2000" in source
     assert "pendingTurn" in source
     assert "pollTurnActivity" in source
-    assert '["settled", "failed"].includes(text(payload.state))' in source
+    assert "state.pendingTurn?.requestId === requestId" in source
     assert '["settled", "failed", "unknown"]' not in source
     assert "turnActivities" in source
     assert "state.turnActivities[presentationId]" in source
