@@ -43,6 +43,7 @@ class TutorPresentationKind(StrEnum):
 MAX_TUTOR_PRESENTATION_TEXT = 4_000
 MAX_TUTOR_PRESENTATION_QUESTION = 1_000
 MAX_TUTOR_PRESENTATION_SCHEMA_BYTES = 8_192
+MAX_TUTOR_SOURCE_LOCATOR_CHARS = 2_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +121,7 @@ class TutorPresentationRecord:
         if len(refs) > 64 or any(
             set(ref) != {"source_id", "revision_id", "locator"}
             or any(not isinstance(ref[key], str) or not ref[key] for key in ref)
+            or len(str(ref["locator"])) > MAX_TUTOR_SOURCE_LOCATOR_CHARS
             for ref in refs
         ):
             raise ValueError("presentation source refs are invalid")

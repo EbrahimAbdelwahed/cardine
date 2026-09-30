@@ -86,26 +86,29 @@ REVIEWED_NON_IMPORT_AST_VARIANCE = {
 # Exact bytes from committed Wave A product evolution after the historical
 # CA-01/CA-02 snapshots. Preserve the frozen ledgers and reject further drift.
 POST_BASELINE_SHA256 = {
+    "src/study_agent/adapters/sqlite/run_store.py": (
+        "331b2fb71c01a987d800465555e5a959c7f9b1692b4dbb8902987751944dfe58"
+    ),
     "src/cardine/application/capability_completion.py": (
-        "d40d21d4db52278adf578c96fc0b01d46160d2a2f9a5f21ccd4b445e6dc156a8"
+        "a8745bebd1384ecd3ddce6577841223628ab9423c86ffe8d0d8e2e9d1e7d0c4b"
     ),
     "src/cardine/application/conversation_turn.py": (
         "f0f20859a832fe0eaea16fe06da8d05ca1b8b71155bf4ea4397068d0c9b3a7bc"
     ),
     "src/cardine/cli/repository.py": (
-        "01e1c6ed3c9790ea5916b4ba3c80d365eb48fcc520e7a2157682584caa0e6972"
+        "a291e142e6579f6af23dd0b0dad0c221f5574214ce46dcc6dc5392e74f3565cb"
     ),
     "src/cardine/demo/ui_application.py": (
         "dbc49571507081e120540add04ce6c7c7cb1af8be55e99350e8c20e3af1df118"
     ),
     "src/cardine/hosts/contracts.py": (
-        "5dff756c757aa8cb6953792f9d30b485a3671f6ba7456882d4d8d3a8a24822c0"
+        "df3e864ef0131f7c09dcc985529950269fbf6afef81b679c07f213b5ebdd3999"
     ),
     "src/study_agent/adapters/sqlite/event_store.py": (
-        "00257f1218f7b46eb0a9ccb3cc2b68e3cfbdb6827c3ca7c6cf4ea1ab7dbf6c1b"
+        "767d67c96fcb52a947698b179d47335ddddaa7a4c441718e8aba5f6153fbdb96"
     ),
     "src/study_agent/domain/session.py": (
-        "92d4217bd4cdff89dc58f191f9daf20332ec80a916ce2213d44b6a826f81254c"
+        "767ed6b1c71d1c7d90eacf27e552e4774d0b71ab2b8ac020e8badfa9608b9d96"
     ),
     "src/study_agent/retrieval/content.py": (
         "abf400ff5c891250b71b5fe8a1d995ba5947973a23b3023b140b03553cecfea7"
@@ -123,7 +126,7 @@ POST_BASELINE_SHA256 = {
         "3be7ae528ff8fb6fd63aa424fa2b19de22faead876ab1972f09f36b33c859e6b"
     ),
     "src/study_agent/adapters/sqlite/fts_retrieval.py": (
-        "6478e496fa957b601866fbe5561a96bea1f92b61adc707c4e1dddef125188b5c"
+        "ab6f8ab5f27da541742526127729c29c317dfaf241edd7f63e6a674dd642930c"
     ),
     "src/study_agent/prompts/explain_concept_v1.py": (
         "00957942586239a396bae507593b687b1896fee120eba83e37feae592a95ff48"
