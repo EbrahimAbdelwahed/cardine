@@ -4,7 +4,7 @@ const vm = require('node:vm');
 require(process.argv[2]);
 const timers = new Map();
 let timerId = 0;
-global.setTimeout = (fn) => { const id = ++timerId; timers.set(id, fn); return id; };
+global.setTimeout = (fn, delay) => { fn.delay = delay; const id = ++timerId; timers.set(id, fn); return id; };
 global.clearTimeout = (id) => timers.delete(id);
 let reduced = false;
 global.matchMedia = () => ({ matches: reduced });
@@ -78,8 +78,8 @@ function fixture() {
   });
   return { root, article, copy, strong, controls };
 }
-function flush() {
-  for (let i = 0; timers.size && i < 200; i++) { const [id, fn] = timers.entries().next().value; timers.delete(id); fn(); }
+function flush(includeAnnouncements = true) {
+  for (let i = 0; timers.size && i < 200; i++) { const [id, fn] = timers.entries().next().value; if (!includeAnnouncements && fn.delay === 1000) break; timers.delete(id); fn(); }
 }
 function section(source, start, end) { return source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start))); }
 async function run() {
@@ -88,7 +88,11 @@ async function run() {
   const duplicate = CardineAI.enhance(first.root, { onStreamStart: () => starts++ }); duplicate();
   const streaming = first.article.hasAttribute('data-ai-stream') && first.copy.getAttribute('aria-hidden') === 'true' && timers.size === 1;
   const firstVisible = first.copy.querySelectorAll('.ai-stream-word').filter((word) => word.classList.contains('is-visible')).length;
+  flush(false);
+  const announcement = first.article.children.find(child => child.getAttribute('role') === 'status');
+  const announced = announcement?.textContent === text;
   flush();
+  const announcementRemoved = !first.article.children.includes(announcement);
   const completed = !first.article.hasAttribute('data-ai-stream') && !first.copy.hasAttribute('aria-hidden') && first.copy.textContent === text && first.strong.tagName === 'STRONG';
   destroy();
   const rebind = CardineAI.enhance(first.root, { onStreamStart: () => starts++ }); rebind();
@@ -159,6 +163,6 @@ async function run() {
   }
   const offRouteAnswer = await commandAfterNavigation(true);
   const onRouteAnswer = await commandAfterNavigation(false);
-  console.log(JSON.stringify({ streaming, firstVisible, completed, starts, cancelled, reducedInstant, copies, retry, feedback, exclusive, collapsed, preservedChoice, stalePollIgnored, retryCalls, offRouteAnswer, onRouteAnswer }));
+  console.log(JSON.stringify({ streaming, firstVisible, completed, announced, announcementRemoved, starts, cancelled, reducedInstant, copies, retry, feedback, exclusive, collapsed, preservedChoice, stalePollIgnored, retryCalls, offRouteAnswer, onRouteAnswer }));
 }
 run().catch((error) => { console.error(error); process.exit(1); });

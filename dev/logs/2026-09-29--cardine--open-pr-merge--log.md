@@ -69,3 +69,5 @@ The complete suite now passes (2501 tests, 4 optional skips); Ruff, mypy
 
 Chat rail previews explicitly refresh after each word reveal, including streams that stay on one visual line and produce no resize or text mutation. Offline DOM regression verifies updated accessible labels/previews, stable controls, and preserved history scroll.
 Final recovery bounds citation display locators to 2,000 characters while retaining canonical IDs, including 4,000-character headings. SQLite identity probes serialize concurrent opens while retaining inode replacement rejection. Offline runtime tests: 2,508 passed, four expected skips; archive audit rechecked after committing updated custody.
+
+The streaming live region is removed after delivering its announcement and cancelled on teardown, preventing a persistent duplicate answer in the accessibility tree. Offline lifecycle regression covers announcement delivery and removal.
