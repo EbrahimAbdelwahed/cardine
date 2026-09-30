@@ -28,7 +28,7 @@
     },
     {
       "path": "src/cardine/demo/ui_application.py",
-      "sha256": "7f90a847f56b81aba6c1487029dcac84eaa55af8e89474397c0621c90a17483a"
+      "sha256": "5a9f053b03e6eec86dadb8279b7d773fea70126f9501717add265db4ad30018a"
     },
     {
       "path": "src/cardine/materials/generation_contracts.py",

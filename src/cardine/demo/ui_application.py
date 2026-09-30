@@ -448,8 +448,7 @@ class RepositoryUiApplication(UiApplicationPort):
 
                 if path == "/api/v1/material-generations":
                     jobs = tuple(
-                        view(str(item["job_id"]), include_markdown=False)
-                        for item in product.jobs()
+                        view(str(item["job_id"]), include_markdown=False) for item in product.jobs()
                     )
                     audio_children = {
                         str(item.get("material_job_id"))
@@ -601,9 +600,7 @@ class RepositoryUiApplication(UiApplicationPort):
         except (LocalRepositoryError, OSError, ValueError, RuntimeError) as error:
             raise UiRequestError("repository runtime is unavailable", status_code=503) from error
 
-    def read_source_document(
-        self, source_id: str, revision_id: str
-    ) -> SourceDocumentView:
+    def read_source_document(self, source_id: str, revision_id: str) -> SourceDocumentView:
         """Resolve one course-owned immutable revision to verified display bytes."""
 
         try:
@@ -653,12 +650,14 @@ class RepositoryUiApplication(UiApplicationPort):
             raise
         except SourceContentError:
             raise UiRequestError(
-                "source content is unavailable", status_code=503,
+                "source content is unavailable",
+                status_code=503,
                 diagnostic_code="source_content_unavailable",
             ) from None
         except (LookupError, OSError, UnicodeError, ValueError):
             raise UiRequestError(
-                "source content is unavailable", status_code=503,
+                "source content is unavailable",
+                status_code=503,
                 diagnostic_code="source_content_unavailable",
             ) from None
         except (LocalRepositoryError, RuntimeError) as error:
@@ -890,9 +889,7 @@ class RepositoryUiApplication(UiApplicationPort):
                 self._turn_activity.settle(request_id, status=activity_status)
 
     def _lesson_search(self, command: Mapping[str, object]) -> JsonObject:
-        request_id, _expected, payload = _workspace_command(
-            command, required_keys={"query"}
-        )
+        request_id, _expected, payload = _workspace_command(command, required_keys={"query"})
         query = _workspace_text(payload.get("query"), "query", MAX_LEARNER_ENTRY_CHARS)
         try:
             with self._lock, self._open() as repository:
@@ -942,9 +939,7 @@ class RepositoryUiApplication(UiApplicationPort):
         request_id, expected_sequence, payload = _workspace_command(
             command, required_keys={"question", "pin"}
         )
-        question = _workspace_text(
-            payload.get("question"), "question", MAX_LEARNER_ENTRY_CHARS
-        )
+        question = _workspace_text(payload.get("question"), "question", MAX_LEARNER_ENTRY_CHARS)
         pin = _lesson_pin_payload_from_json(payload.get("pin"))
         with self._lock:
             try:
@@ -1042,9 +1037,7 @@ class RepositoryUiApplication(UiApplicationPort):
                 raise UiRequestError(str(error), status_code=400) from error
 
     def _post_artifact_decisions(self, command: Mapping[str, object]) -> JsonObject:
-        request_id, expected_sequence, payload = _command(
-            command, payload_key="decisions"
-        )
+        request_id, expected_sequence, payload = _command(command, payload_key="decisions")
         with self._lock:
             try:
                 with self._open() as repository:
@@ -1098,6 +1091,7 @@ class RepositoryUiApplication(UiApplicationPort):
         # untouched rather than combining the old course with a new session.
         self._course_id = course_id
         self._session_id = session_id
+        self._recover_material_jobs(course_id, session_id)
         return {
             "schema_version": 1,
             "request_id": request_id,
@@ -1310,7 +1304,7 @@ class RepositoryUiApplication(UiApplicationPort):
                             self._start_material_worker(
                                 dispatch_job_id,
                                 context.course_id,
-                                cast(SessionId, context.session_id)
+                                cast(SessionId, context.session_id),
                             )
                         self._start_indexing_worker()
                         return result
@@ -1357,14 +1351,23 @@ class RepositoryUiApplication(UiApplicationPort):
         ) as error:
             raise UiRequestError(str(error), status_code=409) from None
 
-    def _recover_material_jobs(self) -> None:
+    def _recover_material_jobs(
+        self, course: CourseId | None = None, session: SessionId | None = None
+    ) -> None:
+        course = course if course is not None else self._course_id
+        session = session if session is not None else self._session_id
+        context = ExecutionContext(
+            PrincipalKind.SERVICE,
+            "cardine-material-recovery",
+            course,
+            CorrelationId("material-recovery"),
+            session_id=session,
+        )
         with self._open() as repository:
-            product = MaterialProduct(
-                repository, self._context("material-recovery", "material-recovery")
-            )
-            for item in product.jobs():
-                job_id = str(item["job_id"])
-                self._start_material_worker(job_id, self._course_id, self._session_id)
+            product = MaterialProduct(repository, context)
+            jobs = product.jobs()
+        for item in jobs:
+            self._start_material_worker(str(item["job_id"]), course, session)
 
     def _start_material_worker(self, job_id: str, course: CourseId, session: SessionId) -> None:
         identity = (str(course), str(session), job_id)
@@ -1390,8 +1393,12 @@ class RepositoryUiApplication(UiApplicationPort):
                         product.clear_worker_error(job_id)
                         try:
                             if job_id.startswith("audio-"):
-                                product.advance_audio(job_id, GroqAudioTranscriber(
-                                    self._audio_environment.get("GROQ_API_KEY", "")))
+                                product.advance_audio(
+                                    job_id,
+                                    GroqAudioTranscriber(
+                                        self._audio_environment.get("GROQ_API_KEY", "")
+                                    ),
+                                )
                                 view = product.audio_status(job_id, include_markdown=False)
                                 material_id = view.get("material_job_id")
                                 if material_id is not None:
@@ -1598,9 +1605,7 @@ class RepositoryUiApplication(UiApplicationPort):
                 ) from error
 
     def _reconcile_indexing(self, command: Mapping[str, object]) -> JsonObject:
-        request_id, _expected_sequence, _payload = _workspace_command(
-            command, required_keys=set()
-        )
+        request_id, _expected_sequence, _payload = _workspace_command(command, required_keys=set())
         try:
             with self._open() as repository:
                 record = repository.queue_indexing()
@@ -1690,9 +1695,7 @@ class RepositoryUiApplication(UiApplicationPort):
             "indexed_chunks": 0 if record is None else record.indexed_chunks,
             "pageindex": {
                 "status": str(pageindex.get("status", "empty")),
-                "ready_revisions": sum(
-                    1 for item in rows if item.get("status") == "ready"
-                ),
+                "ready_revisions": sum(1 for item in rows if item.get("status") == "ready"),
                 "total_revisions": len(rows),
             },
             "error_code": None if record is None else record.error_code,
@@ -2465,9 +2468,7 @@ class RepositoryUiApplication(UiApplicationPort):
             item for item in snapshot.materials if str(item.source_id) not in retired
         )
         active_revisions_value = pageindex.get("active_revisions", 0)
-        active_revisions = (
-            active_revisions_value if type(active_revisions_value) is int else 0
-        )
+        active_revisions = active_revisions_value if type(active_revisions_value) is int else 0
         items_value = pageindex.get("items", ())
         pageindex_items = (
             tuple(item for item in items_value if isinstance(item, Mapping))
@@ -2536,9 +2537,7 @@ class RepositoryUiApplication(UiApplicationPort):
     @staticmethod
     def _session(snapshot: TutorSnapshotV1, metadata: Mapping[str, object]) -> JsonObject:
         presentations = metadata.get("presentations", ())
-        source_records = cast(
-            tuple[SourceRevisionRecord, ...], metadata.get("source_records", ())
-        )
+        source_records = cast(tuple[SourceRevisionRecord, ...], metadata.get("source_records", ()))
         readiness = metadata.get("readiness")
         private_note_ids = frozenset(
             str(item) for item in cast(Sequence[object], metadata.get("study_memory_ids", ()))
@@ -3641,9 +3640,7 @@ def _presentation_timeline_item(
         "interaction_id": str(getattr(item, "id", "")),
         "occurred_at": None if occurred_at is None else occurred_at.isoformat(),
         "content": content,
-        "citations": _source_viewer_citations(
-            getattr(item, "source_refs", ()), source_records
-        ),
+        "citations": _source_viewer_citations(getattr(item, "source_refs", ()), source_records),
         "event_id": str(getattr(item, "event_id", "")),
         "course_sequence": getattr(item, "course_sequence", 0),
         "run_id": None,
@@ -3689,7 +3686,8 @@ def _source_viewer_citations(
         if identity in seen:
             continue
         matches = tuple(
-            record for record in source_records
+            record
+            for record in source_records
             if str(record.source.source_id) == source_id
             and str(record.source.revision_id) == revision_id
         )

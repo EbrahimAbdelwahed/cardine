@@ -679,3 +679,47 @@ def test_resume_during_worker_completion_is_not_lost(
     assert rerun.wait(5)
     assert settled.wait(5)
     assert calls == 2
+
+
+def test_workspace_selection_recovers_jobs_outside_startup_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cardine.demo.ui_application import RepositoryUiApplication
+    from study_agent.domain import CourseId, SessionId
+
+    root = tmp_path / "repo"
+    initialize_local_repository(root, _config())
+    base = _service_context()
+    other = replace(base, session_id=SessionId("other-session"), principal_kind=PrincipalKind.HUMAN)
+    with LocalRepository.open(
+        root, model_adapters=_registry(), environment={"OPENAI_API_KEY": "fixture"}
+    ) as repository:
+        admitted = _prepare(repository, consent=True)
+        repository.session_service.start(other)
+        product = MaterialProduct(repository, other)
+        job = product.start(
+            str(admitted.source.source_id), str(admitted.source.revision_id), "other-job"
+        )
+    app = RepositoryUiApplication(
+        root,
+        base.course_id,
+        cast(SessionId, base.session_id),
+        model_adapters=_registry(),
+        environment={"OPENAI_API_KEY": "fixture"},
+    )
+    dispatched: list[tuple[str, CourseId, SessionId]] = []
+    monkeypatch.setattr(
+        app,
+        "_start_material_worker",
+        lambda job, course, session: dispatched.append((job, course, session)),
+    )
+    app.post(
+        "/api/v1/workspace/select",
+        {
+            "schema_version": 1,
+            "request_id": "select-other",
+            "expected_sequence": 0,
+            "payload": {"course_id": str(other.course_id), "session_id": str(other.session_id)},
+        },
+    )
+    assert dispatched == [(str(job["job_id"]), other.course_id, other.session_id)]
