@@ -171,8 +171,12 @@ def test_retry_poll_survives_previous_terminal_activity() -> None:
     script = r"""
 const fs = require('node:fs'); const vm = require('node:vm');
 const source = fs.readFileSync(process.argv[1], 'utf8');
-const poll = source.slice(source.indexOf('  async function pollTurnActivity'), source.indexOf('  function restoreFailedTurnDraft'));
-const snapshots = [{state:'failed',records:[{sequence:1}]}, {state:'running',records:[{sequence:2}]}, {state:'failed',records:[{sequence:2}]}];
+const poll = source.slice(source.indexOf('  async function pollTurnActivity'),
+ source.indexOf('  function restoreFailedTurnDraft'));
+const snapshots = [
+ {state:'failed',records:[{sequence:1}]},
+ {state:'running',records:[{sequence:2}]},
+ {state:'failed',records:[{sequence:2}]}];
 let reads=0; const rendered=[];
 const state = {activityPollToken:0,navigationVersion:0,pendingTurn:{requestId:'retry'}};
 const context = {state, root:{}, text:(value)=>value||'', $:()=>({}),
