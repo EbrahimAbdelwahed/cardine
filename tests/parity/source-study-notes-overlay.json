@@ -8,7 +8,7 @@
     },
     {
       "path": "src/cardine/adapters/audio/groq.py",
-      "sha256": "7c00c23208d48ab407f741ed4b95d4600b15f54fa6085f724da9cdd10112d084"
+      "sha256": "9ae5006e9d324b877e9b5c887c201cca1da8cbe28e70896d5504f5b1c879a1e1"
     },
     {
       "path": "src/cardine/cli/repository.py",
@@ -20,7 +20,7 @@
     },
     {
       "path": "src/cardine/demo/browser.js",
-      "sha256": "5656caf1f3e57603e9c881b2a1063a1054ea3c860131c5d12ee4a62e3d21c7ec"
+      "sha256": "855cb18fd099f72bc4c244f375ed37fd733192d9d340561ad1501215e2e12ab9"
     },
     {
       "path": "src/cardine/demo/browser.py",
@@ -28,15 +28,19 @@
     },
     {
       "path": "src/cardine/demo/ui_application.py",
-      "sha256": "aa30afd93a464bb6a6934fd49dfda1484c97a4cef69278b1f01260cd8d5fddac"
+      "sha256": "79f11f9d7092b9cf4f101b098ac799cf7b16843345e4c87183ad22dcb5829d99"
     },
     {
       "path": "src/cardine/materials/generation_contracts.py",
       "sha256": "d19e33d25f2cd3a8793a26bde28a4c3d2a894ad6593e8cf9ebce8a8a0337d871"
     },
     {
+      "path": "src/cardine/materials/materializer.py",
+      "sha256": "cc39b62d3a1b770be33f0681f6cd64e3ea1bfc0c043b03e622858557791231c0"
+    },
+    {
       "path": "src/cardine/materials/product.py",
-      "sha256": "96bed413ca480a21401282bf77b966b5f317280616a1dfd5a3a2eb6bd6f59b5c"
+      "sha256": "4cd81d00859e31107421e4c452de7341d1e0602f2f8fceb8be5f7d2e26d81160"
     },
     {
       "path": "src/study_agent/domain/provenance.py",

@@ -18,6 +18,7 @@ MAX_AUDIO_BYTES = 128 * 1024 * 1024
 MAX_AUDIO_SECONDS = 8 * 60 * 60
 CHUNK_SECONDS = 600
 MODEL = "whisper-large-v3-turbo"
+INPUT_FORMATS = "mp3,wav,mov,ogg,matroska,webm,flac,aac"
 AUDIO_EXTENSIONS = {"mp3", "wav", "m4a", "mp4", "ogg", "webm", "flac", "aac"}
 
 
@@ -124,6 +125,10 @@ class GroqAudioTranscriber:
                         "ffprobe",
                         "-v",
                         "error",
+                        "-protocol_whitelist",
+                        "file,pipe",
+                        "-format_whitelist",
+                        INPUT_FORMATS,
                         "-show_entries",
                         "format=duration",
                         "-of",
@@ -143,6 +148,10 @@ class GroqAudioTranscriber:
                         "-nostdin",
                         "-v",
                         "error",
+                        "-protocol_whitelist",
+                        "file,pipe",
+                        "-format_whitelist",
+                        INPUT_FORMATS,
                         "-i",
                         str(input_path),
                         "-map",

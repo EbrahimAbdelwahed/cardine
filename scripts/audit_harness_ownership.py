@@ -608,6 +608,7 @@ STUDY_NOTES_PATHS = {
     "src/cardine/adapters/audio/__init__.py",
     "src/cardine/adapters/audio/groq.py",
     "src/cardine/materials/product.py",
+    "src/cardine/materials/materializer.py",
     "src/cardine/materials/generation_contracts.py",
     "src/cardine/cli/repository.py",
     "src/cardine/demo/browser.css",

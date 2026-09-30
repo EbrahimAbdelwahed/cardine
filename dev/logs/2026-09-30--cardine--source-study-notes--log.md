@@ -29,7 +29,7 @@ responses from an obsolete rendered context are discarded before decisions.
 The operational copied core gained optional generic extraction provenance;
 historical PDF decoding remains compatible. No installed Harness migration or
 copied-core removal occurred. The original custody/classification files remain
-frozen. `tests/parity/source-study-notes-overlay.json` binds only the exact fourteen
+frozen. `tests/parity/source-study-notes-overlay.json` binds only the exact fifteen
 new/changed source paths in the approved feature scope; it records implementation
 custody, not semantic review or package parity approval.
 
@@ -43,7 +43,10 @@ custody, not semantic review or package parity approval.
   during previews/polling; mobile has no horizontal overflow.
 - Groq wire fixtures verify Turbo model, segment timestamps and safe HTTP errors.
   Preparation fixture verifies skipped completed chunks and global time offsets.
-- Raw audio HTTP test verifies exact-origin enforcement and decoded filename/title.
+- Raw audio HTTP test verifies exact-origin enforcement and decoded filename/title;
+  private transport also requires valid session CSRF. Native audio preparation
+  verifies real WAV→FLAC conversion and rejects a disguised HLS playlist before
+  any provider call, through container/protocol allowlists.
 - Fresh screenshot-critique identified singular/plural copy, an English status,
   excessive desktop width and heading ambiguity. All were corrected and final
   desktop/mobile captures inspected. Captures live in `/tmp`, not this repository.
@@ -56,19 +59,40 @@ consent and the configured Luna/OpenAI credential for subsequent generation.
 A separate conversational generation tool, OCR, diarization and exports remain
 outside this approved continuation.
 
+## Automatic review corrections
+
+Codex reviewed `79e2aa5` and identified two P2 findings. Both are corrected in
+this PR. Publication now distinguishes typed sequence/projection conflicts from
+blocked dependencies, revalidates root/parent at each bounded retry against an
+exact canonical sequence, and records exhausted retries durably. The decision
+handler schedules the publication worker; a request arriving during worker exit
+is coalesced into another run instead of being lost. The UI offers truthful
+publication retry status without repeating the HUMAN decision or model calls.
+
+Audio transcript size is checked after chunk checkpoints and before extraction
+admission. Oversized input is terminal with an actionable request to upload
+shorter recordings. It creates no canonical transcript or note proposals and
+cannot loop through the same completed chunks on resume.
+
+Regression tests exercise actual concurrent course events (one conflict and
+exhausted retries across repository reopening), retained HUMAN decisions,
+publication dispatch, worker completion races and oversized audio rejection.
+
 ## Closeout
 
-Implementation commit: `8f60ec5` (2026-09-30).
+Initial implementation: `8f60ec5` (2026-09-30). Final audio containment and
+immutable dispatch-scope corrections are included in the same feature PR.
 
-Full offline pytest: **2501 passed, 14 skipped** in 96.21 seconds. The final
-private-access adjustment added one test; the affected raw-upload, native-browser
-and clean-archive audit set then passed **7 tests** on `8f60ec5`. Ruff and mypy
+Full offline pytest: **2503 passed, 14 skipped** in 96.76 seconds. After the
+last dispatch-scope correction, **13 focused tests** passed (product integration,
+raw audio transport, native preparation and browser journey). The clean-archive
+audit is rerun on the final commit. Ruff and mypy
 (628 source files) pass. Ownership audit passes (322 historical rows). Both sdist
 and wheel build and `verify_cardine_wheel.py` pass. Optional recall/CPython 3.13
 qualification checks account for the local skips; CI owns their additional lanes.
 
-The branch is published to the existing repository. PR submission follows this
-log update; automatic Codex semantic review and GitHub CI must still be inspected
-for the submitted commit. No merge or deployment has occurred.
+Published PR: [#9](https://github.com/EbrahimAbdelwahed/cardine/pull/9),
+based on PR #5. Automatic Codex semantic review and GitHub CI must still be
+inspected for the final submitted commit. No merge or deployment has occurred.
 Continue on this branch/PR for actionable automatic Codex review or CI findings.
 Do not merge or deploy without owner authorization.

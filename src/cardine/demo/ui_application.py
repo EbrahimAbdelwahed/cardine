@@ -346,6 +346,7 @@ class RepositoryUiApplication(UiApplicationPort):
         self._material_worker_lock = Lock()
         self._material_slots = BoundedSemaphore(2)
         self._material_workers: set[tuple[str, str, str]] = set()
+        self._material_worker_reruns: set[tuple[str, str, str]] = set()
         self._audio_environment = environment if environment is not None else os.environ
         self._turn_traces = turn_traces if turn_traces is not None else TurnTraceStore()
         self._turn_activity = turn_activity if turn_activity is not None else TurnActivityStore()
@@ -1293,6 +1294,7 @@ class RepositoryUiApplication(UiApplicationPort):
                     return product.lessons(str(payload["source_id"]), str(payload["revision_id"]))
                 if resume or decision:
                     job_id = path.split("/")[-2]
+                    dispatch_job_id = job_id
                     if decision:
                         descriptor = product.descriptor(job_id)
                         if descriptor["kind"] == "audio":
@@ -1304,10 +1306,18 @@ class RepositoryUiApplication(UiApplicationPort):
                             sequence,
                             request_id,
                         )
+                        if result.get("stage") == "publication_retryable":
+                            self._start_material_worker(
+                                dispatch_job_id,
+                                context.course_id,
+                                cast(SessionId, context.session_id)
+                            )
                         self._start_indexing_worker()
                         return result
                     product.descriptor(job_id)
-                    self._start_material_worker(job_id, self._course_id, self._session_id)
+                    self._start_material_worker(
+                        job_id, context.course_id, cast(SessionId, context.session_id)
+                    )
                     return (
                         product.audio_status(job_id, include_markdown=False)
                         if job_id.startswith("audio-")
@@ -1332,7 +1342,7 @@ class RepositoryUiApplication(UiApplicationPort):
                     )
                 for job in jobs:
                     self._start_material_worker(
-                        str(job["job_id"]), self._course_id, self._session_id
+                        str(job["job_id"]), context.course_id, cast(SessionId, context.session_id)
                     )
                 return {"schema_version": 1, "items": jobs}
         except ProviderConsentRequiredError:
@@ -1360,6 +1370,7 @@ class RepositoryUiApplication(UiApplicationPort):
         identity = (str(course), str(session), job_id)
         with self._material_worker_lock:
             if identity in self._material_workers:
+                self._material_worker_reruns.add(identity)
                 return
             self._material_workers.add(identity)
 
@@ -1404,7 +1415,11 @@ class RepositoryUiApplication(UiApplicationPort):
             finally:
                 with self._material_worker_lock:
                     self._material_workers.discard(identity)
+                    rerun = identity in self._material_worker_reruns
+                    self._material_worker_reruns.discard(identity)
                 self._material_slots.release()
+                if rerun:
+                    self._start_material_worker(job_id, course, session)
 
         Thread(target=work, name="cardine-material-generation", daemon=True).start()
 
@@ -1420,9 +1435,12 @@ class RepositoryUiApplication(UiApplicationPort):
             )
         try:
             with self._lock, self._open() as repository:
-                product = MaterialProduct(repository, self._context(request_id, request_id))
+                context = self._context(request_id, request_id)
+                product = MaterialProduct(repository, context)
                 view = product.start_audio(input_path.read_bytes(), filename, title, request_id)
-                self._start_material_worker(str(view["job_id"]), self._course_id, self._session_id)
+                self._start_material_worker(
+                    str(view["job_id"]), context.course_id, cast(SessionId, context.session_id)
+                )
                 return view
         except (ValueError, ProviderConsentRequiredError) as error:
             raise UiRequestError(str(error), status_code=409) from None

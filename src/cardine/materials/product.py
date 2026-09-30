@@ -14,11 +14,14 @@ from cardine.adapters.audio.groq import GroqAudioTranscriber
 from cardine.cli.repository import LocalRepository, ModelAdapterConfigurationError
 from cardine.integrations.study_agent.course_policy import ProviderConsentRequiredError
 from cardine.materials.generation_contracts import (
+    MAX_SOURCE_BYTES,
+    MAX_TRANSCRIPT_CHARACTERS,
     MaterialGenerationErrorCode,
     MaterialGenerationStage,
     MaterialGenerationState,
 )
 from cardine.materials.materializer import (
+    GeneratedSourceMaterializationConflictError,
     GeneratedSourceMaterializationError,
     GeneratedSourceMaterializer,
 )
@@ -39,6 +42,10 @@ from study_agent.domain.provenance import TextExtractionProvenance
 from study_agent.ingestion import TextIngestionResult
 from study_agent.retrieval import SourceRevisionRecord
 from study_agent.state import canonical_json_bytes
+
+
+class TranscriptTooLargeError(ValueError):
+    """Input cannot enter the bounded single-lesson pipeline."""
 
 
 class MaterialProduct:
@@ -78,6 +85,27 @@ class MaterialProduct:
             return message if isinstance(message, str) else None
         except KeyError:
             return None
+
+    def _publication_pending(self, job_id: str) -> bool:
+        try:
+            raw = NamespacedSQLiteRunStore(self.repo.runs, "material-publication").load(job_id)
+            return json.loads(raw)["pending"] is True
+        except KeyError:
+            return False
+
+    def _set_publication_pending(self, job_id: str, pending: bool) -> None:
+        store = NamespacedSQLiteRunStore(self.repo.runs, "material-publication")
+        payload = canonical_json_bytes({"pending": pending})
+        for _ in range(8):
+            try:
+                old = store.load(job_id)
+            except KeyError:
+                if not pending or store.create(job_id, payload):
+                    return
+                continue
+            if old == payload or store.compare_and_set(job_id, old, payload):
+                return
+        raise ValueError("Publication checkpoint is busy; retry.")
 
     def jobs(self) -> list[JsonObject]:
         try:
@@ -242,6 +270,11 @@ class MaterialProduct:
                 )
         worker_error = self._worker_error(job_id)
         stage = state.stage.value
+        publication_pending = self._publication_pending(job_id) and any(
+            item["status"] == "accepted" and item["publication"] != "published" for item in outputs
+        )
+        if publication_pending:
+            stage = "publication_retryable"
         if worker_error and stage not in {"proposed", "stale", "failed_terminal"}:
             stage = "retryable"
         return {
@@ -250,7 +283,9 @@ class MaterialProduct:
             "stage": stage,
             "segment_count": len(state.segments),
             "error_code": None if state.error_code is None else state.error_code.value,
-            "error": worker_error
+            "error": "Salvataggio in attesa: il sistema riproverà senza cambiare le approvazioni."
+            if publication_pending
+            else worker_error
             if state.error_code is None
             else "La generazione richiede attenzione; riprova o scegli una fonte aggiornata.",
             "outputs": tuple(outputs),
@@ -279,36 +314,47 @@ class MaterialProduct:
     def publish(self, job_id: str) -> None:
         view = self.status(job_id)
         state = MaterialGenerationState.from_bytes(self.states.load(job_id))
-        try:
-            self.repo.material_transcript_pin(
-                self.course,
-                self.session,
-                state.request.pin.source_id,
-                state.request.pin.revision_id,
-            )
-        except ValueError:
-            return
         materializer = GeneratedSourceMaterializer(
             blobs=self.repo.blobs,
             events=self.repo.events,
             clock=self.repo.clock,
             load_projection=self.repo.events.projection,
         )
+        pending = False
         for item in sorted(
             cast(tuple[JsonObject, ...], view["outputs"]),
             key=lambda output: output["variant"] != "complete",
         ):
             if item["status"] != "accepted":
                 continue
-            try:
-                materializer.materialize(
-                    artifact_revision_id=ArtifactRevisionId(str(item["revision_id"])),
-                    context=replace(self.context, principal_kind=PrincipalKind.SERVICE),
-                )
-            except GeneratedSourceMaterializationError:
-                # Decision is canonical, while publication can remain blocked on
-                # an unaccepted parent or stale source. Never invent acceptance.
-                continue
+            for attempt in range(4):
+                # Bind parent/root validation to the same canonical sequence
+                # used for admission. Every retry repeats that validation.
+                sequence = self.repo.events.projection(self.course).sequence
+                try:
+                    self.repo.material_transcript_pin(
+                        self.course,
+                        self.session,
+                        state.request.pin.source_id,
+                        state.request.pin.revision_id,
+                    )
+                except ValueError:
+                    break
+                try:
+                    materializer.materialize(
+                        artifact_revision_id=ArtifactRevisionId(str(item["revision_id"])),
+                        context=replace(self.context, principal_kind=PrincipalKind.SERVICE),
+                        expected_sequence=sequence,
+                    )
+                    break
+                except GeneratedSourceMaterializationConflictError:
+                    if attempt == 3:
+                        pending = True
+                except GeneratedSourceMaterializationError:
+                    # A missing accepted dependency or stale input is blocked,
+                    # not permission to publish or invent acceptance.
+                    break
+        self._set_publication_pending(job_id, pending)
         if any(
             item["status"] == "accepted" for item in cast(tuple[JsonObject, ...], view["outputs"])
         ):
@@ -425,6 +471,7 @@ class MaterialProduct:
         limitations: tuple[str, ...],
     ) -> TextIngestionResult:
         normalized = normalize("NFC", text.replace("\r\n", "\n").replace("\r", "\n"))
+        self._validate_transcript_size(normalized)
         manifest_blob = self.repo.blobs.put(canonical_json_bytes(manifest))
         provenance = TextExtractionProvenance(
             sha256(original).hexdigest(),
@@ -450,6 +497,13 @@ class MaterialProduct:
             extraction_provenance=provenance,
             context=self.context,
         )
+
+    @staticmethod
+    def _validate_transcript_size(text: str) -> None:
+        if len(text) > MAX_TRANSCRIPT_CHARACTERS or len(text.encode("utf-8")) > MAX_SOURCE_BYTES:
+            raise TranscriptTooLargeError(
+                "Trascrizione troppo lunga per una lezione: carica registrazioni più brevi."
+            )
 
     def start_audio(self, data: bytes, filename: str, title: str, request_id: str) -> JsonObject:
         from cardine.adapters.audio.groq import AUDIO_EXTENSIONS, MAX_AUDIO_BYTES
@@ -508,14 +562,16 @@ class MaterialProduct:
         material_id = state["material_job_id"]
         if material_id is not None:
             material = self.status(material_id, include_markdown=include_markdown)
-            error = self._worker_error(job_id) or material.get("error")
+            worker_error = self._worker_error(job_id)
+            error = worker_error or material.get("error")
             return {
                 **material,
                 **descriptor,
                 "material_job_id": material_id,
                 "error": error,
                 "stage": "retryable"
-                if error and material["stage"] not in {"proposed", "stale", "failed_terminal"}
+                if worker_error
+                and material["stage"] not in {"proposed", "stale", "failed_terminal"}
                 else material["stage"],
                 "transcribed_chunks": len(state["chunks"]),
             }
@@ -537,6 +593,8 @@ class MaterialProduct:
         store = NamespacedSQLiteRunStore(self.repo.runs, "audio-generation")
         raw = store.load(job_id)
         state = json.loads(raw)
+        if state["stage"] == "failed_terminal":
+            return
         if state["material_job_id"] is not None:
             self.clear_worker_error(state["material_job_id"])
             self.advance(state["material_job_id"])
@@ -562,6 +620,7 @@ class MaterialProduct:
             if not store.compare_and_set(job_id, raw, new):
                 raise ValueError("La trascrizione è stata ripresa da un altro processo.")
             raw = new
+            self._validate_transcript_size("\n\n".join(str(item["text"]) for item in chunks))
 
         try:
             self._audio_preflight()
@@ -609,6 +668,14 @@ class MaterialProduct:
             if not store.compare_and_set(job_id, raw, new):
                 raise ValueError("Checkpoint audio aggiornato da un altro processo.")
             self.advance(str(material["job_id"]))
+        except TranscriptTooLargeError as error:
+            state.update(
+                stage="failed_terminal",
+                error=str(error),
+                lease_until=0,
+                lease_token=None,
+            )
+            store.compare_and_set(job_id, raw, canonical_json_bytes(freeze_object(state)))
         except (ValueError, OSError, RuntimeError):
             state.update(
                 stage="retryable",

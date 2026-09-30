@@ -28,7 +28,9 @@ accepted complete lineage. Existing indexing and recall owners remain unchanged.
 session-scoped registry lists jobs; it cannot authorize canonical writes. Workers
 capture course/session context, limit concurrent jobs to two, reopen repositories
 between lease waits, and recover durable jobs after process restart. Reads never
-publish or infer acceptance. Configuration failures expose safe resumable errors.
+publish or infer acceptance. Configuration failures expose safe resumable errors. Publication sequence
+conflicts retry with exact-sequence root/parent validation, then persist pending
+publication and schedule a worker retry without repeating HUMAN approval.
 
 ## Extraction contract
 
@@ -69,11 +71,14 @@ existing paths; a separate chat generation tool is not added.
 - Audio formats: mp3, wav, m4a, mp4, ogg, webm, flac, aac; at most 128 MiB and
   eight hours. Preparation isolates temporary files, converts to mono 16 kHz
   FLAC in ten-minute chunks, and bounds duration, runtime and upload size.
+  Demuxer/protocol allowlists reject playlists and external input references.
 - Raw audio transport requires same-origin requests, bounded streaming and the
   existing private authentication/CSRF boundary. No arbitrary server path is
   accepted from HTTP clients.
 - Existing material limits remain: at most 512,000 transcript characters per
   lesson and 16 thematic segments. Binary originals may be at most 256 MiB.
+  Audio stops before canonical admission if the transcript exceeds those limits;
+  the terminal receipt asks the user to upload shorter recordings.
 - Existing PDF admission policy applies. Scans without text still require OCR;
   this feature does not add an OCR provider, slides, image generation or exports.
 - No provider/model fallback or automatic acceptance. Network model tests and
@@ -88,8 +93,8 @@ publication, reload, PDF coverage/staleness and audio checkpoint recovery.
 Groq wire/model/timestamp and raw-upload same-origin tests use fixtures.
 Desktop/mobile screenshots received a fresh visual critique; singular labels,
 Italian proposal status, heading hierarchy and reading width were corrected.
-Full offline suite: 2501 passed, 14 optional skips. Final access/browser/archive
-checks: seven passed. Ruff, mypy, custody audit, sdist/wheel build and package
+Full offline suite: 2503 passed, 14 optional skips. Final product/audio/browser
+checks: thirteen passed; clean-archive audit rerun on the final commit. Ruff, mypy, custody audit, sdist/wheel build and package
 verification pass. No live provider call made. Publication and submitted-commit
 CI/review evidence are recorded in the repository development log.
 

@@ -322,3 +322,326 @@ def test_missing_runtime_configuration_is_resumable_not_stale(
         product.clear_worker_error(job_id)
         product.advance(job_id)
         assert product.status(job_id)["stage"] == "proposed"
+
+
+def test_job_dispatch_keeps_original_scope_when_workspace_selection_changes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cardine.demo.ui_application import RepositoryUiApplication
+    from study_agent.domain import CourseId, SessionId
+
+    root = tmp_path / "repo"
+    initialize_local_repository(root, _config())
+    with LocalRepository.open(root) as repository:
+        admitted = _prepare(repository, consent=True)
+    context = _service_context()
+    app = RepositoryUiApplication(
+        root,
+        context.course_id,
+        cast(SessionId, context.session_id),
+        model_adapters=_registry(),
+        environment={"OPENAI_API_KEY": "fixture"},
+    )
+    dispatched: list[tuple[CourseId, SessionId]] = []
+    original_start = MaterialProduct.start
+
+    def change_selection_after_start(
+        product: MaterialProduct,
+        source_id: str,
+        revision_id: str,
+        request_id: str,
+    ) -> JsonObject:
+        view = original_start(product, source_id, revision_id, request_id)
+        # Simulate another selection request between admission and dispatch.
+        app._course_id = CourseId("another-course")
+        app._session_id = SessionId("another-session")
+        return view
+
+    def capture(job_id: str, course: CourseId, session: SessionId) -> None:
+        dispatched.append((course, session))
+
+    monkeypatch.setattr(MaterialProduct, "start", change_selection_after_start)
+    monkeypatch.setattr(app, "_start_material_worker", capture)
+    app.post(
+        "/api/v1/material-generations",
+        {
+            "schema_version": 1,
+            "request_id": "scope-race",
+            "expected_sequence": 0,
+            "payload": {
+                "source_id": str(admitted.source.source_id),
+                "revision_id": str(admitted.source.revision_id),
+            },
+        },
+    )
+    assert dispatched == [(context.course_id, context.session_id)]
+
+
+@pytest.mark.parametrize("conflicts", [1, 4])
+def test_publication_conflicts_retry_without_repeating_human_decision(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    conflicts: int,
+) -> None:
+    from collections.abc import Mapping, Sequence
+    from typing import Any
+
+    from study_agent.artifacts.events import DECISION_RECORDED
+    from study_agent.domain import CourseId, DomainEvent, SourceId
+
+    root = tmp_path / "repo"
+    initialize_local_repository(root, _config())
+    context = replace(_service_context(), principal_kind=PrincipalKind.HUMAN)
+    with LocalRepository.open(
+        root, model_adapters=_registry(), environment={"OPENAI_API_KEY": "fixture"}
+    ) as repository:
+        admitted = _prepare(repository, consent=True)
+        product = MaterialProduct(repository, context)
+        job_id = str(
+            product.start(
+                str(admitted.source.source_id), str(admitted.source.revision_id), "publish-race"
+            )["job_id"]
+        )
+        product.advance(job_id)
+        view = product.status(job_id)
+        complete = next(
+            item
+            for item in cast(tuple[JsonObject, ...], view["outputs"])
+            if item["variant"] == "complete"
+        )
+        append = type(repository.events).append
+        races = 0
+
+        def concurrent_append(
+            store: Any,
+            course_id: CourseId,
+            expected_sequence: int,
+            events: Sequence[DomainEvent],
+        ) -> int:
+            nonlocal races
+            source = events[0].payload.get("source")
+            if (
+                store is repository.events
+                and isinstance(source, Mapping)
+                and source.get("content_origin") == "generated"
+                and races < conflicts
+            ):
+                races += 1
+                repository.for_course(context.course_id).ingestion.ingest(
+                    filename="other.md",
+                    content=f"Other source {races}".encode(),
+                    source_id=SourceId(f"concurrent-{races}"),
+                    title="Another source",
+                    trust_level=0,
+                    source_role="lesson",
+                    context=context,
+                )
+            return append(store, course_id, expected_sequence, events)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(type(repository.events), "append", concurrent_append)
+            result = product.decide(
+                job_id,
+                str(complete["revision_id"]),
+                "accept",
+                int(cast(int, view["high_water_sequence"])),
+                "accept-complete",
+            )
+        assert races == conflicts
+        assert result["stage"] == ("proposed" if conflicts == 1 else "publication_retryable")
+        result_outputs = cast(tuple[JsonObject, ...], result["outputs"])
+        accepted = next(item for item in result_outputs if item["variant"] == "complete")
+        assert accepted["status"] == "accepted"
+        assert accepted["publication"] == ("published" if conflicts == 1 else "approved_blocked")
+    # The pending publication receipt survives reopening, without provider access.
+    with LocalRepository.open(root) as repository:
+        product = MaterialProduct(repository, context)
+        if conflicts == 4:
+            assert product.status(job_id)["stage"] == "publication_retryable"
+        product.publish(job_id)
+        assert product.status(job_id)["stage"] == "proposed"
+        outputs = cast(tuple[JsonObject, ...], product.status(job_id)["outputs"])
+        assert (
+            next(item for item in outputs if item["variant"] == "complete")["publication"]
+            == "published"
+        )
+        assert next(item for item in outputs if item["variant"] == "study")["status"] == "proposed"
+        decisions = [
+            event
+            for event in repository.events.read(context.course_id)
+            if event.event_type == DECISION_RECORDED
+        ]
+        assert len(decisions) == 1
+
+
+def test_oversized_audio_stops_before_admission_and_is_not_retried(tmp_path: Path) -> None:
+    from collections.abc import Callable
+
+    from cardine.adapters.audio.groq import GroqAudioTranscriber
+    from cardine.materials.generation_contracts import MAX_TRANSCRIPT_CHARACTERS
+
+    class OversizedAudio(GroqAudioTranscriber):
+        calls = 0
+
+        def __init__(self) -> None:
+            super().__init__("fixture")
+
+        def transcribe(
+            self,
+            data: bytes,
+            extension: str,
+            recovered: list[JsonObject],
+            save: Callable[[list[JsonObject]], None],
+            preflight: Callable[[], None],
+        ) -> tuple[str, JsonObject]:
+            self.calls += 1
+            preflight()
+            text = "x" * (MAX_TRANSCRIPT_CHARACTERS + 1)
+            save([{"text": text, "spans": ()}])
+            return text, {"spans": ()}
+
+    root = tmp_path / "repo"
+    initialize_local_repository(root, _config())
+    context = replace(_service_context(), principal_kind=PrincipalKind.HUMAN)
+    transcriber = OversizedAudio()
+    with LocalRepository.open(root) as repository:
+        _prepare(repository, consent=True)
+        product = MaterialProduct(repository, context)
+        sequence = repository.events.projection(context.course_id).sequence
+        job_id = str(
+            product.start_audio(b"recording", "lecture.wav", "Audio", "oversized")["job_id"]
+        )
+        product.advance_audio(job_id, transcriber)
+        status = product.audio_status(job_id)
+        assert status["stage"] == "failed_terminal"
+        assert "troppo lunga" in str(status["error"])
+        assert not status["outputs"]
+        assert repository.events.projection(context.course_id).sequence == sequence
+        assert len(repository.for_course(context.course_id).content.catalog()) == 1
+    with LocalRepository.open(root) as repository:
+        product = MaterialProduct(repository, context)
+        product.advance_audio(job_id, transcriber)
+        assert transcriber.calls == 1
+        assert product.audio_status(job_id)["stage"] == "failed_terminal"
+
+
+def test_publication_retry_is_dispatched_after_accepted_decision(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cardine.demo.ui_application import RepositoryUiApplication
+    from cardine.materials.materializer import (
+        GeneratedSourceMaterializationConflictError,
+        GeneratedSourceMaterializer,
+    )
+    from study_agent.domain import CourseId, SessionId
+
+    root = tmp_path / "repo"
+    initialize_local_repository(root, _config())
+    with LocalRepository.open(root) as repository:
+        admitted = _prepare(repository, consent=True)
+    context = replace(_service_context(), principal_kind=PrincipalKind.HUMAN)
+    app = RepositoryUiApplication(
+        root,
+        context.course_id,
+        cast(SessionId, context.session_id),
+        model_adapters=_registry(),
+        environment={"OPENAI_API_KEY": "fixture"},
+    )
+    with LocalRepository.open(
+        root, model_adapters=_registry(), environment={"OPENAI_API_KEY": "fixture"}
+    ) as repository:
+        product = MaterialProduct(repository, context)
+        job_id = str(
+            product.start(
+                str(admitted.source.source_id), str(admitted.source.revision_id), "retry-dispatch"
+            )["job_id"]
+        )
+        product.advance(job_id)
+        view = product.status(job_id)
+        complete = next(
+            item
+            for item in cast(tuple[JsonObject, ...], view["outputs"])
+            if item["variant"] == "complete"
+        )
+    dispatched: list[tuple[str, CourseId, SessionId]] = []
+
+    def conflict(*args: object, **kwargs: object) -> object:
+        raise GeneratedSourceMaterializationConflictError("fixture sequence conflict")
+
+    def capture(job_id: str, course: CourseId, session: SessionId) -> None:
+        dispatched.append((job_id, course, session))
+
+    monkeypatch.setattr(GeneratedSourceMaterializer, "materialize", conflict)
+    monkeypatch.setattr(app, "_start_material_worker", capture)
+    result = app.post(
+        f"/api/v1/material-generations/{job_id}/decisions",
+        {
+            "schema_version": 1,
+            "request_id": "accept-complete",
+            "expected_sequence": view["high_water_sequence"],
+            "payload": {"revision_id": complete["revision_id"], "decision": "accept"},
+        },
+    )
+    assert result["stage"] == "publication_retryable"
+    assert dispatched == [(job_id, context.course_id, context.session_id)]
+
+
+def test_resume_during_worker_completion_is_not_lost(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from threading import Event
+
+    from cardine.demo.ui_application import RepositoryUiApplication
+    from study_agent.domain import SessionId
+
+    root = tmp_path / "repo"
+    initialize_local_repository(root, _config())
+    with LocalRepository.open(root) as repository:
+        admitted = _prepare(repository, consent=True)
+    context = replace(_service_context(), principal_kind=PrincipalKind.HUMAN)
+    app = RepositoryUiApplication(
+        root,
+        context.course_id,
+        cast(SessionId, context.session_id),
+        model_adapters=_registry(),
+        environment={"OPENAI_API_KEY": "fixture"},
+    )
+    with LocalRepository.open(
+        root, model_adapters=_registry(), environment={"OPENAI_API_KEY": "fixture"}
+    ) as repository:
+        product = MaterialProduct(repository, context)
+        job_id = str(
+            product.start(
+                str(admitted.source.source_id), str(admitted.source.revision_id), "wake-worker"
+            )["job_id"]
+        )
+    entered, release, rerun, settled = Event(), Event(), Event(), Event()
+    original = MaterialProduct.advance
+    calls = 0
+
+    def pause_first(product: MaterialProduct, identifier: str) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            entered.set()
+            assert release.wait(5)
+        else:
+            rerun.set()
+        original(product, identifier)
+
+    monkeypatch.setattr(MaterialProduct, "advance", pause_first)
+    monkeypatch.setattr(
+        app, "_start_indexing_worker", lambda: settled.set() if calls == 2 else None
+    )
+    app._start_material_worker(job_id, context.course_id, cast(SessionId, context.session_id))
+    try:
+        assert entered.wait(5)
+        app._start_material_worker(job_id, context.course_id, cast(SessionId, context.session_id))
+    finally:
+        release.set()
+    assert rerun.wait(5)
+    assert settled.wait(5)
+    assert calls == 2

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import urllib.request
+import wave
 from email.message import Message
 from io import BytesIO
 from pathlib import Path
@@ -92,3 +94,44 @@ def test_audio_retry_reuses_receipts_and_offsets_second_chunk(
         {"start_ms": 0, "end_ms": 1000},
         {"start_ms": 600000, "end_ms": 620000},
     )
+
+
+@pytest.mark.skipif(
+    not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
+    reason="audio runtime binaries are not installed",
+)
+def test_local_preparation_accepts_wav_and_rejects_playlist_disguised_as_audio(
+    tmp_path: Path,
+) -> None:
+    recording = BytesIO()
+    with wave.open(recording, "wb") as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(16000)
+        audio.writeframes(b"\0\0" * 16000)
+    calls: list[bytes] = []
+
+    def call(data: bytes, credential: str) -> JsonObject:
+        calls.append(data)
+        return {"text": "Lezione trascritta.", "spans": ()}
+
+    transcriber = groq.GroqAudioTranscriber("fixture", call=call)
+    text, manifest = transcriber.transcribe(
+        recording.getvalue(),
+        "wav",
+        [],
+        lambda _rows: None,
+        lambda: None,
+    )
+    assert text == "Lezione trascritta."
+    assert manifest["chunk_count"] == 1
+    assert calls[0].startswith(b"fLaC")
+    target = tmp_path / "referenced.wav"
+    target.write_bytes(recording.getvalue())
+    playlist = (
+        "#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:0\n"
+        f"#EXTINF:1,\n{target}\n#EXT-X-ENDLIST\n"
+    ).encode()
+    with pytest.raises(groq.AudioError, match="Preparazione audio fallita"):
+        transcriber.transcribe(playlist, "wav", [], lambda _rows: None, lambda: None)
+    assert len(calls) == 1
