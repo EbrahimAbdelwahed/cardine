@@ -28,7 +28,7 @@
     },
     {
       "path": "src/cardine/cli/repository.py",
-      "sha256": "16c6fee77e675a80cdc0ab68e1dd91f0ee405f148c8669339a2749d7a5460643"
+      "sha256": "a71844397bc9e5f46639fede24c911e5c0c005b52cbbea98dbe15556d6babaeb"
     },
     {
       "path": "src/cardine/demo/ai-primitives.css",

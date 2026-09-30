@@ -522,6 +522,8 @@ class _RepositoryTutorGateway:
         direct = self._repository.resolve_lesson_scope(self._course_id, query)
         if direct is not None:
             return direct
+        if recent_explicit_lesson_references((query,)):
+            raise ValueError("explicit lesson scope is unavailable")
         human_interactions = tuple(
             interaction
             for interaction in self._repository.sessions.interactions(
@@ -535,13 +537,16 @@ class _RepositoryTutorGateway:
         if _DEICTIC_LESSON_SCOPE.search(current_learner_text) is None:
             return None
         references = recent_explicit_lesson_references(
-            tuple(interaction.content for interaction in human_interactions[:-1])
+            tuple(interaction.content for interaction in human_interactions)
         )
         if references:
             # The nearest explicit reference remains authoritative even when
             # unavailable; falling back would silently change lesson scope.
-            return self._repository.resolve_lesson_scope(self._course_id, references[0])
-        return None
+            pin = self._repository.resolve_lesson_scope(self._course_id, references[0])
+            if pin is None:
+                raise ValueError("explicit lesson scope is unavailable")
+            return pin
+        raise ValueError("explicit lesson scope is unavailable")
 
     def recover(
         self,

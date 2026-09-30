@@ -124,7 +124,7 @@ POST_BASELINE_SHA256 = {
         "f720cb0b159feeb0fa7242a07dd14f4a55e12be728a9c370ec7382d254bc3183"
     ),
     "src/cardine/cli/repository.py": (
-        "16c6fee77e675a80cdc0ab68e1dd91f0ee405f148c8669339a2749d7a5460643"
+        "a71844397bc9e5f46639fede24c911e5c0c005b52cbbea98dbe15556d6babaeb"
     ),
     "src/cardine/demo/ui_application.py": (
         "9ce4b20efbda5d2135ee636b886feef274d45d5b9178a9888500cf3ee500b7cc"
