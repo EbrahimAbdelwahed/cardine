@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -132,7 +133,14 @@ def test_pinned_retrieval_discards_cross_section_and_partial_chunks(tmp_path: Pa
         assert outside.status.value == "insufficient"
 
 
-def test_unresolved_nearest_explicit_lesson_cannot_fall_back() -> None:
+@pytest.mark.parametrize(
+    "current",
+    [
+        "crea flashcard su questa lezione",
+        "crea flashcard su questa lezione, intendo lezione 999",
+    ],
+)
+def test_unresolved_nearest_explicit_lesson_cannot_fall_back(current: str) -> None:
     from types import SimpleNamespace
 
     from cardine.cli.repository import _RepositoryTutorGateway
@@ -145,7 +153,7 @@ def test_unresolved_nearest_explicit_lesson_cannot_fall_back() -> None:
 
     interactions = [
         SimpleNamespace(kind=SimpleNamespace(value="human"), content=text)
-        for text in ("lezione 1", "lezione 999", "crea flashcard su questa lezione")
+        for text in ("lezione 1", "lezione 999", current)
     ]
     gateway = object.__new__(_RepositoryTutorGateway)
     gateway._lesson_pin = None
@@ -157,5 +165,24 @@ def test_unresolved_nearest_explicit_lesson_cannot_fall_back() -> None:
         resolve_lesson_scope=resolve,
         sessions=SimpleNamespace(interactions=lambda *args: interactions),
     )  # type: ignore[assignment]
-    assert gateway._flashcard_lesson_pin({"query": "questa lezione"}) is None
-    assert looked_up == ["questa lezione", "lezione 999"]
+    import asyncio
+
+    from study_agent.capabilities import TutorCapabilityId
+
+    calls: list[str] = []
+
+    async def start(*args: object) -> None:
+        calls.append("unscoped")
+
+    gateway._flashcards = SimpleNamespace(start=start, start_for_pin=start)  # type: ignore[assignment]
+    gateway._require_provider_consent = lambda: None  # type: ignore[method-assign]
+    with pytest.raises(ValueError, match="lesson scope is unavailable"):
+        asyncio.run(
+            gateway.start(
+                TutorCapabilityId.PROPOSE_FLASHCARDS,
+                {"query": current},
+                cast(ExecutionContext, object()),
+            )
+        )
+    assert calls == []
+    assert "lezione 1" not in looked_up
