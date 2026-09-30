@@ -1000,12 +1000,19 @@ def test_source_directed_question_cannot_end_without_grounded_content(
     assert model._decision_calls == 0
 
 
-def test_full_length_source_title_keeps_verified_completion_citation(tmp_path: Path) -> None:
+@pytest.mark.parametrize("heading_length", (0, 4_000))
+def test_full_length_source_title_keeps_verified_completion_citation(
+    tmp_path: Path, heading_length: int
+) -> None:
     title = "V" * 240
     root, adapters, _model = _repository(
         tmp_path,
         ({"kind": "assistant_message", "message": "ok"},),
         source_title=title,
+        source_content=(
+            ("# " + "H" * heading_length + "\n\n" if heading_length else "")
+            + "The aortic valve has three cusps."
+        ).encode(),
     )
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
     sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
@@ -1026,6 +1033,9 @@ def test_full_length_source_title_keeps_verified_completion_citation(tmp_path: P
     assert len(citations) == 1
     assert str(citations[0]["label"]).startswith(title)
     assert len(str(citations[0]["label"])) > 256
+    assert len(str(citations[0]["label"])) <= 2_000
+    if heading_length:
+        assert str(citations[0]["label"]).endswith("…")
     assert cast(tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"])[-1][
         "citations"
     ] == citations

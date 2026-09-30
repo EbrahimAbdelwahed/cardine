@@ -16,6 +16,7 @@ from study_agent.domain.session import (
     MAX_TUTOR_PRESENTATION_QUESTION,
     MAX_TUTOR_PRESENTATION_SCHEMA_BYTES,
     MAX_TUTOR_PRESENTATION_TEXT,
+    MAX_TUTOR_SOURCE_LOCATOR_CHARS,
     TutorPresentationKind,
 )
 from study_agent.portability import reject_provider_selectors
@@ -525,6 +526,7 @@ class TutorPresentationReceipt:
         if len(refs) > 64 or any(
             set(ref) != {"source_id", "revision_id", "locator"}
             or any(not isinstance(ref[key], str) or not ref[key] for key in ref)
+            or len(str(ref["locator"])) > MAX_TUTOR_SOURCE_LOCATOR_CHARS
             for ref in refs
         ):
             raise ValueError("presentation source refs are invalid")

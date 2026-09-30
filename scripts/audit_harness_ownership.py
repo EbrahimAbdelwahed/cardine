@@ -112,25 +112,25 @@ POST_BASELINE_SHA256 = {
         "a122cf65a900c43c09abe409689efddb143aa21492cc28495857824798f68f71"
     ),
     "src/cardine/application/capability_completion.py": (
-        "d40d21d4db52278adf578c96fc0b01d46160d2a2f9a5f21ccd4b445e6dc156a8"
+        "a8745bebd1384ecd3ddce6577841223628ab9423c86ffe8d0d8e2e9d1e7d0c4b"
     ),
     "src/cardine/application/conversation_turn.py": (
         "f720cb0b159feeb0fa7242a07dd14f4a55e12be728a9c370ec7382d254bc3183"
     ),
     "src/cardine/cli/repository.py": (
-        "d9d2af3efe68d59a7a1e02616897d024c323c7c9bcfab6de76e22f2a5f222383"
+        "cdceb44529c569e2bc5e01e355880b01c0ec03b74dd1abc4e7c288937e4aec5c"
     ),
     "src/cardine/demo/ui_application.py": (
         "e19c75834bb6d2aafe1f9957883413985d940009428f6d7eb7adfac6bc7ae0e3"
     ),
     "src/cardine/hosts/contracts.py": (
-        "5dff756c757aa8cb6953792f9d30b485a3671f6ba7456882d4d8d3a8a24822c0"
+        "df3e864ef0131f7c09dcc985529950269fbf6afef81b679c07f213b5ebdd3999"
     ),
     "src/study_agent/adapters/sqlite/event_store.py": (
         "767d67c96fcb52a947698b179d47335ddddaa7a4c441718e8aba5f6153fbdb96"
     ),
     "src/study_agent/domain/session.py": (
-        "92d4217bd4cdff89dc58f191f9daf20332ec80a916ce2213d44b6a826f81254c"
+        "767ed6b1c71d1c7d90eacf27e552e4774d0b71ab2b8ac020e8badfa9608b9d96"
     ),
     "src/study_agent/retrieval/content.py": (
         "abf400ff5c891250b71b5fe8a1d995ba5947973a23b3023b140b03553cecfea7"
@@ -154,10 +154,10 @@ POST_BASELINE_SHA256 = {
         "00957942586239a396bae507593b687b1896fee120eba83e37feae592a95ff48"
     ),
     "src/study_agent/prompts/tutor_decision_v1.py": (
-        "828072504ce14499f604fa3951b796e25a1422b4784f72a496ab16b5accf220b"
+        "df410a9934e147a777183d2c03bd282d64edcf4694fa7ebc013905e48a343781"
     ),
     "src/cardine/demo/browser.js": (
-        "66e3c9107c7f25295a03aa10e776a3ae1ea3a55b88ceacc06ba0c42c86bc92f4"
+        "1306b5d8f78010dd9957428a384bd877960c2c1d5674d6b7bbcf7839c9d86331"
     ),
     "src/cardine/hosts/flashcard_routing.py": (
         "1314f6d6bea53980da151de5e4c4366287c3dcc057931c9dc9bb007ad8ebb5b8"
