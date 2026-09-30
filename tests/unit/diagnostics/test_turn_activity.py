@@ -190,3 +190,29 @@ def test_settled_records_are_inserted_closed_and_unknown_ids_are_empty() -> None
     assert unknown["state"] == "unknown"
     assert unknown["records"] == ()
     assert unknown["omitted"] == 0
+
+
+def test_retry_reopens_failed_activity_without_reusing_old_tokens() -> None:
+    store = TurnActivityStore(max_records_per_turn=1)
+    with store.capture("retry"):
+        old = begin_activity(kind="retrieval", ref="retrieval.search", target="Lesson")
+        begin_activity(kind="verification", ref="verification.answer")
+    failed = store.settle("retry", status="failed")
+    assert failed["state"] == "failed"
+    assert failed["omitted"] == 1
+    assert _records(failed)[0]["status"] == "failed"
+
+    with store.capture("retry"):
+        reopened = store.snapshot("retry")
+        assert reopened["state"] == "running"
+        assert _records(reopened) == ()
+        assert reopened["omitted"] == 0
+        current = begin_activity(kind="retrieval", ref="retrieval.search", target="Lesson")
+        assert old is not None and current is not None and current[1] > old[1]
+        finish_activity(old, status="failed", error_code="provider_unavailable")
+        assert _records(store.snapshot("retry"))[0]["status"] == "running"
+        finish_activity(current, status="done")
+    settled = store.settle("retry")
+    assert settled["state"] == "settled"
+    assert _records(settled)[0]["status"] == "done"
+    assert _records(settled)[0]["error_code"] is None
