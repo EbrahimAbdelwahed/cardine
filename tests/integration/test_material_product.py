@@ -153,7 +153,9 @@ def test_foreign_job_cannot_be_read_or_decided(tmp_path: Path) -> None:
             foreign.status(str(job["job_id"]))
 
 
-def test_pdf_lessons_require_exact_page_coverage_and_parent_stays_current(tmp_path: Path) -> None:
+def test_pdf_lessons_require_exact_page_coverage_and_parent_stays_current(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from hashlib import sha256
 
     from study_agent.domain import SourceId
@@ -167,7 +169,7 @@ def test_pdf_lessons_require_exact_page_coverage_and_parent_stays_current(tmp_pa
     ) as repository:
         _prepare(repository, consent=True)
         text = "# Lezione 12A\n\nLecture 12 is important; this may be uncertain.\n"
-        full = text + text.replace("Lezione 12A", "Lezione 12B")
+        full = text + text.replace("Lezione 12A", "Lezione 12B") * 2
         original = b"%PDF-fixture"
         provenance = DocumentConversionProvenance(
             sha256(original).hexdigest(),
@@ -203,6 +205,20 @@ def test_pdf_lessons_require_exact_page_coverage_and_parent_stays_current(tmp_pa
             product.start(
                 str(admitted.source.source_id), str(admitted.source.revision_id), "whole-pdf"
             )
+        assert len(tuple(repository.events.read(context.course_id))) == before
+        assert product.jobs() == []
+        with monkeypatch.context() as bounds:
+            bounds.setattr("cardine.materials.product.MAX_TRANSCRIPT_CHARACTERS", len(text) + 1)
+            with pytest.raises(ValueError, match="troppo lunga"):
+                product.start_lessons(
+                    str(admitted.source.source_id),
+                    str(admitted.source.revision_id),
+                    [
+                        {"title": "First", "start_page": 1, "end_page": 1},
+                        {"title": "Second", "start_page": 2, "end_page": 2},
+                    ],
+                    "oversized-split",
+                )
         assert len(tuple(repository.events.read(context.course_id))) == before
         assert product.jobs() == []
         with pytest.raises(ValueError, match="coprire"):
@@ -242,7 +258,9 @@ def test_pdf_lessons_require_exact_page_coverage_and_parent_stays_current(tmp_pa
         assert product.status(str(jobs[1]["job_id"]))["stage"] == "stale"
 
 
-def test_audio_resume_reuses_completed_chunks_and_joins_the_same_pipeline(tmp_path: Path) -> None:
+def test_audio_resume_reuses_completed_chunks_and_joins_the_same_pipeline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from collections.abc import Callable
 
     from cardine.adapters.audio.groq import GroqAudioTranscriber
@@ -287,11 +305,20 @@ def test_audio_resume_reuses_completed_chunks_and_joins_the_same_pipeline(tmp_pa
         root, model_adapters=_registry(), environment={"OPENAI_API_KEY": "fixture"}
     ) as repository:
         product = MaterialProduct(repository, context)
+        from study_agent.ingestion import IngestionErrorCode, TextIngestionError
+
+        def conflict(**kwargs: object) -> None:
+            raise TextIngestionError(IngestionErrorCode.SEQUENCE_CONFLICT, "race", retryable=True)
+
+        with monkeypatch.context() as admission:
+            admission.setattr(product, "admit_extraction", conflict)
+            product.advance_audio(str(job["job_id"]), fixture)
+        assert product.audio_status(str(job["job_id"]))["stage"] == "transcribing"
         product.advance_audio(str(job["job_id"]), fixture)
         view = product.audio_status(str(job["job_id"]))
         assert view["stage"] == "proposed"
         assert len(cast(tuple[JsonObject, ...], view["outputs"])) == 2
-        assert fixture.calls == 2
+        assert fixture.calls == 3
 
 
 def test_missing_runtime_configuration_is_resumable_not_stale(

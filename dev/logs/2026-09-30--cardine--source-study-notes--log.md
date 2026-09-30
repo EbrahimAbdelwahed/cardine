@@ -100,3 +100,5 @@ Continue on this branch/PR for actionable automatic Codex review or CI findings.
 Do not merge or deploy without owner authorization.
 
 Merge preparation fixes the current review: background material workers use SERVICE provenance; page-mapped PDF generation requires confirmed lesson ranges at the product boundary. Regressions reject whole-PDF jobs without canonical writes and verify actual dispatched worker context.
+
+Final review repairs prevalidate normalized bounds for every selected PDF lesson before admission, and handle retryable audio ingestion conflicts with a released lease and durable chunks so the dispatched worker retries. Product regressions verify both triggers. Recovery integration and exact feature custody are updated together.

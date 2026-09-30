@@ -39,7 +39,7 @@ from study_agent.domain import (
 )
 from study_agent.domain._validation import JsonObject, freeze_object
 from study_agent.domain.provenance import TextExtractionProvenance
-from study_agent.ingestion import TextIngestionResult
+from study_agent.ingestion import TextIngestionError, TextIngestionResult
 from study_agent.retrieval import SourceRevisionRecord
 from study_agent.state import canonical_json_bytes
 
@@ -424,6 +424,13 @@ class MaterialProduct:
             previous = end
         if previous != len(conversion.page_spans):
             raise ValueError("Mancano pagine nella divisione per lezioni.")
+        for lesson in lessons:
+            start = int(cast(int, lesson["start_page"]))
+            end = int(cast(int, lesson["end_page"]))
+            first, last = conversion.page_spans[start - 1], conversion.page_spans[end - 1]
+            slice_text = record.text[first.start_offset : last.end_offset]
+            normalized = normalize("NFC", slice_text.replace("\r\n", "\n").replace("\r", "\n"))
+            self._validate_transcript_size(normalized)
         # Resolve consent before admitting any selected lesson.
         if not (consent := self.repo.provider_consent.get(self.course)) or not consent.granted:
             raise ProviderConsentRequiredError("provider consent is required")
@@ -670,6 +677,18 @@ class MaterialProduct:
             if not store.compare_and_set(job_id, raw, new):
                 raise ValueError("Checkpoint audio aggiornato da un altro processo.")
             self.advance(str(material["job_id"]))
+        except TextIngestionError as error:
+            state.update(
+                stage="transcribing" if error.retryable else "failed_terminal",
+                error="Salvataggio in attesa: nuovo tentativo automatico."
+                if error.retryable
+                else "Impossibile registrare la trascrizione.",
+                lease_until=0,
+                lease_token=None,
+            )
+            # Retryable admission races keep the dispatched worker loop alive.
+            # Completed transcript chunks remain durable and are reused.
+            store.compare_and_set(job_id, raw, canonical_json_bytes(freeze_object(state)))
         except TranscriptTooLargeError as error:
             state.update(
                 stage="failed_terminal",
