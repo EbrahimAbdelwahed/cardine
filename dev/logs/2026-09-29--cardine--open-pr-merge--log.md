@@ -71,3 +71,4 @@ Chat rail previews explicitly refresh after each word reveal, including streams 
 Final recovery bounds citation display locators to 2,000 characters while retaining canonical IDs, including 4,000-character headings. SQLite identity probes serialize concurrent opens while retaining inode replacement rejection. Offline runtime tests: 2,508 passed, four expected skips; archive audit rechecked after committing updated custody.
 
 The streaming live region is removed after delivering its announcement and cancelled on teardown, preventing a persistent duplicate answer in the accessibility tree. Offline lifecycle regression covers announcement delivery and removal.
+Retry captures replace failed transient activity with a fresh running attempt, preserving monotonic sequence IDs to ignore late completion tokens. Regression covers failed-to-running-to-settled state, retention reset and stale tokens.

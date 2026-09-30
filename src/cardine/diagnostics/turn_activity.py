@@ -176,7 +176,14 @@ class TurnActivityStore:
                     self._turns.popitem(last=False)
             else:
                 self._turns.move_to_end(request_id)
-                if turn.state != "failed":
+                if turn.state == "failed":
+                    # Retry observations replace the failed attempt, while
+                    # sequence IDs prevent late old tokens settling new rows.
+                    previous_sequence = turn.sequence
+                    turn = _Turn()
+                    turn.sequence = previous_sequence
+                    self._turns[request_id] = turn
+                else:
                     turn.state = "running"
         token = _CURRENT.set((self, request_id))
         try:
