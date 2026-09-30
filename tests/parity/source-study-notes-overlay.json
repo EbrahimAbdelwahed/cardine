@@ -12,7 +12,7 @@
     },
     {
       "path": "src/cardine/cli/repository.py",
-      "sha256": "9463ae0582f9ba3f2a2483e7f936ae659514de492e4502254d8296a883eb9d9b"
+      "sha256": "ae00d6672046db9a2365d5e8c1d71ac466aec8ae50b983f0032b888b485cf7d7"
     },
     {
       "path": "src/cardine/demo/browser.css",
@@ -20,7 +20,7 @@
     },
     {
       "path": "src/cardine/demo/browser.js",
-      "sha256": "855cb18fd099f72bc4c244f375ed37fd733192d9d340561ad1501215e2e12ab9"
+      "sha256": "5a13af395ad9562ff0a77cff017b614c813fae337027e1e410cb745cc99264f8"
     },
     {
       "path": "src/cardine/demo/browser.py",
