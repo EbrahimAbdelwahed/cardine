@@ -58,6 +58,17 @@ outside this approved continuation.
 
 ## Closeout
 
-Implementation is ready for final committed-tree verification and publication.
+Implementation commit: `8f60ec5` (2026-09-30).
+
+Full offline pytest: **2501 passed, 14 skipped** in 96.21 seconds. The final
+private-access adjustment added one test; the affected raw-upload, native-browser
+and clean-archive audit set then passed **7 tests** on `8f60ec5`. Ruff and mypy
+(628 source files) pass. Ownership audit passes (322 historical rows). Both sdist
+and wheel build and `verify_cardine_wheel.py` pass. Optional recall/CPython 3.13
+qualification checks account for the local skips; CI owns their additional lanes.
+
+The branch is published to the existing repository. PR submission follows this
+log update; automatic Codex semantic review and GitHub CI must still be inspected
+for the submitted commit. No merge or deployment has occurred.
 Continue on this branch/PR for actionable automatic Codex review or CI findings.
 Do not merge or deploy without owner authorization.

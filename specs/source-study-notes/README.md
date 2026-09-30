@@ -88,8 +88,10 @@ publication, reload, PDF coverage/staleness and audio checkpoint recovery.
 Groq wire/model/timestamp and raw-upload same-origin tests use fixtures.
 Desktop/mobile screenshots received a fresh visual critique; singular labels,
 Italian proposal status, heading hierarchy and reading width were corrected.
-No live provider call made. Final suite/build and submitted-commit CI/review
-evidence are recorded in the repository development log.
+Full offline suite: 2501 passed, 14 optional skips. Final access/browser/archive
+checks: seven passed. Ruff, mypy, custody audit, sdist/wheel build and package
+verification pass. No live provider call made. Publication and submitted-commit
+CI/review evidence are recorded in the repository development log.
 
 Run the prescribed pytest/Ruff/mypy/build gates. Focused tests are
 `tests/integration/test_material_product.py` and
