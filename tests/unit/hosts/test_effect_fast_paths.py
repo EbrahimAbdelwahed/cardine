@@ -202,3 +202,16 @@ def test_difficulty_explanation_preserves_study_memory_decisions() -> None:
             )
             assert decision == memory
             assert delegate.calls == 1
+
+
+def test_flashcard_difficulty_preserves_memory_tool_before_generation() -> None:
+    for tool in ("study_memory.record", "study_memory.search"):
+        memory = InvokeToolDecision(tool, {})
+        delegate = _CountingPort(memory)
+        decision = asyncio.run(
+            FlashcardProfileRoutingTutorDecisionPort(delegate).decide(
+                _context("Ho difficoltà con la glicolisi, crea flashcards"), _Token()
+            )
+        )
+        assert decision == memory
+        assert delegate.calls == 1

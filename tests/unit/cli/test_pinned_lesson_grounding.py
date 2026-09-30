@@ -78,9 +78,7 @@ def test_invalid_foreign_and_partial_pins_fail_before_provider_construction(
 
     with LocalRepository.open(
         root,
-        model_adapters=ModelAdapterRegistry(
-            {"fixture-adapter": _unexpected_provider(builds)}
-        ),
+        model_adapters=ModelAdapterRegistry({"fixture-adapter": _unexpected_provider(builds)}),
         environment={},
     ) as repository:
         receipt = repository.course_index_receipt(course_id, repository.rebuild_retrieval())
@@ -103,9 +101,7 @@ def test_whole_source_pin_is_not_a_current_lesson_candidate(tmp_path: Path) -> N
     pin = _pin(root, course_id)
     with LocalRepository.open(
         root,
-        model_adapters=ModelAdapterRegistry(
-            {"fixture-adapter": _unexpected_provider(builds)}
-        ),
+        model_adapters=ModelAdapterRegistry({"fixture-adapter": _unexpected_provider(builds)}),
         environment={},
     ) as repository:
         receipt = repository.course_index_receipt(course_id, repository.rebuild_retrieval())
@@ -134,3 +130,32 @@ def test_pinned_retrieval_discards_cross_section_and_partial_chunks(tmp_path: Pa
         outside = scoped.search(RetrievalQuery(course_id, "altro"))
         assert outside.evidence == ()
         assert outside.status.value == "insufficient"
+
+
+def test_unresolved_nearest_explicit_lesson_cannot_fall_back() -> None:
+    from types import SimpleNamespace
+
+    from cardine.cli.repository import _RepositoryTutorGateway
+
+    looked_up = []
+
+    def resolve(course: object, text: str) -> object:
+        looked_up.append(text)
+        return object() if text == "lezione 1" else None
+
+    interactions = [
+        SimpleNamespace(kind=SimpleNamespace(value="human"), content=text)
+        for text in ("lezione 1", "lezione 999", "crea flashcard su questa lezione")
+    ]
+    gateway = object.__new__(_RepositoryTutorGateway)
+    gateway._lesson_pin = None
+    gateway._course_id = CourseId("course")
+    from study_agent.domain import SessionId
+
+    gateway._session_id = SessionId("session")
+    gateway._repository = SimpleNamespace(
+        resolve_lesson_scope=resolve,
+        sessions=SimpleNamespace(interactions=lambda *args: interactions),
+    )  # type: ignore[assignment]
+    assert gateway._flashcard_lesson_pin({"query": "questa lezione"}) is None
+    assert looked_up == ["questa lezione", "lezione 999"]
