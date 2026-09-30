@@ -169,7 +169,7 @@ POST_BASELINE_SHA256 = {
         "1314f6d6bea53980da151de5e4c4366287c3dcc057931c9dc9bb007ad8ebb5b8"
     ),
     "src/cardine/hosts/source_grounding.py": (
-        "656325396f57be1804fc44c2ed9e7b9df960e91660f570f00168d38bdd32615b"
+        "e25f8091821690801df2a4390fde3ee18cee7c18f12d0515e4fab723d094659f"
     ),
 }
 

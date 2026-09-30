@@ -15,6 +15,13 @@ from .contracts import (
 )
 
 _EXPLAIN_CAPABILITY_ID = "explain_concept"
+_STUDY_MEMORY_INTENT = re.compile(
+    r"\b(?:non\s+(?:capisco|ho\s+capito|ricordo|riesco)|"
+    r"difficolt[aà]|confus[oaie]|dimentic\w*|ricord\w*|"
+    r"(?:don['’]t|do\s+not|can['’]t|cannot)\s+(?:understand|remember)|"
+    r"confus\w*|struggl\w*|forget\w*|forgot\w*|remember)\b",
+    re.IGNORECASE,
+)
 _SOURCE_REFERENCE = re.compile(
     r"\b(?:source|sources|fonte|fonti|materiale|materiali|documento|documenti|"
     r"file|appunti|note|notes)\b",
@@ -120,8 +127,12 @@ class SourceGroundedTutorDecisionPort(TutorDecisionPort):
     async def decide(
         self, context: TutorHostContext, interruption: TutorInterruptionToken
     ) -> TutorDecision:
-        # The delegate can record/search study memory before explanation.
-        # Enforce the source effect after preserving those tool decisions.
+        learner_text = _latest_learner_text(context) or ""
+        if context.pending_continuation is None and not _STUDY_MEMORY_INTENT.search(learner_text):
+            direct = _grounded_explanation_decision(context)
+            if direct is not None:
+                return direct
+        # Difficulty and memory requests need the delegate's memory tool step.
         decision = await self._delegate.decide(context, interruption)
         return _require_grounded_explanation(decision, context)
 

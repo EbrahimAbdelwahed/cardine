@@ -113,7 +113,7 @@ def test_flashcard_meta_question_still_uses_language_model() -> None:
     assert delegate.calls == 1
 
 
-def test_explicit_grounded_explanation_enforces_effect_after_routing() -> None:
+def test_explicit_grounded_explanation_skips_routing_model_call() -> None:
     delegate = _CountingPort()
 
     decision = asyncio.run(
@@ -124,7 +124,7 @@ def test_explicit_grounded_explanation_enforces_effect_after_routing() -> None:
 
     assert isinstance(decision, StartCapabilityDecision)
     assert decision.capability_id == "explain_concept"
-    assert delegate.calls == 1
+    assert delegate.calls == 0
 
 
 def test_answered_clarification_enriches_the_single_model_call() -> None:
@@ -187,13 +187,18 @@ def test_history_scoped_model_promise_cannot_complete_the_effect() -> None:
 
 
 def test_difficulty_explanation_preserves_study_memory_decisions() -> None:
-    for tool in ("study_memory.record", "study_memory.search"):
-        memory = InvokeToolDecision(tool, {})
-        delegate = _CountingPort(memory)
-        decision = asyncio.run(
-            SourceGroundedTutorDecisionPort(delegate).decide(
-                _context("I don't understand glycolysis; explain it"), _Token()
+    for prompt in (
+        "I don't understand glycolysis; explain it",
+        "Non capisco la glicolisi, spiegamela",
+        "Ho difficoltà con la glicolisi, spiegami la fonte",
+        "I am confused; explain glycolysis",
+        "Ricordami le mie difficoltà e spiega la glicolisi",
+    ):
+        for tool in ("study_memory.record", "study_memory.search"):
+            memory = InvokeToolDecision(tool, {})
+            delegate = _CountingPort(memory)
+            decision = asyncio.run(
+                SourceGroundedTutorDecisionPort(delegate).decide(_context(prompt), _Token())
             )
-        )
-        assert decision == memory
-        assert delegate.calls == 1
+            assert decision == memory
+            assert delegate.calls == 1
