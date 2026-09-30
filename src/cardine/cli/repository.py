@@ -15,7 +15,9 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 from cardine.adapters.model.retrieval_query_recovery import RetrievalQueryRecovery
 from cardine.adapters.pageindex import PageIndexCoordinator, PageIndexRevision
-from cardine.application.capability_completion import MAX_COMPLETION_CONTENT_CHARS
+from cardine.application.capability_completion import (
+    MAX_COMPLETION_CONTENT_CHARS,
+)
 from cardine.application.conversation_history import ConversationHistoryReader
 from cardine.application.flashcard_proposals import FlashcardProposalComposition
 from cardine.application.indexing import (
@@ -169,6 +171,7 @@ from study_agent.domain import (
     SourceKind,
 )
 from study_agent.domain._validation import JsonObject, JsonValue
+from study_agent.domain.session import MAX_TUTOR_SOURCE_LOCATOR_CHARS
 from study_agent.grounding import (
     EvidenceSufficiencyValidator,
     GroundedAnswerIntegrityValidator,
@@ -917,11 +920,15 @@ def _explanation_product_receipt(
             if locator not in seen_locators:
                 seen_locators.add(locator)
                 locators.append(locator)
-            ref = (source_id, revision_id, locator)
+            display_locator = (
+                locator if len(locator) <= MAX_TUTOR_SOURCE_LOCATOR_CHARS
+                else locator[: MAX_TUTOR_SOURCE_LOCATOR_CHARS - 1] + "…"
+            )
+            ref = (source_id, revision_id, display_locator)
             if ref not in seen_refs:
                 seen_refs.add(ref)
                 source_refs.append(
-                    {"source_id": source_id, "revision_id": revision_id, "locator": locator}
+                    {"source_id": source_id, "revision_id": revision_id, "locator": display_locator}
                 )
             canonical_ids.update((source_id, revision_id, chunk_id))
         pieces.append(text)

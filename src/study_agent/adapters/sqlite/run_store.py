@@ -8,7 +8,7 @@ from pathlib import Path
 
 from study_agent.domain.identifiers import RunId
 
-from .event_store import SQLiteConnectionGuard, _writable_nofollow_uri
+from .event_store import SQLiteConnectionGuard, _serialized_sqlite_open, _writable_nofollow_uri
 
 
 class UnsupportedSQLiteRunDatabaseError(ValueError):
@@ -54,7 +54,9 @@ class SQLiteRunStore:
 
     def _connect(self) -> sqlite3.Connection:
         if self._connection_identity_guard is None:
-            connection = sqlite3.connect(self._database, isolation_level=None, timeout=30)
+            connection = _serialized_sqlite_open(
+                lambda: sqlite3.connect(self._database, isolation_level=None, timeout=30)
+            )
         else:
             uri = _writable_nofollow_uri(self._database)
             connection = self._connection_identity_guard.connect(

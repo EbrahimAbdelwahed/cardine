@@ -2333,7 +2333,10 @@
         }
         const node = $("[data-turn-activity]", root);
         if (node && token === state.activityPollToken) patch(node, aiToolChips(payload));
-        if (["settled", "failed"].includes(text(payload.state))) return;
+        // A retry reuses its request ID, so its first GET can still observe
+        // the previous terminal attempt before POST enters capture. Keep
+        // polling until the command clears pendingTurn (or navigation cancels).
+
         await new Promise((resolve) => window.setTimeout(resolve, 600));
       } catch (_) {
         failures += 1;

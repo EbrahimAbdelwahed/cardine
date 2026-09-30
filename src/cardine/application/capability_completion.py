@@ -14,6 +14,7 @@ from typing import Protocol
 from cardine.hosts import TutorCapabilityCompletionReference
 from study_agent.domain import ExecutionContext, RunId
 from study_agent.domain._validation import JsonObject, freeze_object
+from study_agent.domain.session import MAX_TUTOR_SOURCE_LOCATOR_CHARS
 
 MAX_COMPLETION_CONTENT_CHARS = 4_000
 MAX_CANONICAL_IDS = 64
@@ -54,6 +55,7 @@ class CapabilityCompletionProductReceipt:
         if len(refs) > MAX_CANONICAL_IDS or any(
             set(ref) != {"source_id", "revision_id", "locator"}
             or any(not isinstance(ref[key], str) or not ref[key] for key in ref)
+            or len(str(ref["locator"])) > MAX_TUTOR_SOURCE_LOCATOR_CHARS
             or ref["source_id"] not in ids
             or ref["revision_id"] not in ids
             for ref in refs

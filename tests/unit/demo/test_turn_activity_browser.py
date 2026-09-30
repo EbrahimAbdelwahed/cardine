@@ -151,9 +151,9 @@ def test_repository_session_read_is_independent_of_long_tutor_mutation_lock(
 
 
 def test_progress_message_is_patched_into_only_the_optimistic_bubble_as_escaped_text() -> None:
-    javascript = (
-        Path(__file__).parents[3] / "src" / "cardine" / "demo" / "browser.js"
-    ).read_text(encoding="utf-8")
+    javascript = (Path(__file__).parents[3] / "src" / "cardine" / "demo" / "browser.js").read_text(
+        encoding="utf-8"
+    )
 
     assert "progress_message" in javascript
     assert "data-optimistic-turn" in javascript
@@ -162,3 +162,27 @@ def test_progress_message_is_patched_into_only_the_optimistic_bubble_as_escaped_
     # keeps markup inert inside the optimistic bubble.
     assert "progressNode.textContent = progressMessage" in javascript
     assert "${progressMessage}" not in javascript
+
+
+def test_retry_poll_survives_previous_terminal_activity() -> None:
+    import subprocess
+
+    browser = Path(__file__).parents[3] / "src/cardine/demo/browser.js"
+    script = r"""
+const fs = require('node:fs'); const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const poll = source.slice(source.indexOf('  async function pollTurnActivity'), source.indexOf('  function restoreFailedTurnDraft'));
+const snapshots = [{state:'failed',records:[{sequence:1}]}, {state:'running',records:[{sequence:2}]}, {state:'failed',records:[{sequence:2}]}];
+let reads=0; const rendered=[];
+const state = {activityPollToken:0,navigationVersion:0,pendingTurn:{requestId:'retry'}};
+const context = {state, root:{}, text:(value)=>value||'', $:()=>({}),
+ fetchJson:async()=>snapshots[reads++], aiToolChips:(payload)=>payload.state,
+ patch:(_node,value)=>rendered.push(value),
+ window:{setTimeout:(resolve)=>{if(reads===3)state.pendingTurn=null; resolve();}}};
+vm.createContext(context); vm.runInContext(poll,context);
+context.pollTurnActivity('retry').then(()=>console.log(JSON.stringify({reads,rendered})));
+"""
+    result = subprocess.run(
+        ["node", "-e", script, str(browser)], check=True, capture_output=True, text=True
+    )
+    assert json.loads(result.stdout) == {"reads": 3, "rendered": ["failed", "running", "failed"]}
