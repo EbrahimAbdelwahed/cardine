@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "plan": "specs/source-study-notes/README.md",
+  "rows": [
+    {
+      "path": "src/cardine/adapters/audio/__init__.py",
+      "sha256": "36f7568e1f49c4385ded75573042131c29207b0d0b3139846266ada73c833207"
+    },
+    {
+      "path": "src/cardine/adapters/audio/groq.py",
+      "sha256": "7c00c23208d48ab407f741ed4b95d4600b15f54fa6085f724da9cdd10112d084"
+    },
+    {
+      "path": "src/cardine/cli/repository.py",
+      "sha256": "9463ae0582f9ba3f2a2483e7f936ae659514de492e4502254d8296a883eb9d9b"
+    },
+    {
+      "path": "src/cardine/demo/browser.css",
+      "sha256": "c1e116fd7c71395350536637eeb6f74c1671d9fce9a79b3a1377996bad1e2ac6"
+    },
+    {
+      "path": "src/cardine/demo/browser.js",
+      "sha256": "5656caf1f3e57603e9c881b2a1063a1054ea3c860131c5d12ee4a62e3d21c7ec"
+    },
+    {
+      "path": "src/cardine/demo/browser.py",
+      "sha256": "6bfb73ddc0975d0097cb0d22df2aa60c288db45f8091ccd93a09e6d1b1c88ee1"
+    },
+    {
+      "path": "src/cardine/demo/ui_application.py",
+      "sha256": "aa30afd93a464bb6a6934fd49dfda1484c97a4cef69278b1f01260cd8d5fddac"
+    },
+    {
+      "path": "src/cardine/materials/generation_contracts.py",
+      "sha256": "d19e33d25f2cd3a8793a26bde28a4c3d2a894ad6593e8cf9ebce8a8a0337d871"
+    },
+    {
+      "path": "src/cardine/materials/product.py",
+      "sha256": "96bed413ca480a21401282bf77b966b5f317280616a1dfd5a3a2eb6bd6f59b5c"
+    },
+    {
+      "path": "src/study_agent/domain/provenance.py",
+      "sha256": "2a6a3b6e2ce22fde505b55a5bc78c2fd08e94e331a23ec9f225bd7cb681c9108"
+    },
+    {
+      "path": "src/study_agent/domain/source.py",
+      "sha256": "ef1b79f562684d3c6fcd179b257f4b90bef4d349bf38749cc5bd0df576f7c0f3"
+    },
+    {
+      "path": "src/study_agent/ingestion/events.py",
+      "sha256": "e5e2499ece595ed12b9fa9e4e7e7fb30d801c42e7dd84c501bf6591fc5f8899b"
+    },
+    {
+      "path": "src/study_agent/ingestion/projection.py",
+      "sha256": "7a54be23e87fa75e49aa165a892ca4354e53cc328176498ef2dcc1f942fce40e"
+    },
+    {
+      "path": "src/study_agent/ingestion/service.py",
+      "sha256": "691c9daa40ea035d49b7b5c89c3846f8254365f225b46adccaf74f7a0abe7ff5"
+    }
+  ]
+}

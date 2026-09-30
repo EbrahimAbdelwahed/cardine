@@ -1,16 +1,18 @@
 # Spec: generazione materiali da sbobina
 
-Status: **Slice 02 implemented — awaiting user review**
+Status: **Expanded continuation approved 2026-09-30; implemented in source-study-notes**
 Date: 2026-08-14
 Area: Cardine / materials / generated sources
 
-The user authorized and completed Slice 02. Slices 03–04 remain unauthorized.
+The user approved the expanded source/PDF/audio workflow on 2026-09-30.
+See [the current scope and handoff](../source-study-notes/README.md). This
+approval supersedes the earlier pause on Slices 03–04 for the source-page flow.
 
 ## Next Agent Prompt
 
-Slices 01 and 02 are implemented and verified. Review the restart-safe paired
-generation evidence; do not begin Slice 03 until the user explicitly approves
-continuation.
+Continue from the source-study-notes handoff. Slices 01–02 remain the pipeline
+foundation; the approved continuation implements publication and source-page
+review. The old audio/PDF exclusions describe the original scope only.
 
 Warnings:
 
@@ -30,10 +32,11 @@ Global checklist:
   lesson-material and generated-source lineage contracts.
 - [x] [Slice 02](slices/02-restart-safe-paired-generation.md): generate the
   complete/study pair as one restart-safe proposal batch.
-- [ ] [Slice 03](slices/03-human-approval-and-publication.md): publish only
+- [x] [Slice 03](slices/03-human-approval-and-publication.md): publish only
   explicitly approved outputs as correctly provenanced canonical sources.
-- [ ] [Slice 04](slices/04-product-entrypoints-and-review.md): expose the same
-  workflow from the Sources page and exact-source chat attachment.
+- [x] Sources-page part of [Slice 04](slices/04-product-entrypoints-and-review.md):
+  source generation, review and publication. The separate conversational
+  generation entrypoint remains deferred; it is outside the approved continuation.
 
 The next agent must update this section before ending its pass.
 
@@ -53,14 +56,16 @@ Both outputs are reviewable proposals. They become indexed sources usable by
 chat and flashcard generation only after explicit HUMAN approval.
 
 The workflow can be started either by a button on an exact source revision or by
-a chat request carrying that same exact full-source attachment. Both entrypoints
-call one application service and return the same idempotent job.
+a chat request carrying that same exact full-source attachment in the original
+plan. The 2026-09-30 continuation implements the source button; the additional
+chat generation tool remains deferred.
 
 ## Non-goals
 
-- Audio upload, transcription, correction, OCR or speaker separation.
+- OCR, speaker separation and semantic correction of recordings. Audio ingress
+  and transcription are now covered by the approved source-study-notes scope.
 - Automatic generation after source upload or repository startup.
-- PDF input for this workflow.
+- PDF input is now covered by the approved source-study-notes scope.
 - Images, chemical rendering, Obsidian sync, Anki import/export or flashcard
   generation inside this workflow.
 - Automatic acceptance, sibling acceptance, silent fallback providers or the

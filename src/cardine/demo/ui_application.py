@@ -7,6 +7,7 @@ owned by the canonical repository services or by their shared harness surface.
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import subprocess
 import sys
@@ -15,10 +16,11 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
-from threading import Lock, Thread
+from threading import BoundedSemaphore, Lock, Thread
 from time import sleep
 from typing import Protocol, cast
 
+from cardine.adapters.audio.groq import GroqAudioTranscriber
 from cardine.application.artifact_decisions import (
     artifact_bulk_receipt_payload,
     decide_artifacts,
@@ -58,6 +60,7 @@ from cardine.integrations.study_agent.course_policy import (
     SourceLifetimeCommandError,
 )
 from cardine.knowledge import LessonCandidate, SourcePin
+from cardine.materials.product import MaterialProduct
 from study_agent.application import (
     ConversationTurnCommand,
     ConversationTurnError,
@@ -340,6 +343,10 @@ class RepositoryUiApplication(UiApplicationPort):
         )
         self._lock = _repository_mutation_lock(self._repository)
         self._indexing_worker_lock = Lock()
+        self._material_worker_lock = Lock()
+        self._material_slots = BoundedSemaphore(2)
+        self._material_workers: set[tuple[str, str, str]] = set()
+        self._audio_environment = environment if environment is not None else os.environ
         self._turn_traces = turn_traces if turn_traces is not None else TurnTraceStore()
         self._turn_activity = turn_activity if turn_activity is not None else TurnActivityStore()
         self._document_policy = document_policy or document_import_policy()
@@ -365,6 +372,7 @@ class RepositoryUiApplication(UiApplicationPort):
             # readiness flow; it must not prevent the UI from starting.
             return
         self._start_indexing_worker_if_queued()
+        self._recover_material_jobs()
 
     @property
     def repository(self) -> Path:
@@ -422,6 +430,41 @@ class RepositoryUiApplication(UiApplicationPort):
             }
 
     def get(self, path: str) -> JsonObject:
+        if path == "/api/v1/material-generations" or path.startswith(
+            "/api/v1/material-generations/"
+        ):
+            with self._open() as repository:
+                product = MaterialProduct(
+                    repository, self._context("material-read", "material-read")
+                )
+
+                def view(job_id: str, *, include_markdown: bool = True) -> JsonObject:
+                    return (
+                        product.audio_status(job_id, include_markdown=include_markdown)
+                        if job_id.startswith("audio-")
+                        else product.status(job_id, include_markdown=include_markdown)
+                    )
+
+                if path == "/api/v1/material-generations":
+                    jobs = tuple(
+                        view(str(item["job_id"]), include_markdown=False)
+                        for item in product.jobs()
+                    )
+                    audio_children = {
+                        str(item.get("material_job_id"))
+                        for item in jobs
+                        if item.get("kind") == "audio"
+                    }
+                    return {
+                        "schema_version": 1,
+                        "items": tuple(
+                            item for item in jobs if item["job_id"] not in audio_children
+                        ),
+                    }
+                try:
+                    return view(path.rsplit("/", 1)[-1])
+                except (KeyError, ValueError):
+                    raise UiRequestError("generation not found", status_code=404) from None
         prefix = "/api/v1/turns/"
         suffix = "/activity"
         if path.startswith(prefix) and path.endswith(suffix):
@@ -621,6 +664,10 @@ class RepositoryUiApplication(UiApplicationPort):
             raise UiRequestError("repository runtime is unavailable", status_code=503) from error
 
     def post(self, path: str, command: Mapping[str, object]) -> JsonObject:
+        if path == "/api/v1/material-generations" or path.startswith(
+            "/api/v1/material-generations/"
+        ):
+            return self._material_command(path, command)
         if path == "/api/v1/workspace/select":
             return self._select_workspace(command)
         if path == "/api/v1/workspace/sessions":
@@ -701,9 +748,11 @@ class RepositoryUiApplication(UiApplicationPort):
             else None
         )
         activity_status = "done"
-        with self._turn_activity.capture(request_id), self._turn_traces.capture(
-            request_id, expected_sequence
-        ) as trace_id, self._lock:
+        with (
+            self._turn_activity.capture(request_id),
+            self._turn_traces.capture(request_id, expected_sequence) as trace_id,
+            self._lock,
+        ):
             try:
                 with self._open() as repository:
                     before_artifacts = repository.artifacts.get(self._course_id)
@@ -1219,6 +1268,164 @@ class RepositoryUiApplication(UiApplicationPort):
             },
             "session": _workspace_session(session, selected=True),
         }
+
+    def _material_command(self, path: str, command: Mapping[str, object]) -> JsonObject:
+        prepare = path.endswith("/prepare")
+        resume = path.endswith("/resume")
+        decision = path.endswith("/decisions")
+        keys = (
+            {"revision_id", "decision"}
+            if decision
+            else set()
+            if resume
+            else {"source_id", "revision_id"}
+        )
+        request_id, sequence, payload = _workspace_command(
+            command,
+            required_keys=keys,
+            optional_keys={"lessons"} if not (prepare or resume or decision) else set(),
+        )
+        context = self._context(request_id, request_id)
+        try:
+            with self._lock, self._open() as repository:
+                product = MaterialProduct(repository, context)
+                if prepare:
+                    return product.lessons(str(payload["source_id"]), str(payload["revision_id"]))
+                if resume or decision:
+                    job_id = path.split("/")[-2]
+                    if decision:
+                        descriptor = product.descriptor(job_id)
+                        if descriptor["kind"] == "audio":
+                            job_id = str(product.audio_status(job_id).get("material_job_id"))
+                        result = product.decide(
+                            job_id,
+                            str(payload["revision_id"]),
+                            str(payload["decision"]),
+                            sequence,
+                            request_id,
+                        )
+                        self._start_indexing_worker()
+                        return result
+                    product.descriptor(job_id)
+                    self._start_material_worker(job_id, self._course_id, self._session_id)
+                    return (
+                        product.audio_status(job_id, include_markdown=False)
+                        if job_id.startswith("audio-")
+                        else product.status(job_id, include_markdown=False)
+                    )
+                if path != "/api/v1/material-generations":
+                    raise UiRequestError("route not found", status_code=404)
+                lessons = payload.get("lessons")
+                if lessons is not None:
+                    if not isinstance(lessons, list) or any(
+                        not isinstance(item, dict) for item in lessons
+                    ):
+                        raise UiRequestError("lesson boundaries are invalid")
+                    jobs = product.start_lessons(
+                        str(payload["source_id"]), str(payload["revision_id"]), lessons, request_id
+                    )
+                else:
+                    jobs = (
+                        product.start(
+                            str(payload["source_id"]), str(payload["revision_id"]), request_id
+                        ),
+                    )
+                for job in jobs:
+                    self._start_material_worker(
+                        str(job["job_id"]), self._course_id, self._session_id
+                    )
+                return {"schema_version": 1, "items": jobs}
+        except ProviderConsentRequiredError:
+            raise UiRequestError(
+                "Conferma il consenso al provider nelle impostazioni.", status_code=409
+            ) from None
+        except (
+            ValueError,
+            ModelAdapterConfigurationError,
+            ArtifactCommandError,
+            ArtifactConflictError,
+        ) as error:
+            raise UiRequestError(str(error), status_code=409) from None
+
+    def _recover_material_jobs(self) -> None:
+        with self._open() as repository:
+            product = MaterialProduct(
+                repository, self._context("material-recovery", "material-recovery")
+            )
+            for item in product.jobs():
+                job_id = str(item["job_id"])
+                self._start_material_worker(job_id, self._course_id, self._session_id)
+
+    def _start_material_worker(self, job_id: str, course: CourseId, session: SessionId) -> None:
+        identity = (str(course), str(session), job_id)
+        with self._material_worker_lock:
+            if identity in self._material_workers:
+                return
+            self._material_workers.add(identity)
+
+        def work() -> None:
+            self._material_slots.acquire()
+            try:
+                context = ExecutionContext(
+                    PrincipalKind.HUMAN,
+                    "cardine-material-worker",
+                    course,
+                    CorrelationId("cardine-material-worker"),
+                    session_id=session,
+                )
+                while True:
+                    with self._open() as repository:
+                        product = MaterialProduct(repository, context)
+                        product.clear_worker_error(job_id)
+                        try:
+                            if job_id.startswith("audio-"):
+                                product.advance_audio(job_id, GroqAudioTranscriber(
+                                    self._audio_environment.get("GROQ_API_KEY", "")))
+                                view = product.audio_status(job_id, include_markdown=False)
+                                material_id = view.get("material_job_id")
+                                if material_id is not None:
+                                    product.publish(str(material_id))
+                            else:
+                                product.advance(job_id)
+                                product.publish(job_id)
+                                view = product.status(job_id, include_markdown=False)
+                        except (KeyError, ValueError, OSError, RuntimeError):
+                            product.worker_error(job_id)
+                            break
+                    if view.get("stage") in {"proposed", "retryable", "stale", "failed_terminal"}:
+                        break
+                    # Another process may own the checkpoint lease after a
+                    # restart. Wait for its result/lease expiry without holding
+                    # a repository connection or blocking browser requests.
+                    sleep(5)
+                self._start_indexing_worker()
+            except (KeyError, ValueError, OSError, RuntimeError):
+                pass
+            finally:
+                with self._material_worker_lock:
+                    self._material_workers.discard(identity)
+                self._material_slots.release()
+
+        Thread(target=work, name="cardine-material-generation", daemon=True).start()
+
+    def import_audio(
+        self, *, input_path: Path, filename: str, title: str, request_id: str
+    ) -> JsonObject:
+        _workspace_text(request_id, "request_id", 200)
+        _workspace_text(title, "title", 240)
+        _workspace_text(filename, "filename", 240)
+        if not self._audio_environment.get("GROQ_API_KEY"):
+            raise UiRequestError(
+                "Configura GROQ_API_KEY sul server prima di caricare audio.", status_code=409
+            )
+        try:
+            with self._lock, self._open() as repository:
+                product = MaterialProduct(repository, self._context(request_id, request_id))
+                view = product.start_audio(input_path.read_bytes(), filename, title, request_id)
+                self._start_material_worker(str(view["job_id"]), self._course_id, self._session_id)
+                return view
+        except (ValueError, ProviderConsentRequiredError) as error:
+            raise UiRequestError(str(error), status_code=409) from None
 
     def _upload_source(self, command: Mapping[str, object]) -> JsonObject:
         """Ingest a bounded UTF-8 text revision through the canonical service."""
@@ -2375,6 +2582,14 @@ class RepositoryUiApplication(UiApplicationPort):
                     "trust_level": item.trust_level,
                     "chunk_count": item.chunk_count,
                     "groundable": groundable,
+                    "can_generate_notes": (
+                        records.get((str(item.source_id), str(item.current_revision_id)))
+                        is not None
+                        and records[
+                            (str(item.source_id), str(item.current_revision_id))
+                        ].source.content_origin.value
+                        != "generated"
+                    ),
                     "viewer": _source_viewer_payload(
                         records.get((str(item.source_id), str(item.current_revision_id)))
                     ),

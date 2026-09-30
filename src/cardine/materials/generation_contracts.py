@@ -135,7 +135,7 @@ class PinnedTranscriptInput:
         ):
             raise ValueError("normalized_character_length is outside its supported bound")
         if (
-            self.blob.byte_length > MAX_SOURCE_BYTES
+            self.blob.byte_length > 256 * 1024 * 1024
             or self.normalized_blob.byte_length > MAX_SOURCE_BYTES
         ):
             raise ValueError("pinned transcript blob is oversized")

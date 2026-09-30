@@ -604,10 +604,63 @@ def _validate_cardine_transition(
                 errors.append(f"CA-02 transition entrypoint digest mismatch: {row['path']}")
 
 
+STUDY_NOTES_PATHS = {
+    "src/cardine/adapters/audio/__init__.py",
+    "src/cardine/adapters/audio/groq.py",
+    "src/cardine/materials/product.py",
+    "src/cardine/materials/generation_contracts.py",
+    "src/cardine/cli/repository.py",
+    "src/cardine/demo/browser.css",
+    "src/cardine/demo/browser.js",
+    "src/cardine/demo/browser.py",
+    "src/cardine/demo/ui_application.py",
+    "src/study_agent/domain/provenance.py",
+    "src/study_agent/domain/source.py",
+    "src/study_agent/ingestion/events.py",
+    "src/study_agent/ingestion/projection.py",
+    "src/study_agent/ingestion/service.py",
+}
+
+
+def _load_study_notes_overlay() -> dict[str, str]:
+    """Bind the owner-approved feature scope without rewriting recovery custody.
+
+    This is implementation custody, not evidence that automatic review or
+    installed-package parity has passed. Unknown paths and digest drift fail.
+    """
+    path = ROOT / "tests/parity/source-study-notes-overlay.json"
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if (
+        not isinstance(raw, dict)
+        or set(raw) != {"schema_version", "plan", "rows"}
+        or raw["schema_version"] != 1
+        or raw["plan"] != "specs/source-study-notes/README.md"
+    ):
+        raise ValueError("study notes overlay fields are invalid")
+    rows = raw["rows"]
+    if not isinstance(rows, list) or len(rows) != len(STUDY_NOTES_PATHS):
+        raise ValueError("study notes custody must bind the exact feature path set")
+    hashes: dict[str, str] = {}
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != {"path", "sha256"}:
+            raise ValueError("study notes custody row is invalid")
+        source, digest = row["path"], row["sha256"]
+        if source not in STUDY_NOTES_PATHS or source in hashes:
+            raise ValueError("study notes custody path is invalid or duplicated")
+        if (
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(char not in "0123456789abcdef" for char in digest)
+        ):
+            raise ValueError("study notes custody digest is invalid")
+        hashes[source] = digest
+    return hashes
+
+
 def validate(*, live: bool = False) -> list[str]:
     errors: list[str] = []
     try:
-        recovery_hashes = _load_recovery_overlay()
+        recovery_hashes = {**_load_recovery_overlay(), **_load_study_notes_overlay()}
         reviewed = _load_classification()
         reviewed_current_paths = {_current_path(row) for row in reviewed}
         config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))

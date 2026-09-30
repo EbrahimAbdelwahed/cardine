@@ -1,6 +1,6 @@
 # Cardine development memory
 
-Updated: 2026-09-29 CEST
+Updated: 2026-09-30 CEST
 
 This file is the authoritative entrypoint for Cardine development memory.
 Cardine-specific plans, logs, notes, and handoffs belong in this repository's
@@ -8,6 +8,8 @@ Cardine-specific plans, logs, notes, and handoffs belong in this repository's
 archive and must not be treated as Cardine's current state.
 
 ## Start here
+
+- [Source, PDF and audio study notes](logs/2026-09-30--cardine--source-study-notes--log.md) — approved source-page generation, Groq Turbo transcription, editable PDF lesson ranges, review and dependency-aware publication; based on PR #5.
 
 - [Flashcard generation repair publication](logs/2026-09-29--cardine--flashcard-generation-publication--log.md) — the owner authorized publishing the generation repair to PR #5; empty-array wire schema, truthful failure and new-turn retry regressions verified offline; preview update and live generation remain pending.
 
@@ -22,7 +24,7 @@ archive and must not be treated as Cardine's current state.
 - [Page-aware flashcard locator fix](logs/2026-08-15-0040--cardine--page-aware-flashcard-locator-fix--log.md) — repeated live flashcard turns selected the correct capability but failed before Luna because planning omitted immutable PDF page provenance from the locator; planner and resolver now share one canonical formatter while exact integrity validation remains fail-closed.
 - [Password-free runtime API key UI](logs/2026-08-14-2352--cardine--password-free-runtime-api-key-ui--log.md) — the loopback `local_repository` shell has no password gate but exposes write-only, process-local OpenAI credential settings backed by the same store used by Luna; local mutations require exact same-origin requests.
 - [Atomic capability progress message](logs/2026-08-14-2223--cardine--atomic-capability-progress-message--log.md) — Luna can atomically select a safe host-owned progress sentence with `start_capability`; it is authenticated, process-local, non-canonical, non-durable, and does not weaken host-owned execution.
-- [Restart-safe paired material generation](logs/2026-08-14-1935--materials--restart-safe-paired-generation--log.md) and [four-slice spec](../specs/material-generation-workflow/README.md) — Slices 01–02 now provide lesson-material lineage plus Luna-only checkpointed complete/study proposals; HUMAN approval/publication and product entrypoints remain unauthorized Slices 03–04.
+- [Restart-safe paired material generation](logs/2026-08-14-1935--materials--restart-safe-paired-generation--log.md) and [four-slice spec](../specs/material-generation-workflow/README.md) — Slices 01–02 now provide lesson-material lineage plus Luna-only checkpointed complete/study proposals; the approved 2026-09-30 source-study-notes continuation adds HUMAN publication and the source-page entrypoint; the separate chat-generation tool remains deferred.
 - [Minimal study memory implementation](logs/2026-08-14-1649--cardine--minimal-study-memory--log.md) — private record/search tools for topics covered and attributable learner signals, prompt-private canonical storage, and completed-capability settlement.
 - [Learner Model Context Map contract](notes/2026-08-14-1446--cardine--learner-model-context-map-contract--note.md) — recovered target behavior for attributable study evidence, multidimensional mastery, exam-relative readiness, coverage/confidence, and the strict separation between factual ledgers and derived estimates.
 - [Repeated deictic flashcard live failure](logs/2026-08-14-1438--cardine--repeated-deictic-flashcard-live-failure--log.md) — the clean-path lesson-scope fix misses a repeated failed `questa lezione` request, falls back to the 3,676-chunk global planner, and misreports the local planning failure as provider unavailability.
