@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from cardine.hosts import (
     AdvertisedCapability,
     AssistantMessageDecision,
+    InvokeToolDecision,
     StartCapabilityDecision,
     TutorDecision,
     TutorHostContext,
@@ -112,7 +113,7 @@ def test_flashcard_meta_question_still_uses_language_model() -> None:
     assert delegate.calls == 1
 
 
-def test_explicit_grounded_explanation_skips_routing_model_call() -> None:
+def test_explicit_grounded_explanation_enforces_effect_after_routing() -> None:
     delegate = _CountingPort()
 
     decision = asyncio.run(
@@ -123,7 +124,7 @@ def test_explicit_grounded_explanation_skips_routing_model_call() -> None:
 
     assert isinstance(decision, StartCapabilityDecision)
     assert decision.capability_id == "explain_concept"
-    assert delegate.calls == 0
+    assert delegate.calls == 1
 
 
 def test_answered_clarification_enriches_the_single_model_call() -> None:
@@ -183,3 +184,16 @@ def test_history_scoped_model_promise_cannot_complete_the_effect() -> None:
 
     assert not isinstance(decision, AssistantMessageDecision)
     assert delegate.calls == 1
+
+
+def test_difficulty_explanation_preserves_study_memory_decisions() -> None:
+    for tool in ("study_memory.record", "study_memory.search"):
+        memory = InvokeToolDecision(tool, {})
+        delegate = _CountingPort(memory)
+        decision = asyncio.run(
+            SourceGroundedTutorDecisionPort(delegate).decide(
+                _context("I don't understand glycolysis; explain it"), _Token()
+            )
+        )
+        assert decision == memory
+        assert delegate.calls == 1

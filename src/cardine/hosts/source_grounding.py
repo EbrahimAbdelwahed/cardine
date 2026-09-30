@@ -120,11 +120,10 @@ class SourceGroundedTutorDecisionPort(TutorDecisionPort):
     async def decide(
         self, context: TutorHostContext, interruption: TutorInterruptionToken
     ) -> TutorDecision:
-        if context.pending_continuation is None:
-            direct = _grounded_explanation_decision(context)
-            if direct is not None:
-                return direct
-        return await self._delegate.decide(context, interruption)
+        # The delegate can record/search study memory before explanation.
+        # Enforce the source effect after preserving those tool decisions.
+        decision = await self._delegate.decide(context, interruption)
+        return _require_grounded_explanation(decision, context)
 
 
 def _grounded_explanation_decision(

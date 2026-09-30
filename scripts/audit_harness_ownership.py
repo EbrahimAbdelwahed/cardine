@@ -61,6 +61,9 @@ TRANSITION_EXPORTS = {
     "require_text",
 }
 REVIEWED_NON_IMPORT_AST_VARIANCE = {
+    # Preserve closed typed gateway failures through the compact worker view.
+    # The exact post-baseline digest below binds this contract correction.
+    "src/study_agent/workers/contracts.py",
     # Current-head review repairs persist verified citation refs through the
     # copied session contract. Exact post-baseline digests bind both paths.
     "src/study_agent/sessions/events.py",
@@ -81,6 +84,9 @@ REVIEWED_NON_IMPORT_AST_VARIANCE = {
 # Exact bytes from committed Wave A product evolution after the historical
 # CA-01/CA-02 snapshots. Preserve the frozen ledgers and reject further drift.
 POST_BASELINE_SHA256 = {
+    "src/study_agent/workers/contracts.py": (
+        "80831c2c0c77e9c09bf20a9e109b503134a2bac39226ca68dcc3b671afca270c"
+    ),
     "src/study_agent/ports/model.py": (
         "b5bdee42438f04ea94cd3dfb71e7888ee72a00ac84080665c8fe6af06bfea856"
     ),
@@ -121,7 +127,7 @@ POST_BASELINE_SHA256 = {
         "cdceb44529c569e2bc5e01e355880b01c0ec03b74dd1abc4e7c288937e4aec5c"
     ),
     "src/cardine/demo/ui_application.py": (
-        "e19c75834bb6d2aafe1f9957883413985d940009428f6d7eb7adfac6bc7ae0e3"
+        "9ce4b20efbda5d2135ee636b886feef274d45d5b9178a9888500cf3ee500b7cc"
     ),
     "src/cardine/hosts/contracts.py": (
         "df3e864ef0131f7c09dcc985529950269fbf6afef81b679c07f213b5ebdd3999"
@@ -163,7 +169,7 @@ POST_BASELINE_SHA256 = {
         "1314f6d6bea53980da151de5e4c4366287c3dcc057931c9dc9bb007ad8ebb5b8"
     ),
     "src/cardine/hosts/source_grounding.py": (
-        "e2da30371b09cf2bbd018fc8051aaddc560b85b596b961b993c4fd03c43e84a0"
+        "656325396f57be1804fc44c2ed9e7b9df960e91660f570f00168d38bdd32615b"
     ),
 }
 
