@@ -415,6 +415,7 @@ def reduce_tutor_presentation_recorded(
         "event_id": str(record.event_id),
         "course_sequence": record.course_sequence,
         "occurred_at": _timestamp(record.occurred_at),
+        **({"source_refs": record.source_refs} if record.source_refs else {}),
     }
     session["last_event_at"] = _timestamp(event.occurred_at)
     sessions[session_id] = session

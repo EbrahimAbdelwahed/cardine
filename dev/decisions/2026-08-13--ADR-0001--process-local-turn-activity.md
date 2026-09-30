@@ -3,6 +3,11 @@
 Date: 2026-08-13
 Status: Accepted
 
+Amended 2026-09-28: the owner requested failure observability in the existing
+trace store. Safe operational phases, timing, closed failure codes, HTTP status,
+and owned code locations are now allowed; payloads, UI titles, and progress
+remain excluded. See [the implementation log](../logs/2026-09-28--cardine--failed-turn-observability--log.md).
+
 ## Context
 
 Tutor turns are blocking HTTP requests, while the learner needs truthful progress in the chat. The existing turn trace intentionally stores only a typed decision discriminator and declares that it captures no payloads. Extending it with UI activity would weaken that policy. A canonical event created only to animate the interface would also give presentation state inappropriate domain authority.

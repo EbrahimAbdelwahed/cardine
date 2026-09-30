@@ -212,7 +212,19 @@ def _copy_input(source: Path, target: Path, maximum: int) -> str:
     return digest.hexdigest()
 
 
-def _sandbox_profile() -> str:
+def _worker_python() -> Path:
+    # python.org framework bin/python is a launcher that posix_spawns this
+    # executable. Invoke the real interpreter directly: process-fork stays denied.
+    framework = Path(sys.base_prefix) / "Resources/Python.app/Contents/MacOS/Python"
+    return (framework if framework.is_file() else Path(sys.executable)).resolve()
+
+
+def _sandbox_profile(*, python: Path, private: Path) -> str:
+    # realpath traverses parent directories before opening allowed runtime files.
+    # Permit metadata only on these exact ancestors, never their file contents.
+    roots = (python, Path(sys.base_prefix).resolve(), private)
+    ancestors = sorted({str(parent) for root in roots for parent in root.parents})
+    metadata = " ".join(f"(literal {json.dumps(path)})" for path in ancestors)
     return """(version 1)
 (deny default)
 (import \"system.sb\")
@@ -225,7 +237,7 @@ def _sandbox_profile() -> str:
 (allow signal (target self))
 (deny process-fork)
 (deny network*)
-"""
+""" + f"(allow file-read-metadata {metadata})\n"
 
 
 def _resident_bytes(pid: int) -> int | None:
@@ -311,17 +323,17 @@ def _convert_pdf_in_worker(
         child_copy.write_bytes(child.read_bytes())
         os.chmod(child_copy, 0o400)
         pdf_sha256 = _copy_input(source, copied, effective.max_document_bytes)
-        python = Path(sys.executable).resolve()
+        python = _worker_python()
         command = [
             "/usr/bin/sandbox-exec",
             "-D",
-            f"PYTHON_ROOT={python.parent.parent}",
+            f"PYTHON_ROOT={Path(sys.base_prefix).resolve()}",
             "-D",
             f"PRIVATE_ROOT={private}",
             "-D",
             f"PYTHON={python}",
             "-p",
-            _sandbox_profile(),
+            _sandbox_profile(python=python, private=private),
             str(python),
             "-I",
             "-S",

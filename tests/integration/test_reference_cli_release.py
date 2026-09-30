@@ -47,6 +47,18 @@ _VERIFIED_ANYDOC_WORKER = (
 )
 
 
+_VERIFIED_ANYDOC_WORKER = (
+    sys.platform == "darwin"
+    and platform.machine() == "arm64"
+    and sys.version_info[:2] in {(3, 12), (3, 13)}
+    and shutil.which("sandbox-exec") == "/usr/bin/sandbox-exec"
+)
+_requires_verified_worker = pytest.mark.skipif(
+    not _VERIFIED_ANYDOC_WORKER,
+    reason="verified AnyDoc containment requires macOS arm64 with sandbox-exec",
+)
+
+
 class _FixtureModel:
     """Host-registered deterministic adapter; never part of production defaults."""
 
@@ -318,10 +330,7 @@ def test_offline_release_journey_survives_restart_and_is_deterministic(
     assert doctor["data"]["status"] == "ok"
 
 
-@pytest.mark.skipif(
-    not _VERIFIED_ANYDOC_WORKER,
-    reason="canonical AnyDoc PDF admission requires verified macOS arm64 sandbox containment",
-)
+@_requires_verified_worker
 def test_cli_admits_pdf_through_the_same_canonical_source_ledger(
     tmp_path: Path, capsys: Any
 ) -> None:

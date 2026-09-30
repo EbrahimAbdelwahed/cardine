@@ -90,6 +90,7 @@ class CourseSourceContent:
             for event in stream
         )
         projection: Projection | None = None
+        historical: dict[int, Projection] = {}
         if has_generated:
             load_projection = getattr(self._events, "projection", None)
             if not callable(load_projection):
@@ -108,6 +109,25 @@ class CourseSourceContent:
                     SourceContentErrorCode.INTEGRITY_ERROR,
                     "generated source projection is missing or stale",
                 )
+            project_prefixes = getattr(self._events, "projections_at", None)
+            if not callable(project_prefixes):
+                raise SourceContentError(
+                    SourceContentErrorCode.INTEGRITY_ERROR,
+                    "generated source requires historical event replay",
+                )
+            prefixes = tuple(
+                event.course_sequence - 1
+                for event in stream
+                if event.event_type == SOURCE_REVISION_INGESTED
+                and event.schema_version == GENERATED_SOURCE_REVISION_SCHEMA_VERSION
+            )
+            try:
+                historical = project_prefixes(self._course_id, prefixes)
+            except (OSError, RuntimeError, ValueError) as error:
+                raise SourceContentError(
+                    SourceContentErrorCode.INTEGRITY_ERROR,
+                    "generated source historical replay failed",
+                ) from error
         for event in stream:
             if (
                 event.event_type == SOURCE_REVISION_SELECTED
@@ -135,8 +155,14 @@ class CourseSourceContent:
             try:
                 revision = decode_source_revision_event(event, self._blobs.get)
                 if event.schema_version == GENERATED_SOURCE_REVISION_SCHEMA_VERSION:
-                    assert projection is not None
-                    validate_generated_source_admission(projection.state, event, revision)
+                    admitted_at = historical.get(event.course_sequence - 1)
+                    if (
+                        not isinstance(admitted_at, Projection)
+                        or admitted_at.course_id != self._course_id
+                        or admitted_at.sequence != event.course_sequence - 1
+                    ):
+                        raise ValueError("generated source historical projection is invalid")
+                    validate_generated_source_admission(admitted_at.state, event, revision)
                 normalized = self._blobs.get(revision.source.normalized_blob)
                 text = normalized.decode("utf-8", errors="strict")
             except LookupError as error:

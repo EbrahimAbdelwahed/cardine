@@ -317,8 +317,8 @@ class TurnActivityStore:
                 return
             value = cast(Mapping[str, object], request_id)
             request_id = current[1]
-        if not isinstance(request_id, str):
-            raise TypeError("request id must be a string")
+        if not isinstance(request_id, str) or not request_id:
+            raise ValueError("turn activity request id is invalid")
         if not isinstance(value, Mapping):
             raise TypeError("settled activity record must be an object")
         kind = _validate_kind(value.get("kind"))

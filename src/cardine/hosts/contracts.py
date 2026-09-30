@@ -475,6 +475,7 @@ class TutorPresentationReceipt:
     continuation_fingerprint: str | None = None
     capability_identity: str | None = None
     response_schema: JsonObject | None = None
+    source_refs: tuple[JsonObject, ...] = ()
 
     SCHEMA_VERSION = 1
 
@@ -520,6 +521,14 @@ class TutorPresentationReceipt:
             if len(_canonical_bytes(schema)) > MAX_TUTOR_PRESENTATION_SCHEMA_BYTES:
                 raise ValueError("response schema exceeds presentation bounds")
             object.__setattr__(self, "response_schema", schema)
+        refs = tuple(freeze_object(item) for item in self.source_refs)
+        if len(refs) > 64 or any(
+            set(ref) != {"source_id", "revision_id", "locator"}
+            or any(not isinstance(ref[key], str) or not ref[key] for key in ref)
+            for ref in refs
+        ):
+            raise ValueError("presentation source refs are invalid")
+        object.__setattr__(self, "source_refs", refs)
 
     @property
     def fingerprint(self) -> str:
@@ -537,6 +546,7 @@ class TutorPresentationReceipt:
             "continuation_fingerprint": self.continuation_fingerprint,
             "capability_identity": self.capability_identity,
             "response_schema": self.response_schema,
+            **({"source_refs": self.source_refs} if self.source_refs else {}),
         }
 
     def to_bytes(self) -> bytes:
@@ -558,6 +568,7 @@ class TutorPresentationReceipt:
                 "continuation_fingerprint",
                 "capability_identity",
                 "response_schema",
+                *( ["source_refs"] if "source_refs" in raw else [] ),
             },
             "tutor presentation receipt",
         )
@@ -576,6 +587,10 @@ class TutorPresentationReceipt:
             _optional_string(raw, "continuation_fingerprint"),
             _optional_string(raw, "capability_identity"),
             schema,
+            tuple(
+                _object(item, "source_ref")
+                for item in cast(tuple[JsonValue, ...], raw.get("source_refs", ()))
+            ),
         )
         if receipt.to_bytes() != data:
             raise ValueError("tutor presentation receipt is not semantically canonical")

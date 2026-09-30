@@ -38,6 +38,7 @@ from study_agent.ports import (
     ModelStreamEvent,
 )
 from study_agent.repository_config import LocalRepositoryConfig, ModelAdapterConfig
+from tests.receipt_assertions import without_transient_activity
 
 COURSE = CourseId("closure-course")
 SESSION = SessionId("closure-session")
@@ -186,10 +187,11 @@ def test_repository_route_control_matrix_and_restart_safe_chat(tmp_path: Path) -
     assert [item["role"] for item in timeline] == ["learner", "assistant"]
     assert timeline[-1]["content"] == "Which valve should we focus on?"
 
+    # Exact retry is a no-op after restart; a different request at the old
+    # sequence is rejected before model invocation or canonical writes.
     retry = restarted.post("/api/v1/session/turns", command)
-    assert retry["status"] == receipt["status"]
-    assert retry["presentation_id"] == receipt["presentation_id"]
-    assert retry["high_water_sequence"] == receipt["high_water_sequence"]
+    assert without_transient_activity(retry) == without_transient_activity(receipt)
+    assert retry["activity_records"] == ()
     with pytest.raises(UiRequestError) as stale:
         restarted.post(
             "/api/v1/session/turns",

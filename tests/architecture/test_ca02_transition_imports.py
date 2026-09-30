@@ -121,3 +121,22 @@ def test_ca02_audit_excludes_only_cardine_integration_modules(
 
     assert "src/cardine/integrations/approved.py" not in paths
     assert "src/study_agent/integrations/unreviewed.py" in paths
+
+
+@pytest.mark.parametrize("mutation", ("duplicate", "invalid_digest", "outside_path"))
+def test_recovery_overlay_rejects_invalid_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
+) -> None:
+    payload = json.loads(audit.RECOVERY_OVERLAY.read_text(encoding="utf-8"))
+    if mutation == "duplicate":
+        payload["rows"][1] = dict(payload["rows"][0])
+    elif mutation == "invalid_digest":
+        payload["rows"][0]["sha256"] = "not-a-digest"
+    else:
+        payload["rows"][0]["path"] = "src/study_agent/../outside.py"
+    candidate = tmp_path / "recovery.json"
+    candidate.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(audit, "RECOVERY_OVERLAY", candidate)
+
+    with pytest.raises(ValueError, match="recovery overlay"):
+        audit._load_recovery_overlay()

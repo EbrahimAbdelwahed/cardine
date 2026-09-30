@@ -57,3 +57,18 @@ _Avoid_: linked worktree
 - **CA-10 prerequisite:** remove the copied core only after parity and import
   gates pass. Until then, `src/study_agent` is current truth and must not be
   deleted or described as already migrated.
+
+## Owner-approved recovery and package adoption
+
+On 2026-09-28 the owner accepted the PR #5 recovery changes and their exact-byte
+custody overlay at checkpoint `50cb0cb`. This approval is a temporary recovery
+baseline; it does not close installed-package adoption or removal gates.
+
+The terminal architecture is a released, versioned `study-agent-harness`
+dependency, with reproducible version pinning and tested upgrades to subsequent
+releases. Cardine must not retain an independently maintained copy of Harness.
+Before migration, reconcile the approved copied-core changes with the Harness
+package: reusable behavior belongs upstream, while product-specific behavior
+belongs behind Cardine adapters. Prove parity against the installed artifact
+(CA-08), then remove `src/study_agent` and temporary transition paths (CA-10).
+An ownership-audit pass alone is not evidence that this migration is complete.

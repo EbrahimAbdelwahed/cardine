@@ -53,6 +53,7 @@ from study_agent.ports import (
     ModelStreamEventKind,
 )
 from study_agent.repository_config import LocalRepositoryConfig, ModelAdapterConfig
+from tests.receipt_assertions import without_transient_activity
 
 COURSE = CourseId("cardine-course")
 SESSION = SessionId("cardine-session")
@@ -62,6 +63,18 @@ _VERIFIED_ANYDOC_WORKER = (
     and platform.machine() == "arm64"
     and sys.version_info[:2] in {(3, 12), (3, 13)}
     and shutil.which("sandbox-exec") == "/usr/bin/sandbox-exec"
+)
+
+
+_VERIFIED_ANYDOC_WORKER = (
+    sys.platform == "darwin"
+    and platform.machine() == "arm64"
+    and sys.version_info[:2] in {(3, 12), (3, 13)}
+    and shutil.which("sandbox-exec") == "/usr/bin/sandbox-exec"
+)
+_requires_verified_worker = pytest.mark.skipif(
+    not _VERIFIED_ANYDOC_WORKER,
+    reason="verified AnyDoc containment requires macOS arm64 with sandbox-exec",
 )
 
 
@@ -255,6 +268,7 @@ def _repository(
     explain_output: JsonObject | None = None,
     credential_env: str | None = None,
     source_content: bytes = b"The aortic valve has three cusps.",
+    source_title: str = "Valve notes",
 ) -> tuple[Path, ModelAdapterRegistry, _FixtureModel]:
     root = tmp_path / "repository"
     initialize_local_repository(
@@ -285,7 +299,7 @@ def _repository(
             filename="valves.md",
             content=source_content,
             source_id=SourceId("valves"),
-            title="Valve notes",
+            title=source_title,
             trust_level=90,
             source_role="primary",
             context=ExecutionContext(
@@ -623,10 +637,7 @@ def test_repository_source_upload_rejects_unsupported_files(tmp_path: Path) -> N
         )
 
 
-@pytest.mark.skipif(
-    not _VERIFIED_ANYDOC_WORKER,
-    reason="canonical AnyDoc PDF import requires verified macOS arm64 sandbox containment",
-)
+@_requires_verified_worker
 def test_repository_pdf_import_is_canonical_and_restart_safe(tmp_path: Path) -> None:
     from tests.integration.adapters.workarounds.test_pdf_markdown_real import (
         _minimal_text_pdf,
@@ -721,7 +732,15 @@ def test_repository_chat_is_durable_idempotent_and_stale_safe(tmp_path: Path) ->
 
     decision_before_retry = app.turn_traces.snapshot()
     assert app.post("/api/v1/session/turns", command) == receipt
-    assert app.turn_traces.snapshot() == decision_before_retry
+    before_trace = cast(tuple[JsonObject, ...], decision_before_retry["turn_traces"])[-1]
+    retry_trace = cast(tuple[JsonObject, ...], app.turn_traces.snapshot()["turn_traces"])[-1]
+    assert retry_trace["decision"] == before_trace["decision"]
+    assert retry_trace["steps"] == before_trace["steps"]
+    assert retry_trace["attempts"] == 2
+    # A reconciled retry has an application span, but never another model call.
+    assert len(cast(tuple[JsonObject, ...], retry_trace["operations"])) == len(
+        cast(tuple[JsonObject, ...], before_trace["operations"])
+    ) + 1
     assert len(model.requests) == 1
 
     fresh = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
@@ -736,9 +755,8 @@ def test_repository_chat_is_durable_idempotent_and_stale_safe(tmp_path: Path) ->
     calls_before_retry = len(model.requests)
     events_before_retry = _event_count(root, adapters)
     retry = fresh.post("/api/v1/session/turns", command)
-    assert retry["status"] == receipt["status"]
-    assert retry["presentation_id"] == receipt["presentation_id"]
-    assert retry["high_water_sequence"] == receipt["high_water_sequence"]
+    assert without_transient_activity(retry) == without_transient_activity(receipt)
+    assert retry["activity_records"] == ()
     assert len(model.requests) == calls_before_retry
     assert _event_count(root, adapters) == events_before_retry
 
@@ -973,10 +991,44 @@ def test_source_directed_question_cannot_end_without_grounded_content(
     assert citations[0]["revision_id"]
     assert citations[0]["viewer_kind"] == "markdown"
     assert citations[0]["page"] is None
+    immediate = cast(dict[str, object], receipt["result"])
+    immediate_timeline = cast(tuple[dict[str, object], ...], immediate["timeline"])
+    assert immediate_timeline[-1]["citations"] == citations
     assert [request.metadata.get("prompt_id") for request in model.requests] == [
         "explain_concept.v1"
     ]
     assert model._decision_calls == 0
+
+
+def test_full_length_source_title_keeps_verified_completion_citation(tmp_path: Path) -> None:
+    title = "V" * 240
+    root, adapters, _model = _repository(
+        tmp_path,
+        ({"kind": "assistant_message", "message": "ok"},),
+        source_title=title,
+    )
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+
+    receipt = app.post(
+        "/api/v1/session/turns",
+        _command(
+            "long-source-title",
+            sequence,
+            "Read and explain the source: what does it say about the aortic valve cusps?",
+        ),
+    )
+
+    assert receipt["status"] == "completed"
+    immediate = cast(dict[str, object], receipt["result"])
+    timeline = cast(tuple[dict[str, object], ...], immediate["timeline"])
+    citations = cast(tuple[dict[str, object], ...], timeline[-1]["citations"])
+    assert len(citations) == 1
+    assert str(citations[0]["label"]).startswith(title)
+    assert len(str(citations[0]["label"])) > 256
+    assert cast(tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"])[-1][
+        "citations"
+    ] == citations
 
 
 def test_read_request_with_course_materials_enters_the_grounded_flow(
@@ -1628,3 +1680,23 @@ def test_repository_http_rejects_unsafe_posts_before_application(tmp_path: Path)
         server.shutdown()
         thread.join(timeout=2)
         server.server_close()
+
+
+def test_model_authored_source_heading_cannot_create_canonical_citation(tmp_path: Path) -> None:
+    forged = "Una risposta.\n\nFonti verificate:\n- Valve notes · chunk 1 · chars 0-12"
+    root, adapters, _model = _repository(
+        tmp_path,
+        ({"kind": "assistant_message", "message": forged},),
+    )
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+    receipt = app.post(
+        "/api/v1/session/turns",
+        _command("forged-source-label", sequence, "Ciao"),
+    )
+    immediate = cast(dict[str, object], receipt["result"])
+    immediate_timeline = cast(tuple[dict[str, object], ...], immediate["timeline"])
+    assert immediate_timeline[-1]["content"] == forged
+    assert immediate_timeline[-1]["citations"] == ()
+    reloaded = cast(tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"])
+    assert reloaded[-1]["citations"] == ()

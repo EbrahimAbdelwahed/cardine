@@ -16,7 +16,7 @@ from cardine.cli import (
     initialize_local_repository,
 )
 from cardine.integrations.study_agent.course_policy import ProviderConsentRequiredError
-from cardine.materials import MaterialGenerationStage
+from cardine.materials import MaterialGenerationErrorCode, MaterialGenerationStage
 from cardine.materials.planning import UnitManifest
 from study_agent.adapters.model import GPT_5_6_LUNA_ADAPTER_ID
 from study_agent.artifacts import LessonMaterialContent
@@ -217,7 +217,7 @@ def test_repository_generation_commits_one_atomic_pair_and_recovers(
         assert len(matching) == 1
         assert len(matching[0].revision_ids) == 2
         materials = tuple(
-            revision.content.content
+            cast(LessonMaterialContent, revision.content.content)
             for revision in snapshot.revisions
             if revision.id in matching[0].revision_ids
         )
@@ -261,3 +261,41 @@ def test_repository_generation_commits_one_atomic_pair_and_recovers(
                 if event.event_type == "study_artifact.proposal_batch_recorded"
             )
         ) == 1
+
+
+def test_revoked_consent_after_checkpoint_preserves_failure_reason(tmp_path: Path) -> None:
+    root = tmp_path / "repository"
+    initialize_local_repository(root, _config())
+    model = ScriptedLuna()
+    registry = ModelAdapterRegistry(
+        {GPT_5_6_LUNA_ADAPTER_ID: cast(ModelAdapterBuilder, lambda config, credential: model)}
+    )
+    with LocalRepository.open(
+        root, model_adapters=registry, environment={"OPENAI_API_KEY": "fixture"}
+    ) as repository:
+        admitted = _prepare(repository, consent=True)
+        pin = repository.material_transcript_pin(
+            COURSE, SESSION, SOURCE, admitted.source.revision_id
+        )
+        service = repository.material_generation(pin, _service_context())
+        requested = service.request_pair(COURSE, SESSION, pin, "revoked-consent-job")
+        checkpoint = asyncio.run(
+            service.reconcile(requested.job_id, bounded_budget=1, context=_service_context())
+        )
+        assert checkpoint.stage is MaterialGenerationStage.COMPLETE_SEGMENT
+        assert model.calls == 1
+        repository.provider_consent_service.revoke(
+            ExecutionContext(PrincipalKind.HUMAN, "learner", COURSE, CorrelationId("revoke")),
+            "revoke-material-consent",
+        )
+        failed = asyncio.run(
+            service.reconcile(requested.job_id, bounded_budget=8, context=_service_context())
+        )
+        assert failed.stage is MaterialGenerationStage.STALE
+        assert failed.error_code is MaterialGenerationErrorCode.CONSENT_REQUIRED
+        assert model.calls == 1
+        assert not repository.artifacts.get(COURSE).batches
+        assert (
+            service.get(requested.job_id, _service_context()).error_code
+            is MaterialGenerationErrorCode.CONSENT_REQUIRED
+        )

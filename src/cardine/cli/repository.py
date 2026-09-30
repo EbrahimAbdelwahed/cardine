@@ -316,8 +316,8 @@ class _ObservedToolExecutor:
             token = begin_activity(kind="retrieval", ref=self._ref, target=self._target)
         try:
             output = await self._inner.invoke(arguments)
-            items = output.get("items", ()) if isinstance(output, Mapping) else ()
-            count = len(items) if isinstance(items, tuple) else None
+            items = output.get("items") if isinstance(output, Mapping) else None
+            count = len(items) if isinstance(items, (tuple, list)) else None
             finish_activity(token, status="done", count=count)
             return output
         except Exception:
@@ -883,6 +883,8 @@ def _explanation_product_receipt(
     canonical_ids: set[str] = set()
     locators: list[str] = []
     seen_locators: set[str] = set()
+    source_refs: list[JsonObject] = []
+    seen_refs: set[tuple[str, str, str]] = set()
     for raw_segment in raw_segments:
         if not isinstance(raw_segment, Mapping):
             return None
@@ -921,6 +923,12 @@ def _explanation_product_receipt(
             if locator not in seen_locators:
                 seen_locators.add(locator)
                 locators.append(locator)
+            ref = (source_id, revision_id, locator)
+            if ref not in seen_refs:
+                seen_refs.add(ref)
+                source_refs.append(
+                    {"source_id": source_id, "revision_id": revision_id, "locator": locator}
+                )
             canonical_ids.update((source_id, revision_id, chunk_id))
         pieces.append(text)
     content = _completion_content_with_sources("\n\n".join(pieces).strip(), locators)
@@ -930,6 +938,7 @@ def _explanation_product_receipt(
             reference.run_id,
             content,
             tuple(sorted(canonical_ids)),
+            tuple(source_refs),
         )
     except (TypeError, ValueError):
         return None
@@ -1916,7 +1925,7 @@ class LocalRepository:
     ) -> None:
         try:
             self._material_generation_preflight(pin, context, stage)
-        except (ProviderConsentRequiredError, ValueError) as error:
+        except ValueError as error:
             raise MaterialGenerationStale(str(error)) from error
 
     def _material_generation_preflight(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import platform
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -211,6 +212,7 @@ def to_markdown_bytes(data, kind):
         ),
     ),
 )
+@_requires_verified_worker
 def test_worker_maps_encryption_and_denies_network(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -259,3 +261,72 @@ def to_markdown_bytes(data, kind):
 
     assert captured.value.code == AnyDocErrorCode.WORKER_TIMEOUT.value
     assert tuple(tmp_path.iterdir()) == (source,)
+
+
+def test_unqualified_platform_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "lesson.pdf"
+    source.write_bytes(_minimal_text_pdf())
+    monkeypatch.setattr(sys, "platform", "linux")
+
+    with pytest.raises(AnyDocWorkerError) as captured:
+        convert_pdf_in_worker(source)
+
+    assert captured.value.code == AnyDocErrorCode.WORKER_UNAVAILABLE.value
+    assert tuple(tmp_path.iterdir()) == (source,)
+
+
+def test_framework_python_runtime_root_includes_stdlib(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base = tmp_path / "Python.framework" / "Versions" / "3.13"
+    executable = base / "Resources" / "Python.app" / "Contents" / "MacOS" / "Python"
+    monkeypatch.setattr(sys, "base_prefix", str(base))
+    monkeypatch.setattr(sys, "executable", str(executable))
+    monkeypatch.setattr(anydoc_runtime, "_verified_wheel", lambda: b"fixture")
+    monkeypatch.setattr(anydoc_runtime, "_extract_verified_wheel", lambda *_args: None)
+    source = tmp_path / "input.pdf"
+    source.write_bytes(_minimal_text_pdf())
+
+    def inspect_spawn(command: list[str], **_kwargs: object) -> None:
+        assert f"PYTHON_ROOT={base.resolve()}" in command
+        assert f"PYTHON={executable.resolve()}" in command
+        raise OSError("fixture stops before actual sandbox execution")
+
+    monkeypatch.setattr(subprocess, "Popen", inspect_spawn)
+    with pytest.raises(AnyDocWorkerError) as captured:
+        convert_pdf_in_worker(source)
+    assert captured.value.code == AnyDocErrorCode.WORKER_UNAVAILABLE.value
+
+
+def test_runtime_ancestors_allow_metadata_without_broadening_content_access(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base = tmp_path / "framework" / "version"
+    python = base / "bin" / "python"
+    private = tmp_path / "isolated"
+    monkeypatch.setattr(sys, "base_prefix", str(base))
+
+    profile = anydoc_runtime._sandbox_profile(python=python, private=private)
+
+    assert f'(literal "{base.parent}")' in profile
+    assert "(allow file-read-metadata (literal " in profile
+    assert "(deny network*)" in profile
+    assert "(deny process-fork)" in profile
+    assert '(subpath (param "PYTHON_ROOT"))' in profile
+    assert '(subpath (param "PRIVATE_ROOT"))' in profile
+    assert "(allow file-read-metadata)" not in profile
+
+
+def test_framework_launcher_is_replaced_with_real_interpreter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base = tmp_path / "framework" / "3.13"
+    real = base / "Resources/Python.app/Contents/MacOS/Python"
+    real.parent.mkdir(parents=True)
+    real.write_bytes(b"fixture interpreter")
+    monkeypatch.setattr(sys, "base_prefix", str(base))
+    monkeypatch.setattr(sys, "executable", str(base / "bin/python3.13"))
+
+    assert anydoc_runtime._worker_python() == real.resolve()

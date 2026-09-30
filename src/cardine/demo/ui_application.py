@@ -732,6 +732,7 @@ class RepositoryUiApplication(UiApplicationPort):
                         if continuation_fingerprint is None
                         else application.resume_continuation(continuation_fingerprint, turn)
                     )
+                    self._turn_traces.record_outcome(trace_id, result.status.value)
                     repository.settle_study_memory(self._course_id, self._session_id)
                     projection, refreshed = self._captured_state(repository)
 
@@ -747,6 +748,9 @@ class RepositoryUiApplication(UiApplicationPort):
                             "presentations": ProjectionTutorPresentationView(
                                 captured
                             ).presentations(self._course_id, self._session_id),
+                            "source_records": repository.for_course(
+                                self._course_id
+                            ).content.catalog(),
                             "continuation": result.pending_continuation,
                             "study_memory_ids": repository.study_memory.validated_memory_ids(
                                 self._course_id,
@@ -3404,7 +3408,9 @@ def _presentation_timeline_item(
         "interaction_id": str(getattr(item, "id", "")),
         "occurred_at": None if occurred_at is None else occurred_at.isoformat(),
         "content": content,
-        "citations": _source_viewer_citations(content, source_records),
+        "citations": _source_viewer_citations(
+            getattr(item, "source_refs", ()), source_records
+        ),
         "event_id": str(getattr(item, "event_id", "")),
         "course_sequence": getattr(item, "course_sequence", 0),
         "run_id": None,
@@ -3430,43 +3436,42 @@ def _source_viewer_payload(record: SourceRevisionRecord | None) -> JsonObject:
 
 
 def _source_viewer_citations(
-    content: str, source_records: Sequence[SourceRevisionRecord]
+    source_refs: Sequence[Mapping[str, object]],
+    source_records: Sequence[SourceRevisionRecord],
 ) -> tuple[JsonObject, ...]:
-    marker = "\n\nFonti verificate:\n"
-    if marker not in content:
-        return ()
-    raw_sources = content.rsplit(marker, 1)[1]
     citations: list[JsonObject] = []
     seen: set[tuple[str, str, str]] = set()
-    for raw_line in raw_sources.splitlines():
-        locator = raw_line.removeprefix("- ").strip() if raw_line.startswith("- ") else ""
-        if not locator or locator.startswith("Altre "):
+    for ref in source_refs:
+        raw_source_id = ref.get("source_id")
+        raw_revision_id = ref.get("revision_id")
+        raw_locator = ref.get("locator")
+        if not (
+            isinstance(raw_source_id, str)
+            and isinstance(raw_revision_id, str)
+            and isinstance(raw_locator, str)
+        ):
+            continue
+        source_id, revision_id, locator = raw_source_id, raw_revision_id, raw_locator
+        identity = (source_id, revision_id, locator)
+        if identity in seen:
             continue
         matches = tuple(
-            record
-            for record in source_records
-            if locator == record.source.title
-            or locator.startswith(record.source.title + " ·")
+            record for record in source_records
+            if str(record.source.source_id) == source_id
+            and str(record.source.revision_id) == revision_id
         )
         if len(matches) != 1:
             continue
-        record = matches[0]
-        identity = (
-            str(record.source.source_id),
-            str(record.source.revision_id),
-            locator,
-        )
-        if identity in seen:
-            continue
         seen.add(identity)
-        page_match = re.search(r" · pages? (\d+)(?:-| ·|$)", locator)
+        record = matches[0]
+        page_match = re.search(r" · pages? (\d+)(?:-| ·|$)", str(locator))
         viewer = _source_viewer_payload(record)
         citations.append(
             {
                 "label": locator,
                 "title": record.source.title,
-                "source_id": identity[0],
-                "revision_id": identity[1],
+                "source_id": source_id,
+                "revision_id": revision_id,
                 "viewer_kind": viewer["kind"],
                 "page": None if page_match is None else int(page_match.group(1)),
             }

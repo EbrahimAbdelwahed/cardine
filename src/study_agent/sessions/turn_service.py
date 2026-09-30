@@ -304,6 +304,7 @@ class SessionTurnService:
             command_fingerprint=command_fingerprint,
             event_id=event_id,
             course_sequence=receipt.observed_host_context_sequence + 1,
+            source_refs=receipt.source_refs,
         )
         existing = self._existing_presentation(presentation_view, context, requested)
         if existing is not None:

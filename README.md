@@ -57,6 +57,10 @@ cardine-shell-web \
   --private
 ```
 
+For a local loopback preview, omit `--private` and enter the model key in the
+browser Settings panel. Install `.[openai]` first (see `CONTRIBUTING.md`). The key
+stays process-local and must be entered again after restarting the preview.
+
 Production deployment uses the pinned container and Compose topology in
 [`docs/private-production.md`](docs/private-production.md). The browser owns
 presentation state only; canonical course, source, and session state remains

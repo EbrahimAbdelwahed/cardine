@@ -1,6 +1,6 @@
 # Cardine development memory
 
-Updated: 2026-08-15 00:40 CEST
+Updated: 2026-09-29 CEST
 
 This file is the authoritative entrypoint for Cardine development memory.
 Cardine-specific plans, logs, notes, and handoffs belong in this repository's
@@ -8,6 +8,16 @@ Cardine-specific plans, logs, notes, and handoffs belong in this repository's
 archive and must not be treated as Cardine's current state.
 
 ## Start here
+
+- [Flashcard generation repair publication](logs/2026-09-29--cardine--flashcard-generation-publication--log.md) — the owner authorized publishing the generation repair to PR #5; empty-array wire schema, truthful failure and new-turn retry regressions verified offline; preview update and live generation remain pending.
+
+- [Message Scroller and BeUI evaluation](logs/2026-09-28--cardine--message-scroller--log.md) — reader-aware chat navigation implemented; Citations and Prompt Input assessed with canonical source boundaries.
+
+- [Failed-turn observability](logs/2026-09-28--cardine--failed-turn-observability--log.md) — correlated, bounded failure/retry traces with safe transport and execution metadata; the owner approved the six-path custody update.
+
+- [Approved recovery custody and package target](logs/2026-09-28--cardine--approved-recovery-custody--log.md) — owner accepted the exact recovery bytes; installed-package parity and copied-core removal remain required.
+
+- [Recovery CI alignment and decision feedback](logs/2026-09-28--cardine--recovery-ci-alignment--log.md) — current development branch includes main; flashcard acceptance feedback is fixed, typing and package checks pass, ownership approval is recorded in the newer custody log; publication and live generation reproduction remain pending.
 
 - [Page-aware flashcard locator fix](logs/2026-08-15-0040--cardine--page-aware-flashcard-locator-fix--log.md) — repeated live flashcard turns selected the correct capability but failed before Luna because planning omitted immutable PDF page provenance from the locator; planner and resolver now share one canonical formatter while exact integrity validation remains fail-closed.
 - [Password-free runtime API key UI](logs/2026-08-14-2352--cardine--password-free-runtime-api-key-ui--log.md) — the loopback `local_repository` shell has no password gate but exposes write-only, process-local OpenAI credential settings backed by the same store used by Luna; local mutations require exact same-origin requests.

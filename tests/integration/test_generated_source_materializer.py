@@ -71,6 +71,7 @@ from study_agent.ingestion import (
     SOURCE_REVISION_INGESTED,
     SOURCE_REVISION_SCHEMA_VERSION,
     ChunkingConfig,
+    TextIngestionService,
     chunk_text,
     decode_source_revision_event,
     revision_id_for,
@@ -83,7 +84,9 @@ from study_agent.ingestion.projection import (
     reduce_source_revision,
 )
 from study_agent.ports.storage import EventSequenceConflictError
+from study_agent.retrieval import CourseSourceContent
 from study_agent.state import Projection
+from tests.course_fixtures import ExistingCourseView
 
 NOW = datetime(2026, 8, 14, 16, 30, tzinfo=UTC)
 COURSE = CourseId("course-materializer")
@@ -531,3 +534,79 @@ def test_study_material_waits_for_complete_source_then_both_materialize() -> Non
     assert study.source.generated_provenance is not None
     assert study.source.generated_provenance.variant is LessonMaterialVariant.STUDY
     assert len(events.events) == 6
+
+
+def test_generated_source_remains_readable_after_root_revision_changes() -> None:
+    materializer, events, blobs, complete_revision, study_revision = _fixture()
+    materializer.materialize(
+        artifact_revision_id=complete_revision,
+        context=ExecutionContext(PrincipalKind.SERVICE, "materializer", COURSE, CORRELATION),
+    )
+    materializer.materialize(
+        artifact_revision_id=study_revision,
+        context=ExecutionContext(PrincipalKind.SERVICE, "materializer", COURSE, CORRELATION),
+    )
+
+    replay_calls: list[tuple[int, ...]] = []
+
+    class ProjectedEvents:
+        def append(
+            self, course_id: CourseId, expected_sequence: int, new_events: Sequence[DomainEvent]
+        ) -> int:
+            return events.append(course_id, expected_sequence, new_events)
+
+        def read(self, course_id: CourseId, after_sequence: int = 0) -> Sequence[DomainEvent]:
+            return events.read(course_id, after_sequence)
+
+        def projection(self, course_id: CourseId) -> Projection:
+            assert course_id == COURSE
+            return _projection(events, blobs)
+
+        def projections_at(
+            self, course_id: CourseId, sequences: Sequence[int]
+        ) -> dict[int, Projection]:
+            assert course_id == COURSE
+            replay_calls.append(tuple(sequences))
+            return {
+                sequence: _projection(MemoryEvents(events.events[:sequence]), blobs)
+                for sequence in sequences
+            }
+
+    content = CourseSourceContent(COURSE, ProjectedEvents(), blobs)
+    generated_before = tuple(
+        row.source for row in content.catalog()
+        if row.source.content_origin is ContentOrigin.GENERATED
+    )
+    assert len(generated_before) == 2
+    assert len(replay_calls) == 1
+    assert len(replay_calls[0]) == 2
+
+    class WritableBlobs:
+        def put(self, content: bytes) -> BlobRef:
+            digest = sha256(content).hexdigest()
+            ref = BlobRef(BlobId(f"sha256:{digest}"), digest, len(content))
+            blobs.values[ref] = content
+            return ref
+
+        def get(self, ref: BlobRef) -> bytes:
+            return blobs.get(ref)
+
+    class FrozenClock:
+        def now(self) -> datetime:
+            return NOW
+
+    ingestion = TextIngestionService(
+        blobs=WritableBlobs(), events=events, clock=FrozenClock(), courses=ExistingCourseView()
+    )
+    ingestion.ingest(
+        filename="root.md", content=b"# Revised root\n\nDifferent content.\n",
+        source_id=ROOT_SOURCE, title="Root notes", trust_level=90,
+        source_role="primary",
+        context=ExecutionContext(PrincipalKind.SERVICE, "ingestion", COURSE, CORRELATION),
+    )
+    generated_after = tuple(
+        row.source for row in content.catalog()
+        if row.source.content_origin is ContentOrigin.GENERATED
+    )
+    assert generated_after == generated_before
+    assert len(replay_calls) == 2

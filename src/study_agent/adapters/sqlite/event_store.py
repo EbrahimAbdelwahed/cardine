@@ -19,6 +19,7 @@ from study_agent.ports.storage import EventSequenceConflictError
 from study_agent.state import (
     EventRegistry,
     Projection,
+    apply_event,
     canonical_json_bytes,
     canonical_json_object,
     event_from_bytes,
@@ -347,6 +348,35 @@ class SQLiteEventStore:
         with closing(self._connect()) as connection:
             current = self._current_sequence(connection, course_id)
             return self._load_projection(connection, course_id, current)
+
+    def projection_at(self, course_id: CourseId, sequence: int) -> Projection:
+        """Replay the canonical prefix, without trusting a later projection."""
+        return self.projections_at(course_id, (sequence,))[sequence]
+
+    def projections_at(
+        self, course_id: CourseId, sequences: Sequence[int]
+    ) -> dict[int, Projection]:
+        """Replay one canonical stream pass and retain requested prefix states."""
+        requested = set(sequences)
+        if any(type(sequence) is not int or sequence < 0 for sequence in requested):
+            raise ValueError("projection sequence must be non-negative")
+        if not requested:
+            return {}
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT envelope FROM events WHERE course_id = ? AND course_sequence <= ? "
+                "ORDER BY course_sequence",
+                (str(course_id), max(requested)),
+            ).fetchall()
+        current = Projection(course_id)
+        snapshots = {0: current} if 0 in requested else {}
+        for row in rows:
+            current = apply_event(current, event_from_bytes(bytes(row[0])), self._registry)
+            if current.sequence in requested:
+                snapshots[current.sequence] = current
+        if snapshots.keys() != requested:
+            raise ProjectionConsistencyError("canonical prefix is incomplete")
+        return snapshots
 
     def projection_bytes(self, course_id: CourseId) -> bytes:
         return self.projection(course_id).canonical_bytes()

@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from typing import cast
 
 from cardine.diagnostics import begin_activity
+from cardine.diagnostics.turn_trace import trace_operation
 from cardine.hosts import (
     TutorDecision,
     TutorHostContext,
@@ -54,6 +55,14 @@ class ModelTutorDecisionPort(TutorDecisionPort):
         self._model = model
 
     async def decide(
+        self,
+        context: TutorHostContext,
+        interruption: TutorInterruptionToken,
+    ) -> TutorDecision:
+        with trace_operation("model_decision"):
+            return await self._decide(context, interruption)
+
+    async def _decide(
         self,
         context: TutorHostContext,
         interruption: TutorInterruptionToken,
@@ -175,6 +184,8 @@ def _observe_decision(decision: TutorDecision) -> None:
                 begin_activity(kind="capability", ref=ref)
             except ValueError:
                 return
+
+
 def _advertised_capability_ids(schema: JsonObject) -> tuple[str, ...]:
     return _advertised_operation_names(
         schema, kind_value="start_capability", name_field="capability_id"
@@ -182,9 +193,7 @@ def _advertised_capability_ids(schema: JsonObject) -> tuple[str, ...]:
 
 
 def _advertised_tool_names(schema: JsonObject) -> tuple[str, ...]:
-    return _advertised_operation_names(
-        schema, kind_value="invoke_tool", name_field="tool_name"
-    )
+    return _advertised_operation_names(schema, kind_value="invoke_tool", name_field="tool_name")
 
 
 def _advertised_operation_names(
@@ -208,19 +217,12 @@ def _advertised_operation_names(
             continue
         kind_schema = branch_properties.get("kind")
         operation_name = branch_properties.get(name_field)
-        if (
-            not isinstance(kind_schema, Mapping)
-            or kind_schema.get("enum") != (kind_value,)
-        ):
+        if not isinstance(kind_schema, Mapping) or kind_schema.get("enum") != (kind_value,):
             continue
         if not isinstance(operation_name, Mapping):
             continue
         enum = operation_name.get("enum")
-        if (
-            isinstance(enum, tuple)
-            and len(enum) == 1
-            and isinstance(enum[0], str)
-        ):
+        if isinstance(enum, tuple) and len(enum) == 1 and isinstance(enum[0], str):
             names.append(enum[0])
     return tuple(sorted(set(names)))
 

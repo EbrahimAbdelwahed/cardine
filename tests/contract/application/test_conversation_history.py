@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from cardine.application.conversation_history import ConversationHistoryReader
-from study_agent.capabilities import CapabilityManifest
+from cardine.hosts.context import CapabilityManifestView
 from study_agent.domain import (
     CourseId,
     EventId,
@@ -194,7 +194,7 @@ def test_context_exposes_omitted_older_conversation_entries() -> None:
             return evidence
 
     class _Capabilities:
-        def discover(self) -> tuple[CapabilityManifest, ...]:
+        def discover(self) -> tuple[CapabilityManifestView, ...]:
             return ()
 
     context = TutorHostContextAssembler(

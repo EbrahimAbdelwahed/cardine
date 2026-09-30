@@ -903,9 +903,21 @@
         const reason = kind === "stop" && text(decision.reason, "")
           ? ` · ${esc(text(decision.reason))}`
           : "";
-        return `<article class="turn-trace" data-turn-trace="${esc(traceId)}" data-highlighted="${highlighted}"><header><div><strong>${esc(traceId)}</strong><span>decisione tutor</span></div></header><p><code>${esc(kind)}</code>${reason}</p></article>`;
+        const operations = array(trace.operations).map((item) => {
+          const operation = object(item);
+          const details = [
+            text(operation.phase), text(operation.status),
+            `tentativo ${text(operation.attempt)}`, `${text(operation.duration_ms, "…")} ms`,
+            operation.http_status == null ? "" : `HTTP ${text(operation.http_status)}`,
+            text(operation.outcome, ""), text(operation.error_code, ""), text(operation.error_kind, ""),
+            text(operation.error_type, ""), text(operation.error_location, ""),
+          ].filter(Boolean).map(esc).join(" · ");
+          return `<li><code>${details}</code></li>`;
+        }).join("");
+        const omitted = Number(trace.omitted_operations) || 0;
+        return `<article class="turn-trace" data-turn-trace="${esc(traceId)}" data-highlighted="${highlighted}"><header><div><strong>${esc(traceId)}</strong><span>${esc(text(trace.status, ""))}</span></div></header><p><code>${esc(kind)}</code>${reason}</p>${operations ? `<ol>${operations}</ol>` : ""}${omitted ? `<p class="field-note">Operazioni precedenti omesse: ${esc(String(omitted))}</p>` : ""}</article>`;
       }).join("") : `<p class="field-note">Nessun turno registrato in questa esecuzione.</p>`;
-      patch(target, `<p class="field-note">Memoria locale: ultime ${esc(text(retention.max_traces, "24"))} decisioni validate. Payload acquisiti: no. Telemetria esterna: no.</p>${traceHtml}`);
+      patch(target, `<p class="field-note">Memoria locale: ultimi ${esc(text(retention.max_traces, "24"))} turni, inclusi i fallimenti. Payload acquisiti: no. Telemetria esterna: no.</p>${traceHtml}`);
       if (state.diagnosticTraceId) {
         target.querySelector('[data-highlighted="true"]')?.scrollIntoView({ block: "nearest" });
       }
@@ -934,6 +946,7 @@
 
   function setBusy(busy) {
     state.loading = busy;
+    $(".conversation-scroll", root)?.setAttribute("aria-busy", String(busy));
     $$('[data-command]').forEach((control) => {
       if (busy) {
         control.dataset.disabledBeforeBusy = String(control.disabled);
@@ -1037,7 +1050,8 @@
   /* ------------------------------------------------------------------ */
 
   const PRESERVE_VALUE = new Set(["INPUT", "TEXTAREA"]);
-  const NEAR_BOTTOM = 64;
+  const NEAR_BOTTOM = 56;
+  let conversationScroller = null;
 
   function nodeKey(node) {
     return node.getAttribute("data-key") || node.id || "";
@@ -1125,12 +1139,208 @@
     morphChildren(container, template.content);
   }
 
+  // BeUI Message Scroller interaction pattern, implemented for Cardine's
+  // dependency-free shell: reader-owned scrolling, message rail and live edge.
+  function enhanceMessageScroller(container) {
+    const viewport = $(".conversation-scroll", container);
+    const rail = $(".message-scroller__rail", container);
+    const latest = $(".message-scroller__latest", container);
+    const content = viewport?.firstElementChild;
+    if (!viewport || !rail || !latest || !content) return null;
+    let following = atEnd();
+    let frame = 0;
+    let messages = [];
+    let targets = [];
+    let signature = "";
+    let navigating = false;
+    let navigationTarget = 0;
+    let activeIndex = -1;
+
+    function atEnd() {
+      return viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= NEAR_BOTTOM;
+    }
+
+    function update() {
+      frame = 0;
+      const overflowing = viewport.scrollHeight > viewport.clientHeight + 1;
+      const nextMessages = $$(".session-thread > .thread-message", content);
+      const previews = nextMessages.map((message, index) => {
+        const learner = message.classList.contains("thread-message--learner");
+        const surface = $(".thread-message__text, .ai-answer__markdown", message);
+        const excerpt = text(surface?.innerText || surface?.textContent).replace(/\s+/g, " ").trim().slice(0, 144);
+        return { label: `${learner ? "tu" : "tutor"} · ${index + 1} di ${nextMessages.length}`, excerpt, learner };
+      });
+      const nextSignature = JSON.stringify(previews);
+      messages = nextMessages;
+      if (signature !== nextSignature) {
+        signature = nextSignature;
+        // Keep the focused rail control alive when output grows.
+        previews.forEach((preview, index) => {
+          let button = rail.children[index];
+          if (!button) {
+            button = document.createElement("button");
+            button.type = "button";
+            button.id = `message-navigation-${index}`;
+            button.className = "message-scroller__tick";
+            const card = document.createElement("span");
+            card.className = "message-scroller__preview";
+            card.setAttribute("aria-hidden", "true");
+            button.appendChild(card);
+            rail.appendChild(button);
+          }
+          button.dataset.messageIndex = String(index);
+          button.dataset.sender = preview.learner ? "learner" : "assistant";
+          button.setAttribute("aria-label", `Vai al messaggio di ${preview.label}: ${preview.excerpt}`);
+          button.setAttribute("aria-controls", "conversation-viewport");
+          button.firstElementChild.textContent = `${preview.label} — ${preview.excerpt}`;
+        });
+        while (rail.children.length > previews.length) rail.lastElementChild.remove();
+        targets = Array.from(rail.children);
+      }
+      rail.hidden = !overflowing || messages.length < 2;
+      latest.hidden = !overflowing || following;
+      viewport.setAttribute("aria-busy", String(state.loading));
+      const bounds = viewport.getBoundingClientRect();
+      let active = 0;
+      let distance = Infinity;
+      messages.forEach((message, index) => {
+        const rect = message.getBoundingClientRect();
+        const delta = Math.abs(rect.top + rect.height / 2 - (bounds.top + bounds.height / 2));
+        if (delta < distance) { distance = delta; active = index; }
+      });
+      if (viewport.scrollTop <= NEAR_BOTTOM) active = 0;
+      else if (atEnd()) active = messages.length - 1;
+      if (active !== activeIndex) {
+        activeIndex = active;
+        const tick = targets[active];
+        if (tick && tick.offsetTop < rail.scrollTop) rail.scrollTop = tick.offsetTop;
+        else if (tick && tick.offsetTop + tick.offsetHeight > rail.scrollTop + rail.clientHeight) {
+          rail.scrollTop = tick.offsetTop + tick.offsetHeight - rail.clientHeight;
+        }
+      }
+      targets.forEach((button, index) => {
+        if (index === active) button.setAttribute("aria-current", "true");
+        else button.removeAttribute("aria-current");
+      });
+    }
+
+    function schedule() {
+      if (!frame) frame = requestAnimationFrame(update);
+    }
+
+    function grow() {
+      // Reflow may happen after rendering (answer reveal, fonts, disclosures).
+      // Follow only the state recorded before the content grew.
+      if (following && !navigating) viewport.scrollTop = viewport.scrollHeight;
+      schedule();
+    }
+
+    function onScroll() {
+      if (!navigating) following = atEnd();
+      schedule();
+    }
+
+    function interrupt(event) {
+      navigating = false;
+      const movingBack = (event?.type === "wheel" && event.deltaY < 0)
+        || ["ArrowUp", "PageUp", "Home"].includes(event?.key);
+      following = movingBack ? false : atEnd();
+      // Cancel an in-flight smooth jump before handing control to the reader.
+      viewport.scrollTo({ top: viewport.scrollTop, behavior: "instant" });
+      schedule();
+    }
+
+    function onKey(event) {
+      if (event.target !== viewport) return;
+      if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) interrupt(event);
+    }
+
+    function jump(event) {
+      const button = event.target.closest("[data-message-index]");
+      const message = button && messages[Number(button.dataset.messageIndex)];
+      if (!message) return;
+      following = false;
+      navigating = true;
+      const top = viewport.scrollTop + message.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 24;
+      navigationTarget = Math.max(0, Math.min(top, viewport.scrollHeight - viewport.clientHeight));
+      viewport.scrollTo({ top: navigationTarget, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+      schedule();
+    }
+
+    function preview(event) {
+      const button = event.target.closest("[data-message-index]");
+      if (button) rail.parentElement.dataset.messagePreview = button.firstElementChild.textContent;
+    }
+
+    function dismissPreview(event) {
+      if (event.type !== "keydown" || event.key === "Escape") delete rail.parentElement.dataset.messagePreview;
+    }
+
+    function onScrollEnd() {
+      // An initial follow can queue scrollend just before a rail jump starts.
+      // That stale event must not re-enable following during the new jump.
+      if (navigating && Math.abs(viewport.scrollTop - navigationTarget) > 2) return;
+      navigating = false;
+      following = atEnd();
+      schedule();
+    }
+
+    function resume() {
+      navigating = false;
+      following = true;
+      viewport.scrollTo({ top: viewport.scrollHeight, behavior: "instant" });
+      schedule();
+    }
+
+    // Latest is hidden after activation; move keyboard focus into the transcript.
+    function returnToLatest() { resume(); viewport.focus({ preventScroll: true }); }
+    viewport.addEventListener("scroll", onScroll, { passive: true });
+    viewport.addEventListener("scrollend", onScrollEnd);
+    viewport.addEventListener("wheel", interrupt, { passive: true });
+    viewport.addEventListener("touchstart", interrupt, { passive: true });
+    viewport.addEventListener("keydown", onKey);
+    rail.addEventListener("click", jump);
+    rail.addEventListener("pointerover", preview);
+    rail.addEventListener("focusin", preview);
+    rail.addEventListener("pointerleave", dismissPreview);
+    rail.addEventListener("focusout", dismissPreview);
+    rail.addEventListener("keydown", dismissPreview);
+    latest.addEventListener("click", returnToLatest);
+    const resize = new ResizeObserver(grow);
+    resize.observe(content);
+    resize.observe(viewport);
+    const mutation = new MutationObserver(grow);
+    mutation.observe(content, { childList: true, subtree: true, characterData: true });
+    update();
+    return {
+      get following() { return following; },
+      resume,
+      destroy() {
+        resize.disconnect();
+        mutation.disconnect();
+        cancelAnimationFrame(frame);
+        viewport.removeEventListener("scroll", onScroll);
+        viewport.removeEventListener("scrollend", onScrollEnd);
+        viewport.removeEventListener("wheel", interrupt);
+        viewport.removeEventListener("touchstart", interrupt);
+        viewport.removeEventListener("keydown", onKey);
+        rail.removeEventListener("click", jump);
+        rail.removeEventListener("pointerover", preview);
+        rail.removeEventListener("focusin", preview);
+        rail.removeEventListener("pointerleave", dismissPreview);
+        rail.removeEventListener("focusout", dismissPreview);
+        rail.removeEventListener("keydown", dismissPreview);
+        latest.removeEventListener("click", returnToLatest);
+      },
+    };
+  }
+
   function captureScroll() {
     const conversation = $(".conversation-scroll", root);
     return {
       view: root.scrollTop,
       conversation: conversation ? conversation.scrollTop : 0,
-      pinned: conversation
+      pinned: conversationScroller ? conversationScroller.following : conversation
         ? conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight <= NEAR_BOTTOM
         : true,
     };
@@ -1154,6 +1364,8 @@
     root.dataset.scrollOwner = route === "sessione" ? "conversation" : "view";
     navActive(route);
     destroyPrimitiveEnhancements();
+    conversationScroller?.destroy();
+    conversationScroller = null;
     patch(root, html);
     bindDynamicControls();
     destroyPrimitiveEnhancements = typeof CardineAI.enhance === "function"
@@ -1166,6 +1378,7 @@
     syncComposers();
     root.removeAttribute("aria-busy");
     restoreScroll(snapshot, routeChanged);
+    conversationScroller = enhanceMessageScroller(root);
     if (!routeChanged) {
       const restored = activeId ? document.getElementById(activeId) : null;
       if (restored && restored !== document.activeElement) restored.focus({ preventScroll: true });
@@ -1253,7 +1466,7 @@
     renderLoading(route);
     try {
       const payload = suppliedData || await fetchJson(ROUTES[route].endpoint);
-      if (navigationVersion !== state.navigationVersion) return;
+      if (navigationVersion !== state.navigationVersion) return false;
       state.viewData = payload;
       updateContinuation(payload);
       if (route === "oggi") {
@@ -1273,10 +1486,12 @@
       if (route === "ripasso") renderRipasso(payload);
       if (route === "piano") renderPlan(payload);
       if (route === "conflitti") renderConflitti(payload);
+      return true;
     } catch (error) {
-      if (navigationVersion !== state.navigationVersion) return;
-      if (error.authExpired) return;
+      if (navigationVersion !== state.navigationVersion) return false;
+      if (error.authExpired) return false;
       renderError(route, error);
+      return false;
     }
   }
 
@@ -1574,7 +1789,7 @@
      session render the same markup, so they cannot drift apart or invent a
      subtitle that contradicts the real state. */
   function sessionShell({ title, subtitle, thread, extras = "", actions = "", placeholder }) {
-    return `<section class="chat-session" data-ai-chat-ready="true" aria-labelledby="conversation-heading"><header class="conversation-header"><div><h1 id="conversation-heading">${esc(title)}</h1><p>${esc(subtitle)}</p></div><div class="conversation-header__actions">${actions}</div></header><div class="conversation-scroll"><div class="conversation-column"><div class="session-thread">${thread}</div>${extras}</div></div><div class="conversation-composer-dock"><div class="conversation-column">${lessonPinAttachment()}${entryForm("session-entry", "Scrivi al tutor", placeholder)}</div></div></section>`;
+    return `<section class="chat-session" data-ai-chat-ready="true" aria-labelledby="conversation-heading"><header class="conversation-header"><div><h1 id="conversation-heading">${esc(title)}</h1><p>${esc(subtitle)}</p></div><div class="conversation-header__actions">${actions}</div></header><div class="message-scroller"><section id="conversation-viewport" class="conversation-scroll" aria-label="Conversazione" tabindex="0"><div class="conversation-column"><div class="session-thread">${thread}</div>${extras}</div></section><nav class="message-scroller__rail" aria-label="Navigazione messaggi" hidden></nav><button class="message-scroller__latest" type="button" hidden>Vai all’ultimo messaggio <span aria-hidden="true">↓</span></button></div><div class="conversation-composer-dock"><div class="conversation-column">${lessonPinAttachment()}${entryForm("session-entry", "Scrivi al tutor", placeholder)}</div></div></section>`;
   }
 
   function renderMessage(message, showFineTune = false) {
@@ -1673,13 +1888,14 @@
 
   function renderProposte(payload) {
     const proposals = array(payload);
-    const rows = proposals.length ? proposals.map(renderProposal).join("") : emptyState("Nessuna proposta da decidere", "Le proposte generate non vengono considerate accettate finché non esiste una decisione esplicita.");
-    const bulkCount = proposals.filter((item) => {
-      const proposal = object(item);
-      return (text(first(proposal, ["status", "state"], "pending"), "pending") === "pending" || text(first(proposal, ["status", "state"], "pending"), "pending") === "proposed") && proposal.reviewable === true;
-    }).length;
+    const isPending = (item) => ["pending", "proposed"].includes(text(first(object(item), ["status", "state"], "pending"), "pending"));
+    const pending = proposals.filter(isPending);
+    const decided = proposals.filter((item) => !isPending(item));
+    const rows = pending.length ? pending.map(renderProposal).join("") : emptyState("Nessuna proposta da decidere", "Le proposte generate non vengono considerate accettate finché non esiste una decisione esplicita.");
+    const decidedView = decided.length ? `<details class="decided-proposals"><summary>Già decise (${decided.length})</summary><div class="card-list">${decided.map(renderProposal).join("")}</div></details>` : "";
+    const bulkCount = pending.filter((item) => object(item).reviewable === true).length;
     const bulkView = bulkCount ? `<form data-artifact-bulk novalidate><p class="field-note">Seleziona una o più flashcard e assegna a ciascuna una decisione. L'invio è un'unica operazione atomica.</p><button class="button button--quiet" type="submit">Applica decisioni selezionate (<span data-bulk-count>${bulkCount}</span> disponibili)</button></form>` : "";
-    const diffRows = proposals.slice(0, 12).map((item) => {
+    const diffRows = pending.slice(0, 12).map((item) => {
       const proposal = object(item);
       const status = text(first(proposal, ["status", "state"], "pending"), "pending");
       const revisionId = first(proposal, ["revision_id", "id"], "non dichiarata");
@@ -1687,9 +1903,9 @@
     });
     const diffView = aiDiffTable({ title: "Confronto delle proposte", rows: diffRows, status: proposals.length ? "ready" : "neutral" });
     const approvalView = aiApproval({ title: "Decidi con calma", detail: "La decisione canonica resta nei pulsanti della singola proposta; questo follow-up serve solo a chiedere chiarimenti.", choices: [{ label: "Spiegami cosa cambia", action: "spiega proposta", prompt: "Spiegami cosa cambia nella proposta corrente" }] });
-    const pendingCount = proposals.filter((item) => ["pending", "proposed"].includes(text(first(object(item), ["status", "state"], "pending")))).length;
+    const pendingCount = pending.length;
     const recommendationView = pendingCount ? aiRecommendation({ title: "Rivedi una proposta", detail: `${pendingCount} proposte attendono una decisione esplicita.`, prompt: "Aiutami a rivedere una proposta", actionLabel: "Chiedimi un riepilogo" }) : "";
-    setView("proposte", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="proposal-heading"><p class="section-kicker">proposte · decisione tua</p><h1 class="section-title" id="proposal-heading">Proposte</h1><p class="section-copy">Generato non significa approvato. Ogni decisione è legata a revisione, sequenza e request ID.</p>${bulkView}<div class="card-list">${rows}</div><div class="ai-proposals-diff">${diffView}</div>${approvalView}${recommendationView}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">regola di stato</p><h2 class="side-card__title">Decisioni esplicite</h2><p class="side-card__copy">Puoi decidere singolarmente oppure inviare una selezione in un'unica operazione atomica.</p></div></aside></section>`);
+    setView("proposte", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="proposal-heading"><p class="section-kicker">proposte · decisione tua</p><h1 class="section-title" id="proposal-heading">Proposte</h1><p class="section-copy">Generato non significa approvato. Ogni decisione è legata a revisione, sequenza e request ID.</p>${bulkView}<div class="card-list">${rows}</div>${decidedView}<div class="ai-proposals-diff">${diffView}</div>${approvalView}${recommendationView}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">regola di stato</p><h2 class="side-card__title">Decisioni esplicite</h2><p class="side-card__copy">Puoi decidere singolarmente oppure inviare una selezione in un'unica operazione atomica.</p></div></aside></section>`);
   }
 
   function renderProposal(item) {
@@ -1982,6 +2198,7 @@
         state.continuationDraft = "";
       }
       const originIsStillActive = commandNavigationVersion === state.navigationVersion;
+      let routeRefreshed = false;
       if (originIsStillActive && status === "demo_completed" && refreshRoute === "sessione") {
         state.route = "sessione";
         state.viewData = object(receipt.result);
@@ -2000,12 +2217,22 @@
         state.viewData = object(receipt.result);
         renderSessione(state.viewData);
       } else if (originIsStillActive) {
-        await loadRoute((isFlashcardCommand || flashcardCompleted) && status === "completed" ? "proposte" : refreshRoute);
+        routeRefreshed = await loadRoute((isFlashcardCommand || flashcardCompleted) && status === "completed" ? "proposte" : refreshRoute);
       }
       if (isTutorTurn) {
         void refreshBootstrapCounts();
       } else {
         await refreshBootstrapCounts();
+      }
+      if (routeRefreshed && refreshRoute === "proposte" && endpoint.includes("/artifacts/") && endpoint.endsWith("/decisions")) {
+        const decisions = endpoint === "/api/v1/artifacts/decisions" ? array(payload.decisions) : [payload];
+        const accepted = decisions.filter((item) => text(object(item).decision) === "accepted").length;
+        const rejected = decisions.filter((item) => text(object(item).decision) === "rejected").length;
+        const summary = [
+          accepted ? `${accepted} flashcard ${accepted === 1 ? "accettata" : "accettate"}` : "",
+          rejected ? `${rejected} flashcard ${rejected === 1 ? "rifiutata" : "rifiutate"}` : "",
+        ].filter(Boolean).join(" · ");
+        setStatus("committed", `${summary}. La coda delle proposte è aggiornata.`);
       }
       if (isTutorTurn && originIsStillActive && receipt.result) {
         const assistant = $$(".thread-message--assistant", root).at(-1);
@@ -2066,6 +2293,7 @@
       thread.insertAdjacentHTML("beforeend", outgoing + pending);
       const scroller = $(".conversation-scroll", root);
       if (scroller) scroller.scrollTop = scroller.scrollHeight;
+      conversationScroller?.resume();
       return;
     }
     setView("sessione", sessionShell({

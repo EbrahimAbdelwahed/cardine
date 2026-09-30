@@ -220,6 +220,11 @@ class OpenAICompatibleModel:
     def capabilities(self) -> ModelCapabilities:
         return self._config.capabilities
 
+    def _structured_output_schema(self, schema: JsonObject) -> object:
+        """Translate a local schema for this provider without mutating its contract."""
+
+        return _provider_schema(schema)
+
     def _body(self, request: ModelRequest) -> bytes:
         messages: list[dict[str, object]] = []
         for message in request.messages:
@@ -250,7 +255,9 @@ class OpenAICompatibleModel:
                     "type": "json_schema",
                     "json_schema": {
                         "name": request.structured_output.name,
-                        "schema": _provider_schema(request.structured_output.schema),
+                        "schema": self._structured_output_schema(
+                            request.structured_output.schema
+                        ),
                         "strict": request.structured_output.strict,
                     },
                 }
