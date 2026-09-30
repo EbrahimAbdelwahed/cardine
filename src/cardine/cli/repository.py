@@ -537,10 +537,10 @@ class _RepositoryTutorGateway:
         references = recent_explicit_lesson_references(
             tuple(interaction.content for interaction in human_interactions[:-1])
         )
-        for reference in references:
-            resolved = self._repository.resolve_lesson_scope(self._course_id, reference)
-            if resolved is not None:
-                return resolved
+        if references:
+            # The nearest explicit reference remains authoritative even when
+            # unavailable; falling back would silently change lesson scope.
+            return self._repository.resolve_lesson_scope(self._course_id, references[0])
         return None
 
     def recover(

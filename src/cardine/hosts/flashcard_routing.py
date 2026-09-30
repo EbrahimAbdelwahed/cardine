@@ -20,6 +20,7 @@ from .contracts import (
     TutorDecision,
     TutorHostContext,
 )
+from .source_grounding import requires_study_memory_routing
 
 _PROPOSE_FLASHCARDS = "propose_flashcards"
 _FLASHCARD_ACTION = (
@@ -110,6 +111,16 @@ class FlashcardProfileRoutingTutorDecisionPort(TutorDecisionPort):
             return await self._delegate.decide(context, interruption)
         if not any(item.id == _PROPOSE_FLASHCARDS for item in context.advertised_capabilities):
             return await self._delegate.decide(context, interruption)
+
+        if requires_study_memory_routing(learner_text):
+            decision = await self._delegate.decide(context, interruption)
+            if isinstance(decision, InvokeToolDecision):
+                return decision
+            if (
+                isinstance(decision, StartCapabilityDecision)
+                and decision.capability_id == _PROPOSE_FLASHCARDS
+            ):
+                return decision
 
         observed_history = _observed_conversation_history(context)
         history_scoped = _HISTORY_SCOPED.search(learner_text) is not None

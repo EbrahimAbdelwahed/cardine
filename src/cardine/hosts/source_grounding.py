@@ -128,13 +128,18 @@ class SourceGroundedTutorDecisionPort(TutorDecisionPort):
         self, context: TutorHostContext, interruption: TutorInterruptionToken
     ) -> TutorDecision:
         learner_text = _latest_learner_text(context) or ""
-        if context.pending_continuation is None and not _STUDY_MEMORY_INTENT.search(learner_text):
+        if context.pending_continuation is None and not requires_study_memory_routing(learner_text):
             direct = _grounded_explanation_decision(context)
             if direct is not None:
                 return direct
         # Difficulty and memory requests need the delegate's memory tool step.
         decision = await self._delegate.decide(context, interruption)
         return _require_grounded_explanation(decision, context)
+
+
+def requires_study_memory_routing(learner_text: str) -> bool:
+    """Keep explicit difficulty/recall signals on the memory-aware route."""
+    return _STUDY_MEMORY_INTENT.search(learner_text) is not None
 
 
 def _grounded_explanation_decision(
