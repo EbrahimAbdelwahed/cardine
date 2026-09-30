@@ -28,7 +28,7 @@
     },
     {
       "path": "src/cardine/demo/ui_application.py",
-      "sha256": "79f11f9d7092b9cf4f101b098ac799cf7b16843345e4c87183ad22dcb5829d99"
+      "sha256": "7f90a847f56b81aba6c1487029dcac84eaa55af8e89474397c0621c90a17483a"
     },
     {
       "path": "src/cardine/materials/generation_contracts.py",
@@ -40,7 +40,7 @@
     },
     {
       "path": "src/cardine/materials/product.py",
-      "sha256": "4cd81d00859e31107421e4c452de7341d1e0602f2f8fceb8be5f7d2e26d81160"
+      "sha256": "ff41b5ac5fba8d78c96a7637c04ce2a8fe2d9bb1d55fac7f47368eb49be03f4c"
     },
     {
       "path": "src/study_agent/domain/provenance.py",

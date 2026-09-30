@@ -199,6 +199,12 @@ def test_pdf_lessons_require_exact_page_coverage_and_parent_stays_current(tmp_pa
         prepared = product.lessons(str(admitted.source.source_id), str(admitted.source.revision_id))
         assert len(cast(tuple[JsonObject, ...], prepared["lessons"])) == 2
         before = len(tuple(repository.events.read(context.course_id)))
+        with pytest.raises(ValueError, match="confini"):
+            product.start(
+                str(admitted.source.source_id), str(admitted.source.revision_id), "whole-pdf"
+            )
+        assert len(tuple(repository.events.read(context.course_id))) == before
+        assert product.jobs() == []
         with pytest.raises(ValueError, match="coprire"):
             product.start_lessons(
                 str(admitted.source.source_id),
@@ -623,6 +629,7 @@ def test_resume_during_worker_completion_is_not_lost(
     calls = 0
 
     def pause_first(product: MaterialProduct, identifier: str) -> None:
+        assert product.context.principal_kind is PrincipalKind.SERVICE
         nonlocal calls
         calls += 1
         if calls == 1:

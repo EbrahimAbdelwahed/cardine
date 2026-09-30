@@ -1378,7 +1378,7 @@ class RepositoryUiApplication(UiApplicationPort):
             self._material_slots.acquire()
             try:
                 context = ExecutionContext(
-                    PrincipalKind.HUMAN,
+                    PrincipalKind.SERVICE,
                     "cardine-material-worker",
                     course,
                     CorrelationId("cardine-material-worker"),

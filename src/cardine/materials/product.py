@@ -165,6 +165,8 @@ class MaterialProduct:
 
     def start(self, source_id: str, revision_id: str, request_id: str) -> JsonObject:
         record = self.source(source_id, revision_id)
+        if record.source.conversion_provenance is not None:
+            raise ValueError("Conferma i confini delle lezioni PDF prima di generare le note.")
         pin = self.repo.material_transcript_pin(
             self.course,
             self.session,

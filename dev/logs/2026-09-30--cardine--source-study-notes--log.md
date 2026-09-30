@@ -98,3 +98,5 @@ cannot authorize a merge. The two Codex findings are covered by the corrections
 and regression tests above. No merge or deployment has occurred.
 Continue on this branch/PR for actionable automatic Codex review or CI findings.
 Do not merge or deploy without owner authorization.
+
+Merge preparation fixes the current review: background material workers use SERVICE provenance; page-mapped PDF generation requires confirmed lesson ranges at the product boundary. Regressions reject whole-PDF jobs without canonical writes and verify actual dispatched worker context.
