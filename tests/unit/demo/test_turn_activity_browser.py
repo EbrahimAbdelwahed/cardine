@@ -180,6 +180,7 @@ const snapshots = [
 let reads=0; const rendered=[];
 const state = {activityPollToken:0,navigationVersion:0,pendingTurn:{requestId:'retry'}};
 const context = {state, root:{}, text:(value)=>value||'', $:()=>({}),
+ captureScroll:()=>({}), restoreScroll:()=>{},
  fetchJson:async()=>snapshots[reads++], aiToolChips:(payload)=>payload.state,
  patch:(_node,value)=>rendered.push(value),
  window:{setTimeout:(resolve)=>{if(reads===3)state.pendingTurn=null; resolve();}}};
