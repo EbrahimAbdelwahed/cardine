@@ -13,7 +13,10 @@ from study_agent.ports.model import ModelFinishReason, ModelResponse
 from .generation_contracts import MAX_OUTPUT_BYTES, GenerationPipelinePins
 
 _UNCERTAINTY = re.compile(
-    r"\b(?:unclear|uncertain|not sure|possibly|maybe|might|may|could)\b", re.I
+    r"\b(?:unclear|uncertain|not sure|possibly|maybe|might|may|could|"
+    r"forse|probabilmente|incert[oaie]|possibilmente|potrebbe|potrebbero|"
+    r"non sicur[oaie]|non certo|non certa)\b",
+    re.I,
 )
 _EMPHASIS = re.compile(
     r"\b(?:important|key|remember|emphasized|attenzione|ricorda|fondamentale)\b", re.I
