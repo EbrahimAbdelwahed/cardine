@@ -58,3 +58,18 @@ write-only and process-local, so the owner must enter it after each restart.
 No model calls, source uploads, artifact decisions, enrollment or recall ratings
 were made by this task. Study stores, raw logs, credentials and build outputs
 remain outside Git. Preserve this active worktree while the preview uses it.
+
+## Authorized merge integration — 2026-10-01
+
+The owner requested merging the open PRs. Integration now reconciles PR #5
+`8a43343`, PR #3 `de37028`, and PR #7 `efb6ee9` in the same preview PR.
+The historical preview above remains a record of its initial state. The exact
+custody gate is now repaired with scoped source digests and reviewed AST
+variance rules; frozen historical classifications remain preserved.
+
+Full offline integration before the final lesson-scope fix: 2,555 passed,
+4 optional network tests skipped. The final scope fix has 16 passing focused
+scope/completion tests; Ruff, mypy and ownership audit pass. GitHub CI and
+automatic Codex review must validate the submitted final commit before merge.
+PR #9 source study notes remains a separate outcome and is not part of this
+preview. The original checkout and private preview study data are preserved.
