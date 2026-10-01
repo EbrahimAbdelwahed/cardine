@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
 from hashlib import sha256
@@ -193,11 +194,11 @@ def _ensure_commitments(source: str, output: str, stage: str) -> None:
         raise MaterialValidationError(f"{stage} dropped segment numeric anchors")
 
 
-def _markers(text: str) -> tuple[set[str], set[str], set[str]]:
+def _markers(text: str) -> tuple[Counter[str], Counter[str], Counter[str]]:
     return (
-        {item.lower() for item in _UNCERTAINTY.findall(text)},
-        {item.lower() for item in _EMPHASIS.findall(text)},
-        {item for item in _NUMERIC.findall(text)},
+        Counter(item.lower() for item in _UNCERTAINTY.findall(text)),
+        Counter(item.lower() for item in _EMPHASIS.findall(text)),
+        Counter(_NUMERIC.findall(text)),
     )
 
 
