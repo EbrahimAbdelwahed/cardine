@@ -1,6 +1,6 @@
 # Cardine development memory
 
-Updated: 2026-09-29 CEST
+Updated: 2026-10-01 CEST
 
 This file is the authoritative entrypoint for Cardine development memory.
 Cardine-specific plans, logs, notes, and handoffs belong in this repository's
@@ -10,6 +10,8 @@ archive and must not be treated as Cardine's current state.
 ## Start here
 
 - [Compact Thinking and Streaming Text](logs/2026-09-28--cardine--compact-thinking-streaming--log.md) — approved compact activity renderers, progressive verified answers, follow-ups and response actions on the recovery base.
+- [PR #5 automatic review follow-up](handoffs/2026-10-01--cardine--pr5-review-fixes.md) — history-derived flashcard scope is rebuilt only from validated bounded conversation observations; material emphasis and Italian uncertainty commitments are preserved and checked.
+
 - [Flashcard generation repair publication](logs/2026-09-29--cardine--flashcard-generation-publication--log.md) — the owner authorized publishing the generation repair to PR #5; empty-array wire schema, truthful failure and new-turn retry regressions verified offline; preview update and live generation remain pending.
 - [Message Scroller and BeUI evaluation](logs/2026-09-28--cardine--message-scroller--log.md) — reader-aware chat navigation implemented; Citations and Prompt Input assessed with canonical source boundaries.
 
