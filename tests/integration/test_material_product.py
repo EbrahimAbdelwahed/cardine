@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import cast
@@ -1072,7 +1073,7 @@ def test_pdf_parent_retirement_racing_admission_cannot_append_lesson(
                     "retire-parent-during-admission",
                     expected_sequence=sequence,
                 )
-            return original_admit(**kwargs)
+            return cast(Callable[..., object], original_admit)(**kwargs)
 
         monkeypatch.setattr(product, "admit_extraction", retire_then_admit)
         with pytest.raises(TextIngestionError, match="expected sequence"):
