@@ -328,3 +328,197 @@ def test_qualified_pageindex_pipeline_uses_only_canonical_text() -> None:
     assert "".join(TEXT[span.start_offset : span.end_offset] for span in spans) == TEXT
     assert all(span.source_id == binding.source.source_id for span in spans)
     assert envelope(spans).items[0].evidence.text == TEXT
+
+
+def test_cache_identity_prepares_without_judgement_and_roundtrips_source_free() -> None:
+    from study_agent.flashcards.semantic import SemanticLessonAnalysis
+
+    judge = Judge()
+    service = analyzer(judge)
+    key = service.cache_key_for("lesson", derived_index(), context())
+    assert judge.requests == []
+    analysis = asyncio.run(service.analyze("lesson", derived_index(), context()))
+    assert key == analysis.cache_key
+    restored = SemanticLessonAnalysis.from_bytes(analysis.to_bytes())
+    assert restored == analysis
+    service.validate_cached(restored, "lesson", derived_index(), context())
+    assert len(judge.requests) == 5  # Validation never calls a provider.
+    assert TEXT.encode() not in analysis.to_bytes()
+    assert b'"state"' not in analysis.to_bytes()
+    assert b'"text"' not in analysis.to_bytes()
+
+
+@pytest.mark.parametrize("fail", [True, False])
+def test_cache_roundtrip_preserves_fallbacks_and_complete_receipts(fail: bool) -> None:
+    from study_agent.flashcards.semantic import SemanticLessonAnalysis
+
+    service = analyzer(Judge(fail=fail, ambiguous=not fail))
+    analysis = asyncio.run(service.analyze("lesson", derived_index(), context()))
+    restored = SemanticLessonAnalysis.from_json(analysis.to_json())
+    assert restored.fingerprint == analysis.fingerprint
+    service.validate_cached(restored, "lesson", derived_index(), context())
+    assert all(
+        item.cardability in {Cardability.CORE, Cardability.SUPPORTING}
+        for item in restored.candidates
+    )
+
+
+def test_cached_candidate_span_and_receipt_policy_cannot_authorize_exclusion() -> None:
+    service = analyzer(Judge())
+    analysis = asyncio.run(service.analyze("lesson", derived_index(), context()))
+    candidate = analysis.candidates[1]
+    forged = replace(candidate, cardability=Cardability.EXCLUDED)
+    with pytest.raises(ValueError, match="cardability policy"):
+        service.validate_cached(
+            replace(analysis, candidates=(analysis.candidates[0], forged, analysis.candidates[2])),
+            "lesson",
+            derived_index(),
+            context(),
+        )
+    forged = replace(
+        candidate,
+        candidate=replace(
+            candidate.candidate, span=replace(candidate.candidate.span, start_offset=6)
+        ),
+    )
+    with pytest.raises(ValueError, match="catalog"):
+        service.validate_cached(
+            replace(analysis, candidates=(analysis.candidates[0], forged, analysis.candidates[2])),
+            "lesson",
+            derived_index(),
+            context(),
+        )
+    forged = replace(
+        candidate,
+        receipts=(
+            candidate.receipts[0],
+            replace(candidate.receipts[1], input_fingerprint="a" * 64),
+        ),
+    )
+    with pytest.raises(ValueError, match="input mismatch"):
+        service.validate_cached(
+            replace(analysis, candidates=(analysis.candidates[0], forged, analysis.candidates[2])),
+            "lesson",
+            derived_index(),
+            context(),
+        )
+
+
+def test_cache_invalidation_for_lesson_scope_index_policy_and_model() -> None:
+    service = analyzer(Judge())
+    key = service.cache_key_for("lesson", derived_index(), context())
+    assert key != service.cache_key_for("other", derived_index(), context())
+    assert key != service.cache_key_for("lesson", index(), context())
+    assert key != service.cache_key_for(
+        "lesson",
+        derived_index(),
+        context(),
+        scope=(original_unit(start=5, end=12).paragraphs[0].span,),
+    )
+    changed = FlashcardSemanticAnalyzer(
+        Judge(), replace(POLICY, exclusion_probability=1), judgement_identity="fake@1/fixture"
+    )
+    assert key != changed.cache_key_for("lesson", derived_index(), context())
+    changed = FlashcardSemanticAnalyzer(Judge(), POLICY, judgement_identity="fake@2/fixture")
+    assert key != changed.cache_key_for("lesson", derived_index(), context())
+
+
+@pytest.mark.parametrize(
+    "tamper", ["unknown", "fingerprint", "cache_key", "schema", "receipt", "margin", "usage"]
+)
+def test_cache_codec_rejects_malformed_payloads(tamper: str) -> None:
+    import json
+
+    from study_agent.flashcards.semantic import SemanticLessonAnalysis
+
+    analysis = asyncio.run(analyzer(Judge()).analyze("lesson", derived_index(), context()))
+    raw = json.loads(analysis.to_bytes())
+    if tamper == "unknown":
+        raw["source_text"] = "private"
+    elif tamper in {"fingerprint", "cache_key"}:
+        raw[tamper] = "a" * 64
+    elif tamper == "schema":
+        raw["schema"] = "future"
+    elif tamper == "receipt":
+        raw["candidates"][0]["receipts"][0]["accepted"] = "yes"
+    elif tamper == "margin":
+        raw["candidates"][0]["receipts"][0]["margin"] = True
+    else:
+        raw["candidates"][0]["receipts"][0]["usage"] = {"input_tokens": "private"}
+    with pytest.raises(ValueError):
+        SemanticLessonAnalysis.from_bytes(json.dumps(raw).encode())
+
+
+def test_cache_codec_rejects_duplicate_keys_and_nan() -> None:
+    from study_agent.flashcards.semantic import SemanticLessonAnalysis
+
+    analysis = asyncio.run(analyzer(Judge()).analyze("lesson", index(), context()))
+    raw = analysis.to_bytes().replace(
+        b'"lesson_key":"lesson"', b'"lesson_key":"lesson","lesson_key":"other"'
+    )
+    with pytest.raises(ValueError, match="duplicate"):
+        SemanticLessonAnalysis.from_bytes(raw)
+    with pytest.raises(ValueError):
+        SemanticLessonAnalysis.from_bytes(b'{"data":NaN}')
+
+
+def canonical_chunk() -> SourceChunk:
+    from study_agent.ingestion.identity import chunk_id_for
+
+    binding = context()
+    digest = sha256(TEXT.encode()).hexdigest()
+    chunk_id = chunk_id_for(
+        source_id=binding.source.source_id,
+        revision_id=binding.source.revision_id,
+        start_offset=0,
+        end_offset=len(TEXT),
+        checksum_sha256=digest,
+        chunker_version="fixture",
+    )
+    return SourceChunk(
+        chunk_id,
+        binding.source.source_id,
+        binding.source.revision_id,
+        0,
+        len(TEXT),
+        (),
+        0,
+        digest,
+        "fixture",
+    )
+
+
+def test_canonical_chunk_crossing_nodes_is_classified_whole_before_exclusion() -> None:
+    judge = Judge()
+    service = analyzer(judge)
+    chunk = canonical_chunk()
+    key = service.cache_key_for("lesson", derived_index(), context(), canonical_chunks=(chunk,))
+    assert judge.requests == []
+    analysis = asyncio.run(
+        service.analyze("lesson", derived_index(), context(), canonical_chunks=(chunk,))
+    )
+    assert analysis.cache_key == key
+    assert len(analysis.candidates) == 1
+    assert analysis.candidates[0].candidate.span.start_offset == 0
+    assert analysis.candidates[0].candidate.span.end_offset == len(TEXT)
+    assert analysis.candidates[0].cardability is Cardability.SUPPORTING
+    assert cast(JsonObject, judge.requests[0].state)["text"] == TEXT
+    assert key != service.cache_key_for("lesson", derived_index(), context())
+    service.validate_cached(
+        analysis, "lesson", derived_index(), context(), canonical_chunks=(chunk,)
+    )
+    unit = generation_unit(analysis, title="Anatomy", context=context())
+    assert len(unit.paragraphs) == 1
+    assert TEXT[unit.paragraphs[0].span.start_offset : unit.paragraphs[0].span.end_offset] == TEXT
+
+
+def test_canonical_chunk_scope_cannot_classify_a_slice_then_restore_dropped_content() -> None:
+    service = analyzer(Judge())
+    with pytest.raises(ValueError, match="canonical_chunk_scope_splits_chunk"):
+        service.cache_key_for(
+            "lesson",
+            derived_index(),
+            context(),
+            canonical_chunks=(canonical_chunk(),),
+            scope=(original_unit(start=5, end=12).paragraphs[0].span,),
+        )
