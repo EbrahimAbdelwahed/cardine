@@ -74,10 +74,12 @@ include canonical content, index/configuration, policy and producer/model identi
 ## Verification and limits
 
 Untouched main baseline: 2334 passed, four expected optional-provider/PDF skips
-outside the nested sandbox. Initial integrated suite: 2444 passed and four skips;
-the remaining ownership audit failure required explicit byte commitments for new
-Cardine-owned core evolution, without changing the historical 322-row inventory.
-Final archive-aware verification runs after committing those commitments.
+outside the nested sandbox. Integrated suite: 2447 passed, four expected skips.
+Ruff, strict mypy (600 files), ownership audit (322 historical rows), wheel/sdist
+verification and a clean core install without Jev passed. Three additional
+regressions cover actual PageIndex Markdown ending with a newline; the focused
+index/semantic suite passes 44 tests. The Jev CI lane exercises the real SDK
+through MockTransport. CI and automatic GitHub review remain pending publication.
 
 Production quality gates remain unmeasured. No representative human gold set,
 accepted calibrated thresholds or authorization for paid provider evaluation was

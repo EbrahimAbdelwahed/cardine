@@ -191,7 +191,8 @@ def _declared_package_data(config: Mapping[str, object]) -> set[str]:
                 # Qualified third-party artifacts have their own exact
                 # supply-chain verifier and are not CA-01/CA-02 namespace rows.
                 if not path.is_relative_to(ROOT / "src/cardine/documents/_vendor")
-                and path != ROOT / "src/cardine/adapters/pageindex/page_index_md.py.data"
+                and path
+                != ROOT / "src/cardine/adapters/pageindex/page_index_md.py.data"
             )
     return paths
 
@@ -356,7 +357,6 @@ def _baseline_source(path: str) -> str:
 
 def _normalized_ast(source: str, filename: str) -> object:
     tree = ast.parse(source, filename=filename)
-
     class _ImportStripper(ast.NodeTransformer):
         def visit_Import(self, node: ast.Import) -> None:
             return None
@@ -377,7 +377,8 @@ def _transition_contract() -> tuple[set[str], set[str]]:
         if (
             isinstance(node, ast.Assign)
             and any(
-                isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets
+                isinstance(target, ast.Name) and target.id == "__all__"
+                for target in node.targets
             )
             and isinstance(node.value, (ast.List, ast.Tuple))
         ):
@@ -413,7 +414,8 @@ def _transition_contract() -> tuple[set[str], set[str]]:
             ):
                 consumers.add(relative)
             if isinstance(imported_node, ast.Import) and any(
-                alias.name == "cardine._transition.study_agent" for alias in imported_node.names
+                alias.name == "cardine._transition.study_agent"
+                for alias in imported_node.names
             ):
                 consumers.add(relative)
     return exports, consumers
@@ -482,7 +484,10 @@ def _validate_cardine_transition(
             errors.append(f"moved Cardine path remains present: {old_path}")
         if replacement not in current_paths:
             errors.append(f"Cardine replacement path is absent: {replacement}")
-    expected_moved = {row["path"]: row["replacement_import_or_path"] for row in source_rows}
+    expected_moved = {
+        row["path"]: row["replacement_import_or_path"]
+        for row in source_rows
+    }
     expected_copied = set(COPIED_IMPORT_PATHS)
     expected_transition_paths = set(expected_moved) | expected_copied | TRANSITION_CONSUMERS
     if len(transition_rows) != 119:
@@ -496,7 +501,10 @@ def _validate_cardine_transition(
         moved_row = by_path.get(old_path)
         if moved_row is None:
             continue
-        if moved_row["source_path"] != replacement or moved_row["disposition"] != "CARDINE_OWNER":
+        if (
+            moved_row["source_path"] != replacement
+            or moved_row["disposition"] != "CARDINE_OWNER"
+        ):
             errors.append(f"CA-02 moved transition binding is invalid: {old_path}")
     for path in expected_copied:
         copied_row = by_path.get(path)
@@ -531,7 +539,9 @@ def _validate_cardine_transition(
                     if _normalized_ast(current_source, source_path) != _normalized_ast(
                         baseline_source, f"baseline:{source_path}"
                     ):
-                        errors.append(f"CA-02 copied-core non-import AST mismatch: {source_path}")
+                        errors.append(
+                            f"CA-02 copied-core non-import AST mismatch: {source_path}"
+                        )
         except (OSError, SyntaxError) as error:
             errors.append(f"CA-02 transition source invalid {source_path}: {error}")
     expected_entrypoints = {
@@ -567,7 +577,9 @@ def validate(*, live: bool = False) -> list[str]:
         config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
         targets = _entry_point_targets(config)
         current_paths = (
-            _source_paths(reviewed_current_paths) | _declared_package_data(config) | set(targets)
+            _source_paths(reviewed_current_paths)
+            | _declared_package_data(config)
+            | set(targets)
         )
         transition_rows, transition_entrypoints = _load_transition_overlay()
     except (OSError, ValueError, tomllib.TOMLDecodeError, json.JSONDecodeError) as error:
@@ -595,8 +607,9 @@ def validate(*, live: bool = False) -> list[str]:
         errors.append(f"classification is missing current path: {path}")
     for path in sorted(set(reviewed_by_current_path) - current_paths):
         row = reviewed_by_current_path[path]
-        if row.get("baseline_state", "clean") == "clean" and not (
-            path.startswith("entrypoint:study-agent") and row["removal_slice"] == "CA-02"
+        if (
+            row.get("baseline_state", "clean") == "clean"
+            and not (path.startswith("entrypoint:study-agent") and row["removal_slice"] == "CA-02")
         ):
             errors.append(f"classification has undeclared baseline-only path: {path}")
     transition_sources = {row["source_path"] for row in transition_rows}
@@ -605,8 +618,9 @@ def validate(*, live: bool = False) -> list[str]:
             if (
                 path not in transition_sources
                 and not path.startswith("entrypoint:")
-                and _digest(path, targets)
-                != POST_BASELINE_SHA256.get(path, reviewed_by_current_path[path]["sha256"])
+                and _digest(path, targets) != POST_BASELINE_SHA256.get(
+                    path, reviewed_by_current_path[path]["sha256"]
+                )
             ):
                 errors.append(f"classification sha256 mismatch for committed path: {path}")
         except OSError as error:

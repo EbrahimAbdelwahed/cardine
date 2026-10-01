@@ -104,7 +104,8 @@ def _normalize_tree(tree: list[object], text: str) -> tuple[DocumentNode, ...]:
     # The synthetic root covers preamble and heading-free documents and gives
     # provider forests one deterministic root without inventing evidence.
     root_key = "document-root"
-    line_count = text.count("\n") + 1
+    # A final newline terminates the final line; it is not an extra source line.
+    line_count = text.count("\n") + (0 if text.endswith("\n") else 1)
     seen: set[str] = {root_key}
     nodes: list[DocumentNode] = []
 

@@ -1,6 +1,7 @@
 # Study Agent Harness — Unified Jev + PageIndex Refactor Specification
 
-Status: implementation-ready consolidated spec  
+Status: implementation-ready consolidated spec
+
 Purpose: replace the previous Jev integration spec plus later revision notes with one authoritative document.
 
 ---

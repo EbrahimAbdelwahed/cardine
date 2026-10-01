@@ -29,9 +29,9 @@ TEXT = "Café\nValves\nHeart"
 
 
 def context(
-    *, page_count: int | None = None, page_map: tuple[PageMapEntry, ...] = ()
+    *, text: str = TEXT, page_count: int | None = None, page_map: tuple[PageMapEntry, ...] = ()
 ) -> DocumentIndexContext:
-    data = TEXT.encode()
+    data = text.encode()
     digest = sha256(data).hexdigest()
     blob = BlobRef(BlobId(f"sha256:{digest}"), digest, len(data))
     source = SourceDocument(
@@ -48,14 +48,14 @@ def context(
         blob,
         blob,
         "normalization@1",
-        len(TEXT),
+        len(text),
         StructureOrigin.SOURCE_AUTHORED,
         "fixture",
     )
     substrate = Substrate(
-        substrate_id_for(data), blob, len(TEXT), "normalization@1", page_count, page_map
+        substrate_id_for(data), blob, len(text), "normalization@1", page_count, page_map
     )
-    return DocumentIndexContext(source, substrate, TEXT)
+    return DocumentIndexContext(source, substrate, text)
 
 
 def locator(start: int, end: int) -> SourceLocator:

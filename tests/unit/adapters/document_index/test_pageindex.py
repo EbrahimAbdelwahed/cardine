@@ -177,3 +177,22 @@ def test_unsupported_format_fails_explicitly() -> None:
     with pytest.raises(PageIndexProviderError, match="pageindex_unsupported_media_type"):
         asyncio.run(PageIndexDocumentIndexAdapter(worker=worker).build(pdf))
     assert worker.calls == 0
+
+
+@pytest.mark.parametrize("text", ["# Heading\nBody\n", "Preamble\n# Heading\nBody\n", "\n"])
+def test_final_newline_indexes_reconcile_to_complete_canonical_source(text: str) -> None:
+    from study_agent.knowledge.document_index import candidate_nodes
+    from tests.unit.knowledge.test_document_index import context
+
+    binding = context(text=text)
+    material = DocumentIndexRequest(
+        binding.source.source_id,
+        binding.source.revision_id,
+        binding.substrate.substrate_id,
+        "text/markdown",
+        text.encode(),
+        text,
+    )
+    derived = asyncio.run(PageIndexDocumentIndexAdapter().build(material))
+    candidates = candidate_nodes(derived, binding)
+    assert "".join(text[c.span.start_offset : c.span.end_offset] for c in candidates) == text
