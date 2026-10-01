@@ -68,6 +68,11 @@
     --weight-medium: 500;
     --weight-semibold: 600;
 
+    /* Reference component metrics: Beautiful UI 02 / 03. */
+    --chat-detail-type: .78125rem;
+    --chat-answer-leading: 1.625;
+    --chat-follow-up-radius: 7px;
+
     --measure: 68ch;
     --measure-tight: 46ch;
 
@@ -195,6 +200,7 @@
   *, *::before, *::after { box-sizing: border-box; }
   /* A layout `display` must never resurrect an element the code hid. */
   [hidden] { display: none !important; }
+  dialog:not([open]) { display: none !important; }
   body, h1, h2, h3, h4, p, figure, blockquote, dl, dd, ol, ul { margin: 0; }
   ol[class], ul[class] { padding: 0; list-style: none; }
   img, svg { display: block; max-width: 100%; }

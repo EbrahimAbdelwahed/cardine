@@ -21,6 +21,7 @@ from .contracts import (
     TutorDecision,
     TutorHostContext,
 )
+from .source_grounding import requires_study_memory_routing
 
 _PROPOSE_FLASHCARDS = "propose_flashcards"
 _FLASHCARD_ACTION = (
@@ -131,42 +132,60 @@ class FlashcardProfileRoutingTutorDecisionPort(TutorDecisionPort):
     async def decide(
         self, context: TutorHostContext, interruption: TutorInterruptionToken
     ) -> TutorDecision:
-        decision = await self._delegate.decide(context, interruption)
         if context.pending_continuation is not None:
-            return decision
+            return await self._delegate.decide(context, interruption)
         learner_text = _latest_learner_text(context)
         if learner_text is None or not _is_flashcard_generation_request(learner_text):
-            return decision
+            return await self._delegate.decide(context, interruption)
         if not any(item.id == _PROPOSE_FLASHCARDS for item in context.advertised_capabilities):
-            return decision
-        if isinstance(decision, InvokeToolDecision):
-            return decision
-        if isinstance(decision, StartCapabilityDecision) and (
-            decision.capability_id == _PROPOSE_FLASHCARDS
-        ):
-            return (
-                _bounded_memory_flashcard_decision(decision, context)
-                if _observed_conversation_history(context)
-                else decision
+            return await self._delegate.decide(context, interruption)
+
+        if requires_study_memory_routing(learner_text):
+            decision = await self._delegate.decide(context, interruption)
+            if isinstance(decision, InvokeToolDecision):
+                return decision
+            if (
+                isinstance(decision, StartCapabilityDecision)
+                and decision.capability_id == _PROPOSE_FLASHCARDS
+            ):
+                return decision
+
+        observed_history = _observed_conversation_history(context)
+        history_scoped = _HISTORY_SCOPED.search(learner_text) is not None
+        if history_scoped and not observed_history:
+            if _omitted_conversation_entries(context) > 0 and _has_conversation_read_tool(context):
+                return InvokeToolDecision(
+                    "conversation.read",
+                    {
+                        "cursor": _oldest_included_conversation_sequence(context),
+                        "direction": "backward",
+                        "limit": 12,
+                    },
+                )
+            decision = await self._delegate.decide(context, interruption)
+            if isinstance(decision, InvokeToolDecision):
+                return decision
+            if (
+                isinstance(decision, StartCapabilityDecision)
+                and decision.capability_id == _PROPOSE_FLASHCARDS
+            ):
+                return decision
+            return AskLearnerDecision(
+                "Quali argomenti della conversazione devo trasformare in flashcard?"
             )
-        if _observed_conversation_history(context):
-            # The model has already inspected older canonical turns. Rebuilding
-            # inputs from only the latest learner message would discard that
-            # recovered scope, so fail closed to the validated model decision.
-            return decision
-        if (
-            _HISTORY_SCOPED.search(learner_text)
-            and _omitted_conversation_entries(context) > 0
-            and _has_conversation_read_tool(context)
-        ):
-            return InvokeToolDecision(
-                "conversation.read",
-                {
-                    "cursor": _oldest_included_conversation_sequence(context),
-                    "direction": "backward",
-                    "limit": 12,
-                },
+        if observed_history:
+            decision = await self._delegate.decide(context, interruption)
+            if isinstance(decision, InvokeToolDecision):
+                return decision
+            if (
+                isinstance(decision, StartCapabilityDecision)
+                and decision.capability_id == _PROPOSE_FLASHCARDS
+            ):
+                return _bounded_memory_flashcard_decision(decision, context)
+            return AskLearnerDecision(
+                "Quali argomenti della conversazione devo trasformare in flashcard?"
             )
+
         route = select_flashcard_profile(learner_text)
         if route.kind is FlashcardProfileRouteKind.CLARIFICATION:
             return AskLearnerDecision(route.clarification or "Quale profilo preferisci?")
@@ -239,8 +258,7 @@ def _observed_conversation_history(context: TutorHostContext) -> bool:
 def _has_conversation_read_tool(context: TutorHostContext) -> bool:
     tools = context.tutor_snapshot.get("harness_tools")
     return isinstance(tools, tuple) and any(
-        isinstance(item, Mapping) and item.get("name") == "conversation.read"
-        for item in tools
+        isinstance(item, Mapping) and item.get("name") == "conversation.read" for item in tools
     )
 
 
@@ -253,8 +271,7 @@ def _oldest_included_conversation_sequence(context: TutorHostContext) -> int | N
         candidates.extend(
             sequence
             for item in entries
-            if isinstance(item, Mapping)
-            and type(sequence := item.get("course_sequence")) is int
+            if isinstance(item, Mapping) and type(sequence := item.get("course_sequence")) is int
         )
     return min(candidates) if candidates else None
 

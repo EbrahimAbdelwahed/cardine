@@ -95,6 +95,17 @@ f.viewport.scrollHeight += 200; observers[0].callback(); flush(); assert.equal(f
 f.viewport.scrollTop = f.viewport.scrollHeight; f.viewport.events.scroll(); flush(); assert.equal(c.following, true);
 f.rail.events.focusin({target:firstButton}); assert.match(f.shell.dataset.messagePreview, /markup stays text/);
 f.rail.events.keydown({key:'Escape',type:'keydown'}); assert.equal(f.shell.dataset.messagePreview, undefined);
+// Visibility-only streaming changes no text node or geometry.
+f.viewport.scrollTop = 100; f.viewport.events.scroll(); flush();
+const streamingButton = f.rail.children[1];
+f.content.messages[1].surface.innerText = 'First'; c.refresh(); flush();
+assert.match(streamingButton.attributes['aria-label'], /First$/);
+f.content.messages[1].surface.innerText = 'First complete answer'; c.refresh(); flush();
+assert.match(streamingButton.attributes['aria-label'], /First complete answer$/);
+f.rail.events.focusin({target:streamingButton});
+assert.match(f.shell.dataset.messagePreview, /First complete answer$/);
+assert.equal(f.viewport.scrollTop, 100, 'Preview refresh preserves history reading');
+assert.equal(f.rail.children[1], streamingButton, 'Streaming preserves rail controls');
 state.loading = true; observers[0].callback(); flush(); assert.equal(f.viewport.attributes['aria-busy'], 'true');
 c.destroy(); assert.ok(observers.every(o => o.disconnected)); assert.equal(Object.keys(f.viewport.events).length, 0); assert.equal(scheduled.size, 0);
 f = fixture(300); observers = []; c = globalThis.enhance({});

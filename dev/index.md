@@ -12,6 +12,9 @@ archive and must not be treated as Cardine's current state.
 
 - [Source, PDF and audio study notes](logs/2026-09-30--cardine--source-study-notes--log.md) — approved source-page generation, Groq Turbo transcription, editable PDF lesson ranges, review and dependency-aware publication; based on PR #5.
 - [PR #9 current review repairs](handoffs/2026-10-01--cardine--pr9-current-review-repairs--handoff.md) — stale accepted material publication and oversized audio manifest handling, with scoped verification and submission status.
+- [Combined recent-PR test preview](logs/2026-09-28--cardine--combined-pr-preview--log.md) — isolated integration of PRs #3/#5/#6/#7, copied study data, local port 8766 and the remaining custody gate.
+- [Compact Thinking and Streaming Text](logs/2026-09-28--cardine--compact-thinking-streaming--log.md) — approved compact activity renderers, progressive verified answers, follow-ups and response actions on the recovery base.
+- [PR #3 automatic review fixes](handoffs/2026-10-01--cardine--pr3-review-fixes--handoff.md) — explicit current-turn lesson scope remains authoritative after model query distillation, and unsuccessful normal turn receipts settle Tool Chips as failed.
 - [PR #5 automatic review follow-up](handoffs/2026-10-01--cardine--pr5-review-fixes.md) — history-derived flashcard scope is rebuilt only from validated bounded conversation observations; material emphasis and Italian uncertainty commitments are preserved and checked.
 
 - [Flashcard generation repair publication](logs/2026-09-29--cardine--flashcard-generation-publication--log.md) — the owner authorized publishing the generation repair to PR #5; empty-array wire schema, truthful failure and new-turn retry regressions verified offline; preview update and live generation remain pending.

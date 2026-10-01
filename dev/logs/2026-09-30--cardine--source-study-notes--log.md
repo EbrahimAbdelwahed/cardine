@@ -117,3 +117,13 @@ primary-checkout venv. The ownership audit passes (322 rows), and the feature
 custody overlay binds the updated product digest. GitHub was unreachable during
 this pass, so CI/review state still needs the parent's submitted-commit check.
 See the [focused handoff](../handoffs/2026-10-01--cardine--pr9-current-review-repairs--handoff.md).
+
+## Final merge integration — 2026-10-01
+
+The owner authorized finishing all open-PR merges. PR #9 now includes the
+verified #5/#3/#7/#8 dependency chain so its final CI checks the actual
+combined product. The turn-activity conflict keeps failure settlement from
+#3 and the product worker lifecycle from #9. Four integrated presentation
+and repository paths receive scoped feature custody digests; historical
+ledgers remain frozen. Current-head CI and automatic review are required
+before merging; no provider calls or deployment are authorized here.
