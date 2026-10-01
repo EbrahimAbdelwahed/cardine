@@ -84,7 +84,7 @@
     },
     {
       "path": "src/cardine/hosts/flashcard_routing.py",
-      "sha256": "d04f0cae6164e6073c3c9f2b7784efed7f9bfd24c3efa0c2fbc3ce51dae0c4b6"
+      "sha256": "a90f4c42ec10dd0503a46d66061efa61bf6ad4c956dab36d53bb4c06c22d4844"
     },
     {
       "path": "src/cardine/hosts/runner.py",

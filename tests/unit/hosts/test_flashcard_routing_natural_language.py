@@ -348,4 +348,4 @@ def test_auxiliary_history_preserves_explicit_topic(prompt: str) -> None:
     assert "meiosi" in decision.inputs["query"]
     assert "meiosi" in decision.inputs["scope"]
     assert "glicolisi" not in decision.inputs["scope"]
-    assert "continuation_summary_json" not in decision.inputs
+    assert decision.inputs["continuation_summary_json"] is None

@@ -193,7 +193,7 @@ def _explicit_memory_flashcard_decision(
     current = _flashcard_inputs(learner_text)
     inputs["query"] = current["query"]
     inputs["scope"] = current["scope"]
-    inputs.pop("continuation_summary_json", None)
+    inputs["continuation_summary_json"] = None
     return StartCapabilityDecision(
         decision.capability_id, cast(JsonObject, inputs), decision.progress_message
     )
