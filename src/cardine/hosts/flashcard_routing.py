@@ -141,32 +141,38 @@ class FlashcardProfileRoutingTutorDecisionPort(TutorDecisionPort):
             return decision
         if isinstance(decision, InvokeToolDecision):
             return decision
-        if isinstance(decision, StartCapabilityDecision) and (
-            decision.capability_id == _PROPOSE_FLASHCARDS
-        ):
-            return (
-                _bounded_memory_flashcard_decision(decision, context)
-                if _observed_conversation_history(context)
-                else decision
+        history_scoped = _purely_history_scoped(learner_text)
+        if history_scoped:
+            if _validated_conversation_entries(context):
+                if (
+                    isinstance(decision, StartCapabilityDecision)
+                    and decision.capability_id == _PROPOSE_FLASHCARDS
+                ):
+                    return _bounded_memory_flashcard_decision(decision, context)
+                return decision
+            if (
+                not _observed_conversation_history(context)
+                and _omitted_conversation_entries(context) > 0
+                and _has_conversation_read_tool(context)
+            ):
+                return InvokeToolDecision(
+                    "conversation.read",
+                    {
+                        "cursor": _oldest_included_conversation_sequence(context),
+                        "direction": "backward",
+                        "limit": 12,
+                    },
+                )
+            return AskLearnerDecision(
+                "Quali argomenti della conversazione vuoi usare per le flashcard?"
             )
-        if _observed_conversation_history(context):
-            # The model has already inspected older canonical turns. Rebuilding
-            # inputs from only the latest learner message would discard that
-            # recovered scope, so fail closed to the validated model decision.
-            return decision
         if (
-            _HISTORY_SCOPED.search(learner_text)
-            and _omitted_conversation_entries(context) > 0
-            and _has_conversation_read_tool(context)
+            isinstance(decision, StartCapabilityDecision)
+            and decision.capability_id == _PROPOSE_FLASHCARDS
         ):
-            return InvokeToolDecision(
-                "conversation.read",
-                {
-                    "cursor": _oldest_included_conversation_sequence(context),
-                    "direction": "backward",
-                    "limit": 12,
-                },
-            )
+            return decision
+        if _observed_conversation_history(context):
+            return decision
         route = select_flashcard_profile(learner_text)
         if route.kind is FlashcardProfileRouteKind.CLARIFICATION:
             return AskLearnerDecision(route.clarification or "Quale profilo preferisci?")
@@ -175,6 +181,32 @@ class FlashcardProfileRoutingTutorDecisionPort(TutorDecisionPort):
             _flashcard_inputs(learner_text),
             None,
         )
+
+
+def _purely_history_scoped(learner_text: str) -> bool:
+    if _HISTORY_SCOPED.search(learner_text) is None:
+        return False
+    remainder = _HISTORY_SCOPED.sub(" ", _FLASHCARD_REQUEST.sub(" ", learner_text))
+    generic = _MEMORY_TOPIC_STOPWORDS | {
+        "solo",
+        "only",
+        "argomenti",
+        "topics",
+        "quanto",
+        "prima",
+        "using",
+        "usando",
+        "già",
+        "studiato",
+        "visto",
+        "covered",
+        "studied",
+    }
+    return not any(
+        token.casefold() not in generic
+        for token in re.findall(r"[\wÀ-ÿ-]+", remainder)
+        if len(token) >= 3
+    )
 
 
 def _is_flashcard_generation_request(learner_text: str) -> bool:
@@ -239,8 +271,7 @@ def _observed_conversation_history(context: TutorHostContext) -> bool:
 def _has_conversation_read_tool(context: TutorHostContext) -> bool:
     tools = context.tutor_snapshot.get("harness_tools")
     return isinstance(tools, tuple) and any(
-        isinstance(item, Mapping) and item.get("name") == "conversation.read"
-        for item in tools
+        isinstance(item, Mapping) and item.get("name") == "conversation.read" for item in tools
     )
 
 
@@ -253,8 +284,7 @@ def _oldest_included_conversation_sequence(context: TutorHostContext) -> int | N
         candidates.extend(
             sequence
             for item in entries
-            if isinstance(item, Mapping)
-            and type(sequence := item.get("course_sequence")) is int
+            if isinstance(item, Mapping) and type(sequence := item.get("course_sequence")) is int
         )
     return min(candidates) if candidates else None
 
@@ -296,8 +326,7 @@ def _validated_conversation_entries(
     for observation in observations:
         if (
             not isinstance(observation, Mapping)
-            or observation.get("tool_name")
-            not in {"conversation.search", "conversation.read"}
+            or observation.get("tool_name") not in {"conversation.search", "conversation.read"}
             or observation.get("status") != "succeeded"
         ):
             continue
@@ -328,9 +357,7 @@ def _validated_conversation_entries(
                 or len(excerpt) > 700
             ):
                 break
-            validated.append(
-                {"role": role, "course_sequence": sequence, "excerpt": excerpt}
-            )
+            validated.append({"role": role, "course_sequence": sequence, "excerpt": excerpt})
         else:
             entries.extend(validated)
     return tuple(entries[:24])
@@ -350,9 +377,7 @@ def _history_topic_terms(entries: tuple[Mapping[str, object], ...]) -> tuple[str
                 and not normalized.isdecimal()
             ):
                 terms[normalized] = terms.get(normalized, 0) + 1
-    return tuple(
-        sorted(terms, key=lambda term: (-terms[term], term))[:6]
-    )
+    return tuple(sorted(terms, key=lambda term: (-terms[term], term))[:6])
 
 
 __all__ = ["FlashcardProfileRoutingTutorDecisionPort"]
