@@ -23,6 +23,17 @@ PR #5 verification: 2493 passed, 4 optional tests skipped; focused contracts
 44 passed; Ruff, mypy (621 files), standalone ownership audit pass.
 Isolated wheel/sdist build and artifact verification also pass.
 
+PR #7 is updated on the recovery base, resolving the dev index conflict by
+keeping both entries. The automatic Codex finding on off-route streaming is
+fixed: a reply that completes after navigation is marked revealed, so returning
+to the session shows its verified answer immediately. The included Beautiful UI
+MIT notice is bound to its exact bytes in the custody audit as a separate
+third-party artifact; the historical CA-01/CA-02 rows remain unchanged.
+An offline browser fixture verifies that an answer completed after route
+navigation is revealed without a stale streaming animation; a same-route
+answer still streams. The combined PR #7 base passed 2501 tests with four
+optional skips, Ruff, mypy (622 files), ownership audit, and wheel/sdist build.
+
 A later Codex review on #5 found historical generated-source reads used the
 latest projection. Generated admissions now validate against canonical event
 prefix replay at their original sequence; the latest projection is still
@@ -56,9 +67,11 @@ CA-01/CA-02 ledgers.
 The complete suite now passes (2501 tests, 4 optional skips); Ruff, mypy
 (621 files), ownership audit (322 rows), and wheel/sdist build pass.
 
+Chat rail previews explicitly refresh after each word reveal, including streams that stay on one visual line and produce no resize or text mutation. Offline DOM regression verifies updated accessible labels/previews, stable controls, and preserved history scroll.
 Final recovery bounds citation display locators to 2,000 characters while retaining canonical IDs, including 4,000-character headings. SQLite identity probes serialize concurrent opens while retaining inode replacement rejection. Offline runtime tests: 2,508 passed, four expected skips; archive audit rechecked after committing updated custody.
 
+The streaming live region is removed after delivering its announcement and cancelled on teardown, preventing a persistent duplicate answer in the accessibility tree. Offline lifecycle regression covers announcement delivery and removal.
 Architecture review repairs retain study-memory tool decisions before grounded explanation, preserve a closed allowlist of typed gateway failures through worker sanitization, and distinguish permission/schema errors in Settings readiness. The worker contract correction has an exact digest and scoped AST variance; frozen custody ledgers remain unchanged.
 Retry captures replace failed transient activity with a fresh running attempt, preserving monotonic sequence IDs to ignore late completion tokens. Regression covers failed-to-running-to-settled state, retention reset and stale tokens.
 
-Retry polling remains active while the POST is pending even if its first GET observes the previous terminal attempt. The polling loop exits when completion clears pendingTurn, navigation cancels it, failures exceed bounds, or retention timeout expires. Offline regression covers old failure, new running attempt and another failure.
+Retry polling remains active while the POST is pending even if its first GET observes the previous terminal attempt. The polling loop exits when completion clears pendingTurn, navigation cancels it, failures exceed bounds, or retention timeout expires. Offline regression covers old failure, new running attempt and another failure. Transport retries that reuse a request ID now ignore old terminal snapshots until fresh running activity arrives; the DOM regression covers stale failure, the new attempt, reader collapse, and settlement.

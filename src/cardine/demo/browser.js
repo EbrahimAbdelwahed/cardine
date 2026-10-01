@@ -143,6 +143,10 @@
     studySetup: null,
     lastTurn: null,
     turnActivities: Object.create(null),
+    turnCommands: Object.create(null),
+    answerFeedback: Object.create(null),
+    revealedAnswers: new Set(),
+    streamAnswerId: "",
     authProbeUnavailable: false,
     indexingPollToken: 0,
     activityPollToken: 0,
@@ -1068,6 +1072,10 @@
   }
 
   function syncAttributes(current, next) {
+    // Live activity collapses once on completion. Subsequent refreshes retain
+    // the reader's disclosure choice, including opening completed traces.
+    if (current.tagName === "DETAILS" && current.classList.contains("ai-tool-chips")
+      && current.dataset.state === "running" && next.dataset.state !== "running") current.open = false;
     for (const attribute of Array.from(current.attributes)) {
       // A disclosure the reader opened stays open across a refresh.
       if (attribute.name === "open" && current.tagName === "DETAILS") continue;
@@ -1310,11 +1318,20 @@
     resize.observe(content);
     resize.observe(viewport);
     const mutation = new MutationObserver(grow);
-    mutation.observe(content, { childList: true, subtree: true, characterData: true });
+    // Streaming reveals words by toggling their visibility class without
+    // changing text nodes or geometry, so observe those changes as well.
+    mutation.observe(content, {
+      attributes: true,
+      attributeFilter: ["class"],
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
     update();
     return {
       get following() { return following; },
       resume,
+      refresh: schedule,
       destroy() {
         resize.disconnect();
         mutation.disconnect();
@@ -1368,11 +1385,28 @@
     conversationScroller = null;
     patch(root, html);
     bindDynamicControls();
+    let streamScroll = null;
     destroyPrimitiveEnhancements = typeof CardineAI.enhance === "function"
       ? CardineAI.enhance(root, {
         populateComposer: false,
         onFollowUp: (prompt, control) => populateComposerPrompt(prompt, control),
         onFineTune: (prompt, control) => populateComposerPrompt(prompt, control),
+        onRetry: retryAnswer,
+        onFeedback: (feedback, control) => {
+          const id = control.closest("[data-message-id]")?.dataset.messageId;
+          if (id) state.answerFeedback[id] = feedback;
+        },
+        onStreamProgress: (_article, phase) => {
+          if (phase === "before") streamScroll = captureScroll();
+          else {
+            if (streamScroll) restoreScroll(streamScroll, false);
+            conversationScroller?.refresh();
+          }
+        },
+        onStreamStart: (article) => {
+          const id = article.closest("[data-message-id]")?.dataset.messageId;
+          if (id) state.revealedAnswers.add(id);
+        },
       })
       : () => {};
     syncComposers();
@@ -1804,22 +1838,30 @@
     const citations = array(first(item, ["citations", "sources"], []));
     if (Object.keys(citation).length) citations.unshift(citation);
     const followUps = array(first(item, ["follow_ups", "followUps", "suggestions", "actions"], []));
-    const thinking = array(first(item, ["thinking", "trace", "steps", "activity"], []));
     const tools = array(first(item, ["activity_records", "tools", "tool_activity", "capabilities", "retrieval"], []));
-    const answer = aiAnswer({ answer: text(content, "Messaggio senza testo visualizzabile."), citations, followUps, status: first(item, ["status", "state"], "ready"), reveal: showFineTune });
-    const thinkingView = thinking.length ? aiThinking({ steps: thinking, summary: "Come ho costruito questa risposta" }) : "";
-    const toolsView = tools.length ? aiToolChips({ records: tools, state: text(first(item, ["activity_state", "state"], "settled"), "settled") }) : "";
-    const fineTune = showFineTune ? aiFineTune({
-      title: "Continua",
-      detail: "Ogni opzione prepara un follow-up nel campo di scrittura, senza inviarlo.",
-      styles: [
-        { label: "Più breve", prompt: "Rispondi di nuovo in modo più breve e diretto." },
-        { label: "Con esempi", prompt: "Rispondi di nuovo usando esempi clinici concreti." },
-        { label: "Fammi una domanda", prompt: "Fammi una domanda di richiamo attivo su questo punto." },
-      ],
-    }) : "";
-    const legacyCitation = Object.keys(citation).length ? `<button class="provenance-chip" type="button" data-provenance='${esc(JSON.stringify(citation))}'>fonte · ${esc(first(citation, ["locator", "title", "revision"], "metadati disponibili"))}</button>` : "";
-    return `<article class="thread-message thread-message--assistant"><p class="thread-message__role">${esc(role === "system" ? "sistema" : "tutor")}</p>${answer}${thinkingView}${toolsView}${legacyCitation}${fineTune}</article>`;
+    const id = text(first(item, ["interaction_id", "presentation_id"], ""));
+    const suggested = followUps.length ? followUps : showFineTune ? [
+      { label: "Spiegamelo con un esempio", prompt: "Spiegamelo usando un esempio clinico concreto." },
+      { label: "Fammi una domanda di richiamo", prompt: "Fammi una domanda di richiamo attivo su questo punto." },
+    ] : [];
+    const answer = aiAnswer({
+      answer: text(content, "Messaggio senza testo visualizzabile."), citations, followUps: suggested,
+      status: first(item, ["status", "state"], "ready"), chat: true,
+      stream: Boolean(id && id === state.streamAnswerId && !state.revealedAnswers.has(id)),
+      canRetry: Boolean(state.turnCommands[id]), feedback: state.answerFeedback[id],
+    });
+    const toolsView = tools.length ? `<div class="thread-message__activity">${aiToolChips({ records: tools, state: text(first(item, ["activity_state"], "settled"), "settled") })}</div>` : "";
+    return `<article class="thread-message thread-message--assistant" ${id ? `data-key="message-${esc(id)}" data-message-id="${esc(id)}"` : ""}><p class="thread-message__role">${esc(role === "system" ? "sistema" : "tutor")}</p>${toolsView}${answer}</article>`;
+  }
+
+  async function retryAnswer(control) {
+    if (state.pendingTurn || state.loading) return;
+    const id = control.closest("[data-message-id]")?.dataset.messageId;
+    const original = state.turnCommands[id];
+    if (!original) return;
+    // Regeneration is a new turn; a transport retry reuses its request key.
+    // Keep the original lesson scope instead of using today's composer pin.
+    await executeCommand(original.endpoint, original.payload, null, "sessione", requestId());
   }
 
   function renderFonti(payload) {
@@ -2154,6 +2196,7 @@
       && JSON.stringify(state.lastCommand.payload) === JSON.stringify(payload)
     );
     const request = forcedRequest || (retryingCommand ? state.lastCommand.requestId : requestId());
+    const reusingRequest = Boolean(state.lastCommand?.requestId === request);
     const command = Object.freeze({
       endpoint,
       payload: Object.freeze({ ...payload }),
@@ -2162,7 +2205,11 @@
     });
     state.lastCommand = command;
     if (isTutorTurn) {
-      state.pendingTurn = { requestId: request, content: text(payload.content || payload.response) };
+      state.pendingTurn = {
+        requestId: request,
+        content: text(payload.content || payload.response),
+        awaitingRetryActivity: reusingRequest,
+      };
       renderOptimisticTurn(state.pendingTurn.content);
       pollTurnActivity(request).catch(() => {});
     }
@@ -2176,6 +2223,14 @@
       const activity = object(receipt.activity);
       const settledRecords = array(receipt.activity_records);
       const presentationId = text(receipt.presentation_id, "");
+      if (isTutorTurn && presentationId) {
+        if (commandNavigationVersion === state.navigationVersion && state.route === "sessione") {
+          state.streamAnswerId = presentationId;
+        } else {
+          state.revealedAnswers.add(presentationId);
+        }
+        if (endpoint === "/api/v1/session/turns") state.turnCommands[presentationId] = command;
+      }
       if (isTutorTurn && presentationId && settledRecords.length) {
         state.turnActivities[presentationId] = { records: settledRecords, state: "settled" };
       }
@@ -2287,9 +2342,11 @@
     const pendingCopy = flashcards
       ? "Sto generando e verificando le proposte flashcard…"
       : "Sto preparando una risposta basata sulle fonti del corso…";
-    const pending = `<article class="thread-message thread-message--assistant thread-message--pending" data-optimistic-turn><p class="thread-message__role">tutor</p><p class="thread-message__text" data-turn-progress>${pendingCopy}</p><div class="thread-message__activity" data-turn-activity aria-live="polite"></div></article>`;
+    const pending = `<article class="thread-message thread-message--assistant thread-message--pending" data-optimistic-turn><p class="thread-message__role">tutor</p><div class="thread-message__activity" data-turn-activity aria-live="polite">${aiToolChips({state: "running", records: [], progress_message: pendingCopy})}</div></article>`;
     const thread = $(".session-thread", root);
     if (thread) {
+      const empty = $(".empty-state", thread);
+      if (empty) empty.hidden = true;
       thread.insertAdjacentHTML("beforeend", outgoing + pending);
       const scroller = $(".conversation-scroll", root);
       if (scroller) scroller.scrollTop = scroller.scrollHeight;
@@ -2307,29 +2364,34 @@
 
   function removeOptimisticTurn() {
     $$('[data-optimistic-turn]', root).forEach((item) => item.remove());
+    const empty = $(".session-thread > .empty-state", root);
+    if (empty) empty.hidden = false;
   }
 
   async function pollTurnActivity(requestId) {
     const token = ++state.activityPollToken;
     const navigationVersion = state.navigationVersion;
+    let awaitingRetryActivity = state.pendingTurn?.awaitingRetryActivity === true;
     let failures = 0;
     for (let attempt = 0; attempt < 240 && token === state.activityPollToken && navigationVersion === state.navigationVersion && state.pendingTurn?.requestId === requestId && failures < 3; attempt += 1) {
       try {
         const payload = await fetchJson(`/api/v1/turns/${encodeURIComponent(requestId)}/activity`);
+        if (token !== state.activityPollToken || navigationVersion !== state.navigationVersion || state.pendingTurn?.requestId !== requestId) return;
+        if (awaitingRetryActivity && payload.state !== "running") {
+          await new Promise((resolve) => window.setTimeout(resolve, 600));
+          continue;
+        }
+        awaitingRetryActivity = false;
         failures = 0;
         const progressMessage = text(payload.progress_message, "");
-        const progressNode = $("[data-turn-progress]", root);
-        if (progressNode && progressMessage && token === state.activityPollToken) {
-          // Keep model text out of HTML parsing; textContent preserves the
-          // escaped pending bubble even when the provider returns markup.
-          progressNode.textContent = progressMessage;
-        }
         const node = $("[data-turn-activity]", root);
-        if (node && token === state.activityPollToken) patch(node, aiToolChips(payload));
-        // A retry reuses its request ID, so its first GET can still observe
-        // the previous terminal attempt before POST enters capture. Keep
-        // polling until the command clears pendingTurn (or navigation cancels).
-
+        if (node && token === state.activityPollToken) {
+          const scroll = captureScroll();
+          patch(node, aiToolChips({ ...payload, progress_message: progressMessage }));
+          const progressNode = $("[data-turn-progress]", node);
+          if (progressNode && progressMessage) progressNode.textContent = progressMessage;
+          restoreScroll(scroll, false);
+        }
         await new Promise((resolve) => window.setTimeout(resolve, 600));
       } catch (_) {
         failures += 1;

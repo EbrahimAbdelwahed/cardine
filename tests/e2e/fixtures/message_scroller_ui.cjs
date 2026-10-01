@@ -8,8 +8,8 @@ function cancelAnimationFrame(id) { scheduled.delete(id); }
 function flush() { const callbacks = [...scheduled.values()]; scheduled.clear(); callbacks.forEach(fn => fn()); }
 let observers = [];
 class Observer {
-  constructor(callback) { this.callback = callback; this.disconnected = false; observers.push(this); }
-  observe() {} disconnect() { this.disconnected = true; }
+  constructor(callback) { this.callback = callback; this.disconnected = false; this.observed = []; observers.push(this); }
+  observe(target, options) { this.observed.push({target, options}); } disconnect() { this.disconnected = true; }
 }
 const ResizeObserver = Observer; const MutationObserver = Observer;
 const state = {loading: false}; const NEAR_BOTTOM = 56;
@@ -95,6 +95,19 @@ f.viewport.scrollHeight += 200; observers[0].callback(); flush(); assert.equal(f
 f.viewport.scrollTop = f.viewport.scrollHeight; f.viewport.events.scroll(); flush(); assert.equal(c.following, true);
 f.rail.events.focusin({target:firstButton}); assert.match(f.shell.dataset.messagePreview, /markup stays text/);
 f.rail.events.keydown({key:'Escape',type:'keydown'}); assert.equal(f.shell.dataset.messagePreview, undefined);
+// Visibility-only streaming changes no text node or geometry. The observer
+// catches the class toggle used by the word reveal, then refreshes the rail.
+f.viewport.scrollTop = 100; f.viewport.events.scroll(); flush();
+const streamingButton = f.rail.children[1];
+assert.deepEqual(observers[1].observed[0].options.attributeFilter, ['class']);
+f.content.messages[1].surface.innerText = 'First'; observers[1].callback([{type:'attributes',attributeName:'class'}]); flush();
+assert.match(streamingButton.attributes['aria-label'], /First$/);
+f.content.messages[1].surface.innerText = 'First complete answer'; observers[1].callback([{type:'attributes',attributeName:'class'}]); flush();
+assert.match(streamingButton.attributes['aria-label'], /First complete answer$/);
+f.rail.events.focusin({target:streamingButton});
+assert.match(f.shell.dataset.messagePreview, /First complete answer$/);
+assert.equal(f.viewport.scrollTop, 100, 'Preview refresh preserves history reading');
+assert.equal(f.rail.children[1], streamingButton, 'Streaming preserves rail controls');
 state.loading = true; observers[0].callback(); flush(); assert.equal(f.viewport.attributes['aria-busy'], 'true');
 c.destroy(); assert.ok(observers.every(o => o.disconnected)); assert.equal(Object.keys(f.viewport.events).length, 0); assert.equal(scheduled.size, 0);
 f = fixture(300); observers = []; c = globalThis.enhance({});

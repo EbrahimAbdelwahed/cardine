@@ -32,15 +32,15 @@
     },
     {
       "path": "src/cardine/demo/ai-primitives.css",
-      "sha256": "d44cef58e90496c79d49262759c25757b660bc07e9c76dba49bb45575beb22d3"
+      "sha256": "2eaf0d4c6c791042307fb6958acc3563ee8e5e1ea391fee947c7f78b51d55781"
     },
     {
       "path": "src/cardine/demo/ai-primitives.js",
-      "sha256": "34629bcd12cbc351209b6048ca484751a819bcdafc00b19fcd628ca20f460d83"
+      "sha256": "393658991ef2e8bb410b6e182dc792a6a70d2ff663b81c67acd074bdc92c543d"
     },
     {
       "path": "src/cardine/demo/browser.css",
-      "sha256": "2ffb5b445f0b5437c56fed57ac64bcb576a09411be44c8c4900a19e02c95a16b"
+      "sha256": "fbc24f237768b68b589baa145093648d7fc11c32fcefc126f03c63f4c6c8e646"
     },
     {
       "path": "src/cardine/demo/browser.html",
@@ -48,7 +48,7 @@
     },
     {
       "path": "src/cardine/demo/browser.js",
-      "sha256": "a98cadd44362840c660ad63d208d5c49ab95d40295dd5946911674c13872a02d"
+      "sha256": "3f0fcc7bbd609d46df6192af4325251fac3fa60e02535d2469f532389f26c135"
     },
     {
       "path": "src/cardine/demo/browser.py",

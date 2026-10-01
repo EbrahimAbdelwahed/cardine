@@ -33,6 +33,11 @@ RECOVERY_AST_VARIANCE = {
     "src/study_agent/domain/__init__.py",
     "src/study_agent/tutor_snapshot/reader.py",
 }
+THIRD_PARTY_NOTICES = {
+    "src/cardine/demo/icons/LICENSE.beautifului.txt": (
+        "65362623b02cdad0e2d8e33a9a399d1d9b2a28412e075108f2f97a9e0cd099de"
+    ),
+}
 BASELINE_WHEEL = ROOT / "tests/parity/artifacts/cardine-0.2.0-py3-none-any.whl"
 SOURCE_ROOT = ROOT / "src"
 DISPOSITIONS = {"HARNESS_IMPORT", "CARDINE_OWNER", "LEGACY_ORACLE_THEN_REMOVE"}
@@ -671,7 +676,13 @@ def validate(*, live: bool = False) -> list[str]:
                 errors.append(f"recovery overlay sha256 mismatch for {path}")
         except OSError as error:
             errors.append(f"recovery overlay missing source {path}: {error}")
-    for path in sorted(current_paths - set(reviewed_by_current_path) - RECOVERY_NEW_CORE_PATHS):
+    for path, expected_digest in THIRD_PARTY_NOTICES.items():
+        if path not in current_paths or _digest(path, targets) != expected_digest:
+            errors.append(f"third-party notice missing or altered: {path}")
+    for path in sorted(
+        current_paths - set(reviewed_by_current_path) - RECOVERY_NEW_CORE_PATHS
+        - set(THIRD_PARTY_NOTICES)
+    ):
         errors.append(f"classification is missing current path: {path}")
     for path in sorted(set(reviewed_by_current_path) - current_paths):
         row = reviewed_by_current_path[path]
