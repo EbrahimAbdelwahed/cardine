@@ -5,3 +5,7 @@ The active implementation in this checkout is the
 `codex/jev-pageindex-refactor` based on fetched `origin/main` at `1163005`.
 The spec README records current gates and dependencies. Historical work logs
 and other chats' preview branches do not change this task's base.
+
+Available components are published in draft [PR #10](https://github.com/EbrahimAbdelwahed/cardine/pull/10).
+Full offline suite: 2450 passed; rollout remains blocked on the gates in the spec
+ledger. No primary runtime/configuration switch or merge has been performed.

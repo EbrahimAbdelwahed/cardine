@@ -74,12 +74,19 @@ include canonical content, index/configuration, policy and producer/model identi
 ## Verification and limits
 
 Untouched main baseline: 2334 passed, four expected optional-provider/PDF skips
-outside the nested sandbox. Integrated suite: 2447 passed, four expected skips.
+outside the nested sandbox. Final integrated suite on `bce1042`: 2450 passed, four expected skips.
 Ruff, strict mypy (600 files), ownership audit (322 historical rows), wheel/sdist
-verification and a clean core install without Jev passed. Three additional
+verification and a clean core install without Jev passed. Three
 regressions cover actual PageIndex Markdown ending with a newline; the focused
 index/semantic suite passes 44 tests. The Jev CI lane exercises the real SDK
-through MockTransport. CI and automatic GitHub review remain pending publication.
+through MockTransport. PR [#10](https://github.com/EbrahimAbdelwahed/cardine/pull/10) is published as a
+draft; remote CI and automatic GitHub review must be checked against its current
+head before any merge.
+
+A synthetic scheduling probe sent 256 fake SDK requests through two adapter
+instances on each fresh loop. Limits 16/32/64 produced shared peaks 16/32/64 and
+wall times 112.50/64.02/34.15 ms with a scripted 5 ms delay. This verifies budget
+sharing and candidate preservation; it is not a provider performance benchmark.
 
 Production quality gates remain unmeasured. No representative human gold set,
 accepted calibrated thresholds or authorization for paid provider evaluation was
