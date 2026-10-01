@@ -51,5 +51,5 @@ contract, migration, replay, packaging and regression tests remain required.
 Conservative configurable thresholds are not claimed to be calibrated quality
 results. No live calls, deployment or merge follow from this implementation.
 
-See [the implementation record](../../specs/jev-pageindex/README.md) and
+See [the implementation record](../../specs/done/jev-pageindex/README.md) and
 ADR-0010 for the unchanged worker design.
