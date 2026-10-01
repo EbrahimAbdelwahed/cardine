@@ -155,7 +155,11 @@ class FlashcardProfileRoutingTutorDecisionPort(TutorDecisionPort):
                     "limit": 12,
                 },
             )
-        if history_scoped or observed_history or requires_study_memory_routing(learner_text):
+        if (
+            _HISTORY_SCOPED.search(learner_text) is not None
+            or observed_history
+            or requires_study_memory_routing(learner_text)
+        ):
             decision = await self._delegate.decide(context, interruption)
             if isinstance(decision, InvokeToolDecision):
                 return decision
@@ -166,6 +170,8 @@ class FlashcardProfileRoutingTutorDecisionPort(TutorDecisionPort):
                 return (
                     _bounded_memory_flashcard_decision(decision, context)
                     if history_scoped
+                    else _explicit_memory_flashcard_decision(decision, learner_text)
+                    if observed_history
                     else decision
                 )
             if history_scoped or observed_history:
@@ -176,6 +182,20 @@ class FlashcardProfileRoutingTutorDecisionPort(TutorDecisionPort):
         if route.kind is FlashcardProfileRouteKind.CLARIFICATION:
             return AskLearnerDecision(route.clarification or "Quale profilo preferisci?")
         return StartCapabilityDecision(_PROPOSE_FLASHCARDS, _flashcard_inputs(learner_text), None)
+
+
+def _explicit_memory_flashcard_decision(
+    decision: StartCapabilityDecision, learner_text: str
+) -> StartCapabilityDecision:
+    """Keep the current explicit topic authoritative after an auxiliary memory lookup."""
+    inputs = dict(decision.inputs)
+    current = _flashcard_inputs(learner_text)
+    inputs["query"] = current["query"]
+    inputs["scope"] = current["scope"]
+    inputs["continuation_summary_json"] = None
+    return StartCapabilityDecision(
+        decision.capability_id, cast(JsonObject, inputs), decision.progress_message
+    )
 
 
 def _purely_history_scoped(learner_text: str) -> bool:
