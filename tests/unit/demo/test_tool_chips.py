@@ -89,3 +89,22 @@ console.log(JSON.stringify({{one, many}}));
     assert 'data-state="done"' in result["one"]
     assert "Preparo la spiegazione" in result["one"]
     assert "Registro nel repository" in result["many"]
+
+
+def test_tool_chips_counts_failed_records_using_state_alias() -> None:
+    source = json.dumps(str(PRIMITIVES))
+    script = f"""
+const path = {source};
+require(path);
+const rendered = CardineAI.toolChips({{
+  state: 'settled',
+  records: [{{label: 'Recupero fallito', state: 'failed'}}],
+}});
+console.log(JSON.stringify(rendered));
+"""
+
+    rendered = _run_node(script)
+    assert isinstance(rendered, str)
+    assert "1 errore" in rendered
+    assert 'data-state="failed"' in rendered
+    assert 'data-state="failed"' in rendered.split("<ul", 1)[1]

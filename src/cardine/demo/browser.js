@@ -1318,7 +1318,15 @@
     resize.observe(content);
     resize.observe(viewport);
     const mutation = new MutationObserver(grow);
-    mutation.observe(content, { childList: true, subtree: true, characterData: true });
+    // Streaming reveals words by toggling their visibility class without
+    // changing text nodes or geometry, so observe those changes as well.
+    mutation.observe(content, {
+      attributes: true,
+      attributeFilter: ["class"],
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
     update();
     return {
       get following() { return following; },
