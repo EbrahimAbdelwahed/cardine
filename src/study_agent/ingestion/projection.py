@@ -484,6 +484,13 @@ def validate_generated_source_admission(
         if pair_provenance.run_id != provenance.material_run_id or pair_roots != roots:
             raise ValueError("generated material pair lineage is inconsistent")
     sources = _mapping(state.get("sources"), "sources")
+    lifetime = _mapping(state.get("source_lifetime", {}), "source lifetime")
+    root_lifetime = lifetime.get(str(provenance.root_source_id))
+    if (
+        root_lifetime is not None
+        and _mapping(root_lifetime, "root lifetime").get("status") == "retired"
+    ):
+        raise ValueError("generated material root source is retired")
     root_projection = _mapping(sources.get(str(provenance.root_source_id)), "root source")
     root_revisions = _mapping(root_projection.get("revisions"), "root revisions")
     root_revision = root_revisions.get(str(provenance.root_revision_id))
@@ -522,9 +529,11 @@ def validate_generated_source_admission(
         if not isinstance(complete_artifact_id, str):
             raise ValueError("complete material artifact identity is corrupt")
         complete_artifact = _mapping(artifacts.get(complete_artifact_id), "complete artifact")
-        if complete_artifact.get("current_revision_id") != complete_revision_id or _mapping(
-            complete_raw, "complete revision"
-        ).get("status") != ArtifactRevisionStatus.ACCEPTED.value:
+        if (
+            complete_artifact.get("current_revision_id") != complete_revision_id
+            or _mapping(complete_raw, "complete revision").get("status")
+            != ArtifactRevisionStatus.ACCEPTED.value
+        ):
             raise ValueError("study material requires an accepted current complete sibling")
         found_projected_complete = False
         for source_value in sources.values():

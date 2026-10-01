@@ -29,3 +29,5 @@ The changes are committed locally as a review-fix commit from an isolated,
 managed worktree. The existing PR branch is checked out elsewhere, so the
 coordinator must integrate this commit into `codex/cardine-wave-a-recovery`
 before the single authorized publish/review step.
+
+Further current-head review repairs preserve explicit topics when history is auxiliary, reject history-only starts without validated observations, persist terminal failures for unreadable ancestry checkpoints, and reject generated admission from canonically retired roots. Forty-six focused regressions, full mypy and exact custody pass; current submitted CI/review remain required.
