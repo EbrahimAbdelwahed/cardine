@@ -13,10 +13,9 @@
     fonti: { label: "Fonti", heading: "Fonti del corso", icon: "icon--book-open", endpoint: "/api/v1/materials" },
     proposte: { label: "Proposte", heading: "Proposte", icon: "icon--note-pencil", endpoint: "/api/v1/artifacts" },
     verifiche: { label: "Verifiche", heading: "Verifiche", icon: "icon--exam", endpoint: "/api/v1/assessments" },
-    evidenze: { label: "Evidenze", heading: "Evidenze per criterio", icon: "icon--chart-line-up", endpoint: "/api/v1/evidence" },
+    percorso: { label: "Percorso", heading: "Il tuo percorso", icon: "icon--chart-line-up", endpoint: "/api/v1/student-state" },
     ripasso: { label: "Ripasso", heading: "Ripasso", icon: "icon--cards", endpoint: "/api/v1/recall/due" },
     piano: { label: "Piano", heading: "Piano verso l’esame", icon: "icon--calendar-blank", endpoint: "/api/v1/plan" },
-    conflitti: { label: "Conflitti", heading: "Conflitti di contesto", icon: "icon--warning-circle", endpoint: "/api/v1/context/conflicts" },
     impostazioni: { label: "Impostazioni", heading: "Impostazioni", icon: "icon--gear", endpoint: "/api/v1/settings", private: true },
     login: { label: "Accedi", heading: "Accedi a Cardine", icon: "icon--gear", endpoint: null, private: true },
   });
@@ -29,14 +28,13 @@
     fonti: "Materiali del corso, revisioni e provenienza",
     proposte: "Revisioni generate in attesa di una tua decisione",
     verifiche: "Domande da svolgere e valutazioni registrate",
-    evidenze: "Che cosa risulta acquisito, criterio per criterio",
+    percorso: "Argomenti trattati e difficoltà incontrate",
     ripasso: "La coda di ripasso dovuta oggi",
     piano: "Vincoli, obiettivi e lavoro aperto verso l’esame",
-    conflitti: "Divergenze da risolvere nel contesto di studio",
     impostazioni: "Accesso, modello e dati locali",
   });
 
-  const CONTINUATION_ROUTES = Object.freeze(new Set(["fonti", "proposte", "verifiche", "evidenze", "ripasso", "piano", "conflitti"]));
+  const CONTINUATION_ROUTES = Object.freeze(new Set(["fonti", "proposte", "verifiche", "percorso", "ripasso", "piano"]));
   const SETTINGS_ENDPOINTS = Object.freeze({
     read: "/api/v1/settings",
     modelCredential: "/api/v1/settings/model/credential",
@@ -71,7 +69,6 @@
     working: "in lavorazione",
     needs_learner_input: "attende una risposta",
     suspended: "sospesa",
-    conflicted_context: "contesto in conflitto",
     needs_review: "richiede revisione",
     stale: "stato da aggiornare",
     degraded: "funzionalità ridotta",
@@ -96,7 +93,6 @@
     injected_clock: "orologio del servizio",
     course: "scheda del corso",
     study_context: "contesto di studio",
-    conflict_state: "stato dei conflitti",
     configured_date: "data configurata",
     as_of_date: "data di riferimento",
     days_remaining: "giorni rimanenti",
@@ -934,7 +930,7 @@
       if (["queued", "indexing"].includes(text(indexing.status))) {
         pollIndexing(null).catch(() => {});
       }
-      updateSequence(first(payload, ["high_water_sequence", "sequence"], state.highWaterSequence));
+      if (route !== "percorso") updateSequence(first(payload, ["high_water_sequence", "sequence"], state.highWaterSequence));
       renderCourse(payload);
       updateCounts(payload);
       updateContinuation(payload);
@@ -980,7 +976,7 @@
     const mode = MODE_LABELS[text(first(bootstrap, ["mode"], "local_repository"))] || "repository locale";
     const consent = object(bootstrap.provider_consent);
     const granted = consent.granted === true;
-    patch($("#trust-copy"), `<p>Corso <strong>${esc(text(course.title, "non dichiarato"))}</strong>, sessione <code>${esc(trustSessionId)}</code>. Modalità: <strong>${esc(mode)}</strong>. Il browser riceve dal servizio locale solo i dati consentiti e non apre SQLite, file di corso, runtime del provider o credenziali.</p><section aria-labelledby="provider-consent-heading"><h3 id="provider-consent-heading">Uso di GPT-5.6 Luna</h3><p>Consenso: <strong>${granted ? "concesso" : "non concesso"}</strong>. Nessuna richiesta al provider parte senza consenso.</p><button class="button button--quiet" type="button" data-provider-consent="${granted ? "revoke" : "grant"}">${granted ? "Revoca consenso" : "Concedi consenso"}</button><span class="settings-card__status" data-provider-consent-status role="status"></span></section><ul><li>Le mutazioni usano un identificativo di richiesta e la sequenza osservata (attuale: ${esc(state.highWaterSequence || "—")}).</li><li>Il Piano mostra solo fatti attribuiti e non calcola un punteggio.</li><li>Un conflitto di fonte non viene trasformato in conflitto di contesto.</li></ul>`);
+    patch($("#trust-copy"), `<p>Corso <strong>${esc(text(course.title, "non dichiarato"))}</strong>, sessione <code>${esc(trustSessionId)}</code>. Modalità: <strong>${esc(mode)}</strong>. Il browser riceve dal servizio locale solo i dati consentiti e non apre SQLite, file di corso, runtime del provider o credenziali.</p><section aria-labelledby="provider-consent-heading"><h3 id="provider-consent-heading">Uso di GPT-5.6 Luna</h3><p>Consenso: <strong>${granted ? "concesso" : "non concesso"}</strong>. Nessuna richiesta al provider parte senza consenso.</p><button class="button button--quiet" type="button" data-provider-consent="${granted ? "revoke" : "grant"}">${granted ? "Revoca consenso" : "Concedi consenso"}</button><span class="settings-card__status" data-provider-consent-status role="status"></span></section><ul><li>Le mutazioni usano un identificativo di richiesta e la sequenza osservata (attuale: ${esc(state.highWaterSequence || "—")}).</li><li>Il Piano mostra solo fatti attribuiti e non calcola un punteggio.</li></ul>`);
     const runtime = $("#runtime-label");
     if (runtime) runtime.textContent = `ambiente locale · ${mode}`;
   }
@@ -1011,11 +1007,10 @@
     setCount("assessments", count(counts, ["assessments", "assessment_count"]));
     setCount("due_reviews", count(counts, ["due_reviews", "due_review_count"]));
     setCount("pending_proposals", count(counts, ["pending_proposals", "proposal_count"]));
-    setCount("context_conflicts", count(counts, ["context_conflicts", "conflict_count"]));
     const features = object(bootstrap.features);
-    $$("[data-route='ripasso'], [data-route='proposte'], [data-route='verifiche'], [data-route='conflitti']").forEach((control) => {
+    $$("[data-route='ripasso'], [data-route='proposte'], [data-route='verifiche']").forEach((control) => {
       const route = control.dataset.route;
-      const feature = route === "ripasso" ? "recall" : route === "proposte" ? "artifacts" : route === "verifiche" ? "assessments" : "context_resolution";
+      const feature = route === "ripasso" ? "recall" : route === "proposte" ? "artifacts" : route === "verifiche" ? "assessments" : "assessments";
       if (features[feature] === false) control.dataset.unavailable = "true";
     });
   }
@@ -1457,7 +1452,7 @@
       await loadSettings(navigationVersion);
       return;
     }
-    const featureByRoute = { proposte: "artifacts", verifiche: "assessments", evidenze: "evidence", ripasso: "recall", conflitti: "context_resolution" };
+    const featureByRoute = { proposte: "artifacts", verifiche: "assessments", percorso: "student_state", ripasso: "recall" };
     if (state.bootstrap && object(state.bootstrap.features)[featureByRoute[route]] === false) {
       setStatus(text(state.bootstrap?.shell_status, "ready"), `${ROUTES[route].heading} · sezione non attiva`);
       renderUnavailable(route);
@@ -1474,7 +1469,7 @@
         renderCourse(state.bootstrap);
         updateCounts(state.bootstrap);
       }
-      updateSequence(first(payload, ["high_water_sequence", "sequence"], state.highWaterSequence));
+      if (route !== "percorso") updateSequence(first(payload, ["high_water_sequence", "sequence"], state.highWaterSequence));
       const status = text(first(payload, ["shell_status", "status"], state.bootstrap?.shell_status || "ready"), "ready");
       setStatus(status, `${ROUTES[route].heading} · ${statusLabel(status)}`);
       if (route === "oggi") renderOggi(payload);
@@ -1482,10 +1477,9 @@
       if (route === "fonti") renderFonti(payload);
       if (route === "proposte") renderProposte(payload);
       if (route === "verifiche") renderVerifiche(payload);
-      if (route === "evidenze") renderEvidenze(payload);
+      if (route === "percorso") renderStudentState(payload);
       if (route === "ripasso") renderRipasso(payload);
       if (route === "piano") renderPlan(payload);
-      if (route === "conflitti") renderConflitti(payload);
       return true;
     } catch (error) {
       if (navigationVersion !== state.navigationVersion) return false;
@@ -1523,23 +1517,15 @@
     const recall = object(readiness.recall);
     const due = first(counts, ["due_reviews"], first(recall, ["due_count"], 0));
     const pending = first(counts, ["pending_proposals"], 0);
-    const conflicts = first(counts, ["context_conflicts"], 0);
-    const openWork = Number(due) + Number(pending) + Number(conflicts);
+    const openWork = Number(due) + Number(pending);
     const today = openWork > 0
-      ? `<div class="today-strip" aria-label="Lavoro aperto oggi"><button type="button" data-route="ripasso"><strong>${esc(due)}</strong><span>ripassi dovuti</span></button><button type="button" data-route="proposte"><strong>${esc(pending)}</strong><span>proposte</span></button><button type="button" data-route="conflitti"><strong>${esc(conflicts)}</strong><span>conflitti</span></button></div>`
-      : `<p class="today-clear">Non hai ripassi, proposte o conflitti in sospeso. Puoi iniziare con una domanda.</p>`;
+      ? `<div class="today-strip" aria-label="Lavoro aperto oggi"><button type="button" data-route="ripasso"><strong>${esc(due)}</strong><span>ripassi dovuti</span></button><button type="button" data-route="proposte"><strong>${esc(pending)}</strong><span>proposte</span></button></div>`
+      : `<p class="today-clear">Non hai ripassi o proposte in sospeso. Puoi iniziare con una domanda.</p>`;
     const taskItems = [
       { label: `${due} ripassi dovuti`, detail: "Ripassi già programmati dal corso.", status: Number(due) > 0 ? "open" : "clear", status_label: Number(due) > 0 ? "da fare" : "in pari" },
       { label: `${pending} proposte`, detail: "Revisioni che attendono una decisione esplicita.", status: Number(pending) > 0 ? "open" : "clear", status_label: Number(pending) > 0 ? "da decidere" : "in pari" },
-      { label: `${conflicts} conflitti`, detail: "Divergenze da risolvere nel tuo contesto di studio.", status: Number(conflicts) > 0 ? "open" : "clear", status_label: Number(conflicts) > 0 ? "da risolvere" : "in pari" },
     ];
-    const evidence = array(readiness.evidence);
-    const insights = evidence.slice(0, 3).map((item) => ({
-      title: first(object(item), ["criterion", "concept", "label", "name"], "Evidenza del corso"),
-      detail: first(object(item), ["detail", "dimension", "disposition", "status"], "Evidenza canonica disponibile."),
-      source: sourceLabel(item),
-    }));
-    if (!insights.length) insights.push({ title: "Stato della sessione", detail: `La sessione è ${statusLabel(status)}.`, source: "proiezione locale" });
+    const insights = [{ title: "Stato della sessione", detail: `La sessione è ${statusLabel(status)}.`, source: "sessione" }];
     const pageindexStatus = text(pageindex.status, "empty");
     const pageindexDetail = pageindexStatus === "empty"
       ? "Nessuna revisione Markdown attiva."
@@ -1994,29 +1980,31 @@
     return `<article class="assessment-card"><div class="card__header"><p class="section-kicker">${esc(format)}</p>${pill(status)}</div><h2 class="assessment-card__prompt">${esc(question)}</h2>${freeControl}<fieldset class="choice-fieldset"${free || !presentationId || attemptId ? " hidden" : ""}><legend class="visually-hidden">Scegli una risposta</legend><ol class="choice-list">${choices}</ol></fieldset>${grade ? `<p class="assessment-feedback">${esc(typeof grade === "string" ? grade : first(object(grade), ["message", "summary", "label"], "Esito disponibile."))}</p>` : ""}${lifecycleHistory}${attemptAction}</article>`;
   }
 
-  function renderEvidenze(payload) {
-    const evidence = array(payload);
-    const throughSequence = first(payload, ["through_sequence"], state.highWaterSequence);
-    const rows = evidence.length ? evidence.map((item) => {
-      const row = object(item);
-      const numerator = first(row, ["numerator"], null);
-      const denominator = first(row, ["denominator"], null);
-      const estimate = Number.isInteger(numerator) && Number.isInteger(denominator) ? `${numerator}/${denominator}` : first(row, ["estimate", "value", "score"], "—");
-      const criterion = first(row, ["criterion", "concept", "label", "name"], "Criterio senza nome");
-      const detail = first(row, ["dimension", "disposition", "status", "detail"], "evidenza canonica");
-      const refs = array(first(row, ["references", "citations", "evidence"], []));
-      return `<article class="evidence-row"><div class="evidence-row__estimate">${esc(estimate)}</div><div><h2 class="evidence-row__concept">${esc(criterion)}</h2><p class="evidence-row__detail">${esc(detail)}</p>${refs.length ? `<div class="reference-list">${refs.map((ref) => `<button class="provenance-chip" type="button" data-provenance='${esc(JSON.stringify(ref))}'>${esc(first(object(ref), ["locator", "title", "revision"], typeof ref === "string" ? ref : "riferimento"))}</button>`).join("")}</div>` : ""}</div></article>`;
-    }).join("") : emptyState("Nessuna evidenza proiettata", "Le proiezioni vengono ricostruite dal ledger assessment e dalle fonti disponibili.");
-    const insights = evidence.slice(0, 8).map((item) => {
-      const row = object(item);
-      return {
-        title: first(row, ["criterion", "concept", "label", "name"], "Criterio senza nome"),
-        detail: first(row, ["detail", "dimension", "disposition", "status"], "Evidenza canonica disponibile."),
-        source: "registro delle verifiche",
-      };
-    });
-    const insightView = aiInsightDeck({ title: "Evidenze da tenere a mente", insights });
-    setView("evidenze", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="evidence-heading"><p class="section-kicker">evidenze registrate</p><h1 class="section-title" id="evidence-heading">Evidenze per criterio</h1><p class="evidence-note">Queste sono stime di evidenza e riferimenti, non una percentuale generica di padronanza.</p>${insightView}${rows}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">integrità</p><h2 class="side-card__title">Evidenze allineate</h2><p class="side-card__copy">Le evidenze mostrate sono quelle registrate fino all’ultimo aggiornamento del corso.</p></div></aside></section>`);
+  document.addEventListener("submit", (event) => {
+    const form = event.target.closest?.("[data-student-state-form]");
+    if (!form) return;
+    event.preventDefault();
+    const values = new FormData(form);
+    executeCommand("/api/v1/student-state", { kind: values.get("kind"), topic: values.get("topic"), summary: values.get("summary") }, form, "percorso");
+  });
+  document.addEventListener("click", async (event) => {
+    const control = event.target.closest?.("[data-student-state-before]");
+    if (!control) return;
+    try {
+      const payload = await fetchJson(`/api/v1/student-state/before/${encodeURIComponent(control.dataset.studentStateBefore)}`);
+      renderStudentState(payload);
+    } catch (error) { setStatus("degraded", error.message || "Percorso non disponibile"); }
+  });
+
+  function renderStudentState(payload) {
+    const labels = { topic_covered: "Argomento trattato", learner_signal: "Osservazione", assessment_activity: "Verifica", context_recorded: "Contesto dichiarato" };
+    const writers = { student: "tu", tutor_agent: "tutor", host: "attività di studio" };
+    const entries = array(payload.entries);
+    const rows = entries.map((entry) => {
+      const item = object(entry);
+      return `<article class="card"><p class="section-kicker">${esc(labels[item.kind] || item.kind)} · ${esc(writers[item.recorded_by] || item.recorded_by)}</p><h2>${esc(item.topic)}</h2>${item.summary ? `<p>${esc(item.summary)}</p>` : ""}<p class="card__meta">${esc(item.occurred_at)}</p></article>`;
+    }).join("") || emptyState("Il percorso è ancora vuoto", "Qui ritroverai gli argomenti trattati e le difficoltà incontrate.");
+    setView("percorso", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="student-state-heading"><h1 class="section-title" id="student-state-heading">Il tuo percorso</h1><p class="section-copy">Una cronologia delle tue attività e osservazioni di studio.</p>${rows}${payload.has_more ? `<p>Mostrate le ultime ${entries.length} attività su ${esc(payload.total_entries)}.</p><button class="button button--quiet" type="button" data-student-state-before="${esc(payload.next_cursor)}">Attività precedenti</button>` : ""}</section><aside class="section-grid__side"><form data-student-state-form class="side-card"><h2>Aggiungi un'osservazione</h2><label>Tipo<select name="kind"><option value="learner_signal">Difficoltà incontrata</option><option value="topic_covered">Argomento trattato</option></select></label><label>Argomento<input name="topic" maxlength="120" required></label><label>Dettaglio<textarea name="summary" maxlength="500" rows="3"></textarea></label><button class="button" type="submit">Aggiungi</button></form><button class="button button--quiet" type="button" data-command="student-state-import">Importa la cronologia precedente</button></aside></section>`);
   }
 
   function renderRipasso(payload) {
@@ -2055,7 +2043,6 @@
     const constraints = array(readiness.constraints);
     const blueprints = array(readiness.blueprints);
     const counts = array(readiness.artifact_counts);
-    const evidence = array(readiness.evidence);
     const recall = object(readiness.recall);
     /* The declared parameters of the course: read-only facts with their own
        provenance. They belong beside the page, not in the middle of it. */
@@ -2084,35 +2071,9 @@
       const kind = text(row.kind, "artefatto");
       return sideItem(ARTIFACT_LABELS[kind] || kind, `${text(row.pending, "0")} proposte · ${text(row.accepted, "0")} accettati`, sourceRef(row));
     }).join("");
-    const evidenceCopy = evidence.length ? `${evidence.length} evidenze registrate con i relativi riferimenti. ${sourceRef(evidence[0])}` : "Nessuna evidenza registrata dalle verifiche.";
-    const recallCopy = recall.available ? `${esc(text(recall.due_count, "0"))} revisioni dovute.` : "Il ripasso programmato non è configurato.";
     const examSources = object(exam.sources);
-    const planInsights = evidence.slice(0, 6).map((item) => {
-      const row = object(item);
-      return { title: first(row, ["criterion", "concept", "label", "name"], "Evidenza"), detail: first(row, ["detail", "dimension", "disposition", "status"], "Evidenza canonica disponibile."), source: "registro delle verifiche" };
-    });
-    if (!planInsights.length) planInsights.push({ title: "Nessuna evidenza", detail: "Il corso non ha ancora prodotto evidenze da mostrare qui.", source: "stato dichiarato" });
-    const insightView = aiInsightDeck({ title: "Che cosa sappiamo finora", insights: planInsights });
-    const recommendationView = days !== null && days !== undefined
-      ? aiRecommendation({ title: "Scegli il prossimo passo", detail: `Il servizio riporta ${days} giorni di calendario configurati.`, prompt: "Aiutami a scegliere un prossimo passo dal piano", actionLabel: "Chiedimi una direzione" })
-      : "";
-    setView("piano", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="plan-heading"><p class="section-kicker">fatti attribuiti · nessuna agenda</p><h1 class="section-title" id="plan-heading">Piano verso l'esame</h1><div class="fact-grid"><div class="side-card"><p class="section-kicker">data configurata</p><h2 class="side-card__title">${esc(text(dateValue, "Data non configurata"))}</h2><p class="side-card__copy">Aggiornata al ${esc(text(first(readiness, ["as_of_date"], "—")))}</p>${sourceRef(examSources.configured_date)}</div><div class="side-card"><p class="section-kicker">giorni di calendario</p><h2 class="side-card__title">${esc(days === null || days === undefined ? "non disponibile" : String(days))}</h2><p class="side-card__copy">Valore derivato dal servizio da data, conflitti e clock UTC.</p>${sourceRefs(object(examSources.days_remaining).as_of_date, object(examSources.days_remaining).configured_date, object(examSources.days_remaining).conflict_state)}</div></div>${insightView}${recommendationView}<p class="section-copy">${evidenceCopy} ${recallCopy} ${sourceRef(recall)}</p></section><aside class="section-grid__side" aria-label="Come è configurato il corso">${specPanel("come è configurato", "Il corso in breve", [specGroup("Obiettivi", goalRows), specGroup("Come verrai valutato", styleRows), specGroup("I tuoi vincoli", constraintRows), specGroup("Osservazioni sul formato d’esame", blueprintRows), specGroup("Materiali generati", countRows)], "Questo corso non ha ancora obiettivi, vincoli o materiali configurati.")}<section class="side-card"><p class="section-kicker">limite esplicito</p><h2 class="side-card__title">Nessun punteggio o priorità</h2><p class="side-card__copy">Questa vista riporta osservazioni, vincoli e lavoro aperto; non genera agenda, copertura, retention o readiness score.</p></section></aside></section>`);
-  }
-
-  function renderConflitti(payload) {
-    const conflicts = array(payload);
-    const rows = conflicts.length ? conflicts.map(renderConflict).join("") : emptyState("Nessun conflitto di contesto", "Non ci sono divergenze da risolvere fra le tue fonti.");
-    setView("conflitti", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="conflict-heading"><p class="section-kicker">contesto di studio · risoluzione esplicita</p><h1 class="section-title" id="conflict-heading">Conflitti di contesto</h1><p class="section-copy">Qui compaiono solo divergenze del contesto dello studente. Un disaccordo tra fonti resta nella provenienza e non viene risolto da questa schermata.</p><div>${rows}</div></section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">regola</p><h2 class="side-card__title">Nessuna sovrascrittura per recenza.</h2><p class="side-card__copy">La scelta viene registrata nel tuo contesto di studio, senza sovrascrivere nulla in automatico.</p></div></aside></section>`);
-  }
-
-  function renderConflict(item) {
-    const conflict = object(item);
-    const kind = text(first(conflict, ["kind", "type"], "context"), "context").toLowerCase();
-    const title = first(conflict, ["title", "field", "label"], "Divergenza di contesto");
-    const status = text(first(conflict, ["status", "state"], "conflicted"), "conflicted");
-    const options = array(first(conflict, ["candidates", "options", "choices", "values"], []));
-    const sourceConflict = kind.includes("source") || kind.includes("evidence");
-    return `<article class="conflict-card" data-kind="${sourceConflict ? "source" : "context"}"><div class="conflict-card__heading"><h2 class="conflict-card__title">${esc(title)}</h2>${pill(status)}</div>${sourceConflict ? `<p class="conflict-readonly">Disaccordo tra fonti: sola lettura. Serve un contratto di risoluzione della fonte separato.</p>` : options.length ? `<div class="conflict-card__values">${options.map((option) => { const value = object(option); const statementId = first(value, ["statement_id"], ""); const displayValue = first(value, ["value", "label"], "valore non dichiarato"); return statementId ? `<button class="conflict-option" type="button" data-command="context" data-conflict-kind="${esc(first(conflict, ["kind", "type"], "context"))}" data-statement-id="${esc(statementId)}"><span class="conflict-option__value">${esc(displayValue)}</span><span class="conflict-option__event">scegli questo valore</span></button>` : `<p class="conflict-readonly">Scelta non disponibile: il servizio non ha fornito un identificativo per questo valore.</p>`; }).join("")}</div>` : `<p class="conflict-readonly">Nessuna opzione di risoluzione disponibile.</p>`}</article>`;
+    const recallCopy = recall.available ? `${text(recall.due_count, "0")} ripassi dovuti.` : "Ripasso non configurato.";
+    setView("piano", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="plan-heading"><p class="section-kicker">fatti attribuiti · nessuna agenda</p><h1 class="section-title" id="plan-heading">Piano verso l'esame</h1><div class="fact-grid"><div class="side-card"><p class="section-kicker">data configurata</p><h2 class="side-card__title">${esc(text(dateValue, "Data non configurata"))}</h2><p class="side-card__copy">Aggiornata al ${esc(text(first(readiness, ["as_of_date"], "—")))}</p>${sourceRef(examSources.configured_date)}</div><div class="side-card"><p class="section-kicker">giorni di calendario</p><h2 class="side-card__title">${esc(days === null || days === undefined ? "non disponibile" : String(days))}</h2><p class="side-card__copy">Valore derivato dal servizio dalla data configurata.</p>${sourceRefs(object(examSources.days_remaining).as_of_date, object(examSources.days_remaining).configured_date)}</div></div><p class="section-copy">${recallCopy} ${sourceRef(recall)}</p></section><aside class="section-grid__side" aria-label="Come è configurato il corso">${specPanel("come è configurato", "Il corso in breve", [specGroup("Obiettivi", goalRows), specGroup("Come verrai valutato", styleRows), specGroup("I tuoi vincoli", constraintRows), specGroup("Osservazioni sul formato d’esame", blueprintRows), specGroup("Materiali generati", countRows)], "Questo corso non ha ancora obiettivi, vincoli o materiali configurati.")}<section class="side-card"><p class="section-kicker">limite esplicito</p><h2 class="side-card__title">Nessun punteggio o priorità</h2><p class="side-card__copy">Questa vista riporta osservazioni, vincoli e lavoro aperto; non genera agenda, copertura, retention o readiness score.</p></section></aside></section>`);
   }
 
   async function submitTurn(form, continuation = false) {
@@ -2696,6 +2657,7 @@
 
   function commandFromControl(control) {
     const kind = control.dataset.command;
+    if (kind === "student-state-import") executeCommand("/api/v1/student-state/import", {}, control, "percorso");
     if (kind === "artifact") executeCommand(`/api/v1/artifacts/${encodeURIComponent(control.dataset.revisionId || "")}/decisions`, { decision: control.dataset.decision }, control.closest(".card"), "proposte");
     if (kind === "assessment-attempt") {
       const presentationId = control.dataset.presentationId || "";
@@ -2717,7 +2679,6 @@
     if (kind === "assessment-grade") executeCommand(`/api/v1/assessments/${encodeURIComponent(control.dataset.attemptId || "")}/grade`, {}, control.closest(".assessment-card"), "verifiche");
     if (kind === "enroll") executeCommand(`/api/v1/recall/${encodeURIComponent(control.dataset.revisionId || "")}/enrollments`, {}, control.closest(".card"), "proposte");
     if (kind === "review") executeCommand(`/api/v1/recall/${encodeURIComponent(control.dataset.revisionId || "")}/reviews`, { rating: control.dataset.rating }, control.closest(".review-card"), "ripasso");
-    if (kind === "context") executeCommand(`/api/v1/context/conflicts/${encodeURIComponent(control.dataset.conflictKind || "context")}/resolve`, { selected_statement_id: control.dataset.statementId }, control.closest(".conflict-card"), "conflitti");
   }
 
   function openProvenance(serialized) {

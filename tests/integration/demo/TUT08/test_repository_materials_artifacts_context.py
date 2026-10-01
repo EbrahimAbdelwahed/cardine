@@ -44,6 +44,7 @@ from study_agent.sessions import (
     SESSION_SCHEMA_VERSION,
     interaction_recorded_payload,
 )
+from study_agent.study_context import ProjectionStudyContextView, StudyContextService
 
 COURSE = CourseId("cardine-c2-course")
 SESSION = "cardine-c2-session"
@@ -287,48 +288,50 @@ def test_repository_c2_context_uses_statement_ids_and_reloads_resolution(
     app = RepositoryUiApplication(root, COURSE, SESSION)
     with LocalRepository.open(root) as repository:
         origin_context = _context("context-origin", actor=PrincipalKind.HUMAN)
-        first = repository.study_context_service.record(
+        first = StudyContextService(
+            repository.events,
+            repository.clock,
+            ProjectionStudyContextView(repository.events.projection),
+            repository.courses,
+            repository.sessions,
+        ).record(
             StudyStatementInput(StudyStatementKind.DEADLINE, date(2026, 9, 1)),
             ORIGIN,
             origin_context,
             repository.events.read(COURSE)[-1].course_sequence,
         )
-        second = repository.study_context_service.record(
+        StudyContextService(
+            repository.events,
+            repository.clock,
+            ProjectionStudyContextView(repository.events.projection),
+            repository.courses,
+            repository.sessions,
+        ).record(
             StudyStatementInput(StudyStatementKind.DEADLINE, date(2026, 9, 2)),
             ORIGIN,
             _context("context-second", actor=PrincipalKind.HUMAN),
             first.sequence,
         )
-        selected = str(second.conflicts[0].statement_ids[0])
 
-    conflicts = app.get("/api/v1/context/conflicts")
-    conflict_rows = cast(tuple[dict[str, object], ...], conflicts["items"])
-    candidates = cast(tuple[dict[str, object], ...], conflict_rows[0]["candidates"])
-    candidate = candidates[0]
-    assert candidate["statement_id"] == selected
-    assert candidate["provenance"]
-
-    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+    with pytest.raises(UiRequestError) as retired:
+        app.get("/api/v1/context/conflicts")
+    assert retired.value.status_code == 404
     command = {
         "schema_version": 1,
-        "request_id": "c2-context-resolution",
-        "expected_sequence": sequence,
-        "payload": {"selected_statement_id": selected},
+        "request_id": "import-context",
+        "expected_sequence": 0,
+        "payload": {},
     }
-    committed = app.post("/api/v1/context/conflicts/deadline/resolve", command)
-    assert cast(dict[str, object], committed["result"])["status"] == "empty"
-    assert app.get("/api/v1/context/conflicts")["status"] == "empty"
-
-    # A display value is not a valid resolution identity.
-    bad = {
-        **command,
-        "request_id": "c2-context-display-value",
-        "expected_sequence": committed["high_water_sequence"],
-        "payload": {"selected_statement_id": "2026-09-01"},
-    }
-    with pytest.raises(UiRequestError) as bad_error:
-        app.post("/api/v1/context/conflicts/deadline/resolve", bad)
-    assert bad_error.value.status_code == 409
+    result = app.post("/api/v1/student-state/import", command)
+    entries = cast(
+        tuple[dict[str, object], ...], cast(dict[str, object], result["result"])["entries"]
+    )
+    assert len(entries) == 2
+    assert {e["summary"] for e in entries} == {"2026-09-01", "2026-09-02"}
+    assert all(e["kind"] == "context_recorded" for e in entries)
+    with pytest.raises(UiRequestError) as mutation:
+        app.post("/api/v1/context/conflicts/deadline/resolve", command)
+    assert mutation.value.status_code == 405
 
 
 def test_provider_consent_and_source_retirement_survive_restart_without_deleting_history(
@@ -391,11 +394,7 @@ def test_ui_bulk_human_decisions_append_once_and_retry_by_request_identity(
         "schema_version": 1,
         "request_id": "c2-bulk-decisions",
         "expected_sequence": sequence,
-        "payload": {
-            "decisions": (
-                {"revision_id": str(revision_id), "decision": "accepted"},
-            )
-        },
+        "payload": {"decisions": ({"revision_id": str(revision_id), "decision": "accepted"},)},
     }
     committed = app.post("/api/v1/artifacts/decisions", command)
     assert committed["status"] == "committed"
@@ -407,11 +406,7 @@ def test_ui_bulk_human_decisions_append_once_and_retry_by_request_identity(
     conflict = {
         **command,
         "request_id": "c2-bulk-conflict",
-        "payload": {
-            "decisions": (
-                {"revision_id": str(revision_id), "decision": "rejected"},
-            )
-        },
+        "payload": {"decisions": ({"revision_id": str(revision_id), "decision": "rejected"},)},
     }
     with pytest.raises(UiRequestError) as error:
         app.post("/api/v1/artifacts/decisions", conflict)

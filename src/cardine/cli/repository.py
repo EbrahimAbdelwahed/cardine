@@ -25,7 +25,7 @@ from cardine.application.indexing import (
     IndexingRecord,
     IndexingStatus,
 )
-from cardine.application.study_memory import StudyMemoryArchive
+from cardine.application.student_state import StudentStateService
 from cardine.courses import (
     CourseService,
     ProjectionCourseCatalog,
@@ -133,7 +133,6 @@ from study_agent.assessments import (
     AssessmentService,
     ExactClosedGradingPolicy,
     ProjectionAssessmentView,
-    ProjectionLearnerEvidenceView,
     register_assessment_events,
 )
 from study_agent.capabilities import (
@@ -235,8 +234,6 @@ from study_agent.skills import ArtifactReference, SemanticVersion
 from study_agent.skills.builtin import GROUNDED_ANSWER_SKILL
 from study_agent.state import EventRegistry, canonical_json_bytes
 from study_agent.study_context import (
-    ProjectionStudyContextView,
-    StudyContextService,
     register_study_context_events,
 )
 from study_agent.tools import BoundSourceSearchExecutor
@@ -273,15 +270,13 @@ HARNESS_TOOL_LABELS = {
     "course.list": "Leggo il repository",
     "session.start": "Avvio la sessione",
     "source.ingest": "Registro la fonte",
-    "context.get": "Leggo il contesto",
     "recall.get": "Leggo il ripasso",
     "artifact.get": "Leggo gli artefatti",
     "assessment.get": "Leggo la valutazione",
-    "evidence.get": "Leggo le evidenze",
     "conversation.search": "Cerco nella conversazione",
     "conversation.read": "Leggo la conversazione",
-    "study_memory.record": "Aggiorno la memoria di studio",
-    "study_memory.search": "Cerco nella memoria di studio",
+    "student_state.record": "Aggiorno la memoria di studio",
+    "student_state.search": "Cerco nella memoria di studio",
 }
 
 
@@ -358,11 +353,7 @@ class _QueryOverrideRetrieval:
         return self._inner.index(documents)
 
     def search(self, query: RetrievalQuery) -> RetrievalEvidenceSet:
-        effective = (
-            replace(query, text=self._recovered)
-            if query.text == self._original
-            else query
-        )
+        effective = replace(query, text=self._recovered) if query.text == self._original else query
         return self._inner.search(effective)
 
 
@@ -415,7 +406,8 @@ class _StructuralRangeRetrieval:
             )
         evidence = tuple(evidence_rows)
         fingerprint = sha256(
-            b"cardine-structural-query@1\0" + canonical_json_bytes(
+            b"cardine-structural-query@1\0"
+            + canonical_json_bytes(
                 {
                     "course_id": str(query.course_id),
                     "text": query.text,
@@ -749,10 +741,7 @@ class _RepositoryTutorGateway:
         )
         for alternative in alternatives:
             candidate_query = replace(retrieval_query, text=alternative)
-            if (
-                course.retrieval.search(candidate_query).status
-                is not EvidenceStatus.INSUFFICIENT
-            ):
+            if course.retrieval.search(candidate_query).status is not EvidenceStatus.INSUFFICIENT:
                 return alternative
         return None
 
@@ -1003,11 +992,7 @@ class _RepositoryTutorToolGateway:
         if manifest is None:
             raise ValueError("tutor named an unknown harness tool")
         ref = name if name in HARNESS_TOOL_LABELS else None
-        token = (
-            begin_activity(kind="tool", ref=ref)
-            if ref is not None
-            else None
-        )
+        token = begin_activity(kind="tool", ref=ref) if ref is not None else None
         target_course = course_id
         target_session: SessionId | None = session_id
         if name == "course.create":
@@ -1020,8 +1005,8 @@ class _RepositoryTutorToolGateway:
             target_session = None
         try:
             idempotency_key = (
-                f"{host_turn_id}:study_memory.record"
-                if name == "study_memory.record"
+                f"{host_turn_id}:student_state.record"
+                if name == "student_state.record"
                 else f"{host_turn_id}:{invocation_fingerprint}"
             )
             result = await surface.invoke(
@@ -1549,8 +1534,15 @@ class LocalRepository:
         self.conversation_history = ConversationHistoryReader(
             self.tutor_snapshots, self.tutor_presentations
         )
-        self.study_memory = StudyMemoryArchive(
-            self.events, self.sessions, self.session_service
+        self.student_state = StudentStateService(
+            paths.state / "student-state.json",
+            self.events,
+            self.sessions,
+            self.clock,
+            verify_binding=None if observation is None else observation.verify_binding,
+            directory_descriptor=(
+                None if observation is None else lambda: observation.directory_descriptor("state")
+            ),
         )
         self._pending_study_topics: list[
             tuple[CourseId, SessionId, str, str]
@@ -1578,9 +1570,7 @@ class LocalRepository:
             self.conversation = self.conversation_application(
                 tutor_host_runner, continuation_store=self.tutor_continuations
             )
-        self.study_context = ProjectionStudyContextView(self.events.projection)
         self.assessments = ProjectionAssessmentView(self.events.projection)
-        self.learner_evidence = ProjectionLearnerEvidenceView(self.assessments)
         self.assessment_service = AssessmentService(
             self.events,
             self.clock,
@@ -1588,9 +1578,6 @@ class LocalRepository:
             self.artifacts,
             self.sessions,
             ExactClosedGradingPolicy(),
-        )
-        self.study_context_service = StudyContextService(
-            self.events, self.clock, self.study_context, self.courses, self.sessions
         )
         self.recall_composition = compose_recall(
             events=self.events,
@@ -1735,7 +1722,7 @@ class LocalRepository:
                 )
             ),
             self.tutor_snapshots,
-            self.learner_evidence,
+            self.student_state,
             gateway,
             _RepositoryTutorAuthority(),
             _RepositoryTutorActionIdentity(),
@@ -1748,11 +1735,11 @@ class LocalRepository:
             ),
             context_assembler=TutorHostContextAssembler(
                 self.tutor_snapshots,
-                self.learner_evidence,
+                self.student_state,
                 gateway,
                 self.tutor_presentations,
                 _RepositoryTutorToolGateway(self),
-                self.study_memory,
+                self.student_state,
             ),
             completion_handoff_store=self.tutor_completion_handoffs,
             tool_gateway=_RepositoryTutorToolGateway(self),
@@ -2560,7 +2547,7 @@ class LocalRepository:
                 lesson_pin=lesson_pin,
             ),
             events=self.events,
-            private_summary_notes=self.study_memory.validated_memory_contents,
+            private_summary_notes=self.student_state.validated_memory_contents,
         )
 
     async def propose_flashcards_for_pin(
@@ -2714,9 +2701,10 @@ class LocalRepository:
         if pending not in self._pending_study_topics:
             self._pending_study_topics.append(pending)
 
-    def settle_study_memory(self, course_id: CourseId, session_id: SessionId) -> None:
+    def settle_student_state(self, course_id: CourseId, session_id: SessionId) -> None:
         """Persist completed topics only after the tutor presentation is canonical."""
 
+        self.student_state.import_history(course_id)
         selected = tuple(
             item
             for item in self._pending_study_topics
@@ -2726,23 +2714,20 @@ class LocalRepository:
             item for item in self._pending_study_topics if item not in selected
         ]
         for _, _, topic, run_id in selected:
-            with suppress(Exception):
-                origin_sequence = self.study_memory.latest_learner_sequence(
-                    course_id, session_id
-                )
-                self.study_memory.record_topic_covered(
-                    topic=topic,
-                    context=ExecutionContext(
-                        PrincipalKind.SERVICE,
-                        "cardine-tutor-host",
-                        course_id,
-                        CorrelationId(f"cardine-study-memory-{run_id}"),
-                        frozenset({"study:write"}),
-                        session_id,
-                        idempotency_key=f"{run_id}:study-memory-topic",
-                    ),
-                    origin_sequence=origin_sequence,
-                )
+            origin_sequence = self.student_state.latest_learner_sequence(course_id, session_id)
+            self.student_state.record_topic_covered(
+                topic=topic,
+                context=ExecutionContext(
+                    PrincipalKind.SERVICE,
+                    "cardine-tutor-host",
+                    course_id,
+                    CorrelationId(f"cardine-study-memory-{run_id}"),
+                    frozenset({"study:write"}),
+                    session_id,
+                    idempotency_key=f"{run_id}:study-memory-topic",
+                ),
+                origin_sequence=origin_sequence,
+            )
 
     def close(self) -> None:
         self.blobs.close()

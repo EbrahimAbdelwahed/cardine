@@ -126,7 +126,7 @@ class RepositoryObservationHandle:
 
     def directory_descriptor(self, name: str) -> int:
         """Duplicate a retained directory descriptor for an adapter owner."""
-        if name not in {"blobs"}:
+        if name not in {"blobs", "state"}:
             raise ValueError("unsupported repository directory descriptor")
         return os.dup(self._required_descriptor(name))
 

@@ -12,22 +12,13 @@ from cardine.courses import ProjectionCourseView
 from study_agent.artifacts import ExamBlueprintContent, ProjectionArtifactView
 from study_agent.artifacts.content import EvidenceObservation
 from study_agent.artifacts.contracts import ArtifactSnapshot
-from study_agent.assessments import (
-    ProjectionAssessmentView,
-    ProjectionLearnerEvidenceView,
-)
-from study_agent.assessments.evidence import LearnerEvidenceSnapshot
 from study_agent.domain import (
     CourseId,
-    StatementStatus,
     StudyArtifactKind,
-    StudyContextSnapshot,
-    StudyStatementKind,
 )
 from study_agent.ports.clock import ClockPort
 from study_agent.recall import DueRecallView
 from study_agent.state import Projection
-from study_agent.study_context import ProjectionStudyContextView
 
 type ProjectionLoader = Callable[[CourseId], Projection]
 
@@ -123,48 +114,6 @@ class ReadinessArtifactCount:
 
 
 @dataclass(frozen=True, slots=True)
-class ReadinessEvidenceReference:
-    grade_id: str
-    event_sequence: int
-    disposition: str
-    numerator: int
-    denominator: int
-
-    def to_json(self) -> dict[str, object]:
-        return {
-            "grade_id": self.grade_id,
-            "event_sequence": self.event_sequence,
-            "disposition": self.disposition,
-            "numerator": self.numerator,
-            "denominator": self.denominator,
-        }
-
-
-@dataclass(frozen=True, slots=True)
-class ReadinessEvidence:
-    dimension: str
-    key: str
-    label: str
-    numerator: int
-    denominator: int
-    through_sequence: int
-    references: tuple[ReadinessEvidenceReference, ...]
-    source: ReadinessSource
-
-    def to_json(self) -> dict[str, object]:
-        return {
-            "dimension": self.dimension,
-            "key": self.key,
-            "label": self.label,
-            "numerator": self.numerator,
-            "denominator": self.denominator,
-            "through_sequence": self.through_sequence,
-            "references": tuple(item.to_json() for item in self.references),
-            "source": self.source.to_json(),
-        }
-
-
-@dataclass(frozen=True, slots=True)
 class ReadinessRecall:
     available: bool
     due_count: int | None
@@ -197,7 +146,6 @@ class StudyReadinessSnapshot:
     constraints: tuple[ReadinessConstraint, ...]
     blueprints: tuple[ReadinessBlueprint, ...]
     artifact_counts: tuple[ReadinessArtifactCount, ...]
-    evidence: tuple[ReadinessEvidence, ...]
     recall: ReadinessRecall
     sources: Mapping[str, ReadinessSource]
 
@@ -210,7 +158,6 @@ class StudyReadinessSnapshot:
             "constraints",
             "blueprints",
             "artifact_counts",
-            "evidence",
         ):
             object.__setattr__(self, name, tuple(getattr(self, name)))
         object.__setattr__(self, "sources", MappingProxyType(dict(self.sources)))
@@ -240,11 +187,9 @@ class StudyReadinessSnapshot:
                     "as_of_date": clock_source,
                     "deadline_status": {
                         "configured_date": course_source,
-                        "conflict_state": self.sources["study_context"].to_json(),
                     },
                     "days_remaining": {
                         "configured_date": course_source,
-                        "conflict_state": self.sources["study_context"].to_json(),
                         "as_of_date": clock_source,
                     },
                 },
@@ -256,7 +201,6 @@ class StudyReadinessSnapshot:
             "constraints": tuple(item.to_json() for item in self.constraints),
             "blueprints": tuple(item.to_json() for item in self.blueprints),
             "artifact_counts": tuple(item.to_json() for item in self.artifact_counts),
-            "evidence": tuple(item.to_json() for item in self.evidence),
             "recall": self.recall.to_json(),
             "source": self.source.to_json(),
             "sources": {
@@ -315,38 +259,19 @@ class StudyReadinessView:
         def loader(_course_id: CourseId) -> Projection:
             return projection
         course = ProjectionCourseView(loader).get(projection.course_id)
-        context = ProjectionStudyContextView(loader).get(projection.course_id)
         artifacts = ProjectionArtifactView(loader).get(projection.course_id)
-        assessments = ProjectionAssessmentView(loader).get(projection.course_id)
-        learner_evidence = ProjectionLearnerEvidenceView(
-            ProjectionAssessmentView(loader)
-        ).get(projection.course_id)
         sources = {
             key: ReadinessSource(key, sequence)
             for key, sequence in (
                 ("projection", projection.sequence),
                 ("course", projection.sequence),
-                ("study_context", context.sequence),
                 ("study_artifacts", artifacts.sequence),
-                ("assessments", assessments.sequence),
-                ("learner_evidence", learner_evidence.through_sequence),
                 ("recall", projection.sequence),
                 ("injected_clock", projection.sequence),
             )
         }
-        deadline_conflicted = any(
-            item.kind is StudyStatementKind.DEADLINE for item in context.conflicts
-        )
-        deadline_status = (
-            "conflicted"
-            if deadline_conflicted
-            else "missing"
-            if course.exam_date is None
-            else "configured"
-        )
-        days_remaining = None
-        if not deadline_conflicted and course.exam_date is not None:
-            days_remaining = (course.exam_date - now.date()).days
+        deadline_status = "missing" if course.exam_date is None else "configured"
+        days_remaining = None if course.exam_date is None else (course.exam_date - now.date()).days
         return StudyReadinessSnapshot(
             projection.course_id,
             projection.sequence,
@@ -362,10 +287,9 @@ class StudyReadinessView:
                 AttributedValue(value, sources["course"])
                 for value in course.assessment_styles
             ),
-            _constraints(context, sources["study_context"]),
+            (),
             _blueprints(artifacts, sources["study_artifacts"]),
             _counts(artifacts, sources["study_artifacts"]),
-            _evidence(learner_evidence, sources["learner_evidence"]),
             self._recall(projection, now, sources["recall"]),
             sources,
         )
@@ -398,39 +322,6 @@ class StudyReadinessView:
             None if not due else due[0].due_at,
             source,
         )
-
-
-def _constraints(
-    snapshot: StudyContextSnapshot, source: ReadinessSource
-) -> tuple[ReadinessConstraint, ...]:
-    conflicts = {item.kind for item in snapshot.conflicts}
-    rows = []
-    for statement in snapshot.statements:
-        if (
-            statement.kind
-            not in (
-                StudyStatementKind.DEADLINE,
-                StudyStatementKind.WEEKLY_TIME_BUDGET,
-            )
-            or statement.status is not StatementStatus.ACTIVE
-        ):
-            continue
-        value = (
-            statement.value.isoformat()
-            if isinstance(statement.value, date)
-            else statement.value
-        )
-        rows.append(
-            ReadinessConstraint(
-                statement.kind.value,
-                value,
-                "learner",
-                "conflicted" if statement.kind in conflicts else "active",
-                source,
-                str(statement.id),
-            )
-        )
-    return tuple(sorted(rows, key=lambda item: (item.kind, item.statement_id or "")))
 
 
 def _blueprints(
@@ -479,40 +370,11 @@ def _counts(
     )
 
 
-def _evidence(
-    snapshot: LearnerEvidenceSnapshot, source: ReadinessSource
-) -> tuple[ReadinessEvidence, ...]:
-    return tuple(
-        ReadinessEvidence(
-            item.dimension.value,
-            item.key,
-            item.key if item.dimension.value == "criterion" else item.label,
-            item.numerator,
-            item.denominator,
-            item.through_sequence,
-            tuple(
-                ReadinessEvidenceReference(
-                    str(reference.grade_id),
-                    reference.event_sequence,
-                    reference.disposition.value,
-                    reference.numerator,
-                    reference.denominator,
-                )
-                for reference in item.evidence
-            ),
-            source,
-        )
-        for item in snapshot.estimates
-    )
-
-
 __all__ = [
     "AttributedValue",
     "ReadinessArtifactCount",
     "ReadinessBlueprint",
     "ReadinessConstraint",
-    "ReadinessEvidence",
-    "ReadinessEvidenceReference",
     "ReadinessRecall",
     "ReadinessSource",
     "StudyReadinessSnapshot",

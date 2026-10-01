@@ -60,11 +60,9 @@ def test_cardine_surface_uses_canonical_repository_services(tmp_path: Path) -> N
             "course.create",
             "source.ingest",
             "session.start",
-            "context.get",
             "recall.get",
             "artifact.get",
             "assessment.get",
-            "evidence.get",
         } <= set(names)
 
         course = asyncio.run(
@@ -117,8 +115,8 @@ def test_cardine_surface_uses_canonical_repository_services(tmp_path: Path) -> N
 
         evidence = asyncio.run(
             surface.invoke(
-                "evidence.get",
-                {},
+                "student_state.search",
+                {"query": None, "kind": "any", "signal": "any", "limit": 8},
                 _context(
                     course_id,
                     session_id=session_id,
@@ -129,9 +127,7 @@ def test_cardine_surface_uses_canonical_repository_services(tmp_path: Path) -> N
         )
         assert evidence.error is None
         assert evidence.value is not None
-        through_sequence = evidence.value["through_sequence"]
-        assert isinstance(through_sequence, int)
-        assert through_sequence >= 3
+        assert evidence.value["entries"] == ()
 
 
 def test_surface_rejects_a_missing_grant(tmp_path: Path) -> None:
@@ -218,26 +214,26 @@ def test_study_memory_tools_record_and_search_canonical_learner_signal(
         )
         recorded = asyncio.run(
             repository.harness_tools().invoke(
-                "study_memory.record",
+                "student_state.record",
                 record_arguments,
                 record_context,
             )
         )
         retried = asyncio.run(
             repository.harness_tools().invoke(
-                "study_memory.record", record_arguments, record_context
+                "student_state.record", record_arguments, record_context
             )
         )
         conflicting = asyncio.run(
             repository.harness_tools().invoke(
-                "study_memory.record",
+                "student_state.record",
                 {**record_arguments, "summary": "Un contenuto diverso."},
                 record_context,
             )
         )
         found = asyncio.run(
             repository.harness_tools().invoke(
-                "study_memory.search",
+                "student_state.search",
                 {"query": "cinetica", "kind": "any", "signal": "any", "limit": 8},
                 _service_context(
                     course_id,
@@ -253,8 +249,8 @@ def test_study_memory_tools_record_and_search_canonical_learner_signal(
             "argomento molto lungo " * 20,
             "run-long-topic",
         )
-        repository.settle_study_memory(course_id, session_id)
-        covered = repository.study_memory.search(course_id, kind="topic_covered")
+        repository.settle_student_state(course_id, session_id)
+        covered = repository.student_state.search(course_id, kind="topic_covered")
 
     assert recorded.error is None
     assert recorded.value is not None

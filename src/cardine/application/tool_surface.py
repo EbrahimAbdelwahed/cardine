@@ -16,7 +16,7 @@ from cardine.application.conversation_history import (
     ConversationHistoryEntry,
     ConversationHistoryReader,
 )
-from cardine.application.study_memory import StudyMemoryArchive, StudyMemoryEntry
+from cardine.application.student_state import StudentStateEvent, StudentStateService
 from cardine.courses import course_profile_manifest
 from cardine.courses.service import CourseService
 from study_agent.domain import (
@@ -35,8 +35,6 @@ from study_agent.ports import (
     AssessmentViewPort,
     CourseCatalogPort,
     EventStore,
-    LearnerEvidenceViewPort,
-    StudyContextViewPort,
 )
 from study_agent.recall.composition import RecallComposition
 from study_agent.sessions.service import IdempotencyConflictError, SessionService
@@ -64,12 +62,10 @@ class HarnessToolOwner(Protocol):
     course_service: object
     sessions: object
     session_service: object
-    study_context: object
     artifacts: object
     assessments: object
-    learner_evidence: object
     conversation_history: object
-    study_memory: object
+    student_state: object
     recall_composition: object
     events: object
 
@@ -188,8 +184,7 @@ class HarnessToolSurface:
         conversation_through_sequence: int | None = None,
     ) -> None:
         if conversation_through_sequence is not None and (
-            type(conversation_through_sequence) is not int
-            or conversation_through_sequence < 0
+            type(conversation_through_sequence) is not int or conversation_through_sequence < 0
         ):
             raise ValueError("conversation high-water bound is invalid")
         self._owner = owner
@@ -327,7 +322,7 @@ class HarnessToolSurface:
             ),
             _Operation(
                 _manifest(
-                    "study_memory.record",
+                    "student_state.record",
                     _object(
                         {
                             "topic": {"type": "string", "minLength": 1, "maxLength": 120},
@@ -355,22 +350,22 @@ class HarnessToolSurface:
                     ),
                     output_schema=_object(
                         {
-                            "memory_id": _TEXT,
+                            "event_id": _TEXT,
                             "kind": {"type": "string", "enum": ("learner_signal",)},
-                            "origin_sequence": {"type": "integer", "minimum": 1},
-                            "recorded_sequence": {"type": "integer", "minimum": 1},
+                            "origin_sequence": {"type": "integer", "minimum": 0},
+                            "sequence": {"type": "integer", "minimum": 1},
                         },
-                        ("memory_id", "kind", "origin_sequence", "recorded_sequence"),
+                        ("event_id", "kind", "origin_sequence", "sequence"),
                     ),
                     effect=ToolEffect.CANONICAL_WRITE,
                     capability="study:write",
                     idempotency=IdempotencyMode.REQUIRED,
                 ),
-                self._record_study_memory,
+                self._record_student_state,
             ),
             _Operation(
                 _manifest(
-                    "study_memory.search",
+                    "student_state.search",
                     _object(
                         {
                             "query": {
@@ -378,7 +373,13 @@ class HarnessToolSurface:
                             },
                             "kind": {
                                 "type": "string",
-                                "enum": ("any", "topic_covered", "learner_signal"),
+                                "enum": (
+                                    "any",
+                                    "topic_covered",
+                                    "learner_signal",
+                                    "assessment_activity",
+                                    "context_recorded",
+                                ),
                             },
                             "signal": {
                                 "type": "string",
@@ -396,13 +397,13 @@ class HarnessToolSurface:
                         ("query", "kind", "signal", "limit"),
                     ),
                     output_schema=_object(
-                        {"entries": _array(_study_memory_entry_schema())},
+                        {"entries": _array(_student_state_entry_schema())},
                         ("entries",),
                     ),
                     effect=ToolEffect.READ_ONLY,
                     capability="study:read",
                 ),
-                self._search_study_memory,
+                self._search_student_state,
             ),
             _Operation(
                 _manifest(
@@ -467,23 +468,6 @@ class HarnessToolSurface:
             ),
             _Operation(
                 _manifest(
-                    "context.get",
-                    _object({}),
-                    output_schema=_object(
-                        {
-                            "sequence": {"type": "integer", "minimum": 0},
-                            "statement_count": {"type": "integer", "minimum": 0},
-                            "conflict_count": {"type": "integer", "minimum": 0},
-                        },
-                        ("sequence", "statement_count", "conflict_count"),
-                    ),
-                    effect=ToolEffect.READ_ONLY,
-                    capability="study:read",
-                ),
-                self._context,
-            ),
-            _Operation(
-                _manifest(
                     "recall.get",
                     _object({}),
                     output_schema=_object(
@@ -535,33 +519,6 @@ class HarnessToolSurface:
                 ),
                 self._assessments,
             ),
-            _Operation(
-                _manifest(
-                    "evidence.get",
-                    _object({}),
-                    output_schema=_object(
-                        {
-                            "through_sequence": {"type": "integer", "minimum": 0},
-                            "estimates": _array(
-                                _object(
-                                    {
-                                        "dimension": _TEXT,
-                                        "key": _TEXT,
-                                        "label": _TEXT,
-                                        "numerator": {"type": "integer", "minimum": 0},
-                                        "denominator": {"type": "integer", "minimum": 0},
-                                    },
-                                    ("dimension", "key", "label", "numerator", "denominator"),
-                                )
-                            ),
-                        },
-                        ("through_sequence", "estimates"),
-                    ),
-                    effect=ToolEffect.READ_ONLY,
-                    capability="study:read",
-                ),
-                self._evidence,
-            ),
         )
 
     def _create_course(self, arguments: JsonObject, context: ExecutionContext) -> ToolResult:
@@ -573,9 +530,7 @@ class HarnessToolSurface:
             str(arguments["title"]),
             str(arguments["language"]),
             learning_goals=cast(tuple[str, ...], arguments["learning_goals"]),
-            assessment_styles=cast(
-                tuple[str, ...], arguments.get("assessment_styles", ())
-            ),
+            assessment_styles=cast(tuple[str, ...], arguments.get("assessment_styles", ())),
         )
         created = cast(CourseService, self._owner.course_service).create(profile, context)
         return ToolResult.success({"profile": course_profile_manifest(created)})
@@ -592,9 +547,9 @@ class HarnessToolSurface:
         if context.session_id != session_id:
             return _failure(ToolErrorCode.UNAUTHORIZED, "session authority is host-derived")
         session = cast(SessionService, self._owner.session_service).start(context)
-        sequence = cast(_EventProjectionStore, self._owner.events).projection(
-            context.course_id
-        ).sequence
+        sequence = (
+            cast(_EventProjectionStore, self._owner.events).projection(context.course_id).sequence
+        )
         return ToolResult.success(
             {"id": str(session.id), "status": session.status.value, "high_water_sequence": sequence}
         )
@@ -627,9 +582,7 @@ class HarnessToolSurface:
             }
         )
 
-    def _search_conversation(
-        self, arguments: JsonObject, context: ExecutionContext
-    ) -> ToolResult:
+    def _search_conversation(self, arguments: JsonObject, context: ExecutionContext) -> ToolResult:
         if context.session_id is None:
             return _failure(ToolErrorCode.UNAUTHORIZED, "conversation scope is host-derived")
         result = cast(ConversationHistoryReader, self._owner.conversation_history).search(
@@ -648,12 +601,10 @@ class HarnessToolSurface:
             }
         )
 
-    def _record_study_memory(
-        self, arguments: JsonObject, context: ExecutionContext
-    ) -> ToolResult:
+    def _record_student_state(self, arguments: JsonObject, context: ExecutionContext) -> ToolResult:
         if context.session_id is None:
             return _failure(ToolErrorCode.UNAUTHORIZED, "study memory scope is host-derived")
-        archive = cast(StudyMemoryArchive, self._owner.study_memory)
+        archive = cast(StudentStateService, self._owner.student_state)
         origin_sequence = archive.latest_learner_sequence(
             context.course_id,
             context.session_id,
@@ -669,17 +620,15 @@ class HarnessToolSurface:
         )
         return ToolResult.success(
             {
-                "memory_id": entry.memory_id,
+                "event_id": entry.event_id,
                 "kind": entry.kind,
                 "origin_sequence": entry.origin_sequence,
-                "recorded_sequence": entry.recorded_sequence,
+                "sequence": entry.sequence,
             }
         )
 
-    def _search_study_memory(
-        self, arguments: JsonObject, context: ExecutionContext
-    ) -> ToolResult:
-        entries = cast(StudyMemoryArchive, self._owner.study_memory).search(
+    def _search_student_state(self, arguments: JsonObject, context: ExecutionContext) -> ToolResult:
+        entries = cast(StudentStateService, self._owner.student_state).search(
             context.course_id,
             query=cast(str | None, arguments["query"]),
             kind=str(arguments["kind"]),
@@ -688,12 +637,10 @@ class HarnessToolSurface:
             through_sequence=self._conversation_through_sequence,
         )
         return ToolResult.success(
-            {"entries": tuple(_study_memory_entry(item) for item in entries)}
+            {"entries": tuple(_student_state_entry(item) for item in entries)}
         )
 
-    def _read_conversation(
-        self, arguments: JsonObject, context: ExecutionContext
-    ) -> ToolResult:
+    def _read_conversation(self, arguments: JsonObject, context: ExecutionContext) -> ToolResult:
         if context.session_id is None:
             return _failure(ToolErrorCode.UNAUTHORIZED, "conversation scope is host-derived")
         result = cast(ConversationHistoryReader, self._owner.conversation_history).read(
@@ -711,18 +658,6 @@ class HarnessToolSurface:
                 "through_sequence": result.through_sequence,
                 "next_cursor": result.next_cursor,
                 "has_more": result.has_more,
-            }
-        )
-
-    def _context(self, _arguments: JsonObject, context: ExecutionContext) -> ToolResult:
-        snapshot = cast(StudyContextViewPort, self._owner.study_context).get(
-            context.course_id
-        )
-        return ToolResult.success(
-            {
-                "sequence": snapshot.sequence,
-                "statement_count": len(snapshot.statements),
-                "conflict_count": len(snapshot.conflicts),
             }
         )
 
@@ -759,26 +694,6 @@ class HarnessToolSurface:
             }
         )
 
-    def _evidence(self, _arguments: JsonObject, context: ExecutionContext) -> ToolResult:
-        snapshot = cast(LearnerEvidenceViewPort, self._owner.learner_evidence).get(
-            context.course_id
-        )
-        return ToolResult.success(
-            {
-                "through_sequence": snapshot.through_sequence,
-                "estimates": tuple(
-                    {
-                        "dimension": item.dimension.value,
-                        "key": item.key,
-                        "label": item.label,
-                        "numerator": item.numerator,
-                        "denominator": item.denominator,
-                    }
-                    for item in snapshot.estimates
-                ),
-            }
-        )
-
 
 def _failure(code: ToolErrorCode, message: str) -> ToolResult:
     return ToolResult.failure(
@@ -805,44 +720,52 @@ def _history_entry(entry: ConversationHistoryEntry, maximum: int) -> JsonObject:
     }
 
 
-def _study_memory_entry_schema() -> JsonObject:
+def _student_state_entry_schema() -> JsonObject:
     nullable_text: JsonObject = {"type": ("string", "null")}
     return _object(
         {
-            "memory_id": _TEXT,
-            "kind": {"type": "string", "enum": ("topic_covered", "learner_signal")},
+            "event_id": _TEXT,
+            "kind": {
+                "type": "string",
+                "enum": (
+                    "topic_covered",
+                    "learner_signal",
+                    "assessment_activity",
+                    "context_recorded",
+                ),
+            },
             "topic": _TEXT,
             "summary": nullable_text,
             "signal": nullable_text,
             "assistance": nullable_text,
-            "origin_sequence": {"type": "integer", "minimum": 1},
-            "recorded_sequence": {"type": "integer", "minimum": 1},
-            "recorded_by": {"type": "string", "enum": ("host", "tutor_agent")},
+            "origin_sequence": {"type": "integer", "minimum": 0},
+            "sequence": {"type": "integer", "minimum": 1},
+            "recorded_by": {"type": "string", "enum": ("host", "tutor_agent", "student")},
         },
         (
-            "memory_id",
+            "event_id",
             "kind",
             "topic",
             "summary",
             "signal",
             "assistance",
             "origin_sequence",
-            "recorded_sequence",
+            "sequence",
             "recorded_by",
         ),
     )
 
 
-def _study_memory_entry(entry: StudyMemoryEntry) -> JsonObject:
+def _student_state_entry(entry: StudentStateEvent) -> JsonObject:
     return {
-        "memory_id": entry.memory_id,
+        "event_id": entry.event_id,
         "kind": entry.kind,
         "topic": entry.topic,
         "summary": entry.summary,
         "signal": entry.signal,
         "assistance": entry.assistance,
         "origin_sequence": entry.origin_sequence,
-        "recorded_sequence": entry.recorded_sequence,
+        "sequence": entry.sequence,
         "recorded_by": entry.recorded_by,
     }
 

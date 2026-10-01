@@ -18,7 +18,11 @@ def test_tool_result_is_observed_before_luna_answers_the_same_turn(tmp_path: Pat
     root, adapters, model = _repository(
         tmp_path,
         decisions=(
-            {"kind": "invoke_tool", "tool_name": "context.get", "arguments": {}},
+            {
+                "kind": "invoke_tool",
+                "tool_name": "student_state.search",
+                "arguments": {"query": None, "kind": "any", "signal": "any", "limit": 8},
+            },
             {
                 "kind": "assistant_message",
                 "message": "Il contesto è vuoto: possiamo iniziare dalla prima fonte.",
@@ -40,9 +44,7 @@ def test_tool_result_is_observed_before_luna_answers_the_same_turn(tmp_path: Pat
     assert receipt["status"] == "assistant_message"
     session = app.get("/api/v1/session")
     timeline = cast(tuple[JsonObject, ...], session["timeline"])
-    assert timeline[-1]["content"] == (
-        "Il contesto è vuoto: possiamo iniziare dalla prima fonte."
-    )
+    assert timeline[-1]["content"] == ("Il contesto è vuoto: possiamo iniziare dalla prima fonte.")
     decision_requests = tuple(
         request
         for request in model.requests
@@ -55,13 +57,9 @@ def test_tool_result_is_observed_before_luna_answers_the_same_turn(tmp_path: Pat
     assert len(observations[0]["action_fingerprint"]) == 64
     assert observations[0] | {"action_fingerprint": "<opaque>"} == {
         "action_fingerprint": "<opaque>",
-        "result": {
-            "conflict_count": 0,
-            "sequence": observed_context["tutor_snapshot_sequence"],
-            "statement_count": 0,
-        },
+        "result": {"entries": []},
         "status": "succeeded",
-        "tool_name": "context.get",
+        "tool_name": "student_state.search",
     }
 
 
@@ -69,8 +67,16 @@ def test_exact_duplicate_tool_call_is_skipped_before_luna_recovers(tmp_path: Pat
     root, adapters, model = _repository(
         tmp_path,
         decisions=(
-            {"kind": "invoke_tool", "tool_name": "context.get", "arguments": {}},
-            {"kind": "invoke_tool", "tool_name": "context.get", "arguments": {}},
+            {
+                "kind": "invoke_tool",
+                "tool_name": "student_state.search",
+                "arguments": {"query": None, "kind": "any", "signal": "any", "limit": 8},
+            },
+            {
+                "kind": "invoke_tool",
+                "tool_name": "student_state.search",
+                "arguments": {"query": None, "kind": "any", "signal": "any", "limit": 8},
+            },
             {
                 "kind": "assistant_message",
                 "message": "Ho già controllato il contesto una volta: non ripeto la lettura.",
@@ -91,7 +97,7 @@ def test_exact_duplicate_tool_call_is_skipped_before_luna_recovers(tmp_path: Pat
 
     assert receipt["status"] == "assistant_message"
     activities = cast(tuple[JsonObject, ...], receipt["activity_records"])
-    assert sum(item.get("ref") == "context.get" for item in activities) == 1
+    assert sum(item.get("ref") == "student_state.search" for item in activities) == 1
     decision_requests = tuple(
         request
         for request in model.requests

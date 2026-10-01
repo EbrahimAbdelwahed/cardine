@@ -52,10 +52,9 @@ ROUTES = {
     "fonti": "/api/v1/materials",
     "proposte": "/api/v1/artifacts",
     "verifiche": "/api/v1/assessments",
-    "evidenze": "/api/v1/evidence",
+    "percorso": "/api/v1/student-state",
     "ripasso": "/api/v1/recall/due",
     "piano": "/api/v1/plan",
-    "conflitti": "/api/v1/context/conflicts",
 }
 
 
@@ -175,9 +174,8 @@ def test_repository_route_control_matrix_and_restart_safe_chat(tmp_path: Path) -
     assert responses["fonti"]["status"] == "ready"
     assert responses["proposte"]["status"] == "empty"
     assert responses["verifiche"]["status"] == "empty"
-    assert responses["evidenze"]["status"] == "empty"
+    assert responses["percorso"]["entries"] == ()
     assert responses["ripasso"]["status"] == "not_configured"
-    assert responses["conflitti"]["status"] == "empty"
 
     command = _command("closure-chat", sequence, {"content": "aortic valve"})
     receipt = app.post("/api/v1/session/turns", command)
@@ -226,7 +224,7 @@ def test_browser_control_matrix_keyboard_and_responsive_contracts() -> None:
         "assessment-attempt",
         "assessment-grade",
         "review",
-        "context",
+        "student-state-import",
     ):
         assert f'data-command="{command}"' in javascript
     assert "$$('[data-command]')" in javascript

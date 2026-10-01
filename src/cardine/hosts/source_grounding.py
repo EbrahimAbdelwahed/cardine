@@ -85,7 +85,7 @@ def _require_grounded_explanation(
         return decision
     if (
         isinstance(decision, InvokeToolDecision)
-        and decision.tool_name in {"study_memory.record", "study_memory.search"}
+        and decision.tool_name in {"student_state.record", "student_state.search"}
     ):
         return decision
     learner_text = _latest_learner_text(context)

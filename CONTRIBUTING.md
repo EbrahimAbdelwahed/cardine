@@ -46,6 +46,8 @@ Use the Cardine entry points in examples and deployment scripts:
 Keep changes small and preserve these architectural boundaries:
 
 - canonical study state comes from the append-only domain event stream;
+- student observations use the separate append-only student journal through
+  `StudentStateService` (see `specs/student-journal/README.md`);
 - projections, indexes, and run checkpoints do not become authorities;
 - skills and playbooks own study behaviour;
 - model/provider adapters translate technical protocols only;

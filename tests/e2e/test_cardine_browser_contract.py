@@ -34,10 +34,9 @@ ROUTES = {
     "fonti": "/api/v1/materials",
     "proposte": "/api/v1/artifacts",
     "verifiche": "/api/v1/assessments",
-    "evidenze": "/api/v1/evidence",
+    "percorso": "/api/v1/student-state",
     "ripasso": "/api/v1/recall/due",
     "piano": "/api/v1/plan",
-    "conflitti": "/api/v1/context/conflicts",
 }
 
 

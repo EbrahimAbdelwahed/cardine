@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 
 import pytest
 
+from cardine.application.student_state import StudentStateSnapshot
 from cardine.hosts import (
     AdvertisedCapability,
     AnswerDialogueDecision,
@@ -26,7 +27,6 @@ from cardine.hosts import (
     decision_schema,
     decision_to_bytes,
 )
-from study_agent.assessments import LearnerEvidenceSnapshot
 from study_agent.domain import (
     CourseId,
     SessionId,
@@ -77,9 +77,9 @@ def _context(**changes: object) -> TutorHostContext:
         "course_id": "course-host",
         "session_id": "session-host",
         "tutor_snapshot_sequence": 8,
-        "learner_evidence_through_sequence": 8,
+        "student_state_sequence": 8,
         "tutor_snapshot": {"status": "active"},
-        "learner_evidence": {"estimates": ()},
+        "student_state": {"estimates": ()},
         "advertised_capabilities": (_capability(),),
         "pending_continuation": _pending(),
         "host_files": (
@@ -244,8 +244,9 @@ def test_legacy_needs_learner_input_stop_reason_is_rejected() -> None:
 
 
 def test_context_rejects_sequence_owner_order_and_continuation_mismatches() -> None:
-    with pytest.raises(ValueError, match="sequence-consistent"):
-        _context(learner_evidence_through_sequence=7)
+    assert _context(student_state_sequence=7).student_state_sequence == 7
+    with pytest.raises(ValueError, match="non-negative"):
+        _context(student_state_sequence=-1)
     with pytest.raises(ValueError, match="canonically ordered"):
         _context(
             advertised_capabilities=(
@@ -266,7 +267,7 @@ def test_context_rejects_sequence_owner_order_and_continuation_mismatches() -> N
     ("field", "value"),
     (
         ("tutor_snapshot", {"nested": {"api-key": "leak"}}),
-        ("learner_evidence", {"canonical_expected_response": "leak"}),
+        ("student_state", {"canonical_expected_response": "leak"}),
     ),
 )
 def test_model_context_rejects_forbidden_keys(field: str, value: object) -> None:
@@ -421,7 +422,7 @@ def test_assembler_reads_snapshot_evidence_and_manifests_without_owning_state() 
         (),
         (),
     )
-    evidence = LearnerEvidenceSnapshot(course_id, 8, ())
+    evidence = StudentStateSnapshot(course_id, 8, ())
 
     class _Snapshots:
         def get(self, requested_course: CourseId, requested_session: SessionId) -> TutorSnapshotV1:
@@ -429,7 +430,7 @@ def test_assembler_reads_snapshot_evidence_and_manifests_without_owning_state() 
             return snapshot
 
     class _Evidence:
-        def get(self, requested_course: CourseId) -> LearnerEvidenceSnapshot:
+        def get(self, requested_course: CourseId) -> StudentStateSnapshot:
             assert requested_course == course_id
             return evidence
 
@@ -459,24 +460,20 @@ def test_assembler_reads_snapshot_evidence_and_manifests_without_owning_state() 
             "omitted_entries": 0,
         },
     }
-    assert assembled.learner_evidence == {
-        "course_id": "course-host",
-        "through_sequence": 8,
-        "estimates": (),
-    }
+    assert assembled.student_state == evidence.to_json(limit=24)
     assert assembled.advertised_capabilities == (_capability(),)
 
-    mismatched = LearnerEvidenceSnapshot(course_id, 7, ())
+    mismatched = StudentStateSnapshot(course_id, 7, ())
 
     class _StaleEvidence:
-        def get(self, requested_course: CourseId) -> LearnerEvidenceSnapshot:
+        def get(self, requested_course: CourseId) -> StudentStateSnapshot:
             assert requested_course == course_id
             return mismatched
 
-    with pytest.raises(ValueError, match="one sequence"):
-        TutorHostContextAssembler(
-            _Snapshots(), _StaleEvidence(), _Capabilities()
-        ).assemble(course_id, session_id)
+    independently_captured = TutorHostContextAssembler(
+        _Snapshots(), _StaleEvidence(), _Capabilities()
+    ).assemble(course_id, session_id)
+    assert independently_captured.student_state_sequence == 7
 
     foreign_snapshot = replace(snapshot, course_id=CourseId("course-other"))
 

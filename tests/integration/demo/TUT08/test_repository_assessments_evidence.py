@@ -566,61 +566,17 @@ def test_evidence_is_canonical_and_preserves_contest_and_supersession_history(
             "content_fingerprint",
         )
     )
-    evidence = app.get("/api/v1/evidence")
-    assert evidence["through_sequence"] == app.get("/api/v1/bootstrap")[
-        "high_water_sequence"
-    ]
-    estimates = cast(tuple[dict[str, object], ...], evidence["estimates"])
-    assert estimates
-    for estimate in estimates:
-        assert isinstance(estimate["numerator"], int)
-        assert isinstance(estimate["denominator"], int)
-        references = cast(tuple[dict[str, object], ...], estimate["references"])
-        assert references
-        assert all(
-            {"grade_id", "event_sequence", "disposition", "numerator", "denominator"}
-            <= set(reference)
-            for reference in references
-        )
-    all_references = [
-        reference
-        for estimate in estimates
-        for reference in cast(tuple[dict[str, object], ...], estimate["references"])
-    ]
-    assert any(reference["grade_id"] == grade_id for reference in all_references)
-    assert any(reference["grade_id"] == successor_id for reference in all_references)
-    assert any(
-        reference["grade_id"] == grade_id
-        and reference["disposition"] in {"contested", "superseded"}
-        for reference in references
-    )
-    evidence_sequence = cast(int, evidence["through_sequence"])
-    with LocalRepository.open(root) as repository:
-        _record_interaction(
-            repository,
-            SESSION,
-            InteractionId("external-evidence-writer"),
-            "external-evidence-writer",
-        )
-    refreshed_evidence = app.get("/api/v1/evidence")
-    assert cast(int, refreshed_evidence["through_sequence"]) > evidence_sequence
-    assert refreshed_evidence["through_sequence"] == app.get("/api/v1/bootstrap")[
-        "high_water_sequence"
-    ]
-    assert all(
-        estimate["through_sequence"] == refreshed_evidence["through_sequence"]
-        for estimate in cast(
-            tuple[dict[str, object], ...], refreshed_evidence["estimates"]
-        )
-    )
-    prior_estimates = tuple(
-        {**estimate, "through_sequence": None}
-        for estimate in cast(tuple[dict[str, object], ...], evidence["estimates"])
-    )
-    refreshed_estimates = tuple(
-        {**estimate, "through_sequence": None}
-        for estimate in cast(
-            tuple[dict[str, object], ...], refreshed_evidence["estimates"]
-        )
-    )
-    assert refreshed_estimates == prior_estimates
+    journal = app.get("/api/v1/student-state")
+    entries = cast(tuple[dict[str, object], ...], journal["entries"])
+    assert len(entries) == 5  # presentation, attempt, grade, contest, replacement grade
+    assert all(entry["kind"] == "assessment_activity" for entry in entries)
+    assert grade_id in str(entries) and successor_id in str(entries)
+    assert "estimates" not in journal
+    with pytest.raises(UiRequestError) as removed:
+        app.get("/api/v1/evidence")
+    assert removed.value.status_code == 404
+    before = (root / "state" / "student-state.json").read_bytes()
+    app.post("/api/v1/student-state/import", _command("import-again", 0, {}))
+    assert (root / "state" / "student-state.json").read_bytes() == before
+    restarted = RepositoryUiApplication(root, COURSE, SESSION)
+    assert restarted.get("/api/v1/student-state") == journal

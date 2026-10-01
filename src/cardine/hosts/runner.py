@@ -79,7 +79,7 @@ from .contracts import (
 )
 
 if TYPE_CHECKING:
-    from study_agent.ports.assessment import LearnerEvidenceViewPort
+    from cardine.hosts.context import StudentStateView
     from study_agent.ports.tutor_snapshot import TutorSnapshotPort
 
 
@@ -454,8 +454,7 @@ class TutorContinuationRecord:
         if self.descriptor.fingerprint != self.continuation.fingerprint:
             raise ValueError("continuation descriptor does not bind exact continuation")
         expected_identity = (
-            f"{self.continuation.capability_id.value}@"
-            f"{self.continuation.capability_version.major}"
+            f"{self.continuation.capability_id.value}@{self.continuation.capability_version.major}"
         )
         if self.descriptor.capability_identity != expected_identity:
             raise ValueError("continuation descriptor capability identity differs")
@@ -1030,7 +1029,7 @@ class TutorHostRunner:
         self,
         decision_port: TutorDecisionPort,
         snapshots: TutorSnapshotPort | None,
-        evidence: LearnerEvidenceViewPort | None,
+        student_state: StudentStateView | None,
         gateway: TutorCapabilityGatewayPort,
         authority: TutorHostAuthorityPort,
         action_identity: TutorHostActionIdentityPort,
@@ -1042,9 +1041,11 @@ class TutorHostRunner:
         tool_gateway: object | None = None,
     ) -> None:
         if context_assembler is None:
-            if snapshots is None or evidence is None:
-                raise TypeError("snapshots and evidence are required without a context assembler")
-            context_assembler = TutorHostContextAssembler(snapshots, evidence, gateway)
+            if snapshots is None or student_state is None:
+                raise TypeError(
+                    "snapshots and student state are required without a context assembler"
+                )
+            context_assembler = TutorHostContextAssembler(snapshots, student_state, gateway)
         self._decision_port = decision_port
         self._gateway = gateway
         self._authority = authority
@@ -1591,12 +1592,8 @@ class TutorHostRunner:
                 completion_reference,
                 interruption,
             )
-            if (
-                completion_reference is not None
-                and (
-                    finalized is None
-                    or finalized.state is not TutorCompletionHandoffState.COMPLETED
-                )
+            if completion_reference is not None and (
+                finalized is None or finalized.state is not TutorCompletionHandoffState.COMPLETED
             ):
                 return _failed(retry_action)
             if finalized is not None and finalized.state is TutorCompletionHandoffState.COMPLETED:

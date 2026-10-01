@@ -1,0 +1,227 @@
+--- a/scripts/audit_harness_ownership.py
++++ b/scripts/audit_harness_ownership.py
+@@ -25,6 +25,38 @@
+ CLASSIFICATION = ROOT / "tests/parity/ownership-classification.json"
+ TRANSITION_OVERLAY = ROOT / "tests/parity/ca02-transition-overlay.json"
+ RECOVERY_OVERLAY = ROOT / "tests/parity/wave-a-recovery-overlay.json"
++STUDENT_JOURNAL_OVERLAY = ROOT / "tests/parity/student-journal-overlay.json"
++STUDENT_JOURNAL_PATHS = {
++    'src/cardine/application/grounding_ask.py',
++    'src/cardine/application/legacy_student_state.py',
++    'src/cardine/application/student_state.py',
++    'src/cardine/application/study_readiness.py',
++    'src/cardine/application/tool_surface.py',
++    'src/cardine/cli/repository.py',
++    'src/cardine/demo/anatomy.py',
++    'src/cardine/demo/browser.css',
++    'src/cardine/demo/browser.html',
++    'src/cardine/demo/browser.js',
++    'src/cardine/demo/product_shell.py',
++    'src/cardine/demo/ui_application.py',
++    'src/cardine/diagnostics/turn_activity.py',
++    'src/cardine/hosts/context.py',
++    'src/cardine/hosts/contracts.py',
++    'src/cardine/hosts/runner.py',
++    'src/cardine/hosts/source_grounding.py',
++    'src/study_agent/adapters/filesystem/repository_target.py',
++    'src/study_agent/application/__init__.py',
++    'src/study_agent/assessments/__init__.py',
++    'src/study_agent/domain/tutor_snapshot.py',
++    'src/study_agent/ports/__init__.py',
++    'src/study_agent/ports/assessment.py',
++    'src/study_agent/prompts/tutor_decision_v1.py',
++    'src/study_agent/tutor_snapshot/reader.py',
++}
++STUDENT_JOURNAL_REMOVED = {
++    'src/cardine/application/study_memory.py',
++    'src/study_agent/assessments/evidence.py',
++}
+ RECOVERY_NEW_CORE_PATHS = {
+     "src/study_agent/ingestion/preparation.py",
+     "src/study_agent/prompts/retrieval_query_recovery_v1.py",
+@@ -318,6 +350,36 @@
+         hashes[path] = digest
+     if not hashes.keys() >= (RECOVERY_NEW_CORE_PATHS | RECOVERY_AST_VARIANCE):
+         raise ValueError("recovery overlay is missing required core bindings")
++    return hashes
++
++
++def _load_student_journal_overlay() -> dict[str, str]:
++    """Bind the fixed journal scope to exact bytes without changing old approval records."""
++    raw = json.loads(STUDENT_JOURNAL_OVERLAY.read_text(encoding="utf-8"))
++    if (not isinstance(raw, dict)
++        or set(raw) != {"schema_version", "decision", "rows", "removed"}
++        or raw["schema_version"] != 1
++        or raw["decision"] != "ADR-0023--minimal-append-only-student-journal"
++        or not isinstance(raw["rows"], list)
++        or not isinstance(raw["removed"], list)
++        or len(raw["removed"]) != len(STUDENT_JOURNAL_REMOVED)
++        or set(raw["removed"]) != STUDENT_JOURNAL_REMOVED):
++        raise ValueError("student journal overlay has invalid scope")
++    hashes: dict[str, str] = {}
++    for row in raw["rows"]:
++        if not isinstance(row, dict) or set(row) != {"path", "sha256"}:
++            raise ValueError("student journal overlay has invalid row")
++        path, digest = row["path"], row["sha256"]
++        if (path not in STUDENT_JOURNAL_PATHS or path in hashes
++            or not isinstance(digest, str) or len(digest) != 64
++            or any(c not in "0123456789abcdef" for c in digest)):
++            raise ValueError("student journal overlay has invalid binding")
++        hashes[path] = digest
++    if set(hashes) != STUDENT_JOURNAL_PATHS:
++        raise ValueError("student journal overlay has incomplete scope")
++    for path in STUDENT_JOURNAL_REMOVED:
++        if (ROOT / path).exists():
++            raise ValueError(f"student journal retired source is present: {path}")
+     return hashes
+
+
+@@ -562,6 +624,8 @@
+             errors.append(f"CA-02 transition consumer binding is invalid: {path}")
+     for row in transition_rows:
+         source_path = row["source_path"]
++        if source_path in STUDENT_JOURNAL_REMOVED:
++            continue
+         try:
+             if _digest(source_path, targets) != recovery_hashes.get(
+                 source_path, POST_BASELINE_SHA256.get(source_path, row["transition_sha256"])
+@@ -574,6 +638,7 @@
+                     row["disposition"] == "HARNESS_IMPORT"
+                     and source_path not in REVIEWED_NON_IMPORT_AST_VARIANCE
+                     and source_path not in RECOVERY_AST_VARIANCE
++                    and source_path not in STUDENT_JOURNAL_PATHS
+                 ):
+                     baseline_source = _baseline_source(source_path)
+                     if _normalized_ast(current_source, source_path) != _normalized_ast(
+@@ -611,6 +676,9 @@
+     errors: list[str] = []
+     try:
+         recovery_hashes = _load_recovery_overlay()
++        recovery_hashes.update(_load_student_journal_overlay())
++        for path in STUDENT_JOURNAL_REMOVED:
++            recovery_hashes.pop(path, None)
+         reviewed = _load_classification()
+         reviewed_current_paths = {_current_path(row) for row in reviewed}
+         config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+@@ -642,7 +710,7 @@
+         errors.append(f"classification is missing current path: {path}")
+     for path in sorted(set(reviewed_by_current_path) - current_paths):
+         row = reviewed_by_current_path[path]
+-        if row.get("baseline_state", "clean") == "clean" and not (
++        if path not in STUDENT_JOURNAL_REMOVED and row.get("baseline_state", "clean") == "clean" and not (
+             path.startswith("entrypoint:study-agent") and row["removal_slice"] == "CA-02"
+         ):
+             errors.append(f"classification has undeclared baseline-only path: {path}")
+--- /dev/null
++++ b/tests/parity/student-journal-overlay.json
+@@ -0,0 +1,110 @@
++{
++  "schema_version": 1,
++  "decision": "ADR-0023--minimal-append-only-student-journal",
++  "rows": [
++    {
++      "path": "src/cardine/application/grounding_ask.py",
++      "sha256": "7b820afe2bb2286d9c5975a41abd64bfe9afabbfe4220028dfa338a0ced7c5ad"
++    },
++    {
++      "path": "src/cardine/application/legacy_student_state.py",
++      "sha256": "ad11bcc4306d365f6e5b547e92ae38983616b2dcb41f8dff4e371cc337e8e81b"
++    },
++    {
++      "path": "src/cardine/application/student_state.py",
++      "sha256": "c2f3bc5f5ef228777e799d6c36e95e8a1614cd0e2e93ec0bdedfc359e3fe4860"
++    },
++    {
++      "path": "src/cardine/application/study_readiness.py",
++      "sha256": "9d3ef4d2f2da4119c4bfad004759f01d3a129d310de6c7f17319d3eea609d5c3"
++    },
++    {
++      "path": "src/cardine/application/tool_surface.py",
++      "sha256": "1f6526bfb28cbcbdfb8313cd8402b5b1839309fa25310879dbda1c4d34fe77af"
++    },
++    {
++      "path": "src/cardine/cli/repository.py",
++      "sha256": "ff97b8d075e1a2d2bcd44ce4f92fb61ced2dcc3f0e45da2346898b062a97cdd2"
++    },
++    {
++      "path": "src/cardine/demo/anatomy.py",
++      "sha256": "73e84191d9648f3db8d4d3edcab08595c34ed68c57eac5b58c5e16aeae0bae67"
++    },
++    {
++      "path": "src/cardine/demo/browser.css",
++      "sha256": "826b8d889b0d4f0cb0798ac7f03427fff4e94567f337fa6cd6b7119d97aa240b"
++    },
++    {
++      "path": "src/cardine/demo/browser.html",
++      "sha256": "3b3e6d0411dc202447a90b475badbd776b0155e09a0b9a0eb8d49f71b4a91cc6"
++    },
++    {
++      "path": "src/cardine/demo/browser.js",
++      "sha256": "888cb2ad30f449f91a3082100c7674447aace48a6fbc80fae267fa1add154822"
++    },
++    {
++      "path": "src/cardine/demo/product_shell.py",
++      "sha256": "967b10e15b52215631a048fe02ec1d4a13e534e2b33955b609535b86cf73d42b"
++    },
++    {
++      "path": "src/cardine/demo/ui_application.py",
++      "sha256": "af2d23c99cb37dd29c7442f9dccb6e8c7d57c44fe8f7c8eba4fafbb3a0da0ae8"
++    },
++    {
++      "path": "src/cardine/diagnostics/turn_activity.py",
++      "sha256": "460b3eb04a1409c8598cc8f4683cc153e1e8e9e41d22fd05c2780c374a14e7df"
++    },
++    {
++      "path": "src/cardine/hosts/context.py",
++      "sha256": "afc9f202592de18e2f5392478d751d8816849a99e52da3dec8b7ac0d3c0783e4"
++    },
++    {
++      "path": "src/cardine/hosts/contracts.py",
++      "sha256": "e9a5b8cd21d7baf429e10276f57cf9f09e45f1aea687cd13a0a3be5dae1f4327"
++    },
++    {
++      "path": "src/cardine/hosts/runner.py",
++      "sha256": "d0cedd9f6f0f2ccc4fbd2bfe25c99b881ad2d936dbf773be7b93804221508200"
++    },
++    {
++      "path": "src/cardine/hosts/source_grounding.py",
++      "sha256": "d348e180ed0032548dce0f7a526b92612f1081f19c25583f737281cea29054af"
++    },
++    {
++      "path": "src/study_agent/adapters/filesystem/repository_target.py",
++      "sha256": "aed3af0098ebfee830429a5c825f836be3c3dcea766ca48e398b28668d3d51dd"
++    },
++    {
++      "path": "src/study_agent/application/__init__.py",
++      "sha256": "3866a376b85c1f4675fc405577352cc0447eb2c853a0d4ef0c147e565448c12b"
++    },
++    {
++      "path": "src/study_agent/assessments/__init__.py",
++      "sha256": "b9f677a525c7fa794a217c8bc3eedd23827ebc7fe02a2305856497f280e42304"
++    },
++    {
++      "path": "src/study_agent/domain/tutor_snapshot.py",
++      "sha256": "a2511da927663f696f4dea9107bc5996fa6ae9a1bdb0524ee2fd91b71a408e16"
++    },
++    {
++      "path": "src/study_agent/ports/__init__.py",
++      "sha256": "50dc8f3709bfc790a2c909cde44e7c1547af5235cde199c69024691760674222"
++    },
++    {
++      "path": "src/study_agent/ports/assessment.py",
++      "sha256": "56e23e336d9ab9bf711cd1d974c595cd5a7ae4d261d20a59e36daea60131ca59"
++    },
++    {
++      "path": "src/study_agent/prompts/tutor_decision_v1.py",
++      "sha256": "ad7997b7699cc98e89a676fdf365baf1a80c508647d7c781c7f9f206846639ef"
++    },
++    {
++      "path": "src/study_agent/tutor_snapshot/reader.py",
++      "sha256": "36d4abe9ccc16762c7c37a10f867b455c9252cdc0338453f437cda1ea65f07b3"
++    }
++  ],
++  "removed": [
++    "src/cardine/application/study_memory.py",
++    "src/study_agent/assessments/evidence.py"
++  ]
++}

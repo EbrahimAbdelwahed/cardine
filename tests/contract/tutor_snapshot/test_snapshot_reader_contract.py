@@ -23,7 +23,6 @@ from study_agent.domain import (
     SessionId,
     StudyStatementInput,
     StudyStatementKind,
-    TutorContextState,
     TutorTimelineKind,
 )
 from study_agent.domain._validation import JsonObject, JsonValue
@@ -164,14 +163,8 @@ def test_snapshot_uses_one_capture_and_reports_evidence_without_policy(
     assert events.read(COURSE)[-1].course_sequence == 5
     assert first.timeline[0].kind is TutorTimelineKind.LEARNER
     assert first.timeline[0].course_sequence == 3
-    assert first.learner_context[0].state is TutorContextState.KNOWN
-    assert tuple(item.state for item in first.learner_context[1:]) == (
-        TutorContextState.MISSING,
-        TutorContextState.MISSING,
-        TutorContextState.MISSING,
-        TutorContextState.MISSING,
-    )
-    assert first.divergences[0].learner_statement_ids
+    assert first.learner_context == ()
+    assert first.divergences == ()
 
     second = reader.get(COURSE, SESSION)
     assert counted.read_count == 2
@@ -198,7 +191,7 @@ def test_local_repository_exposes_public_snapshot_reader(tmp_path: Path) -> None
 
     assert snapshot.high_water_sequence == 2
     assert snapshot.timeline == ()
-    assert len(snapshot.learner_context) == 5
+    assert snapshot.learner_context == ()
 
 
 def test_snapshot_reuses_a_coherent_persisted_projection_without_reducing_events(

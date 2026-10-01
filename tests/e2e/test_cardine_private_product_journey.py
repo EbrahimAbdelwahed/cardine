@@ -62,7 +62,7 @@ from study_agent.repository_config import LocalRepositoryConfig, ModelAdapterCon
 
 PASSWORD = os.environ.get("CARDINE_TEST_PASSWORD", "cardine-e2e-password")
 SENTINEL = "cardine-e2e-runtime-key-sentinel"
-ROUTES = ("fonti", "proposte", "verifiche", "evidenze", "ripasso", "piano", "conflitti")
+ROUTES = ("fonti", "proposte", "verifiche", "percorso", "ripasso", "piano")
 PRIVATE_GETS = ("/api/v1/settings", "/api/v1/bootstrap", "/api/v1/session")
 COURSE = CourseId("cardine-private-e2e")
 SESSION = SessionId("cardine-private-e2e-session")

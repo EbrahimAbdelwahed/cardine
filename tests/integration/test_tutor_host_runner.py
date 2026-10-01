@@ -1195,9 +1195,9 @@ class _PendingAssembler(_Assembler):
                 base.course_id,
                 base.session_id,
                 base.tutor_snapshot_sequence,
-                base.learner_evidence_through_sequence,
+                base.student_state_sequence,
                 base.tutor_snapshot,
-                base.learner_evidence,
+                base.student_state,
                 base.advertised_capabilities,
                 pending,
             )

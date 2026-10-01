@@ -80,8 +80,7 @@ def test_cardine_assets_use_only_approved_v1_routes_and_semantic_markers() -> No
     for marker in (
         'aria-labelledby="conversation-heading"',
         'aria-labelledby="material-heading"',
-        'aria-labelledby="evidence-heading"',
-        'aria-labelledby="conflict-heading"',
+        'aria-labelledby="student-state-heading"',
         'aria-labelledby="review-heading"',
     ):
         assert marker in javascript
@@ -94,9 +93,8 @@ def test_cardine_assets_use_only_approved_v1_routes_and_semantic_markers() -> No
         "/api/v1/materials",
         "/api/v1/artifacts",
         "/api/v1/assessments",
-        "/api/v1/evidence",
+        "/api/v1/student-state",
         "/api/v1/recall/due",
-        "/api/v1/context/conflicts",
     ):
         assert route in javascript
 
@@ -234,7 +232,7 @@ def test_piano_is_explicitly_unavailable_and_source_conflicts_are_read_only() ->
     javascript = (DEMO_DIR / "browser.js").read_text(encoding="utf-8")
 
     assert "Piano non disponibile" in javascript
-    assert "Disaccordo tra fonti: sola lettura" in javascript
+    assert "/api/v1/context/conflicts" not in javascript
     assert "Non esiste un owner canonico" in javascript
 
 

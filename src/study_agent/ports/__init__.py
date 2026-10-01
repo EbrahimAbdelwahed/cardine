@@ -11,7 +11,6 @@ from .artifact import (
 from .assessment import (
     AssessmentViewPort,
     DeterministicClosedGradingPolicyPort,
-    LearnerEvidenceViewPort,
     VerifiedGradeOwnerStore,
     VerifiedGradePort,
 )
@@ -111,7 +110,6 @@ __all__ = [
     "HostFileIngestionPort",
     "HostFileSnapshotStore",
     "IndexReceipt",
-    "LearnerEvidenceViewPort",
     "MessageRole",
     "ModelCapabilities",
     "ModelError",

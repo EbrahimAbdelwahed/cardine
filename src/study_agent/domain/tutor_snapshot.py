@@ -267,7 +267,10 @@ class TutorSnapshotV1:
         if not isinstance(self.session_status, SessionStatus):
             raise TypeError("session_status must be a SessionStatus")
         expected_kinds = tuple(StudyStatementKind)
-        if tuple(item.kind for item in self.learner_context) != expected_kinds:
+        if (
+            self.learner_context
+            and tuple(item.kind for item in self.learner_context) != expected_kinds
+        ):
             raise ValueError("learner_context must contain all five kinds in canonical order")
         kind_order = {kind: index for index, kind in enumerate(expected_kinds)}
         configured_kinds = tuple(item.kind for item in self.configured_hints)
@@ -285,7 +288,8 @@ class TutorSnapshotV1:
         expected_divergences = tuple(
             hint.kind
             for hint in self.configured_hints
-            if context_by_kind[hint.kind].active
+            if hint.kind in context_by_kind
+            and context_by_kind[hint.kind].active
             and {_value_key(value) for value in hint.values}
             != {
                 _value_key(item.value)
@@ -302,12 +306,11 @@ class TutorSnapshotV1:
             if configured is None or configured.values != divergence.configured_values:
                 raise ValueError("divergence must reference the configured hint values")
             active_ids = tuple(item.statement_id for item in context.active)
-            active_values = {
-                _value_key(item.value) for item in context.active
-            }
-            if divergence.learner_statement_ids != active_ids or {
-                _value_key(value) for value in divergence.learner_values
-            } != active_values:
+            active_values = {_value_key(item.value) for item in context.active}
+            if (
+                divergence.learner_statement_ids != active_ids
+                or {_value_key(value) for value in divergence.learner_values} != active_values
+            ):
                 raise ValueError("divergence must reference all active learner evidence")
         sequences = tuple(item.course_sequence for item in self.timeline)
         if sequences != tuple(sorted(sequences)) or len(set(sequences)) != len(sequences):
@@ -326,19 +329,26 @@ class TutorSnapshotV1:
             if item.kind is TutorTimelineKind.LEARNER
         }
         for item in self.timeline:
-            if item.in_reply_to_interaction_id is not None and learner_positions.get(
-                item.in_reply_to_interaction_id, self.high_water_sequence + 1
-            ) >= item.course_sequence:
+            if (
+                item.in_reply_to_interaction_id is not None
+                and learner_positions.get(
+                    item.in_reply_to_interaction_id, self.high_water_sequence + 1
+                )
+                >= item.course_sequence
+            ):
                 raise ValueError("assistant reply must target an earlier learner turn")
         note_evidence = tuple(
             (item.event_id, item.course_sequence, item.interaction_id, item.content)
             for item in self.timeline
             if item.kind is TutorTimelineKind.NOTE
         )
-        if tuple(
-            (item.event_id, item.course_sequence, item.interaction_id, item.content)
-            for item in self.notes
-        ) != note_evidence:
+        if (
+            tuple(
+                (item.event_id, item.course_sequence, item.interaction_id, item.content)
+                for item in self.notes
+            )
+            != note_evidence
+        ):
             raise ValueError("notes must exactly mirror note timeline evidence")
         material_ids = tuple(item.source_id for item in self.materials)
         if material_ids != tuple(sorted(material_ids, key=str)) or len(

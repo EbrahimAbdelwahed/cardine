@@ -34,7 +34,6 @@ from study_agent.domain import (
     SourceId,
     StudyStatementInput,
     StudyStatementKind,
-    TutorContextState,
     TutorTimelineKind,
     TutorTimelineStatus,
     ValidatorProvenance,
@@ -308,9 +307,8 @@ def test_mixed_snapshot_replays_timeline_context_and_current_materials(
     assert first.timeline[3].status is TutorTimelineStatus.INSUFFICIENT_EVIDENCE
     assert first.timeline[3].in_reply_to_interaction_id == grounded.question_interaction_id
     assert first.notes[0].interaction_id == InteractionId("note-snapshot")
-    deadline = first.learner_context[1]
-    assert deadline.state is TutorContextState.KNOWN
-    assert first.divergences[0].kind is StudyStatementKind.DEADLINE
+    assert first.learner_context == ()
+    assert first.divergences == ()
     assert first.materials[0].current_revision_id == first_revision.source.revision_id
     assert first.materials[0].chunk_count == len(first_revision.chunks)
     assert canonical_json_bytes(first.to_json()) == canonical_json_bytes(second.to_json())
