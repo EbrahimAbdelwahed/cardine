@@ -19,13 +19,16 @@ from cardine.adapters.pageindex.worker import (
     PageIndexWorker,
     PageIndexWorkerError,
 )
+from study_agent.domain._validation import JsonObject
 from study_agent.domain.document_index import (
     DocumentIndex,
     DocumentNode,
     LocatorKind,
     SourceLocator,
 )
+from study_agent.domain.substrate import PageMapEntry, validate_page_map
 from study_agent.ports.document_index import DocumentIndexRequest
+from study_agent.state.serialization import canonical_json_bytes
 
 
 class StructuralWorker(Protocol):
@@ -41,7 +44,7 @@ class PageIndexProviderError(RuntimeError):
 
 
 class PageIndexDocumentIndexAdapter:
-    """A bounded, offline-capable PageIndex indexing port for Markdown.
+    """Index canonical Markdown, including the admitted substrate of a PDF.
 
     The qualified worker owns a killable subprocess timeout. We await its
     bounded completion even when cancelled, so retries cannot overlap orphaned
@@ -56,6 +59,7 @@ class PageIndexDocumentIndexAdapter:
                 {
                     "implementation": QUALIFIED_UPSTREAM_COMMIT,
                     "projection": "document-index-v1",
+                    "input_policy": "canonical-source-binding-v2",
                     "timeout_seconds": getattr(self._worker, "timeout_seconds", 3.0),
                     "max_input_bytes": getattr(self._worker, "max_input_bytes", 2 * 1024 * 1024),
                 },
@@ -64,21 +68,56 @@ class PageIndexDocumentIndexAdapter:
             ).encode()
         ).hexdigest()
 
+    @property
+    def config_fingerprint(self) -> str:
+        return self._config_fingerprint
+
     async def build(self, request: DocumentIndexRequest) -> DocumentIndex:
-        if request.media_type not in {"text/markdown", "text/x-markdown", "text/plain"}:
+        task = asyncio.create_task(asyncio.to_thread(self.build_sync, request))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            # Repeated cancellation must not abandon a running worker. Its own
+            # subprocess deadline guarantees bounded cleanup before propagation.
+            while not task.done():
+                try:
+                    await asyncio.shield(task)
+                except asyncio.CancelledError:
+                    continue
+                except Exception:
+                    break
+            with suppress(Exception):
+                task.result()
+            raise
+
+    def configuration_fingerprint(self, request: DocumentIndexRequest) -> str:
+        """Expected complete configuration identity without running PageIndex."""
+        if request.media_type not in {
+            "text/markdown",
+            "text/x-markdown",
+            "text/plain",
+            "application/pdf",
+        }:
             raise PageIndexProviderError("pageindex_unsupported_media_type")
+        try:
+            request.__post_init__()
+        except (TypeError, ValueError):
+            raise PageIndexProviderError("pageindex_invalid_source_binding") from None
         text = request.normalized_text
         if not text:
             raise PageIndexProviderError("pageindex_normalized_text_required")
-        task = asyncio.create_task(asyncio.to_thread(self._worker.run, text))
+        provenance = _input_provenance(request, text)
+        return sha256(
+            canonical_json_bytes({"adapter": self._config_fingerprint, "input": provenance})
+        ).hexdigest()
+
+    def build_sync(self, request: DocumentIndexRequest) -> DocumentIndex:
+        """The same sole structural pipeline for synchronous product coordination."""
+        config_fingerprint = self.configuration_fingerprint(request)
+        text = request.normalized_text
+        assert text is not None
         try:
-            tree = await asyncio.shield(task)
-        except asyncio.CancelledError:
-            # Worker.run has its own hard process deadline; finish cleanup before
-            # propagating cancellation. Do not retry a still-running worker.
-            with suppress(Exception):
-                await task
-            raise
+            tree = self._worker.run(text)
         except PageIndexWorkerError as error:
             code = "pageindex_timeout" if error.code == "pageindex_timeout" else "pageindex_failure"
             raise PageIndexProviderError(code) from None
@@ -93,11 +132,51 @@ class PageIndexDocumentIndexAdapter:
                 index_version="document-index-v1",
                 producer_id="pageindex-qualified-structural",
                 producer_version=QUALIFIED_UPSTREAM_COMMIT,
-                config_fingerprint=self._config_fingerprint,
+                config_fingerprint=config_fingerprint,
                 nodes=nodes,
             )
         except (TypeError, ValueError):
             raise PageIndexProviderError("pageindex_malformed_response") from None
+
+
+def _input_provenance(request: DocumentIndexRequest, text: str) -> JsonObject:
+    if request.media_type != "application/pdf":
+        return {"strategy": "canonical-normalized-text", "media_type": request.media_type}
+    # The host supplies admission-owned page boundaries and immutable PDF bytes.
+    # Index only the verified normalized substrate; never extract provider text.
+    try:
+        digest = sha256(request.content).hexdigest()
+        if not request.content.startswith(b"%PDF-"):
+            raise ValueError("PDF signature")
+        if request.metadata.get("original_sha256") != digest:
+            raise ValueError("PDF digest")
+        page_count = request.metadata.get("page_count")
+        raw_map = request.metadata.get("page_map")
+        if type(page_count) is not int or not isinstance(raw_map, tuple):
+            raise ValueError("page map")
+        entries: list[PageMapEntry] = []
+        for entry in raw_map:
+            if not isinstance(entry, Mapping) or set(entry) != {"page", "offset"}:
+                raise ValueError("page entry")
+            page, offset = entry["page"], entry["offset"]
+            if type(page) is not int or type(offset) is not int:
+                raise ValueError("page boundary")
+            entries.append(PageMapEntry(offset, page))
+        validate_page_map(page_count, entries, len(text))
+        if len(entries) != page_count or any(
+            entry.page != ordinal for ordinal, entry in enumerate(entries, start=1)
+        ):
+            raise ValueError("incomplete map")
+        return {
+            "strategy": "canonical-normalized-markdown-from-pdf",
+            "media_type": "application/pdf",
+            "original_sha256": digest,
+            "substrate_id": str(request.substrate_id),
+            "page_count": page_count,
+            "page_map": tuple(entry.to_json() for entry in entries),
+        }
+    except (TypeError, ValueError):
+        raise PageIndexProviderError("pageindex_invalid_pdf_binding") from None
 
 
 def _normalize_tree(tree: list[object], text: str) -> tuple[DocumentNode, ...]:

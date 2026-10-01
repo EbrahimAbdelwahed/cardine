@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from hashlib import sha256
 
-from ._validation import JsonObject, require_text
+from ._validation import JsonObject, JsonValue, freeze_object, require_text
 from .identifiers import RevisionId, SourceId, SubstrateId
 
 
@@ -65,6 +66,30 @@ class SourceLocator:
             "end_offset": self.end_offset,
         }
 
+    @classmethod
+    def from_json(cls, value: JsonObject) -> SourceLocator:
+        _exact(
+            value,
+            {
+                "kind",
+                "start_page",
+                "end_page",
+                "start_line",
+                "end_line",
+                "start_offset",
+                "end_offset",
+            },
+        )
+        return cls(
+            kind=LocatorKind(_string(value, "kind")),
+            start_page=_optional_int(value, "start_page"),
+            end_page=_optional_int(value, "end_page"),
+            start_line=_optional_int(value, "start_line"),
+            end_line=_optional_int(value, "end_line"),
+            start_offset=_optional_int(value, "start_offset"),
+            end_offset=_optional_int(value, "end_offset"),
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class DocumentNode:
@@ -103,6 +128,27 @@ class DocumentNode:
             "order": self.order,
             "children": self.children,
         }
+
+    @classmethod
+    def from_json(cls, value: JsonObject) -> DocumentNode:
+        _exact(
+            value, {"node_key", "parent_key", "title", "summary", "locator", "order", "children"}
+        )
+        children = _sequence(value["children"])
+        if any(not isinstance(child, str) for child in children):
+            raise ValueError("child keys must be strings")
+        order = value["order"]
+        if type(order) is not int:
+            raise ValueError("node order must be integer")
+        return cls(
+            node_key=_string(value, "node_key"),
+            parent_key=_optional_string(value, "parent_key"),
+            title=_optional_string(value, "title"),
+            summary=_optional_string(value, "summary"),
+            locator=SourceLocator.from_json(_object(value["locator"])),
+            order=order,
+            children=tuple(_as_string(child) for child in children),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,6 +207,53 @@ class DocumentIndex:
             raise ValueError("document index fingerprint mismatch")
         object.__setattr__(self, "fingerprint", computed)
 
+    def to_json(self) -> JsonObject:
+        return freeze_object(
+            {
+                "source_id": str(self.source_id),
+                "revision_id": str(self.revision_id),
+                "substrate_id": str(self.substrate_id),
+                "index_version": self.index_version,
+                "producer_id": self.producer_id,
+                "producer_version": self.producer_version,
+                "config_fingerprint": self.config_fingerprint,
+                "nodes": tuple(node.to_json() for node in self.nodes),
+                "fingerprint": self.fingerprint,
+            }
+        )
+
+    @classmethod
+    def from_json(cls, value: JsonObject) -> DocumentIndex:
+        _exact(
+            value,
+            {
+                "source_id",
+                "revision_id",
+                "substrate_id",
+                "index_version",
+                "producer_id",
+                "producer_version",
+                "config_fingerprint",
+                "nodes",
+                "fingerprint",
+            },
+        )
+        fingerprint = _string(value, "fingerprint")
+        require_text(fingerprint, "fingerprint")
+        return cls(
+            source_id=SourceId(_string(value, "source_id")),
+            revision_id=RevisionId(_string(value, "revision_id")),
+            substrate_id=SubstrateId(_string(value, "substrate_id")),
+            index_version=_string(value, "index_version"),
+            producer_id=_string(value, "producer_id"),
+            producer_version=_string(value, "producer_version"),
+            config_fingerprint=_string(value, "config_fingerprint"),
+            nodes=tuple(
+                DocumentNode.from_json(_object(node)) for node in _sequence(value["nodes"])
+            ),
+            fingerprint=fingerprint,
+        )
+
 
 def document_index_fingerprint(index: DocumentIndex) -> str:
     """Includes all source binding, producer/config, locator and navigation fields."""
@@ -178,3 +271,41 @@ def document_index_fingerprint(index: DocumentIndex) -> str:
         payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
     ).encode("utf-8")
     return sha256(b"document-index@1\0" + encoded).hexdigest()
+
+
+def _exact(value: JsonObject, fields: set[str]) -> None:
+    if not isinstance(value, Mapping) or set(value) != fields:
+        raise ValueError("document index JSON fields mismatch")
+
+
+def _object(value: JsonValue) -> JsonObject:
+    if not isinstance(value, Mapping):
+        raise ValueError("expected document index JSON object")
+    return value
+
+
+def _sequence(value: JsonValue) -> Sequence[JsonValue]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        raise ValueError("expected document index JSON array")
+    return value
+
+
+def _as_string(value: JsonValue) -> str:
+    if not isinstance(value, str):
+        raise ValueError("expected document index JSON string")
+    return value
+
+
+def _string(value: JsonObject, key: str) -> str:
+    return _as_string(value[key])
+
+
+def _optional_string(value: JsonObject, key: str) -> str | None:
+    return None if value[key] is None else _as_string(value[key])
+
+
+def _optional_int(value: JsonObject, key: str) -> int | None:
+    item = value[key]
+    if item is not None and type(item) is not int:
+        raise ValueError("locator offsets must be integers or null")
+    return item

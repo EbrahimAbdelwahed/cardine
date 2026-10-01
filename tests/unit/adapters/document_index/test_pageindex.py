@@ -173,9 +173,9 @@ def test_unsupported_format_fails_explicitly() -> None:
     from dataclasses import replace
 
     worker = Worker([])
-    pdf = replace(request(), media_type="application/pdf")
+    unsupported = replace(request(), media_type="image/png")
     with pytest.raises(PageIndexProviderError, match="pageindex_unsupported_media_type"):
-        asyncio.run(PageIndexDocumentIndexAdapter(worker=worker).build(pdf))
+        asyncio.run(PageIndexDocumentIndexAdapter(worker=worker).build(unsupported))
     assert worker.calls == 0
 
 
