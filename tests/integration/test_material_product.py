@@ -337,8 +337,6 @@ def test_pdf_lessons_require_exact_page_coverage_and_parent_stays_current(
 def test_audio_resume_reuses_completed_chunks_and_joins_the_same_pipeline(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from collections.abc import Callable
-
     from cardine.adapters.audio.groq import GroqAudioTranscriber
 
     class FixtureAudio(GroqAudioTranscriber):
@@ -585,8 +583,6 @@ def test_publication_conflicts_retry_without_repeating_human_decision(
 
 
 def test_oversized_audio_stops_before_admission_and_is_not_retried(tmp_path: Path) -> None:
-    from collections.abc import Callable
-
     from cardine.adapters.audio.groq import GroqAudioTranscriber
     from cardine.materials.generation_contracts import MAX_TRANSCRIPT_CHARACTERS
 
@@ -638,7 +634,6 @@ def test_oversized_audio_stops_before_admission_and_is_not_retried(tmp_path: Pat
 def test_oversized_audio_manifest_is_terminal_and_retains_provenance_and_chunks(
     tmp_path: Path,
 ) -> None:
-    from collections.abc import Callable
     from hashlib import sha256
 
     from cardine.adapters.audio.groq import GroqAudioTranscriber
