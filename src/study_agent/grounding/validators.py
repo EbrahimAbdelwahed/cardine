@@ -73,6 +73,8 @@ class GroundedAnswerIntegrityValidator:
         return ValidationOutcome(True, ValidatorDisposition.CONTINUE, result)
 
     def _validate(self, draft: GroundedAnswerDraft, envelope: EvidenceEnvelope) -> JsonObject:
+        # The model draft is untrusted. It must preserve the retrieval outcome
+        # instead of turning missing or conflicting evidence into a confident answer.
         if envelope.status is EvidenceStatus.INSUFFICIENT:
             raise GroundingContractError("model output cannot consume insufficient evidence")
         if (
@@ -86,6 +88,8 @@ class GroundedAnswerIntegrityValidator:
         ):
             raise GroundingContractError("answer cannot invent an evidence conflict")
 
+        # Answer-level semantics are checked before individual citations: an
+        # answered result needs a claim, while non-answers must explain their limit.
         claim_kinds = {SegmentKind.SUPPORTED_CLAIM, SegmentKind.SYNTHESIS}
         has_claim = any(segment.kind in claim_kinds for segment in draft.segments)
         if draft.status is AnswerStatus.ANSWERED and not has_claim:
@@ -95,6 +99,8 @@ class GroundedAnswerIntegrityValidator:
         if draft.status is not AnswerStatus.ANSWERED and draft.unsupported_information_note is None:
             raise GroundingContractError("non-answered output requires an unsupported note")
 
+        # Evidence identities come only from the trusted retrieval envelope.
+        # The model may reference those handles, but it cannot create new evidence.
         trusted = envelope.by_handle()
         all_citations: list[tuple[JsonObject, ...]] = []
         for segment in draft.segments:
@@ -107,6 +113,8 @@ class GroundedAnswerIntegrityValidator:
                 evidence = trusted.get(handle)
                 if evidence is None:
                     raise GroundingContractError("answer references unknown evidence")
+                # Re-resolve every citation against canonical storage. A stale
+                # revision or changed excerpt fails closed before publication.
                 try:
                     resolved = self._content.resolve(evidence.citation)
                 except Exception as error:
@@ -117,6 +125,7 @@ class GroundedAnswerIntegrityValidator:
                     raise GroundingContractError("evidence no longer matches canonical content")
                 citations.append(_citation_json(evidence.citation))
             all_citations.append(tuple(citations))
+        # Only this canonicalized representation may cross the trust boundary.
         return validated_answer_json(draft, tuple(all_citations))
 
 

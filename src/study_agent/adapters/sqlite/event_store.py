@@ -8,6 +8,8 @@ import stat
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import closing, contextmanager
 from pathlib import Path
+from threading import Lock
+from time import sleep
 from typing import Protocol
 from urllib.parse import quote
 
@@ -17,6 +19,7 @@ from study_agent.ports.storage import EventSequenceConflictError
 from study_agent.state import (
     EventRegistry,
     Projection,
+    apply_event,
     canonical_json_bytes,
     canonical_json_object,
     event_from_bytes,
@@ -56,6 +59,20 @@ class SQLiteConnectionIdentityError(RuntimeError):
     """SQLite did not retain the database identity authorized by its host."""
 
 
+class _AmbiguousSQLiteConnectionIdentityError(SQLiteConnectionIdentityError):
+    """Concurrent file IO prevented attributing a single new descriptor."""
+
+
+# Descriptor snapshots belong to the process, not to an individual guard.
+_CONNECTION_IDENTITY_LOCK = Lock()
+
+
+def _serialized_sqlite_open(opener: Callable[[], sqlite3.Connection]) -> sqlite3.Connection:
+    """Keep unguarded opens out of a guarded descriptor snapshot window."""
+    with _CONNECTION_IDENTITY_LOCK:
+        return opener()
+
+
 class SQLiteConnectionIdentityGuard:
     """Fail closed unless SQLite retains exactly the host-authorized inode."""
 
@@ -68,6 +85,20 @@ class SQLiteConnectionIdentityGuard:
         self._verify_owner = verify_owner
 
     def connect(
+        self, opener: Callable[[], sqlite3.Connection]
+    ) -> sqlite3.Connection:
+        for attempt in range(4):
+            try:
+                with _CONNECTION_IDENTITY_LOCK:
+                    return self._connect_serialized(opener)
+            except _AmbiguousSQLiteConnectionIdentityError:
+                if attempt == 3:
+                    raise
+                # Re-probe after closing the unverified handle, outside the lock.
+                sleep(0.01 * 2**attempt)
+        raise AssertionError("connection identity retry is unreachable")
+
+    def _connect_serialized(
         self, opener: Callable[[], sqlite3.Connection]
     ) -> sqlite3.Connection:
         self._verify_owner()
@@ -84,6 +115,10 @@ class SQLiteConnectionIdentityGuard:
                 connection.execute("PRAGMA schema_version").fetchone()
                 after = _live_file_descriptors()
                 opened_regular = _new_regular_identities(before, after)
+            if len(opened_regular) != 1:
+                raise _AmbiguousSQLiteConnectionIdentityError(
+                    "SQLite connection did not retain the authorized database binding"
+                )
             if opened_regular != (self._expected_identity,):
                 raise SQLiteConnectionIdentityError(
                     "SQLite connection did not retain the authorized database binding"
@@ -165,7 +200,7 @@ class SQLiteEventStore:
                 database, isolation_level=None, timeout=30, uri=uri
             )
         connection = (
-            opener()
+            _serialized_sqlite_open(opener)
             if self._connection_identity_guard is None
             else self._connection_identity_guard.connect(opener)
         )
@@ -314,6 +349,35 @@ class SQLiteEventStore:
             current = self._current_sequence(connection, course_id)
             return self._load_projection(connection, course_id, current)
 
+    def projection_at(self, course_id: CourseId, sequence: int) -> Projection:
+        """Replay the canonical prefix, without trusting a later projection."""
+        return self.projections_at(course_id, (sequence,))[sequence]
+
+    def projections_at(
+        self, course_id: CourseId, sequences: Sequence[int]
+    ) -> dict[int, Projection]:
+        """Replay one canonical stream pass and retain requested prefix states."""
+        requested = set(sequences)
+        if any(type(sequence) is not int or sequence < 0 for sequence in requested):
+            raise ValueError("projection sequence must be non-negative")
+        if not requested:
+            return {}
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT envelope FROM events WHERE course_id = ? AND course_sequence <= ? "
+                "ORDER BY course_sequence",
+                (str(course_id), max(requested)),
+            ).fetchall()
+        current = Projection(course_id)
+        snapshots = {0: current} if 0 in requested else {}
+        for row in rows:
+            current = apply_event(current, event_from_bytes(bytes(row[0])), self._registry)
+            if current.sequence in requested:
+                snapshots[current.sequence] = current
+        if snapshots.keys() != requested:
+            raise ProjectionConsistencyError("canonical prefix is incomplete")
+        return snapshots
+
     def projection_bytes(self, course_id: CourseId) -> bytes:
         return self.projection(course_id).canonical_bytes()
 
@@ -389,5 +453,5 @@ def _new_regular_identities(
     return tuple(
         identity
         for descriptor, identity in after.items()
-        if descriptor not in before and identity is not None
+        if identity is not None and (descriptor not in before or before[descriptor] != identity)
     )

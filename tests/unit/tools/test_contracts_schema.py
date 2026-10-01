@@ -54,6 +54,13 @@ def test_schema_definition_requires_closed_objects_and_known_keywords() -> None:
         validate_schema_definition({"type": "string", "pattern": ".*"})
 
 
+def test_string_schema_enforces_a_maximum_length() -> None:
+    schema: JsonObject = {"type": "string", "minLength": 1, "maxLength": 3}
+    validate_json("abc", schema)
+    with pytest.raises(SchemaValidationError, match="too long"):
+        validate_json("abcd", schema)
+
+
 def test_manifest_fingerprint_is_canonical_and_result_is_strict_xor() -> None:
     schema: JsonObject = {
         "type": "object",

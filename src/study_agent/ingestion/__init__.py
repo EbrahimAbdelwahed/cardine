@@ -2,6 +2,7 @@
 
 from .chunking import CHUNKER_VERSION, ChunkingConfig, chunk_text
 from .events import (
+    GENERATED_SOURCE_REVISION_SCHEMA_VERSION,
     SOURCE_REVISION_INGESTED,
     SOURCE_REVISION_SCHEMA_VERSION,
     SOURCE_REVISION_SELECTED,
@@ -10,17 +11,24 @@ from .events import (
     PersistedChunkingConfig,
     SourceRevisionIngested,
     SourceRevisionSelected,
+    decode_generated_source_revision_event,
+    decode_generated_source_revision_ingested,
     decode_source_revision_event,
     decode_source_revision_ingested,
     decode_source_revision_selected,
     decode_source_revision_selected_event,
     source_revision_selected_payload,
+    validate_generated_source_revision_identity,
 )
 from .identity import (
     CHUNK_MAX_CHARACTERS,
     CHUNKER_POLICY_VERSION,
+    GENERATED_MARKDOWN_INGESTION_METHOD,
     NORMALIZATION_POLICY_VERSION,
     chunk_id_for,
+    generated_revision_id_for,
+    generated_source_event_id_for,
+    generated_source_id_for,
     revision_id_for,
     source_event_id_for,
     source_kind_contract,
@@ -34,6 +42,8 @@ from .normalization import (
 )
 from .projection import (
     chunk_manifest,
+    generated_source_revision_payload,
+    reduce_generated_source_revision,
     reduce_source_revision,
     reduce_source_revision_selected,
     register_source_revision_events,
@@ -73,6 +83,8 @@ __all__ = [
     "CHUNKER_POLICY_VERSION",
     "CHUNKER_VERSION",
     "CHUNK_MAX_CHARACTERS",
+    "GENERATED_MARKDOWN_INGESTION_METHOD",
+    "GENERATED_SOURCE_REVISION_SCHEMA_VERSION",
     "NORMALIZATION_POLICY_VERSION",
     "NORMALIZATION_VERSION",
     "SOURCE_REVISION_INGESTED",
@@ -105,6 +117,8 @@ __all__ = [
     "chunk_id_for",
     "chunk_manifest",
     "chunk_text",
+    "decode_generated_source_revision_event",
+    "decode_generated_source_revision_ingested",
     "decode_source_revision_event",
     "decode_source_revision_ingested",
     "decode_source_revision_selected",
@@ -113,7 +127,12 @@ __all__ = [
     "decode_source_substrate_produced_event",
     "decode_substrate_produced_event",
     "decode_substrate_production",
+    "generated_revision_id_for",
+    "generated_source_event_id_for",
+    "generated_source_id_for",
+    "generated_source_revision_payload",
     "normalize_utf8",
+    "reduce_generated_source_revision",
     "reduce_source_revision",
     "reduce_source_revision_selected",
     "register_source_revision_events",
@@ -126,4 +145,5 @@ __all__ = [
     "source_revision_selected_payload",
     "source_substrate_produced_payload",
     "substrate_production_payload",
+    "validate_generated_source_revision_identity",
 ]

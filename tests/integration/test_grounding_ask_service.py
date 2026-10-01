@@ -490,6 +490,30 @@ def test_request_bound_executors_reject_authority_arguments(tmp_path: Path) -> N
     blobs.close()
 
 
+def test_grounding_context_does_not_expose_structured_study_memory(
+    tmp_path: Path,
+) -> None:
+    service, _, _, factory, _, blobs = composition(tmp_path)
+    private_note = 'study-memory@1:{"summary":"private learner observation"}'
+    service._private_summary_notes = lambda _course_id: frozenset({private_note})
+    service._session_service.record_note(
+        context(key="private-study-memory"),
+        private_note,
+    )
+
+    asyncio.run(
+        service.ask(
+            "What is absent from these notes?",
+            context(key="ask-after-private-memory"),
+        )
+    )
+    exposed = asyncio.run(factory.last_tools[0].invoke({}))
+
+    assert "study-memory@1:" not in str(exposed)
+    assert "private learner observation" not in str(exposed)
+    blobs.close()
+
+
 def test_completed_run_recovers_after_process_loss_without_repeating_search(
     tmp_path: Path,
 ) -> None:

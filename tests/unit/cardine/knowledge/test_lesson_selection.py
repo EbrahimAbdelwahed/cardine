@@ -87,3 +87,44 @@ def test_ambiguity_requires_explicit_choice_and_plain_text_uses_exact_evidence()
 def test_search_result_rejects_false_unique_disposition() -> None:
     with pytest.raises(ValueError, match="cardinality"):
         LessonSearchResult(SearchDisposition.UNIQUE, ())
+
+
+@pytest.mark.parametrize("heading", ("L01_04/03/2025", "L_01", "L-01"))
+def test_natural_lesson_title_matches_converted_heading_aliases(heading: str) -> None:
+    text = f"# {heading}\nContenuto uno.\n# L02\nContenuto due.\n"
+    result = LessonSelectionService(_Evidence()).search(
+        "course-1", "Lezione 1", (_source(text),)
+    )
+
+    assert result.disposition is SearchDisposition.UNIQUE
+    pin = LessonSelectionService(_Evidence()).select(
+        result.candidates[0].candidate_id, result
+    )
+    assert pin.section_title == heading
+    assert "Contenuto due" not in text[pin.start_offset : pin.end_offset]
+
+
+@pytest.mark.parametrize("boundary", ("# Appendix", "# Part 2", "## Appendix"))
+def test_numbered_lesson_stops_at_enclosing_non_lesson_heading(boundary: str) -> None:
+    text = (
+        "## L01\nFirst section.\n### Detail\nStill lesson one.\n"
+        + boundary
+        + "\nUnrelated.\n# L02\nLesson two.\n"
+    )
+    service = LessonSelectionService(_Evidence())
+    result = service.search("course-1", "Lezione 1", (_source(text),))
+    assert result.disposition is SearchDisposition.UNIQUE
+    pin = service.select(result.candidates[0].candidate_id, result)
+    selected = text[pin.start_offset : pin.end_offset]
+    assert "Still lesson one" in selected
+    assert "Unrelated" not in selected
+    assert pin.end_offset == text.index(boundary)
+
+
+def test_repeated_same_lesson_heading_retains_lesson_continuation() -> None:
+    text = "# L01\nFirst section.\n# L01 continued\nSecond section.\n# Appendix\nUnrelated.\n"
+    service = LessonSelectionService(_Evidence())
+    result = service.search("course-1", "Lezione 1", (_source(text),))
+    first = result.candidates[0]
+    assert "Second section" in text[first.start_offset : first.end_offset]
+    assert "Unrelated" not in text[first.start_offset : first.end_offset]

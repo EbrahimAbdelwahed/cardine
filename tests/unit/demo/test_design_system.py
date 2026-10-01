@@ -103,7 +103,10 @@ def test_a_closed_disclosure_occupies_and_paints_nothing() -> None:
 
 def test_the_shell_has_one_tooltip_mechanism_and_no_native_ones() -> None:
     assert 'title="' not in PAGE
-    assert 'title="' not in SHELL_JS
+    # An iframe title names the embedded document for assistive technology;
+    # native title tooltips on controls remain prohibited.
+    assert SHELL_JS.count('title="') == 1
+    assert '<iframe class="source-viewer__frame"' in SHELL_JS
     assert 'title="' not in PRIMITIVES_JS
     assert "content: attr(data-tooltip)" in SHELL_CSS
 

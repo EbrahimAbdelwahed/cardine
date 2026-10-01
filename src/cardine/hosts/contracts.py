@@ -16,6 +16,7 @@ from study_agent.domain.session import (
     MAX_TUTOR_PRESENTATION_QUESTION,
     MAX_TUTOR_PRESENTATION_SCHEMA_BYTES,
     MAX_TUTOR_PRESENTATION_TEXT,
+    MAX_TUTOR_SOURCE_LOCATOR_CHARS,
     TutorPresentationKind,
 )
 from study_agent.portability import reject_provider_selectors
@@ -24,6 +25,17 @@ HOST_CONTEXT_SCHEMA_VERSION = 1
 MAX_HOST_FILES = 16
 MAX_HOST_TEXT = 4_000
 MAX_QUESTION_TEXT = 1_000
+MAX_PROGRESS_MESSAGE = 240
+
+# Progress is a presentation hint, not model-authored copy.  The model may
+# select the one safe label advertised for the capability or omit the field.
+_CAPABILITY_PROGRESS_MESSAGES = {
+    "explain_concept": "Preparo la spiegazione",
+    "propose_flashcards": "Preparo le flashcard",
+    "assess_understanding": "Preparo la valutazione",
+    "analyze_exam_sample": "Analizzo il campione",
+    "grade_response": "Valuto la risposta",
+}
 
 
 class TutorDecisionKind(StrEnum):
@@ -257,6 +269,7 @@ class TutorHostContext:
 class StartCapabilityDecision:
     capability_id: str
     inputs: JsonObject
+    progress_message: str | None = None
     kind: TutorDecisionKind = field(default=TutorDecisionKind.START_CAPABILITY, init=False)
 
     def __post_init__(self) -> None:
@@ -265,6 +278,8 @@ class StartCapabilityDecision:
         _reject_sensitive_structure(value, "inputs")
         _reject_start_authority_structure(value, "inputs")
         object.__setattr__(self, "inputs", value)
+        if self.progress_message is not None:
+            _require_capability_progress_message(self.capability_id, self.progress_message)
 
 
 @dataclass(frozen=True, slots=True)
@@ -461,6 +476,7 @@ class TutorPresentationReceipt:
     continuation_fingerprint: str | None = None
     capability_identity: str | None = None
     response_schema: JsonObject | None = None
+    source_refs: tuple[JsonObject, ...] = ()
 
     SCHEMA_VERSION = 1
 
@@ -506,6 +522,15 @@ class TutorPresentationReceipt:
             if len(_canonical_bytes(schema)) > MAX_TUTOR_PRESENTATION_SCHEMA_BYTES:
                 raise ValueError("response schema exceeds presentation bounds")
             object.__setattr__(self, "response_schema", schema)
+        refs = tuple(freeze_object(item) for item in self.source_refs)
+        if len(refs) > 64 or any(
+            set(ref) != {"source_id", "revision_id", "locator"}
+            or any(not isinstance(ref[key], str) or not ref[key] for key in ref)
+            or len(str(ref["locator"])) > MAX_TUTOR_SOURCE_LOCATOR_CHARS
+            for ref in refs
+        ):
+            raise ValueError("presentation source refs are invalid")
+        object.__setattr__(self, "source_refs", refs)
 
     @property
     def fingerprint(self) -> str:
@@ -523,6 +548,7 @@ class TutorPresentationReceipt:
             "continuation_fingerprint": self.continuation_fingerprint,
             "capability_identity": self.capability_identity,
             "response_schema": self.response_schema,
+            **({"source_refs": self.source_refs} if self.source_refs else {}),
         }
 
     def to_bytes(self) -> bytes:
@@ -544,6 +570,7 @@ class TutorPresentationReceipt:
                 "continuation_fingerprint",
                 "capability_identity",
                 "response_schema",
+                *( ["source_refs"] if "source_refs" in raw else [] ),
             },
             "tutor presentation receipt",
         )
@@ -562,6 +589,10 @@ class TutorPresentationReceipt:
             _optional_string(raw, "continuation_fingerprint"),
             _optional_string(raw, "capability_identity"),
             schema,
+            tuple(
+                _object(item, "source_ref")
+                for item in cast(tuple[JsonValue, ...], raw.get("source_refs", ()))
+            ),
         )
         if receipt.to_bytes() != data:
             raise ValueError("tutor presentation receipt is not semantically canonical")
@@ -570,11 +601,14 @@ class TutorPresentationReceipt:
 
 def decision_to_json(decision: TutorDecision) -> JsonObject:
     if isinstance(decision, StartCapabilityDecision):
-        return {
+        payload: dict[str, JsonValue] = {
             "kind": decision.kind.value,
             "capability_id": decision.capability_id,
             "inputs": decision.inputs,
         }
+        if decision.progress_message is not None:
+            payload["progress_message"] = decision.progress_message
+        return payload
     if isinstance(decision, AnswerDialogueDecision):
         return {
             "kind": decision.kind.value,
@@ -650,6 +684,16 @@ def decision_schema(context: TutorHostContext) -> JsonObject:
                     },
                     "capability_id": {"type": "string", "enum": (capability.id,)},
                     "inputs": capability.input_schema,
+                    **(
+                        {
+                            "progress_message": {
+                                "type": "string",
+                                "enum": (_CAPABILITY_PROGRESS_MESSAGES[capability.id],),
+                            }
+                        }
+                        if capability.id in _CAPABILITY_PROGRESS_MESSAGES
+                        else {}
+                    ),
                 },
                 "required": ("kind", "capability_id", "inputs"),
                 "additionalProperties": False,
@@ -697,7 +741,12 @@ def decision_schema(context: TutorHostContext) -> JsonObject:
 
 
 def decision_fingerprint(decision: TutorDecision) -> str:
-    return _fingerprint("study-agent-tutor-decision-v1", decision_to_json(decision))
+    # Progress is transient presentation.  It must not alter operational
+    # idempotency or retry identity.
+    payload = dict(decision_to_json(decision))
+    if isinstance(decision, StartCapabilityDecision):
+        payload.pop("progress_message", None)
+    return _fingerprint("study-agent-tutor-decision-v1", payload)
 
 
 def decision_to_bytes(decision: TutorDecision) -> bytes:
@@ -708,10 +757,15 @@ def decision_from_bytes(data: bytes, context: TutorHostContext) -> TutorDecision
     raw = _canonical_object(data, "tutor decision")
     kind = TutorDecisionKind(_string(raw, "kind"))
     if kind is TutorDecisionKind.START_CAPABILITY:
-        _exact(raw, {"kind", "capability_id", "inputs"}, "start decision")
+        if set(raw) not in (
+            {"kind", "capability_id", "inputs"},
+            {"kind", "capability_id", "inputs", "progress_message"},
+        ):
+            raise ValueError("start decision has an invalid field set")
         decision: TutorDecision = StartCapabilityDecision(
             _string(raw, "capability_id"),
             _object(raw["inputs"], "inputs"),
+            _optional_string(raw, "progress_message"),
         )
     elif kind is TutorDecisionKind.ANSWER_DIALOGUE:
         _exact(raw, {"kind", "continuation_fingerprint", "response"}, "dialogue decision")
@@ -920,6 +974,19 @@ def _require_bounded_text(value: str, name: str, maximum: int) -> None:
         raise ValueError(f"{name} must be bounded non-blank trimmed text")
 
 
+def _require_progress_message(value: str) -> None:
+    _require_bounded_text(value, "progress_message", MAX_PROGRESS_MESSAGE)
+    if any(ord(character) < 0x20 or ord(character) == 0x7F for character in value):
+        raise ValueError("progress_message must be plain text")
+
+
+def _require_capability_progress_message(capability_id: str, value: str) -> None:
+    _require_progress_message(value)
+    expected = _CAPABILITY_PROGRESS_MESSAGES.get(capability_id)
+    if expected is None or value != expected:
+        raise ValueError("progress_message is not the exact capability template")
+
+
 def _require_sha256(value: str, name: str) -> None:
     if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
         raise ValueError(f"{name} must be a lowercase SHA-256")
@@ -998,6 +1065,7 @@ def _exact(value: Mapping[str, JsonValue], fields: set[str], name: str) -> None:
 
 __all__ = [
     "HOST_CONTEXT_SCHEMA_VERSION",
+    "MAX_PROGRESS_MESSAGE",
     "AdvertisedCapability",
     "AnswerDialogueDecision",
     "AskLearnerDecision",

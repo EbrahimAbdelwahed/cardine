@@ -38,13 +38,17 @@ from study_agent.ingestion import (
     SOURCE_REVISION_SELECTED,
     SOURCE_REVISION_SELECTED_SCHEMA_VERSION,
     decode_source_revision_selected_event,
+    reduce_generated_source_revision,
     reduce_source_revision,
     reduce_source_revision_selected,
+    validate_generated_source_revision_identity,
 )
 from study_agent.ingestion.events import (
+    GENERATED_SOURCE_REVISION_SCHEMA_VERSION,
     SOURCE_REVISION_INGESTED,
     SOURCE_REVISION_SCHEMA_VERSION,
     SourceRevisionIngested,
+    decode_generated_source_revision_ingested,
     decode_source_revision_ingested,
 )
 from study_agent.ingestion.identity import source_event_id_for
@@ -415,6 +419,12 @@ type _EventDecoder = Callable[[DomainEvent], object]
 
 def _reject_v1_artifact_stream(stream: Sequence[DomainEvent]) -> None:
     _reject_recall_stream(stream)
+    if any(
+        event.event_type == SOURCE_REVISION_INGESTED
+        and event.schema_version == GENERATED_SOURCE_REVISION_SCHEMA_VERSION
+        for event in stream
+    ):
+        raise ExportStateError("generated source export requires v2")
     if any(event.event_type in ARTIFACT_EVENT_TYPES | ASSESSMENT_EVENT_TYPES for event in stream):
         raise ExportStateError("artifact export requires v2")
 
@@ -463,11 +473,10 @@ def _decode_allowlisted_event(event: DomainEvent) -> object:
 def _decode_source_event(event: DomainEvent) -> SourceRevisionIngested:
     if (
         event.event_type != SOURCE_REVISION_INGESTED
-        or event.schema_version != SOURCE_REVISION_SCHEMA_VERSION
+        or event.schema_version
+        not in (SOURCE_REVISION_SCHEMA_VERSION, GENERATED_SOURCE_REVISION_SCHEMA_VERSION)
     ):
-        raise ValueError("event envelope does not match source.revision_ingested@1")
-    if event.session_id is not None or event.causation_id is not None:
-        raise ValueError("source ingestion cannot be session-scoped or caused")
+        raise ValueError("event envelope does not match a supported source revision schema")
     if not isinstance(event.event_id, EventId):
         raise ValueError("source event id envelope is not typed")
     if not isinstance(event.correlation_id, CorrelationId):
@@ -478,8 +487,20 @@ def _decode_source_event(event: DomainEvent) -> SourceRevisionIngested:
         or event.actor.kind not in (PrincipalKind.HUMAN, PrincipalKind.SERVICE)
     ):
         raise ValueError("source ingestion requires a trusted actor")
-    decoded = decode_source_revision_ingested(event.payload)
-    if event.event_id != source_event_id_for(event.course_id, decoded.source.revision_id):
+    if event.schema_version == GENERATED_SOURCE_REVISION_SCHEMA_VERSION:
+        if event.session_id is not None:
+            raise ValueError("generated source event cannot be session-scoped")
+        if event.actor.kind is not PrincipalKind.SERVICE:
+            raise ValueError("generated source event requires SERVICE authority")
+        decoded = decode_generated_source_revision_ingested(event.payload)
+        validate_generated_source_revision_identity(event, decoded)
+        return decoded
+    else:
+        if event.session_id is not None or event.causation_id is not None:
+            raise ValueError("source ingestion cannot be session-scoped or caused")
+        decoded = decode_source_revision_ingested(event.payload)
+        expected_event_id = source_event_id_for(event.course_id, decoded.source.revision_id)
+    if event.event_id != expected_event_id:
         raise ValueError("source event id does not match its canonical revision")
     return decoded
 
@@ -585,6 +606,12 @@ def _replay_v2(course_id: CourseId, stream: Sequence[DomainEvent]) -> Projection
         reduce_source_revision,
     )
     registry.register_event(
+        SOURCE_REVISION_INGESTED,
+        GENERATED_SOURCE_REVISION_SCHEMA_VERSION,
+        _decode_source_event,
+        reduce_generated_source_revision,
+    )
+    registry.register_event(
         SOURCE_REVISION_SELECTED,
         SOURCE_REVISION_SELECTED_SCHEMA_VERSION,
         decode_source_revision_selected_event,
@@ -622,6 +649,12 @@ def _replay_v3(course_id: CourseId, stream: Sequence[DomainEvent]) -> Projection
         SOURCE_REVISION_SCHEMA_VERSION,
         _decode_source_event,
         reduce_source_revision,
+    )
+    registry.register_event(
+        SOURCE_REVISION_INGESTED,
+        GENERATED_SOURCE_REVISION_SCHEMA_VERSION,
+        _decode_source_event,
+        reduce_generated_source_revision,
     )
     registry.register_event(
         SOURCE_REVISION_SELECTED,

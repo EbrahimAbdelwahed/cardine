@@ -538,14 +538,17 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
                 "document.querySelector('[data-turn-trace][data-highlighted=true]').innerText"
             ),
         )
-        # Advanced diagnostics intentionally expose only the validated tutor
-        # decision, not the internal phase timeline or turn payload metadata.
-        assert "assistant_message" in trace_text
+        # Correlated retries retain both the failed attempt and the successful
+        # one. Safe execution phases are visible; turn/provider payloads are not.
+        assert "start_capability" in trace_text
+        assert "application_turn" in trace_text
+        assert "capability_start" in trace_text
+        assert "timeout" in trace_text
+        assert "completed" in trace_text
+        assert "tentativo 2" in trace_text
         for excluded in (
             "model.grounding",
-            "timeout",
             "ui.retry",
-            "completed",
             "persistito: sì",
         ):
             assert excluded not in trace_text

@@ -5,20 +5,23 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, assert_never, cast
 
 from study_agent.domain._validation import JsonObject, JsonValue, freeze_object, require_text
 from study_agent.domain.artifact import (
     AssessmentFormat,
     HybridFlashcardRole,
+    LessonMaterialVariant,
     MorphologyCognitiveFunction,
     MorphologyFamily,
     MorphologyFlashcardRole,
     RetrievalForm,
     StudyArtifactKind,
     VerifiedMediaRef,
+    require_sha256,
 )
 from study_agent.domain.identifiers import BlobId
+from study_agent.domain.source import BlobRef
 from study_agent.pedagogy import (
     HYBRID_MACRO_DETAIL_V1,
     MORPHOLOGY_FIRST_ANATOMY_V1,
@@ -222,8 +225,42 @@ class StudyBriefContent:
         object.__setattr__(self, "limitations", _bounded_texts(self.limitations, "limitations"))
 
 
+@dataclass(frozen=True, slots=True)
+class LessonMaterialContent:
+    """A long generated lesson body addressed by an existing content blob."""
+
+    variant: LessonMaterialVariant
+    title: str
+    markdown_blob: BlobRef
+    markdown_character_length: int
+    direct_parent_blob_sha256: str
+    limitations: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.variant, LessonMaterialVariant):
+            raise TypeError("lesson material variant is invalid")
+        require_text(self.title, "lesson material title")
+        _reject_markup(self.title, "lesson material title")
+        if not isinstance(self.markdown_blob, BlobRef):
+            raise TypeError("lesson material markdown_blob must be BlobRef")
+        if str(self.markdown_blob.id) != f"sha256:{self.markdown_blob.checksum_sha256}":
+            raise ValueError("lesson material blob id must match its checksum")
+        if self.markdown_blob.byte_length < 1:
+            raise ValueError("lesson material markdown blob must be non-empty")
+        if type(self.markdown_character_length) is not int or self.markdown_character_length < 1:
+            raise ValueError("lesson material character length must be positive")
+        require_sha256(self.direct_parent_blob_sha256, "lesson material direct parent")
+        object.__setattr__(
+            self, "limitations", _bounded_texts(self.limitations, "lesson material limitations")
+        )
+
+
 type ArtifactContent = (
-    FlashcardContent | AssessmentItemContent | ExamBlueprintContent | StudyBriefContent
+    FlashcardContent
+    | AssessmentItemContent
+    | ExamBlueprintContent
+    | StudyBriefContent
+    | LessonMaterialContent
 )
 
 
@@ -241,6 +278,7 @@ class StudyArtifactEnvelope:
             StudyArtifactKind.ASSESSMENT_ITEM: (AssessmentItemContent,),
             StudyArtifactKind.EXAM_BLUEPRINT: (ExamBlueprintContent,),
             StudyArtifactKind.STUDY_BRIEF: (StudyBriefContent,),
+            StudyArtifactKind.LESSON_MATERIAL: (LessonMaterialContent,),
         }
         if not isinstance(self.kind, StudyArtifactKind) or not isinstance(
             self.content, expected[self.kind]
@@ -338,15 +376,26 @@ def _content_json(content: ArtifactContent) -> dict[str, JsonValue]:
             "observed_formats": tuple(_observation_json(item) for item in content.observed_formats),
             "limitations": content.limitations,
         }
-    return {
-        "title": content.title,
-        "objective": content.objective,
-        "sections": tuple(
-            {"heading": item.heading, "summary": item.summary, "key_points": item.key_points}
-            for item in content.sections
-        ),
-        "limitations": content.limitations,
-    }
+    if isinstance(content, LessonMaterialContent):
+        return {
+            "variant": content.variant.value,
+            "title": content.title,
+            "markdown_blob": _blob_json(content.markdown_blob),
+            "markdown_character_length": content.markdown_character_length,
+            "direct_parent_blob_sha256": content.direct_parent_blob_sha256,
+            "limitations": content.limitations,
+        }
+    if isinstance(content, StudyBriefContent):
+        return {
+            "title": content.title,
+            "objective": content.objective,
+            "sections": tuple(
+                {"heading": item.heading, "summary": item.summary, "key_points": item.key_points}
+                for item in content.sections
+            ),
+            "limitations": content.limitations,
+        }
+    assert_never(content)
 
 
 def _flashcard_json(
@@ -419,13 +468,36 @@ def _decode_content(kind: StudyArtifactKind, value: Mapping[str, JsonValue]) -> 
             observed_formats=_observations(value, "observed_formats"),
             limitations=_strings(value, "limitations"),
         )
-    _exact(value, {"title", "objective", "sections", "limitations"}, "study brief")
-    return StudyBriefContent(
-        title=_string(value, "title"),
-        objective=_string(value, "objective"),
-        sections=_sections(value, "sections"),
-        limitations=_strings(value, "limitations"),
-    )
+    if kind is StudyArtifactKind.LESSON_MATERIAL:
+        _exact(
+            value,
+            {
+                "variant",
+                "title",
+                "markdown_blob",
+                "markdown_character_length",
+                "direct_parent_blob_sha256",
+                "limitations",
+            },
+            "lesson material",
+        )
+        return LessonMaterialContent(
+            variant=LessonMaterialVariant(_string(value, "variant")),
+            title=_string(value, "title"),
+            markdown_blob=_blob(_mapping(value, "markdown_blob")),
+            markdown_character_length=_integer(value, "markdown_character_length"),
+            direct_parent_blob_sha256=_string(value, "direct_parent_blob_sha256"),
+            limitations=_strings(value, "limitations"),
+        )
+    if kind is StudyArtifactKind.STUDY_BRIEF:
+        _exact(value, {"title", "objective", "sections", "limitations"}, "study brief")
+        return StudyBriefContent(
+            title=_string(value, "title"),
+            objective=_string(value, "objective"),
+            sections=_sections(value, "sections"),
+            limitations=_strings(value, "limitations"),
+        )
+    assert_never(kind)
 
 
 _FLASH_COMMON = {
@@ -474,6 +546,23 @@ def _media_json(item: VerifiedMediaRef) -> dict[str, JsonValue]:
         "verifier_fingerprint": item.verifier_fingerprint,
         "alt_text": item.alt_text,
     }
+
+
+def _blob_json(item: BlobRef) -> dict[str, JsonValue]:
+    return {
+        "id": str(item.id),
+        "checksum_sha256": item.checksum_sha256,
+        "byte_length": item.byte_length,
+    }
+
+
+def _blob(value: Mapping[str, JsonValue]) -> BlobRef:
+    _exact(value, {"id", "checksum_sha256", "byte_length"}, "lesson material blob")
+    checksum = _string(value, "checksum_sha256")
+    blob_id = _string(value, "id")
+    if blob_id != f"sha256:{checksum}":
+        raise ValueError("lesson material blob id must match its checksum")
+    return BlobRef(BlobId(blob_id), checksum, _integer(value, "byte_length"))
 
 
 def _media_items(value: Mapping[str, JsonValue], key: str) -> tuple[VerifiedMediaRef, ...]:
@@ -663,6 +752,7 @@ __all__ = [
     "ExamBlueprintContent",
     "FlashcardContent",
     "HybridFlashcardContent",
+    "LessonMaterialContent",
     "MorphologyFlashcardContent",
     "StudyArtifactEnvelope",
     "StudyBriefContent",

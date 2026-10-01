@@ -114,7 +114,11 @@ from study_agent.ports import (
 from study_agent.ports.lesson_worker import FlashcardProfileExecutionBinding
 from study_agent.ports.retrieval import RetrievalDocument, retrieval_catalog_fingerprint
 from study_agent.prompts import CanonicalPromptComposer
-from study_agent.retrieval import CourseSourceContent, SourceRevisionRecord
+from study_agent.retrieval import (
+    CourseSourceContent,
+    SourceRevisionRecord,
+    canonical_source_locator,
+)
 from study_agent.skills import ArtifactReference, SemanticVersion
 from study_agent.state import canonical_json_bytes
 from study_agent.tools.planned_flashcard_scope_bridge import planned_flashcard_scope_tool
@@ -478,6 +482,12 @@ class FlashcardProposalComposition:
                 "flashcard lesson generation could not be verified",
                 _failure_reason(error),
             )
+        if compact.status is LessonWorkerStatus.FAILED:
+            return FailedCapabilityOutcome(
+                compact.run_id,
+                "flashcard lesson generation failed",
+                "generation_failed",
+            )
         if compact.status is not LessonWorkerStatus.COMPLETED or compact.candidate_count < 1:
             return _terminated(
                 compact.run_id,
@@ -595,7 +605,12 @@ class FlashcardProposalComposition:
             str(public["scope"] or str(public["query"])),
             str(public["language"]),
             _candidate_ceiling(public["candidate_ceiling"]),
-            None,
+            {
+                "generation_request_fingerprint": sha256(
+                    b"cardine-flashcard-generation-request@1\0"
+                    + str(interaction_id).encode("utf-8")
+                ).hexdigest(),
+            },
             expectation,
             8,
             commitments,
@@ -767,16 +782,14 @@ def _lesson_plan(
     for record in records:
         for chunk in record.chunks:
             section = " > ".join(chunk.section_path) or f"chunk {chunk.ordinal + 1}"
-            locator = (
-                f"{record.source.title} · {section} · chars "
-                f"{chunk.start_offset}-{chunk.end_offset}"
-            )
             span = CanonicalSourceSpan(
                 chunk.source_id,
                 chunk.revision_id,
                 chunk.start_offset,
                 chunk.end_offset,
-                locator,
+                canonical_source_locator(
+                    record, chunk, chunk.start_offset, chunk.end_offset
+                ),
             )
             topic_key = f"topic-{position:04d}"
             paragraph_key = f"paragraph-{position:04d}"

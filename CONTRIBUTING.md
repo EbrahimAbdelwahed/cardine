@@ -19,6 +19,17 @@ python3.12 -m venv .venv
 .venv/bin/python -m pip install -e '.[dev]'
 ```
 
+For a model-backed local Cardine preview, install the provider extra as well:
+
+```bash
+.venv/bin/python -m pip install -e '.[dev,openai]'
+```
+
+Repeat the editable installation after moving the checkout so console scripts
+point to the current Cardine package. Offline tests do not require provider
+credentials. The loopback browser accepts a process-local key through Settings;
+a restart clears it.
+
 Before submitting a change, run:
 
 ```bash

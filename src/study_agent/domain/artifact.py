@@ -15,6 +15,12 @@ class StudyArtifactKind(StrEnum):
     ASSESSMENT_ITEM = "assessment_item"
     EXAM_BLUEPRINT = "exam_blueprint"
     STUDY_BRIEF = "study_brief"
+    LESSON_MATERIAL = "lesson_material"
+
+
+class LessonMaterialVariant(StrEnum):
+    COMPLETE = "complete"
+    STUDY = "study"
 
 
 class ArtifactRevisionStatus(StrEnum):
@@ -155,6 +161,7 @@ __all__ = [
     "ArtifactRevisionStatus",
     "AssessmentFormat",
     "HybridFlashcardRole",
+    "LessonMaterialVariant",
     "MorphologyCognitiveFunction",
     "MorphologyFamily",
     "MorphologyFlashcardRole",

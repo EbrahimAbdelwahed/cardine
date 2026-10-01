@@ -5,22 +5,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-from hashlib import sha256
 from pathlib import PurePath
 
 from study_agent.domain.context import ExecutionContext
 from study_agent.domain.events import Actor, DomainEvent
-from study_agent.domain.identifiers import BlobId, RevisionId, SourceId
+from study_agent.domain.identifiers import RevisionId, SourceId
 from study_agent.domain.provenance import (
     ContentOrigin,
     DocumentConversionProvenance,
     StructureOrigin,
 )
-from study_agent.domain.source import BlobRef, SourceChunk, SourceDocument, SourceKind
+from study_agent.domain.source import SourceChunk, SourceDocument, SourceKind
 from study_agent.ports import BlobStore, ClockPort, CourseViewPort, EventStore
 from study_agent.ports.storage import EventSequenceConflictError
 
-from .chunking import CHUNKER_VERSION, DEFAULT_CHUNKING_CONFIG, ChunkingConfig, chunk_text
+from .chunking import CHUNKER_VERSION, DEFAULT_CHUNKING_CONFIG, ChunkingConfig
 from .events import (
     SOURCE_REVISION_INGESTED,
     SOURCE_REVISION_SCHEMA_VERSION,
@@ -37,7 +36,8 @@ from .identity import (
     source_kind_contract,
     source_revision_selected_event_id_for,
 )
-from .normalization import InvalidUtf8Error, normalize_utf8
+from .normalization import InvalidUtf8Error
+from .preparation import predicted_blob, prepare_chunks, prepare_text, write_expected_blob
 from .projection import source_revision_payload
 
 
@@ -121,13 +121,14 @@ class TextIngestionService:
             )
         kind, media_type, method = _file_contract(filename)
         try:
-            normalized = normalize_utf8(content)
+            prepared = prepare_text(content)
         except InvalidUtf8Error as error:
             raise TextIngestionError(IngestionErrorCode.INVALID_UTF8, str(error)) from error
 
         original_bytes = content if original_content is None else original_content
-        original_blob = _predicted_blob(original_bytes)
-        normalized_blob = _predicted_blob(normalized.content)
+        original_blob = predicted_blob(original_bytes)
+        normalized = prepared.normalized
+        normalized_blob = prepared.normalized_blob
         revision_id = revision_id_for(
             original_sha256=original_blob.checksum_sha256,
             source_id=source_id,
@@ -161,7 +162,7 @@ class TextIngestionService:
                 content_origin,
                 conversion_provenance,
             )
-            chunks = chunk_text(
+            chunks = prepare_chunks(
                 normalized.text,
                 source_id=source_id,
                 revision_id=revision_id,
@@ -232,9 +233,15 @@ class TextIngestionService:
             raise TextIngestionError(IngestionErrorCode.INVALID_CONTENT, str(error)) from error
 
         if current is None or current.source.blob != original_blob:
-            _write_expected_blob(self._blobs, original_bytes, original_blob)
+            try:
+                write_expected_blob(self._blobs, original_bytes, original_blob)
+            except (TypeError, ValueError) as error:
+                raise TextIngestionError(IngestionErrorCode.BLOB_MISMATCH, str(error)) from error
         if current is None or current.source.normalized_blob != normalized_blob:
-            _write_expected_blob(self._blobs, normalized.content, normalized_blob)
+            try:
+                write_expected_blob(self._blobs, normalized.content, normalized_blob)
+            except (TypeError, ValueError) as error:
+                raise TextIngestionError(IngestionErrorCode.BLOB_MISMATCH, str(error)) from error
         try:
             committed = self._events.append(context.course_id, current_sequence, (event,))
         except EventSequenceConflictError as error:
@@ -337,23 +344,6 @@ def _file_contract(filename: str) -> tuple[SourceKind, str, str]:
         IngestionErrorCode.UNSUPPORTED_EXTENSION,
         "only .txt and .md files are supported",
     )
-
-
-def _predicted_blob(content: bytes) -> BlobRef:
-    digest = sha256(content).hexdigest()
-    return BlobRef(BlobId(f"sha256:{digest}"), digest, len(content))
-
-
-def _write_expected_blob(store: BlobStore, content: bytes, expected: BlobRef) -> None:
-    try:
-        actual = store.put(content)
-    except (TypeError, ValueError) as error:
-        raise TextIngestionError(IngestionErrorCode.BLOB_MISMATCH, str(error)) from error
-    if actual != expected:
-        raise TextIngestionError(
-            IngestionErrorCode.BLOB_MISMATCH,
-            "blob store returned a reference that does not match content",
-        )
 
 
 def _find_matching_revision(

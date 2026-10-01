@@ -6,7 +6,8 @@ import json
 from collections.abc import Mapping
 from typing import cast
 
-from cardine.diagnostics import record_turn_decision
+from cardine.diagnostics import begin_activity
+from cardine.diagnostics.turn_trace import trace_operation
 from cardine.hosts import (
     TutorDecision,
     TutorHostContext,
@@ -54,6 +55,14 @@ class ModelTutorDecisionPort(TutorDecisionPort):
         self._model = model
 
     async def decide(
+        self,
+        context: TutorHostContext,
+        interruption: TutorInterruptionToken,
+    ) -> TutorDecision:
+        with trace_operation("model_decision"):
+            return await self._decide(context, interruption)
+
+    async def _decide(
         self,
         context: TutorHostContext,
         interruption: TutorInterruptionToken,
@@ -148,13 +157,33 @@ class ModelTutorDecisionPort(TutorDecisionPort):
                 separators=(",", ":"),
             ).encode("utf-8")
             decision = decision_from_bytes(encoded, context)
-            record_turn_decision(decision)
+            _observe_decision(decision)
             return decision
         except (TypeError, ValueError, OverflowError):
             raise ModelTutorDecisionError(
                 "provider decision was invalid",
                 failure_reason=ModelErrorCode.PROTOCOL_ERROR.value,
             ) from None
+
+
+def _observe_decision(decision: TutorDecision) -> None:
+    """Expose only the closed, human-readable operation discriminator."""
+
+    kind = getattr(getattr(decision, "kind", None), "value", None)
+    if kind == "assistant_message":
+        begin_activity(kind="model", ref="model.assistant_message")
+        return
+    if kind == "ask_learner":
+        begin_activity(kind="model", ref="model.ask_learner")
+        return
+    if kind == "start_capability":
+        capability_id = getattr(decision, "capability_id", None)
+        if isinstance(capability_id, str):
+            ref = f"capability.{capability_id}"
+            try:
+                begin_activity(kind="capability", ref=ref)
+            except ValueError:
+                return
 
 
 def _advertised_capability_ids(schema: JsonObject) -> tuple[str, ...]:
@@ -164,9 +193,7 @@ def _advertised_capability_ids(schema: JsonObject) -> tuple[str, ...]:
 
 
 def _advertised_tool_names(schema: JsonObject) -> tuple[str, ...]:
-    return _advertised_operation_names(
-        schema, kind_value="invoke_tool", name_field="tool_name"
-    )
+    return _advertised_operation_names(schema, kind_value="invoke_tool", name_field="tool_name")
 
 
 def _advertised_operation_names(
@@ -190,19 +217,12 @@ def _advertised_operation_names(
             continue
         kind_schema = branch_properties.get("kind")
         operation_name = branch_properties.get(name_field)
-        if (
-            not isinstance(kind_schema, Mapping)
-            or kind_schema.get("enum") != (kind_value,)
-        ):
+        if not isinstance(kind_schema, Mapping) or kind_schema.get("enum") != (kind_value,):
             continue
         if not isinstance(operation_name, Mapping):
             continue
         enum = operation_name.get("enum")
-        if (
-            isinstance(enum, tuple)
-            and len(enum) == 1
-            and isinstance(enum[0], str)
-        ):
+        if isinstance(enum, tuple) and len(enum) == 1 and isinstance(enum[0], str):
             names.append(enum[0])
     return tuple(sorted(set(names)))
 

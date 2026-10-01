@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
+from cardine.adapters.model.diagnostic_transport import DiagnosticHttpTransport
+from cardine.diagnostics.turn_trace import trace_operation
 from study_agent.adapters.model.openai_compatible import (
     HttpTransport,
     OpenAICompatibleConfig,
     OpenAICompatibleModel,
+    StdlibHttpTransport,
 )
+from study_agent.domain._validation import JsonObject
 from study_agent.ports.model import (
     ModelCapabilities,
     ModelError,
@@ -22,6 +27,26 @@ GPT_5_6_LUNA_ADAPTER_VERSION = "1.0.0"
 GPT_5_6_LUNA_MODEL_ID = "gpt-5.6-luna"
 GPT_5_6_LUNA_ENDPOINT = "https://api.openai.com/v1/chat/completions"
 GPT_5_6_LUNA_REASONING_EFFORT = "none"
+_UNSUPPORTED_STRICT_SCHEMA_KEYWORDS = frozenset({"uniqueItems"})
+
+
+def _provider_strict_schema(value: object) -> object:
+    """Project local constraints into the strict provider schema without mutation."""
+
+    if isinstance(value, Mapping):
+        projected = {
+            str(key): _provider_strict_schema(item)
+            for key, item in value.items()
+            if key not in _UNSUPPORTED_STRICT_SCHEMA_KEYWORDS
+        }
+        # Locally an empty-only array needs no element schema. The provider
+        # still requires one; maxItems=0 preserves the exact accepted values.
+        if value.get("type") == "array" and value.get("maxItems") == 0:
+            projected.setdefault("items", {"type": "string"})
+        return projected
+    if isinstance(value, tuple):
+        return tuple(_provider_strict_schema(item) for item in value)
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,10 +60,7 @@ class OpenAIGpt56LunaConfig:
         if (
             not isinstance(self.api_key, str)
             or not self.api_key
-            or any(
-                ord(character) < 32 or ord(character) == 127
-                for character in self.api_key
-            )
+            or any(ord(character) < 32 or ord(character) == 127 for character in self.api_key)
         ):
             raise ValueError("api_key must be non-empty bounded text")
         if (
@@ -73,19 +95,23 @@ class OpenAIGpt56LunaModel(OpenAICompatibleModel):
                 reasoning_effort=GPT_5_6_LUNA_REASONING_EFFORT,
                 max_output_tokens_field="max_completion_tokens",
             ),
-            transport,
+            DiagnosticHttpTransport(transport if transport is not None else StdlibHttpTransport()),
         )
 
+    def _structured_output_schema(self, schema: JsonObject) -> object:
+        return _provider_strict_schema(schema)
+
     async def generate(self, request: ModelRequest) -> ModelResponse:
-        if (
-            request.structured_output is not None
-            and request.structured_output.strict is not True
-        ):
-            raise ModelError(
-                ModelErrorCode.PROTOCOL_ERROR,
-                "GPT-5.6 Luna structured output must be strict",
-            )
-        return await super().generate(request)
+        with trace_operation("model_generation"):
+            if (
+                request.structured_output is not None
+                and request.structured_output.strict is not True
+            ):
+                raise ModelError(
+                    ModelErrorCode.PROTOCOL_ERROR,
+                    "GPT-5.6 Luna structured output must be strict",
+                )
+            return await super().generate(request)
 
 
 __all__ = [

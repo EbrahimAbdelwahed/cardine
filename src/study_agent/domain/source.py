@@ -6,7 +6,12 @@ from enum import StrEnum
 
 from ._validation import JsonObject, freeze_object, require_aware, require_text
 from .identifiers import BlobId, ChunkId, RevisionId, SourceId
-from .provenance import ContentOrigin, DocumentConversionProvenance, StructureOrigin
+from .provenance import (
+    ContentOrigin,
+    DocumentConversionProvenance,
+    GeneratedDocumentProvenance,
+    StructureOrigin,
+)
 
 
 class SourceKind(StrEnum):
@@ -49,6 +54,7 @@ class SourceDocument:
     ingestion_method: str
     content_origin: ContentOrigin = ContentOrigin.ORIGINAL
     conversion_provenance: DocumentConversionProvenance | None = None
+    generated_provenance: GeneratedDocumentProvenance | None = None
 
     def __post_init__(self) -> None:
         require_text(self.title, "title")
@@ -72,13 +78,22 @@ class SourceDocument:
         if self.content_origin is ContentOrigin.EXTRACTED:
             if self.conversion_provenance is None:
                 raise ValueError("extracted content requires conversion provenance")
+            if self.generated_provenance is not None:
+                raise ValueError("extracted content cannot carry generated provenance")
             if self.conversion_provenance.page_spans and (
                 self.conversion_provenance.page_spans[-1].end_offset
                 > self.normalized_character_length
             ):
                 raise ValueError("conversion page span exceeds normalized content")
+        elif self.content_origin is ContentOrigin.GENERATED:
+            if self.generated_provenance is None:
+                raise ValueError("generated content requires generated provenance")
+            if self.conversion_provenance is not None:
+                raise ValueError("generated content cannot carry conversion provenance")
         elif self.conversion_provenance is not None:
             raise ValueError("conversion provenance requires extracted content")
+        elif self.generated_provenance is not None:
+            raise ValueError("generated provenance requires generated content")
 
 
 @dataclass(frozen=True, slots=True)

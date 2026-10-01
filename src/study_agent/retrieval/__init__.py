@@ -5,7 +5,7 @@ from study_agent.ports.retrieval import (
     retrieval_read_set_fingerprint,
 )
 
-from .content import CourseSourceContent, SourceRevisionRecord
+from .content import CourseSourceContent, SourceRevisionRecord, canonical_source_locator
 from .errors import SourceContentError, SourceContentErrorCode
 
 __all__ = [
@@ -14,5 +14,6 @@ __all__ = [
     "SourceContentError",
     "SourceContentErrorCode",
     "SourceRevisionRecord",
+    "canonical_source_locator",
     "retrieval_read_set_fingerprint",
 ]
