@@ -315,6 +315,7 @@ def test_history_only_start_requires_validated_observation() -> None:
     [
         "Crea flashcard sulla meiosi usando anche quanto discusso prima",
         "Crea flashcard sulla meiosi e su quello che abbiamo discusso finora",
+        "Crea flashcard su pH e su quello che abbiamo discusso finora",
     ],
 )
 def test_auxiliary_history_preserves_explicit_topic(prompt: str) -> None:
@@ -347,7 +348,19 @@ def test_auxiliary_history_preserves_explicit_topic(prompt: str) -> None:
     assert isinstance(decision, StartCapabilityDecision)
     assert isinstance(decision.inputs["query"], str)
     assert isinstance(decision.inputs["scope"], str)
-    assert "meiosi" in decision.inputs["query"]
-    assert "meiosi" in decision.inputs["scope"]
+    topic = "pH" if "pH" in prompt else "meiosi"
+    assert topic in decision.inputs["query"]
+    assert topic in decision.inputs["scope"]
     assert "glicolisi" not in decision.inputs["scope"]
     assert decision.inputs["continuation_summary_json"] is None
+
+
+def test_short_explicit_topic_does_not_require_history_observation() -> None:
+    decision = asyncio.run(
+        FlashcardProfileRoutingTutorDecisionPort(_StartingDecisionPort()).decide(
+            _context("Crea flashcard su pH e su quello che abbiamo discusso finora"), _Token()
+        )
+    )
+    assert isinstance(decision, StartCapabilityDecision)
+    assert isinstance(decision.inputs["scope"], str)
+    assert "pH" in decision.inputs["scope"]

@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 
 import pytest
 
+from cardine.integrations.study_agent.course_policy import (
+    COURSE_POLICY_SCHEMA_VERSION,
+    SOURCE_RESTORED,
+    SOURCE_RETIRED,
+    register_course_policy_events,
+    source_lifetime_event_id,
+)
 from cardine.materials import (
     GeneratedSourceMaterializationError,
     GeneratedSourceMaterializer,
@@ -85,7 +92,7 @@ from study_agent.ingestion.projection import (
 )
 from study_agent.ports.storage import EventSequenceConflictError
 from study_agent.retrieval import CourseSourceContent
-from study_agent.state import Projection
+from study_agent.state import EventRegistry, Projection
 from tests.course_fixtures import ExistingCourseView
 
 NOW = datetime(2026, 8, 14, 16, 30, tzinfo=UTC)
@@ -136,6 +143,8 @@ class MemoryEvents:
 
 
 def _projection(events: MemoryEvents, blobs: MemoryBlobs) -> Projection:
+    registry = EventRegistry()
+    register_course_policy_events(registry)
     state: dict[str, JsonValue] = {
         "course": {},
         "sessions": {str(SESSION): {"course_id": str(COURSE)}},
@@ -155,7 +164,33 @@ def _projection(events: MemoryEvents, blobs: MemoryBlobs) -> Projection:
             )
         elif event.event_type == DECISION_RECORDED:
             state = dict(reduce_decision_recorded(state, event, decode_decision_recorded(event)))
+        elif event.event_type in {SOURCE_RETIRED, SOURCE_RESTORED}:
+            state = dict(registry.reduce(state, event))
     return Projection(COURSE, events.events[-1].course_sequence, state)
+
+
+def _source_lifetime_event(
+    sequence: int, status: str, occurred_at: datetime, request_id: str
+) -> DomainEvent:
+    event_type = SOURCE_RETIRED if status == "retired" else SOURCE_RESTORED
+    return DomainEvent(
+        source_lifetime_event_id(COURSE, ROOT_SOURCE, "reviewer", request_id, status),
+        COURSE,
+        sequence,
+        event_type,
+        COURSE_POLICY_SCHEMA_VERSION,
+        Actor(PrincipalKind.HUMAN, "reviewer"),
+        occurred_at,
+        CORRELATION,
+        {
+            "course_id": str(COURSE),
+            "source_id": str(ROOT_SOURCE),
+            "principal_id": "reviewer",
+            "request_id": request_id,
+            "occurred_at": occurred_at.isoformat(),
+            "status": status,
+        },
+    )
 
 
 def _root_fixture() -> tuple[DomainEvent, MemoryBlobs, SourceDocument, SourceCommitment]:
@@ -531,6 +566,56 @@ def test_study_material_waits_for_complete_source_then_both_materialize() -> Non
     assert len(events.events) == 6
 
 
+def test_root_retired_then_restored_after_proposal_remains_stale() -> None:
+    materializer, events, blobs, revision, _study_revision = _fixture()
+    proposal_prefix = _projection(MemoryEvents(events.events[:2]), blobs)
+    events.events.extend(
+        (
+            _source_lifetime_event(5, "retired", NOW + timedelta(seconds=1), "retire"),
+            _source_lifetime_event(6, "restored", NOW + timedelta(seconds=2), "restore"),
+        )
+    )
+
+    with pytest.raises(
+        GeneratedSourceMaterializationError,
+        match="canonical projection validation",
+    ) as error:
+        materializer.materialize(
+            artifact_revision_id=revision,
+            context=ExecutionContext(PrincipalKind.SERVICE, "materializer", COURSE, CORRELATION),
+        )
+
+    assert error.value.__cause__ is not None
+    assert "restored after its proposal" in str(error.value.__cause__)
+    assert events.append_calls == 0
+    assert len(events.events) == 6
+    assert _projection(MemoryEvents(events.events[:2]), blobs) == proposal_prefix
+
+
+def test_new_proposal_after_root_restore_is_admissible() -> None:
+    materializer, events, _blobs, revision, _study_revision = _fixture()
+    root, proposal, decision_complete, decision_study = events.events
+    retired_at = NOW + timedelta(seconds=1)
+    restored_at = NOW + timedelta(seconds=2)
+    proposal_at = NOW + timedelta(seconds=3)
+    events.events = [
+        root,
+        _source_lifetime_event(2, "retired", retired_at, "retire-before-new-run"),
+        _source_lifetime_event(3, "restored", restored_at, "restore-before-new-run"),
+        replace(proposal, course_sequence=4, occurred_at=proposal_at),
+        replace(decision_complete, course_sequence=5),
+        replace(decision_study, course_sequence=6),
+    ]
+
+    result = materializer.materialize(
+        artifact_revision_id=revision,
+        context=ExecutionContext(PrincipalKind.SERVICE, "materializer", COURSE, CORRELATION),
+    )
+
+    assert result.status is GeneratedSourceMaterializationStatus.EMITTED
+    assert events.append_calls == 1
+
+
 def test_generated_source_remains_readable_after_root_revision_changes() -> None:
     materializer, events, blobs, complete_revision, study_revision = _fixture()
     materializer.materialize(
@@ -618,6 +703,8 @@ def test_materializer_obeys_canonical_root_lifetime_before_append(status: str) -
 
     def projection(_course: CourseId) -> Projection:
         original = _projection(events, blobs)
+        if status == "active":
+            return original
         return Projection(
             COURSE,
             original.sequence,
