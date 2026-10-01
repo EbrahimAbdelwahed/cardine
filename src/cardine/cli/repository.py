@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from collections.abc import Callable, Mapping, Sequence
@@ -2008,6 +2009,41 @@ class LocalRepository:
             ContentOrigin.EXTRACTED,
         ):
             raise ValueError("material generation requires an original or extracted transcript")
+        extraction = record.source.extraction_provenance
+        if extraction is not None:
+            from study_agent.domain import BlobId, BlobRef
+
+            # The manifest is part of canonical extraction lineage, not a
+            # checkpoint or derived index. A parent PDF must still be current.
+            manifest = json.loads(
+                self.blobs.get(
+                    BlobRef(
+                        BlobId("sha256:" + extraction.manifest_sha256),
+                        extraction.manifest_sha256,
+                        extraction.manifest_byte_length,
+                    )
+                )
+            )
+            parent_id = manifest.get("parent_source_id")
+            if parent_id is not None:
+                parent = next(
+                    (
+                        item
+                        for item in CourseSourceContent(
+                            course_id, self.events, self.blobs
+                        ).catalog()
+                        if str(item.source.source_id) == parent_id
+                        and str(item.source.revision_id) == manifest.get("parent_revision_id")
+                    ),
+                    None,
+                )
+                if (
+                    parent is None
+                    or not parent.is_current_revision
+                    or parent.source.source_id
+                    in (self.source_lifetime.retired_source_ids(course_id))
+                ):
+                    raise ValueError("parent PDF was retired or superseded")
         source_sequences = tuple(
             event.course_sequence
             for event in self.events.read(course_id)

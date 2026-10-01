@@ -1919,3 +1919,17 @@
     .status-dot, .review-progress__tick.is-current { background: CanvasText !important; }
   }
 }
+
+/* Source-scoped study notes use the existing library and review surface. */
+.notes-job { max-width: calc(var(--measure) + 2.5rem); margin-inline: auto; margin-block: 1.5rem; padding: 1.25rem; border: 1px solid var(--line); border-radius: var(--radius-lg); }
+.notes-job h2 { font-size: var(--text-lg); margin-block: 0 .75rem; }
+.notes-job textarea { width: 100%; min-height: 10rem; margin-block: .75rem; }
+.notes-output { border-top: 1px solid var(--line); padding-block: 1rem; }
+.notes-output summary, .notes-info summary { cursor: pointer; }
+.notes-markdown { max-height: 32rem; overflow: auto; padding-block: 1rem; overflow-wrap: anywhere; }
+.notes-info { display: inline-block; max-width: 24rem; font-size: var(--text-sm); }
+.source-row__button { flex-wrap: wrap; gap: var(--space-2); }
+
+#material-jobs { grid-column: 1 / -1; min-width: 0; }
+.notes-markdown { max-width: var(--measure); }
+.source-viewer:not([open]) { display: none; }

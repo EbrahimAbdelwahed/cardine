@@ -63,6 +63,10 @@ class GeneratedSourceMaterializationError(ValueError):
     """A reviewed artifact cannot be admitted as a generated source."""
 
 
+class GeneratedSourceMaterializationConflictError(GeneratedSourceMaterializationError):
+    """The canonical stream moved; revalidate and retry without a new decision."""
+
+
 ProjectionLoader = Callable[[CourseId], Projection]
 
 
@@ -121,7 +125,7 @@ class GeneratedSourceMaterializer:
         stream = tuple(self._events.read(context.course_id))
         current_sequence = stream[-1].course_sequence if stream else 0
         if expected_sequence is not None and current_sequence != expected_sequence:
-            raise GeneratedSourceMaterializationError(
+            raise GeneratedSourceMaterializationConflictError(
                 f"course stream does not match expected sequence {expected_sequence}"
             )
         if self._chunking.version != CHUNKER_VERSION:
@@ -189,7 +193,7 @@ class GeneratedSourceMaterializer:
                     sequence,
                 )
             self._preflight(concurrent_stream, event, decoded, context)
-            raise GeneratedSourceMaterializationError(
+            raise GeneratedSourceMaterializationConflictError(
                 "course event sequence changed during generated materialization"
             ) from error
         return GeneratedSourceMaterializationResult(
@@ -293,7 +297,9 @@ class GeneratedSourceMaterializer:
             )
         expected = stream[-1].course_sequence if stream else 0
         if projection.sequence != expected:
-            raise GeneratedSourceMaterializationError("projection is stale for material admission")
+            raise GeneratedSourceMaterializationConflictError(
+                "projection is stale for material admission"
+            )
         try:
             from study_agent.ingestion.projection import validate_generated_source_admission
 
@@ -678,6 +684,7 @@ class GeneratedSourceMaterializer:
 
 
 __all__ = [
+    "GeneratedSourceMaterializationConflictError",
     "GeneratedSourceMaterializationError",
     "GeneratedSourceMaterializationResult",
     "GeneratedSourceMaterializer",

@@ -44,6 +44,10 @@ from .ui_application import SourceDocumentView, UiApplicationPort, UiRequestErro
 class _DocumentUiApplication(Protocol):
     document_policy: DocumentImportPolicy
 
+    def import_audio(
+        self, *, input_path: Path, filename: str, title: str, request_id: str
+    ) -> JsonObject: ...
+
     def import_pdf(
         self,
         *,
@@ -55,9 +59,7 @@ class _DocumentUiApplication(Protocol):
         request_id: str,
     ) -> JsonObject: ...
 
-    def read_source_document(
-        self, source_id: str, revision_id: str
-    ) -> SourceDocumentView: ...
+    def read_source_document(self, source_id: str, revision_id: str) -> SourceDocumentView: ...
 
 
 DEFAULT_BROWSER_HOST = "127.0.0.1"
@@ -367,6 +369,29 @@ class BrowserSurface:
             request_id=request_id,
         )
 
+    def api_post_audio(
+        self,
+        *,
+        input_path: Path,
+        filename: str,
+        title: str,
+        request_id: str,
+        session_token: str | None,
+        csrf_token: str | None,
+    ) -> JsonObject:
+        if self._private_access is not None and not self._private_access.csrf_valid(
+            session_token, csrf_token
+        ):
+            raise UiRequestError("csrf token is invalid", status_code=403)
+        if not self.repository_backed:
+            raise UiRequestError("audio import is unavailable", status_code=405)
+        return cast(_DocumentUiApplication, self._ui).import_audio(
+            input_path=input_path,
+            filename=filename,
+            title=title,
+            request_id=request_id,
+        )
+
     def api_source_document(
         self,
         source_id: str,
@@ -380,9 +405,7 @@ class BrowserSurface:
             session_token
         ):
             raise UiRequestError("authentication required", status_code=401)
-        return cast(_DocumentUiApplication, self._ui).read_source_document(
-            source_id, revision_id
-        )
+        return cast(_DocumentUiApplication, self._ui).read_source_document(source_id, revision_id)
 
 
 class _BrowserServer(ThreadingHTTPServer):
@@ -541,8 +564,8 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
         self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
     def _post_api(self, path: str) -> None:
-        if path == "/api/v1/sources/import/pdf":
-            self._post_pdf_api()
+        if path in {"/api/v1/sources/import/pdf", "/api/v1/sources/import/audio"}:
+            self._post_pdf_api(audio=path.endswith("/audio"))
             return
         if not _is_json_content_type(self.headers.get("Content-Type")):
             self._send_json(
@@ -552,16 +575,11 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
             return
         private_login = self.server.surface.private_mode and path == "/api/v1/auth/login"
         local_owner_setup = self.server.surface.setup_required and path == LOCAL_OWNER_SETUP_PATH
-        local_settings = (
-            self.server.surface.mode == "local_repository"
-            and path.startswith("/api/v1/settings")
+        local_settings = self.server.surface.mode == "local_repository" and path.startswith(
+            "/api/v1/settings"
         )
         if not self._origin_matches_request(
-            require_origin=(
-                self.server.surface.private_mode
-                or local_owner_setup
-                or local_settings
-            )
+            require_origin=(self.server.surface.private_mode or local_owner_setup or local_settings)
         ):
             self._send_json(HTTPStatus.FORBIDDEN, {"error": "origin is not allowed"})
             return
@@ -615,16 +633,16 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
             return
         self._send_json(HTTPStatus.OK, payload)
 
-    def _post_pdf_api(self) -> None:
+    def _post_pdf_api(self, *, audio: bool = False) -> None:
         if not self.server._document_slots.acquire(blocking=False):
             self._send_json(HTTPStatus.TOO_MANY_REQUESTS, {"error": "PDF import is busy"})
             return
         try:
-            self._post_pdf_api_impl()
+            self._post_pdf_api_impl(audio=audio)
         finally:
             self.server._document_slots.release()
 
-    def _post_pdf_api_impl(self) -> None:
+    def _post_pdf_api_impl(self, *, audio: bool = False) -> None:
         if self.server.surface.private_access is not None:
             if not self.server.surface.private_access.authenticate(self._session_token()):
                 self._send_json(HTTPStatus.UNAUTHORIZED, {"error": "authentication required"})
@@ -632,23 +650,33 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
             if not self._origin_matches_request(require_origin=True):
                 self._send_json(HTTPStatus.FORBIDDEN, {"error": "origin is not allowed"})
                 return
-        if self.headers.get("Content-Type", "").split(";", 1)[0].strip() != "application/pdf":
-            self._send_json(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, {"error": "PDF required"})
+        if audio and not self._origin_matches_request(require_origin=True):
+            self._send_json(HTTPStatus.FORBIDDEN, {"error": "origin is not allowed"})
+            return
+        upload_kind = "Audio" if audio else "PDF"
+        expected_media = "application/octet-stream" if audio else "application/pdf"
+        if self.headers.get("Content-Type", "").split(";", 1)[0].strip() != expected_media:
+            self._send_json(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, {"error": f"{upload_kind} required"})
             return
         try:
             length = int(self.headers.get("Content-Length", "-1"))
         except ValueError:
             length = -1
-        policy = self.server.surface.document_policy
-        maximum = policy.max_document_bytes
+        maximum = (
+            128 * 1024 * 1024 if audio else self.server.surface.document_policy.max_document_bytes
+        )
         if not 0 < length <= maximum:
-            self._send_json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "PDF is too large"})
+            self._send_json(
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": f"{upload_kind} is too large"}
+            )
             return
         filename = self.headers.get("X-File-Name", "")
         title = self.headers.get("X-Source-Title", "")
         request_id = self.headers.get("Idempotency-Key", "")
         if not filename or not title or not request_id:
-            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "PDF headers are incomplete"})
+            self._send_json(
+                HTTPStatus.BAD_REQUEST, {"error": f"{upload_kind} headers are incomplete"}
+            )
             return
         try:
             with tempfile.TemporaryDirectory(prefix="cardine-upload-") as root:
@@ -659,20 +687,32 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
                     while written < length:
                         block = self.rfile.read(min(1024 * 1024, length - written))
                         if not block:
-                            raise UiRequestError("PDF body is truncated", status_code=400)
+                            raise UiRequestError(
+                                f"{upload_kind} body is truncated", status_code=400
+                            )
                         written += len(block)
                         digest.update(block)
                         output.write(block)
-                payload = self.server.surface.api_post_pdf(
-                    input_path=input_path,
-                    pdf_sha256=digest.hexdigest(),
-                    byte_size=written,
-                    filename=filename,
-                    title=title,
-                    request_id=request_id,
-                    session_token=self._session_token(),
-                    csrf_token=self.headers.get("X-CSRF-Token"),
-                )
+                if audio:
+                    payload = self.server.surface.api_post_audio(
+                        input_path=input_path,
+                        filename=unquote(filename),
+                        title=unquote(title),
+                        request_id=request_id,
+                        session_token=self._session_token(),
+                        csrf_token=self.headers.get("X-CSRF-Token"),
+                    )
+                else:
+                    payload = self.server.surface.api_post_pdf(
+                        input_path=input_path,
+                        pdf_sha256=digest.hexdigest(),
+                        byte_size=written,
+                        filename=filename,
+                        title=title,
+                        request_id=request_id,
+                        session_token=self._session_token(),
+                        csrf_token=self.headers.get("X-CSRF-Token"),
+                    )
         except UiRequestError as error:
             self._send_json(HTTPStatus(error.status_code), _ui_error_payload(error))
             return
@@ -834,16 +874,13 @@ def create_server(
         if private_access is not None and settings_application.mode != "private":
             raise ValueError("private access requires private settings")
         if private_access is None and (
-            repository_mode != "local_repository"
-            or settings_application.mode != "local_repository"
+            repository_mode != "local_repository" or settings_application.mode != "local_repository"
         ):
             raise ValueError("local settings require a local repository application")
     if local_owner_setup and private_access is not None:
         raise ValueError("local owner setup cannot be combined with private access")
     if runtime_credentials is not None and not (
-        private_access
-        or local_owner_setup
-        or settings_application is not None
+        private_access or local_owner_setup or settings_application is not None
     ):
         raise ValueError(
             "runtime credentials require private access, local owner setup, or settings"

@@ -14,6 +14,7 @@ from study_agent.domain.provenance import (
     ContentOrigin,
     DocumentConversionProvenance,
     StructureOrigin,
+    TextExtractionProvenance,
 )
 from study_agent.domain.source import SourceChunk, SourceDocument, SourceKind
 from study_agent.ports import BlobStore, ClockPort, CourseViewPort, EventStore
@@ -103,6 +104,7 @@ class TextIngestionService:
         content_origin: ContentOrigin = ContentOrigin.ORIGINAL,
         conversion_provenance: DocumentConversionProvenance | None = None,
         original_content: bytes | None = None,
+        extraction_provenance: TextExtractionProvenance | None = None,
     ) -> TextIngestionResult:
         self._courses.get(context.course_id)
         stream = tuple(self._events.read(context.course_id))
@@ -161,6 +163,7 @@ class TextIngestionService:
                 method,
                 content_origin,
                 conversion_provenance,
+                extraction_provenance=extraction_provenance,
             )
             chunks = prepare_chunks(
                 normalized.text,
@@ -415,6 +418,7 @@ def _matches_request(
         and source.structure_origin is requested.structure_origin
         and source.ingestion_method == requested.ingestion_method
         and source.content_origin is requested.content_origin
+        and source.extraction_provenance == requested.extraction_provenance
         and source.conversion_provenance == requested.conversion_provenance
         and existing.chunking.version == chunking.version
         and existing.chunking.max_characters == chunking.max_characters
