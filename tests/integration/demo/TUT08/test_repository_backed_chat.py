@@ -58,12 +58,7 @@ from tests.receipt_assertions import without_transient_activity
 COURSE = CourseId("cardine-course")
 SESSION = SessionId("cardine-session")
 _EVIDENCE_ID = re.compile(r'"evidence_id":"([^"]+)"')
-_VERIFIED_ANYDOC_WORKER = (
-    sys.platform == "darwin"
-    and platform.machine() == "arm64"
-    and sys.version_info[:2] in {(3, 12), (3, 13)}
-    and shutil.which("sandbox-exec") == "/usr/bin/sandbox-exec"
-)
+
 
 
 _VERIFIED_ANYDOC_WORKER = (

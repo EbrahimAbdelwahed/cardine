@@ -39,12 +39,7 @@ from study_agent.tools import StudyEvent
 
 _EVIDENCE_ID = re.compile(r'"evidence_id":"([^"]+)"')
 _PROJECT_ROOT = Path(__file__).parents[2]
-_VERIFIED_ANYDOC_WORKER = (
-    sys.platform == "darwin"
-    and platform.machine() == "arm64"
-    and sys.version_info[:2] in {(3, 12), (3, 13)}
-    and shutil.which("sandbox-exec") == "/usr/bin/sandbox-exec"
-)
+
 
 
 _VERIFIED_ANYDOC_WORKER = (

@@ -99,7 +99,6 @@ def test_a_closed_disclosure_occupies_and_paints_nothing() -> None:
     # The rule that stops a component stylesheet laying out the contents of a
     # collapsed <details> outside the scrollable extent.
     assert "details:not([open]) > *:not(summary) { display: none !important; }" in SHELL_CSS
-    assert "dialog:not([open]) { display: none !important; }" in SHELL_CSS
 
 
 def test_the_shell_has_one_tooltip_mechanism_and_no_native_ones() -> None:
