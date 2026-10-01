@@ -332,7 +332,9 @@
     var records = list(config.records || config.items);
     var state = value(config.state, "settled");
     if (!records.length && state !== "running") return "";
-    var failed = records.filter(function (record) { return record && record.status === "failed"; }).length;
+    var failed = records.filter(function (record) {
+      return record && read(record, ["status", "state"], "") === "failed";
+    }).length;
     var countLabel = records.length === 1 ? "1 attività" : records.length + " attività";
     var suffix = (state === "running" ? " · in corso" : "") + (failed ? " · " + failed + " errore" + (failed === 1 ? "" : "i") : "");
     var rows = records.map(function (record, index) {
