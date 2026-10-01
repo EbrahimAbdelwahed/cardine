@@ -15,7 +15,12 @@ from .generation_contracts import MAX_OUTPUT_BYTES, GenerationPipelinePins
 _UNCERTAINTY = re.compile(
     r"\b(?:unclear|uncertain|not sure|possibly|maybe|might|(?-i:may)(?!\s+\d{4})|could|"
     r"forse|probabilmente|incert[oaie]|possibilmente|potrebbe|potrebbero|"
-    r"non sicur[oaie]|non certo|non certa)\b",
+    r"incertezz[ae]|ambigu[oaie]|limitazion[ei]|non sicur[oaie]|non certo|non certa)\b",
+    re.I,
+)
+_UNCERTAINTY_LIMITATION = re.compile(
+    r"\b(?:uncertain(?:ty)?|unclear|limitation|not established|ambiguous|"
+    r"incertezz[ae]|ambigu[oaie]|limitazion[ei]|non accertat[oaie])\b",
     re.I,
 )
 _EMPHASIS = re.compile(
@@ -121,7 +126,7 @@ def validate_markdown(
     output_markers = _markers(text)
     if not source_markers[0] <= output_markers[0]:
         raise MaterialValidationError(f"{stage} output dropped uncertainty markers")
-    if source_markers[1] and not source_markers[1].intersection(output_markers[1]):
+    if not source_markers[1] <= output_markers[1]:
         raise MaterialValidationError(f"{stage} output dropped teacher-emphasis markers")
     missing_numbers = source_markers[2] - output_markers[2]
     if missing_numbers:
@@ -181,7 +186,7 @@ def _ensure_commitments(source: str, output: str, stage: str) -> None:
     target = _markers(output)
     if not markers[0] <= target[0]:
         raise MaterialValidationError(f"{stage} dropped a segment uncertainty marker")
-    if markers[1] and not markers[1].intersection(target[1]):
+    if not markers[1] <= target[1]:
         raise MaterialValidationError(f"{stage} dropped a segment emphasis marker")
     missing = markers[2] - target[2]
     if missing:
@@ -197,9 +202,7 @@ def _markers(text: str) -> tuple[set[str], set[str], set[str]]:
 
 
 def _limitations(text: str, source: str) -> tuple[str, ...]:
-    if _UNCERTAINTY.search(source) and not re.search(
-        r"\b(?:uncertain|unclear|limitation|not established)\b", text, re.I
-    ):
+    if _UNCERTAINTY.search(source) and not _UNCERTAINTY_LIMITATION.search(text):
         return (
             "The transcript contains uncertainty markers; the generated material preserves only "
             "what was explicit.",
@@ -214,12 +217,7 @@ def _validate_limitations(limitations: tuple[str, ...], source: str, stage: str)
     if not limitations or any(not item.strip() for item in limitations):
         raise MaterialValidationError(f"{stage} limitations are missing")
     if _UNCERTAINTY.search(source) and not any(
-        re.search(
-            r"\b(?:uncertain(?:ty)?|unclear|limitation|not established|ambiguous)\b",
-            item,
-            re.I,
-        )
-        for item in limitations
+        _UNCERTAINTY_LIMITATION.search(item) for item in limitations
     ):
         raise MaterialValidationError(f"{stage} limitations are not truthful about uncertainty")
 
