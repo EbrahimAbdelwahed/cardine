@@ -16,8 +16,6 @@ archive and must not be treated as Cardine's current state.
 - [Flashcard generation repair publication](logs/2026-09-29--cardine--flashcard-generation-publication--log.md) — the owner authorized publishing the generation repair to PR #5; empty-array wire schema, truthful failure and new-turn retry regressions verified offline; preview update and live generation remain pending.
 
 - [Compact Thinking and Streaming Text](logs/2026-09-28--cardine--compact-thinking-streaming--log.md) — compact activity renderers, progressive verified answers and response actions.
-- [Compact Thinking and Streaming Text](logs/2026-09-28--cardine--compact-thinking-streaming--log.md) — approved compact activity renderers, progressive verified answers, follow-ups and response actions on the recovery base.
-- [Flashcard generation repair publication](logs/2026-09-29--cardine--flashcard-generation-publication--log.md) — the owner authorized publishing the generation repair to PR #5; empty-array wire schema, truthful failure and new-turn retry regressions verified offline; preview update and live generation remain pending.
 - [Message Scroller and BeUI evaluation](logs/2026-09-28--cardine--message-scroller--log.md) — reader-aware chat navigation implemented; Citations and Prompt Input assessed with canonical source boundaries.
 
 - [Failed-turn observability](logs/2026-09-28--cardine--failed-turn-observability--log.md) — correlated, bounded failure/retry traces with safe transport and execution metadata; the owner approved the six-path custody update.
