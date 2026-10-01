@@ -13,9 +13,12 @@ historical import and note redaction, removal of evidence projections/tools/API
 and product context-conflict routes/composition. Recall remains separate. Old
 SQLite history and context replay are preserved. Contract: specs/student-journal.
 
-Validation: journal/tool/assessment tests pass (23); the last previously failing
-runtime/browser cases pass (5); Ruff and strict mypy pass; wheel/sdist build passes.
-The committed-head full suite and GitHub CI are checked at publication.
+Validation on implementation commit 7841f85: full offline suite: 2543 passed,
+4 skipped, 1 failed in 102.44s. The sole failure is the clean-archive ownership
+audit rejecting intentionally changed frozen core bytes. Journal/tool/assessment
+tests pass (23); browser/tool journeys pass (17); Ruff and strict mypy pass;
+wheel/sdist build passes. PR: https://github.com/EbrahimAbdelwahed/cardine/pull/12
+(draft). GitHub CI/review remains outstanding. This follow-up only records results.
 
 Blocker: automatic approval review rejected changes to the ownership-audit policy
 and a proposed new custody overlay, citing lack of explicit authority and possible
