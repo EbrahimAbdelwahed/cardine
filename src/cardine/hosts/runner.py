@@ -181,9 +181,7 @@ class TutorHostRunResult:
     def __post_init__(self) -> None:
         if not isinstance(self.status, TutorHostRunStatus):
             raise TypeError("host result status must use TutorHostRunStatus")
-        if self.retry_receipt is not None and not isinstance(
-            self.retry_receipt, HostRetryReceipt
-        ):
+        if self.retry_receipt is not None and not isinstance(self.retry_receipt, HostRetryReceipt):
             raise TypeError("host retry receipt is invalid")
         if self.learner_text is not None:
             _require_text(self.learner_text, "learner_text", MAX_HOST_TEXT)
@@ -215,12 +213,19 @@ class TutorHostRunResult:
             or self.failure_reason
             not in {
                 "authentication",
+                "authorization",
                 "model_unavailable",
                 "endpoint_incompatible",
+                "schema_incompatible",
                 "rate_limited",
                 "timeout",
                 "protocol_error",
                 "unavailable",
+                "capability_execution_failed",
+                "capability_validation_failed",
+                "scope_missing",
+                "scope_stale",
+                "publication_failed",
                 "consent_required",
             }
         ):
@@ -284,6 +289,7 @@ class TutorHostRunResult:
     def pending(self) -> PendingContinuationDescriptor | None:
         return self.pending_continuation
 
+
 def _tool_observation(
     decision: InvokeToolDecision,
     *,
@@ -316,8 +322,7 @@ def _bounded_observation_value(value: object, *, depth: int = 0) -> JsonValue:
             key = str(raw_key)
             normalized = re.sub(r"[^a-z0-9]+", "_", key.casefold()).strip("_")
             if normalized in _OBSERVATION_SENSITIVE_KEYS or any(
-                normalized.endswith(f"_{token}")
-                for token in _OBSERVATION_SENSITIVE_KEYS
+                normalized.endswith(f"_{token}") for token in _OBSERVATION_SENSITIVE_KEYS
             ):
                 continue
             selected[key] = _bounded_observation_value(value[raw_key], depth=depth + 1)
@@ -357,9 +362,7 @@ def _validate_agent_observation(observation: JsonObject) -> None:
         result is None or error_code is not None or retryable is not None
     ):
         raise ValueError("successful agent observation fields are invalid")
-    if status != "succeeded" and (
-        result is not None or error_code is None or retryable is None
-    ):
+    if status != "succeeded" and (result is not None or error_code is None or retryable is None):
         raise ValueError("failed agent observation fields are invalid")
     if _bounded_observation_value(observation) != observation:
         raise ValueError("agent observation exceeds the bounded projection")
@@ -375,9 +378,7 @@ def _durable_agent_observations(
             {
                 **{key: value for key, value in observation.items() if key != "result"},
                 **(
-                    {
-                        "result": _durable_observation_value(observation["result"])
-                    }
+                    {"result": _durable_observation_value(observation["result"])}
                     if "result" in observation
                     else {}
                 ),
@@ -426,9 +427,7 @@ def _durable_observation_value(value: object, *, depth: int = 0) -> JsonValue:
 def _is_conversational_payload_key(key: str) -> bool:
     normalized = re.sub(r"[^a-z0-9]+", "_", key.casefold()).strip("_")
     sensitive = {"excerpt", "message", "query", "content", "text", "topic", "summary"}
-    return normalized in sensitive or any(
-        normalized.endswith(f"_{token}") for token in sensitive
-    )
+    return normalized in sensitive or any(normalized.endswith(f"_{token}") for token in sensitive)
 
 
 def _validate_durable_agent_observation(observation: JsonObject) -> None:
@@ -454,8 +453,7 @@ class TutorContinuationRecord:
         if self.descriptor.fingerprint != self.continuation.fingerprint:
             raise ValueError("continuation descriptor does not bind exact continuation")
         expected_identity = (
-            f"{self.continuation.capability_id.value}@"
-            f"{self.continuation.capability_version.major}"
+            f"{self.continuation.capability_id.value}@{self.continuation.capability_version.major}"
         )
         if self.descriptor.capability_identity != expected_identity:
             raise ValueError("continuation descriptor capability identity differs")
@@ -498,9 +496,7 @@ class TutorContinuationRecord:
         )
         if _integer(raw, "schema_version") != 1:
             raise ValueError("unsupported tutor continuation record schema version")
-        continuation = _continuation_from_json(
-            _object(raw["continuation"], "continuation")
-        )
+        continuation = _continuation_from_json(_object(raw["continuation"], "continuation"))
         context_raw = _object(raw["execution_context"], "execution_context")
         _exact(
             context_raw,
@@ -516,9 +512,7 @@ class TutorContinuationRecord:
             },
             "execution_context",
         )
-        capabilities = _array(
-            context_raw["requested_capabilities"], "requested_capabilities"
-        )
+        capabilities = _array(context_raw["requested_capabilities"], "requested_capabilities")
         if not all(isinstance(item, str) for item in capabilities):
             raise ValueError("requested capabilities must be strings")
         capability_names = tuple(item for item in capabilities if isinstance(item, str))
@@ -635,9 +629,7 @@ class TutorCompletionHandoff:
     def __post_init__(self) -> None:
         if not isinstance(self.state, TutorCompletionHandoffState):
             raise TypeError("completion handoff state is invalid")
-        if not isinstance(self.course_id, CourseId) or not isinstance(
-            self.session_id, SessionId
-        ):
+        if not isinstance(self.course_id, CourseId) or not isinstance(self.session_id, SessionId):
             raise TypeError("completion handoff scope is invalid")
         _require_opaque(self.host_turn_id, "handoff host_turn_id")
         if type(self.generation) is not int or self.generation < 1:
@@ -749,9 +741,7 @@ class TutorCompletionHandoff:
             "action": self.action,
             "execution_context": _execution_context_to_json(self.execution_context),
             "completion_reference": (
-                None
-                if self.completion_reference is None
-                else self.completion_reference.to_json()
+                None if self.completion_reference is None else self.completion_reference.to_json()
             ),
         }
         if self.serialized_schema_version in {2, 3}:
@@ -778,9 +768,7 @@ class TutorCompletionHandoff:
             "action": self.action,
             "execution_context": _execution_context_to_json(self.execution_context),
             "completion_reference": (
-                None
-                if self.completion_reference is None
-                else self.completion_reference.to_json()
+                None if self.completion_reference is None else self.completion_reference.to_json()
             ),
             **(
                 {"agent_observations": self.agent_observations}
@@ -808,11 +796,22 @@ class TutorCompletionHandoff:
         raw = _canonical_object(data, "tutor completion handoff")
         schema_version = _integer(raw, "schema_version")
         expected = {
-            "schema_version", "state", "course_id", "session_id", "host_turn_id",
-            "generation", "observed_host_context_sequence", "context_fingerprint",
-            "retry_receipt", "capability_id", "capability_identity",
-            "manifest_fingerprint", "action", "execution_context",
-            "completion_reference", "record_fingerprint",
+            "schema_version",
+            "state",
+            "course_id",
+            "session_id",
+            "host_turn_id",
+            "generation",
+            "observed_host_context_sequence",
+            "context_fingerprint",
+            "retry_receipt",
+            "capability_id",
+            "capability_identity",
+            "manifest_fingerprint",
+            "action",
+            "execution_context",
+            "completion_reference",
+            "record_fingerprint",
         }
         if schema_version in {2, 3}:
             expected.add("agent_observations")
@@ -856,20 +855,18 @@ class TutorCompletionHandoff:
             tuple(
                 _object(item, "agent observation")
                 for item in _array(raw["agent_observations"], "agent_observations")
-            ) if schema_version in {2, 3} else (),
+            )
+            if schema_version in {2, 3}
+            else (),
             schema_version,
-            _string(raw, "replay_context_fingerprint")
-            if schema_version == 3
-            else None,
+            _string(raw, "replay_context_fingerprint") if schema_version == 3 else None,
         )
         if record.to_bytes() != data:
             raise ValueError("tutor completion handoff is not semantically canonical")
         return record
 
 
-def completion_handoff_key(
-    course_id: CourseId, session_id: SessionId, host_turn_id: str
-) -> str:
+def completion_handoff_key(course_id: CourseId, session_id: SessionId, host_turn_id: str) -> str:
     """Derive the collision-resistant namespaced slot for one host turn."""
 
     if not isinstance(course_id, CourseId) or not isinstance(session_id, SessionId):
@@ -1067,9 +1064,7 @@ class TutorHostRunner:
 
         return self._handoffs
 
-    async def verify_model_readiness(
-        self, course_id: CourseId, session_id: SessionId
-    ) -> None:
+    async def verify_model_readiness(self, course_id: CourseId, session_id: SessionId) -> None:
         """Exercise the exact decision schema without writing a learner turn.
 
         Settings uses this probe instead of a shallow provider ping: it builds
@@ -1128,9 +1123,7 @@ class TutorHostRunner:
         decisions = 0
         stale_refreshes = 0
         agent_observations = list(handoff.agent_observations) if handoff is not None else []
-        invoked_tool_actions = {
-            str(item["action_fingerprint"]) for item in agent_observations
-        }
+        invoked_tool_actions = {str(item["action_fingerprint"]) for item in agent_observations}
         while True:
             if _interrupted(interruption):
                 return _interrupted_result(selected, retry_receipt)
@@ -1138,9 +1131,7 @@ class TutorHostRunner:
                 return _budget()
             pending = None if selected is None else selected.descriptor
             try:
-                context = self._assemble(
-                    course_id, session_id, pending, interruption
-                )
+                context = self._assemble(course_id, session_id, pending, interruption)
             except Exception:
                 return (
                     _interrupted_result(selected, retry_receipt)
@@ -1156,9 +1147,7 @@ class TutorHostRunner:
                     context,
                     tutor_snapshot={
                         **context.tutor_snapshot,
-                        "agent_observations": tuple(
-                            agent_observations[-_MAX_AGENT_OBSERVATIONS:]
-                        ),
+                        "agent_observations": tuple(agent_observations[-_MAX_AGENT_OBSERVATIONS:]),
                     },
                 )
 
@@ -1183,9 +1172,7 @@ class TutorHostRunner:
                     handoff.retry_receipt.decision_generation,
                     handoff.retry_receipt.attempt + 1,
                 )
-                updated = replace(
-                    handoff, retry_receipt=retry_action, record_fingerprint=None
-                )
+                updated = replace(handoff, retry_receipt=retry_action, record_fingerprint=None)
                 if not self._replace_handoff(handoff, updated, interruption):
                     return _failed(retry_action)
                 handoff = updated
@@ -1202,9 +1189,7 @@ class TutorHostRunner:
                     return (
                         _interrupted_result(selected, retry_receipt)
                         if _interrupted(interruption)
-                        else _failed(
-                            failure_reason=getattr(error, "failure_reason", None)
-                        )
+                        else _failed(failure_reason=getattr(error, "failure_reason", None))
                     )
                 if _interrupted(interruption):
                     return _interrupted_result(selected, retry_receipt)
@@ -1214,9 +1199,7 @@ class TutorHostRunner:
             except (TypeError, ValueError):
                 return _failed()
             _record_executed_decision(decision)
-            if selected is not None and not isinstance(
-                decision, AnswerDialogueDecision
-            ):
+            if selected is not None and not isinstance(decision, AnswerDialogueDecision):
                 # A pending continuation can only be resolved through its
                 # advertised response schema.  Presentation/stop decisions
                 # must not silently abandon operational capability state.
@@ -1402,9 +1385,7 @@ class TutorHostRunner:
                     if _interrupted(interruption):
                         return _interrupted_result(selected, retry_action)
                     if error.code is CapabilityGatewayErrorCode.IN_PROGRESS:
-                        return TutorHostRunResult(
-                            TutorHostRunStatus.IN_PROGRESS, retry_action
-                        )
+                        return TutorHostRunResult(TutorHostRunStatus.IN_PROGRESS, retry_action)
                     return _failed(retry_action)
                 except Exception as error:
                     return (
@@ -1482,9 +1463,7 @@ class TutorHostRunner:
                     if _interrupted(interruption):
                         return _interrupted_result(selected, retry_action)
                     if error.code is CapabilityGatewayErrorCode.IN_PROGRESS:
-                        return TutorHostRunResult(
-                            TutorHostRunStatus.IN_PROGRESS, retry_action
-                        )
+                        return TutorHostRunResult(TutorHostRunStatus.IN_PROGRESS, retry_action)
                     return _failed(retry_action)
                 except Exception as error:
                     return _failed(retry_action, getattr(error, "failure_reason", None))
@@ -1591,20 +1570,14 @@ class TutorHostRunner:
                 completion_reference,
                 interruption,
             )
-            if (
-                completion_reference is not None
-                and (
-                    finalized is None
-                    or finalized.state is not TutorCompletionHandoffState.COMPLETED
-                )
+            if completion_reference is not None and (
+                finalized is None or finalized.state is not TutorCompletionHandoffState.COMPLETED
             ):
                 return _failed(retry_action)
             if finalized is not None and finalized.state is TutorCompletionHandoffState.COMPLETED:
                 completion_reference = finalized.completion_reference
                 retry_action = finalized.retry_receipt
-            if selected is not None and isinstance(
-                outcome, CompletedCapabilityOutcome
-            ):
+            if selected is not None and isinstance(outcome, CompletedCapabilityOutcome):
                 try:
                     self._delete(
                         course_id,
@@ -1814,9 +1787,7 @@ class TutorHostRunner:
     ) -> TutorHostContext | None:
         if _interrupted(interruption):
             return None
-        value = self._assembler.assemble(
-            course_id, session_id, pending_continuation=pending
-        )
+        value = self._assembler.assemble(course_id, session_id, pending_continuation=pending)
         if _interrupted(interruption):
             return None
         return value
@@ -1975,9 +1946,7 @@ class TutorHostRunner:
         if _interrupted(interruption):
             return False
         try:
-            existing = self._store.load(
-                course_id, session_id, fingerprint
-            )
+            existing = self._store.load(course_id, session_id, fingerprint)
         except Exception:
             return False
         if _interrupted(interruption):
@@ -2118,9 +2087,7 @@ def _pins_from_json(raw: JsonObject) -> VersionPins:
 def _dependency_from_json(value: JsonValue) -> ReadDependency:
     raw = _object(value, "read dependency")
     _exact(raw, {"kind", "id", "version"}, "read dependency")
-    return ReadDependency(
-        _string(raw, "kind"), _string(raw, "id"), _string(raw, "version")
-    )
+    return ReadDependency(_string(raw, "kind"), _string(raw, "id"), _string(raw, "version"))
 
 
 def _descriptor_from_json(raw: JsonObject) -> PendingContinuationDescriptor:
@@ -2235,15 +2202,11 @@ def _failed(
     receipt: HostRetryReceipt | None = None,
     failure_reason: str | None = None,
 ) -> TutorHostRunResult:
-    return TutorHostRunResult(
-        TutorHostRunStatus.FAILED, receipt, failure_reason=failure_reason
-    )
+    return TutorHostRunResult(TutorHostRunStatus.FAILED, receipt, failure_reason=failure_reason)
 
 
 def _budget(failure_reason: str | None = None) -> TutorHostRunResult:
-    return TutorHostRunResult(
-        TutorHostRunStatus.BUDGET_EXHAUSTED, failure_reason=failure_reason
-    )
+    return TutorHostRunResult(TutorHostRunStatus.BUDGET_EXHAUSTED, failure_reason=failure_reason)
 
 
 def _require_text(value: str, name: str, maximum: int) -> None:

@@ -174,3 +174,23 @@ def test_failed_capability_settles_a_verification_activity(tmp_path: Path) -> No
     assert len(verification) == 1
     assert verification[0]["status"] == "failed"
     assert verification[0]["error_code"] == "capability_failed"
+
+
+def test_normal_failed_turn_receipt_settles_tool_chips_as_failed(tmp_path: Path) -> None:
+    root, adapters, _model = _repository(
+        tmp_path,
+        ({"kind": "not-a-real-decision"},),
+    )
+    app = RepositoryUiApplication(
+        root, "cardine-course", "cardine-session", model_adapters=adapters
+    )
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+
+    receipt = app.post(
+        "/api/v1/session/turns",
+        _command("activity-normal-failed-turn", sequence, "biochimica"),
+    )
+
+    assert receipt["status"] == "failed"
+    activity = app.get("/api/v1/turns/activity-normal-failed-turn/activity")
+    assert activity["state"] == "failed"

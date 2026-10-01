@@ -40,7 +40,11 @@ from cardine.documents import (
     admit_pdf,
     document_import_policy,
 )
-from cardine.hosts import PendingContinuationDescriptor, TutorContinuationRecord
+from cardine.hosts import (
+    PendingContinuationDescriptor,
+    TutorContinuationRecord,
+    TutorHostRunStatus,
+)
 from cardine.integrations.study_agent import (
     CardineInternalError,
     CardineRuntimeConfig,
@@ -173,6 +177,19 @@ MAX_WORKSPACE_GOAL_CHARS = 240
 MAX_SOURCE_UPLOAD_BYTES = 196_608
 MAX_SOURCE_FILENAME_CHARS = 240
 MAX_SOURCE_TITLE_CHARS = 240
+
+_SUCCESSFUL_TURN_STATUSES = frozenset(
+    {
+        TutorHostRunStatus.COMPLETED,
+        TutorHostRunStatus.SUSPENDED,
+        TutorHostRunStatus.NEEDS_LEARNER_INPUT,
+        TutorHostRunStatus.ASSISTANT_MESSAGE,
+    }
+)
+
+
+def _turn_activity_status(status: TutorHostRunStatus) -> str:
+    return "done" if status in _SUCCESSFUL_TURN_STATUSES else "failed"
 
 _REPOSITORY_LOCKS_GUARD = Lock()
 _REPOSITORY_MUTATION_LOCKS: dict[Path, Lock] = {}
@@ -356,9 +373,9 @@ class RepositoryUiApplication(UiApplicationPort):
             "error_code": None,
         }
         try:
-            with self._lock, self._open() as opened_repository:
+            with self._lock, self._open() as local_repository:
                 self._indexing_view = self._indexing_record_payload(
-                    opened_repository, opened_repository.indexing_status()
+                    local_repository, local_repository.indexing_status()
                 )
         except CardineSourceContentUnavailableError:
             # A missing canonical blob is surfaced by the existing materials
@@ -700,7 +717,7 @@ class RepositoryUiApplication(UiApplicationPort):
             if payload.get("lesson_pin") is not None
             else None
         )
-        activity_status = "done"
+        activity_status = "failed"
         with self._turn_activity.capture(request_id), self._turn_traces.capture(
             request_id, expected_sequence
         ) as trace_id, self._lock:
@@ -732,6 +749,7 @@ class RepositoryUiApplication(UiApplicationPort):
                         if continuation_fingerprint is None
                         else application.resume_continuation(continuation_fingerprint, turn)
                     )
+                    activity_status = _turn_activity_status(result.status)
                     self._turn_traces.record_outcome(trace_id, result.status.value)
                     repository.settle_study_memory(self._course_id, self._session_id)
                     projection, refreshed = self._captured_state(repository)
@@ -766,7 +784,9 @@ class RepositoryUiApplication(UiApplicationPort):
                         and item.status is ArtifactRevisionStatus.PROPOSED
                         and item.kind is StudyArtifactKind.FLASHCARD
                     )
-                    settled_activity = self._turn_activity.settle(request_id, status="done")
+                    settled_activity = self._turn_activity.settle(
+                        request_id, status=activity_status
+                    )
                     timeline = list(cast(Sequence[JsonObject], session.get("timeline", ())))
                     for index in range(len(timeline) - 1, -1, -1):
                         if timeline[index].get("role") in {"assistant", "tutor"}:
@@ -3347,6 +3367,8 @@ def _workspace_session(item: object, *, selected: bool) -> JsonObject:
 def _model_check_message(reason: str) -> str:
     return {
         "invalid_credential": "La chiave API non è accettata dal provider.",
+        "permission_denied": "La chiave API non ha i permessi richiesti dal provider.",
+        "schema_incompatible": "Il provider non supporta lo schema strutturato richiesto.",
         "rate_limited": "Il provider ha limitato le richieste. Riprova tra poco.",
         "timeout": "Il provider non ha risposto entro il tempo previsto.",
         "model_unavailable": "Il modello configurato non è disponibile per questa chiave.",
@@ -3363,6 +3385,8 @@ def _model_check_reason(failure_reason: object) -> str:
         return "provider_unavailable"
     return {
         ModelErrorCode.AUTHENTICATION.value: "invalid_credential",
+        ModelErrorCode.AUTHORIZATION.value: "permission_denied",
+        ModelErrorCode.SCHEMA_INCOMPATIBLE.value: "schema_incompatible",
         ModelErrorCode.RATE_LIMITED.value: "rate_limited",
         ModelErrorCode.TIMEOUT.value: "timeout",
         ModelErrorCode.MODEL_UNAVAILABLE.value: "model_unavailable",

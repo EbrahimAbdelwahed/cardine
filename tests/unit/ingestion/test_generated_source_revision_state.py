@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, datetime
 from hashlib import sha256
-from typing import cast
+from typing import TypedDict, cast
 
 import pytest
 
@@ -279,6 +279,12 @@ def test_generated_document_provenance_codec_is_exact_and_closed() -> None:
         generated_document_provenance_from_json(cast(JsonObject, forged))
 
 
+class _AdmissionMutation(TypedDict, total=False):
+    causation_id: EventId | None
+    session_id: SessionId | None
+    actor: Actor
+
+
 @pytest.mark.parametrize(
     "mutation",
     ("wrong_origin", "wrong_structure", "missing_provenance", "inline_markdown"),
@@ -318,15 +324,15 @@ def test_generated_v2_rejects_corrupt_blob_bytes() -> None:
     ),
 )
 def test_generated_v2_requires_service_unscoped_admission_event(
-    mutation: dict[str, object],
+    mutation: _AdmissionMutation,
 ) -> None:
     event, blobs = _v2_event()
     if "causation_id" in mutation:
-        forged = replace(event, causation_id=cast(EventId | None, mutation["causation_id"]))
+        forged = replace(event, causation_id=mutation["causation_id"])
     elif "session_id" in mutation:
         forged = replace(event, session_id=cast(SessionId, mutation["session_id"]))
     else:
-        forged = replace(event, actor=cast(Actor, mutation["actor"]))
+        forged = replace(event, actor=mutation["actor"])
 
     with pytest.raises(ValueError, match=r"session|caus|caused|SERVICE"):
         decode_source_revision_event(forged, blobs.__getitem__)
