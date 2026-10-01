@@ -43,6 +43,8 @@ from study_agent.ingestion import TextIngestionError, TextIngestionResult
 from study_agent.retrieval import SourceRevisionRecord
 from study_agent.state import canonical_json_bytes
 
+MAX_EXTRACTION_MANIFEST_BYTES = 2 * 1024 * 1024
+
 
 class TranscriptTooLargeError(ValueError):
     """Input cannot enter the bounded single-lesson pipeline."""
@@ -106,6 +108,15 @@ class MaterialProduct:
             if old == payload or store.compare_and_set(job_id, old, payload):
                 return
         raise ValueError("Publication checkpoint is busy; retry.")
+
+    def _mark_stale(self, job_id: str, state: MaterialGenerationState) -> None:
+        stale = replace(
+            state,
+            stage=MaterialGenerationStage.STALE,
+            error_code=MaterialGenerationErrorCode.STALE_INPUT,
+            error_message="Pinned source was retired or superseded before publication.",
+        )
+        self.states.compare_and_set(job_id, state.to_bytes(), stale.to_bytes())
 
     def jobs(self) -> list[JsonObject]:
         try:
@@ -323,11 +334,12 @@ class MaterialProduct:
             load_projection=self.repo.events.projection,
         )
         pending = False
+        source_stale = False
         for item in sorted(
             cast(tuple[JsonObject, ...], view["outputs"]),
             key=lambda output: output["variant"] != "complete",
         ):
-            if item["status"] != "accepted":
+            if item["status"] != "accepted" or item["publication"] == "published":
                 continue
             for attempt in range(4):
                 # Bind parent/root validation to the same canonical sequence
@@ -341,6 +353,8 @@ class MaterialProduct:
                         state.request.pin.revision_id,
                     )
                 except ValueError:
+                    self._mark_stale(job_id, state)
+                    source_stale = True
                     break
                 try:
                     materializer.materialize(
@@ -357,7 +371,7 @@ class MaterialProduct:
                     # not permission to publish or invent acceptance.
                     break
         self._set_publication_pending(job_id, pending)
-        if any(
+        if not source_stale and state.stage is not MaterialGenerationStage.STALE and any(
             item["status"] == "accepted" for item in cast(tuple[JsonObject, ...], view["outputs"])
         ):
             self.repo.queue_indexing()
@@ -652,6 +666,24 @@ class MaterialProduct:
                 original, state["extension"], recovered, save, self._audio_preflight
             )
             self._audio_preflight()
+            manifest_bytes = canonical_json_bytes(manifest)
+            if len(manifest_bytes) > MAX_EXTRACTION_MANIFEST_BYTES:
+                manifest_blob = self.repo.blobs.put(manifest_bytes)
+                state.update(
+                    stage="failed_terminal",
+                    error=(
+                        "Manifesto della trascrizione troppo grande; "
+                        "carica una registrazione più breve."
+                    ),
+                    manifest={
+                        "sha256": manifest_blob.checksum_sha256,
+                        "bytes": manifest_blob.byte_length,
+                    },
+                    lease_until=0,
+                    lease_token=None,
+                )
+                store.compare_and_set(job_id, raw, canonical_json_bytes(freeze_object(state)))
+                return
             admitted = self.admit_extraction(
                 original=original,
                 text=text,

@@ -10,6 +10,7 @@ archive and must not be treated as Cardine's current state.
 ## Start here
 
 - [Source, PDF and audio study notes](logs/2026-09-30--cardine--source-study-notes--log.md) — approved source-page generation, Groq Turbo transcription, editable PDF lesson ranges, review and dependency-aware publication; based on PR #5.
+- [PR #9 current review repairs](handoffs/2026-10-01--cardine--pr9-current-review-repairs--handoff.md) — stale accepted material publication and oversized audio manifest handling, with scoped verification and submission status.
 
 - [Flashcard generation repair publication](logs/2026-09-29--cardine--flashcard-generation-publication--log.md) — the owner authorized publishing the generation repair to PR #5; empty-array wire schema, truthful failure and new-turn retry regressions verified offline; preview update and live generation remain pending.
 

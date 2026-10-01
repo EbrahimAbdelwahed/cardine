@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
 from typing import cast
@@ -92,6 +93,76 @@ def test_product_requires_explicit_decisions_and_publishes_parent_first(tmp_path
         assert all(
             item["publication"] == "published"
             for item in cast(tuple[JsonObject, ...], product.status(job_id)["outputs"])
+        )
+
+
+def test_superseded_source_keeps_human_decision_and_stales_unpublished_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from study_agent.domain import SourceId
+
+    root = tmp_path / "repo"
+    initialize_local_repository(root, _config())
+    context = replace(_service_context(), principal_kind=PrincipalKind.HUMAN)
+    with LocalRepository.open(
+        root, model_adapters=_registry(), environment={"OPENAI_API_KEY": "fixture"}
+    ) as repository:
+        admitted = _prepare(repository, consent=True)
+        product = MaterialProduct(repository, context)
+        job_id = str(
+            product.start(
+                str(admitted.source.source_id),
+                str(admitted.source.revision_id),
+                "stale-before-publish",
+            )["job_id"]
+        )
+        product.advance(job_id)
+        view = product.status(job_id)
+        complete = next(
+            item
+            for item in cast(tuple[JsonObject, ...], view["outputs"])
+            if item["variant"] == "complete"
+        )
+        publish = product.publish
+        with monkeypatch.context() as defer_publication:
+            defer_publication.setattr(product, "publish", lambda _job_id: None)
+            accepted = product.decide(
+                job_id,
+                str(complete["revision_id"]),
+                "accept",
+                int(cast(int, view["high_water_sequence"])),
+                "accept-before-source-change",
+            )
+        assert next(
+            item
+            for item in cast(tuple[JsonObject, ...], accepted["outputs"])
+            if item["revision_id"] == complete["revision_id"]
+        )["status"] == "accepted"
+        repository.for_course(context.course_id).ingestion.ingest(
+            filename="replacement.md",
+            content=b"A newer canonical source revision.",
+            source_id=SourceId(str(admitted.source.source_id)),
+            title="Replacement",
+            trust_level=100,
+            source_role="lesson",
+            context=context,
+        )
+        publish(job_id)
+        result = product.status(job_id)
+
+        accepted = next(
+            item
+            for item in cast(tuple[JsonObject, ...], result["outputs"])
+            if item["revision_id"] == complete["revision_id"]
+        )
+        assert result["stage"] == "stale"
+        assert accepted["status"] == "accepted"
+        assert accepted["publication"] == "approved_blocked"
+        assert accepted["published_source_id"] is None
+        assert not product._publication_pending(job_id)
+        assert all(
+            item.source.content_origin is not ContentOrigin.GENERATED
+            for item in repository.for_course(context.course_id).content.catalog()
         )
 
 
@@ -554,6 +625,82 @@ def test_oversized_audio_stops_before_admission_and_is_not_retried(tmp_path: Pat
         assert len(repository.for_course(context.course_id).content.catalog()) == 1
     with LocalRepository.open(root) as repository:
         product = MaterialProduct(repository, context)
+        product.advance_audio(job_id, transcriber)
+        assert transcriber.calls == 1
+        assert product.audio_status(job_id)["stage"] == "failed_terminal"
+
+
+def test_oversized_audio_manifest_is_terminal_and_retains_provenance_and_chunks(
+    tmp_path: Path,
+) -> None:
+    from collections.abc import Callable
+    from hashlib import sha256
+
+    from cardine.adapters.audio.groq import GroqAudioTranscriber
+    from study_agent.adapters.sqlite.namespaced_run_store import NamespacedSQLiteRunStore
+    from study_agent.domain import BlobId, BlobRef
+
+    class LongManifestAudio(GroqAudioTranscriber):
+        calls = 0
+
+        def __init__(self) -> None:
+            super().__init__("fixture")
+
+        def transcribe(
+            self,
+            data: bytes,
+            extension: str,
+            recovered: list[JsonObject],
+            save: Callable[[list[JsonObject]], None],
+            preflight: Callable[[], None],
+        ) -> tuple[str, JsonObject]:
+            self.calls += 1
+            preflight()
+            chunk = {"text": "Lecture 12 is important.", "spans": ()}
+            recovered.append(chunk)
+            save(recovered)
+            return "Lecture 12 is important.", {
+                "model": "whisper-large-v3-turbo",
+                "duration_seconds": 600,
+                "chunk_count": 1,
+                "spans": tuple(
+                    {"start_ms": index, "end_ms": index + 1}
+                    for index in range(100_000)
+                ),
+            }
+
+    root = tmp_path / "repo"
+    initialize_local_repository(root, _config())
+    context = replace(_service_context(), principal_kind=PrincipalKind.HUMAN)
+    transcriber = LongManifestAudio()
+    with LocalRepository.open(
+        root, model_adapters=_registry(), environment={"OPENAI_API_KEY": "fixture"}
+    ) as repository:
+        _prepare(repository, consent=True)
+        product = MaterialProduct(repository, context)
+        job_id = str(
+            product.start_audio(b"recording", "lecture.wav", "Audio", "long-manifest")[
+                "job_id"
+            ]
+        )
+        product.advance_audio(job_id, transcriber)
+
+        status = product.audio_status(job_id)
+        raw_state = NamespacedSQLiteRunStore(repository.runs, "audio-generation").load(job_id)
+        stored = json.loads(raw_state)
+        manifest_ref = BlobRef(
+            BlobId("sha256:" + stored["manifest"]["sha256"]),
+            stored["manifest"]["sha256"],
+            stored["manifest"]["bytes"],
+        )
+        manifest_bytes = repository.blobs.get(manifest_ref)
+        assert len(manifest_bytes) > 2 * 1024 * 1024
+        assert sha256(manifest_bytes).hexdigest() == stored["manifest"]["sha256"]
+        assert len(stored["chunks"]) == 1
+        assert status["stage"] == "failed_terminal"
+        assert status["transcribed_chunks"] == 1
+        assert not status["outputs"]
+
         product.advance_audio(job_id, transcriber)
         assert transcriber.calls == 1
         assert product.audio_status(job_id)["stage"] == "failed_terminal"
