@@ -194,7 +194,12 @@ class MaterialGenerationService:
                 provider_calls += 1
                 continue
             if state.stage is MaterialGenerationStage.COMPLETE_SEGMENT:
-                if len(state.segments) < len(self._read_boundaries(state).segments):
+                try:
+                    boundaries = self._read_boundaries(state)
+                except (LookupError, OSError, ValueError) as error:
+                    state, raw = self._terminal(raw, state, error)
+                    break
+                if len(state.segments) < len(boundaries.segments):
                     before_raw = raw
                     state, raw = await self._segment(
                         state, raw, service_context, len(state.segments)
@@ -235,7 +240,10 @@ class MaterialGenerationService:
     async def _run_boundaries(
         self, state: MaterialGenerationState, raw: bytes, context: ExecutionContext
     ) -> tuple[MaterialGenerationState, bytes]:
-        manifest = self._manifest(state)
+        try:
+            manifest = self._manifest(state)
+        except (LookupError, OSError, ValueError) as error:
+            return self._terminal(raw, state, error)
         if state.unit_manifest is None:
             raise MaterialGenerationConflict("unit manifest checkpoint is missing")
         claimed, claimed_raw = self._claim(state, raw, MaterialGenerationStage.BOUNDARIES)
@@ -296,8 +304,11 @@ class MaterialGenerationService:
     async def _segment(
         self, state: MaterialGenerationState, raw: bytes, context: ExecutionContext, position: int
     ) -> tuple[MaterialGenerationState, bytes]:
-        manifest = self._manifest(state)
-        boundaries = self._read_boundaries(state)
+        try:
+            manifest = self._manifest(state)
+            boundaries = self._read_boundaries(state)
+        except (LookupError, OSError, ValueError) as error:
+            return self._terminal(raw, state, error)
         if state.unit_manifest is None or state.boundaries is None:
             raise MaterialGenerationConflict("segment ancestry checkpoints are missing")
         boundary = boundaries.segments[position]
@@ -375,7 +386,9 @@ class MaterialGenerationService:
             boundaries = self._read_boundaries(claimed)
             if claimed.unit_manifest is None or claimed.boundaries is None or not claimed.segments:
                 raise MaterialGenerationConflict("merge ancestry checkpoints are incomplete")
-            segments = tuple(self._blobs.get(item).decode("utf-8") for item in claimed.segments)
+            segments = tuple(
+                self._checkpoint_bytes(item).decode("utf-8") for item in claimed.segments
+            )
             model_request = complete_merge_request(
                 segments, title=claimed.request.pin.title, pins=claimed.request.pins
             )
@@ -431,7 +444,13 @@ class MaterialGenerationService:
                 error,
                 code=MaterialGenerationErrorCode.CONSENT_REQUIRED,
             )
-        except (MaterialValidationError, UnicodeDecodeError, ValueError) as error:
+        except (
+            LookupError,
+            OSError,
+            MaterialValidationError,
+            UnicodeDecodeError,
+            ValueError,
+        ) as error:
             return self._terminal(claimed_raw, claimed, error)
 
     async def _study(
@@ -442,7 +461,7 @@ class MaterialGenerationService:
             return state, raw
         try:
             self._preflight(state.request.pin, context, MaterialGenerationStage.STUDY.value)
-            complete = self._blobs.get(claimed.complete).decode("utf-8")
+            complete = self._checkpoint_bytes(claimed.complete).decode("utf-8")
             model_request = study_from_complete_request(
                 complete, title=claimed.request.pin.title, pins=claimed.request.pins
             )
@@ -489,7 +508,13 @@ class MaterialGenerationService:
                 error,
                 code=MaterialGenerationErrorCode.CONSENT_REQUIRED,
             )
-        except (MaterialValidationError, UnicodeDecodeError, ValueError) as error:
+        except (
+            LookupError,
+            OSError,
+            MaterialValidationError,
+            UnicodeDecodeError,
+            ValueError,
+        ) as error:
             return self._terminal(claimed_raw, claimed, error)
 
     def _proposal(
@@ -555,12 +580,18 @@ class MaterialGenerationService:
     def _manifest(self, state: MaterialGenerationState) -> UnitManifest:
         if state.unit_manifest is None:
             raise MaterialGenerationConflict("unit manifest checkpoint is missing")
-        return UnitManifest.from_bytes(self._blobs.get(state.unit_manifest))
+        return UnitManifest.from_bytes(self._checkpoint_bytes(state.unit_manifest))
+
+    def _checkpoint_bytes(self, ref: BlobRef) -> bytes:
+        data = self._blobs.get(ref)
+        if len(data) != ref.byte_length or sha256(data).hexdigest() != ref.checksum_sha256:
+            raise ValueError("persisted generation checkpoint failed integrity validation")
+        return data
 
     def _read_boundaries(self, state: MaterialGenerationState) -> SegmentBoundaries:
         if state.boundaries is None:
             raise MaterialGenerationConflict("segment boundary checkpoint is missing")
-        return SegmentBoundaries.from_bytes(self._blobs.get(state.boundaries))
+        return SegmentBoundaries.from_bytes(self._checkpoint_bytes(state.boundaries))
 
     def _text(self, state: MaterialGenerationState) -> str:
         try:

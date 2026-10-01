@@ -139,61 +139,69 @@ class FlashcardProfileRoutingTutorDecisionPort(TutorDecisionPort):
             return await self._delegate.decide(context, interruption)
         if not any(item.id == _PROPOSE_FLASHCARDS for item in context.advertised_capabilities):
             return await self._delegate.decide(context, interruption)
-
-        if requires_study_memory_routing(learner_text):
-            decision = await self._delegate.decide(context, interruption)
-            if isinstance(decision, InvokeToolDecision):
-                return decision
-            if (
-                isinstance(decision, StartCapabilityDecision)
-                and decision.capability_id == _PROPOSE_FLASHCARDS
-            ):
-                return decision
-
+        history_scoped = _purely_history_scoped(learner_text)
         observed_history = _observed_conversation_history(context)
-        history_scoped = _HISTORY_SCOPED.search(learner_text) is not None
-        if history_scoped and not observed_history:
-            if _omitted_conversation_entries(context) > 0 and _has_conversation_read_tool(context):
-                return InvokeToolDecision(
-                    "conversation.read",
-                    {
-                        "cursor": _oldest_included_conversation_sequence(context),
-                        "direction": "backward",
-                        "limit": 12,
-                    },
+        if (
+            history_scoped
+            and not observed_history
+            and _omitted_conversation_entries(context) > 0
+            and _has_conversation_read_tool(context)
+        ):
+            return InvokeToolDecision(
+                "conversation.read",
+                {
+                    "cursor": _oldest_included_conversation_sequence(context),
+                    "direction": "backward",
+                    "limit": 12,
+                },
+            )
+        if history_scoped or observed_history or requires_study_memory_routing(learner_text):
+            decision = await self._delegate.decide(context, interruption)
+            if isinstance(decision, InvokeToolDecision):
+                return decision
+            if (
+                isinstance(decision, StartCapabilityDecision)
+                and decision.capability_id == _PROPOSE_FLASHCARDS
+            ):
+                return (
+                    _bounded_memory_flashcard_decision(decision, context)
+                    if history_scoped
+                    else decision
                 )
-            decision = await self._delegate.decide(context, interruption)
-            if isinstance(decision, InvokeToolDecision):
-                return decision
-            if (
-                isinstance(decision, StartCapabilityDecision)
-                and decision.capability_id == _PROPOSE_FLASHCARDS
-            ):
-                return decision
-            return AskLearnerDecision(
-                "Quali argomenti della conversazione devo trasformare in flashcard?"
-            )
-        if observed_history:
-            decision = await self._delegate.decide(context, interruption)
-            if isinstance(decision, InvokeToolDecision):
-                return decision
-            if (
-                isinstance(decision, StartCapabilityDecision)
-                and decision.capability_id == _PROPOSE_FLASHCARDS
-            ):
-                return _bounded_memory_flashcard_decision(decision, context)
-            return AskLearnerDecision(
-                "Quali argomenti della conversazione devo trasformare in flashcard?"
-            )
-
+            if history_scoped or observed_history:
+                return AskLearnerDecision(
+                    "Quali argomenti della conversazione vuoi usare per le flashcard?"
+                )
         route = select_flashcard_profile(learner_text)
         if route.kind is FlashcardProfileRouteKind.CLARIFICATION:
             return AskLearnerDecision(route.clarification or "Quale profilo preferisci?")
-        return StartCapabilityDecision(
-            _PROPOSE_FLASHCARDS,
-            _flashcard_inputs(learner_text),
-            None,
-        )
+        return StartCapabilityDecision(_PROPOSE_FLASHCARDS, _flashcard_inputs(learner_text), None)
+
+
+def _purely_history_scoped(learner_text: str) -> bool:
+    if _HISTORY_SCOPED.search(learner_text) is None:
+        return False
+    remainder = _HISTORY_SCOPED.sub(" ", _FLASHCARD_REQUEST.sub(" ", learner_text))
+    generic = _MEMORY_TOPIC_STOPWORDS | {
+        "solo",
+        "only",
+        "argomenti",
+        "topics",
+        "quanto",
+        "prima",
+        "using",
+        "usando",
+        "già",
+        "studiato",
+        "visto",
+        "covered",
+        "studied",
+    }
+    return not any(
+        token.casefold() not in generic
+        for token in re.findall(r"[\wÀ-ÿ-]+", remainder)
+        if len(token) >= 3
+    )
 
 
 def _is_flashcard_generation_request(learner_text: str) -> bool:
@@ -313,8 +321,7 @@ def _validated_conversation_entries(
     for observation in observations:
         if (
             not isinstance(observation, Mapping)
-            or observation.get("tool_name")
-            not in {"conversation.search", "conversation.read"}
+            or observation.get("tool_name") not in {"conversation.search", "conversation.read"}
             or observation.get("status") != "succeeded"
         ):
             continue
@@ -345,9 +352,7 @@ def _validated_conversation_entries(
                 or len(excerpt) > 700
             ):
                 break
-            validated.append(
-                {"role": role, "course_sequence": sequence, "excerpt": excerpt}
-            )
+            validated.append({"role": role, "course_sequence": sequence, "excerpt": excerpt})
         else:
             entries.extend(validated)
     return tuple(entries[:24])
@@ -367,9 +372,7 @@ def _history_topic_terms(entries: tuple[Mapping[str, object], ...]) -> tuple[str
                 and not normalized.isdecimal()
             ):
                 terms[normalized] = terms.get(normalized, 0) + 1
-    return tuple(
-        sorted(terms, key=lambda term: (-terms[term], term))[:6]
-    )
+    return tuple(sorted(terms, key=lambda term: (-terms[term], term))[:6])
 
 
 __all__ = ["FlashcardProfileRoutingTutorDecisionPort"]

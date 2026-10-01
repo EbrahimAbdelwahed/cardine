@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 
 import pytest
 
 from cardine.hosts import (
     AdvertisedCapability,
+    AskLearnerDecision,
     AssistantMessageDecision,
     InvokeToolDecision,
     StartCapabilityDecision,
@@ -202,18 +204,14 @@ def test_broad_history_request_reads_before_the_oldest_included_turn() -> None:
                 "omitted_entries": 8,
                 "through_sequence": 33,
             },
-            "harness_tools": (
-                {"name": "conversation.read", "input_schema": {}},
-            ),
+            "harness_tools": ({"name": "conversation.read", "input_schema": {}},),
         },
         context.learner_evidence,
         context.advertised_capabilities,
     )
 
     decision = asyncio.run(
-        FlashcardProfileRoutingTutorDecisionPort(_PromisingDecisionPort()).decide(
-            context, _Token()
-        )
+        FlashcardProfileRoutingTutorDecisionPort(_PromisingDecisionPort()).decide(context, _Token())
     )
 
     assert decision == InvokeToolDecision(
@@ -255,9 +253,7 @@ def test_memory_scoped_flashcard_wrapper_preserves_progress_message() -> None:
     )
 
     decision = asyncio.run(
-        FlashcardProfileRoutingTutorDecisionPort(_StartingDecisionPort()).decide(
-            context, _Token()
-        )
+        FlashcardProfileRoutingTutorDecisionPort(_StartingDecisionPort()).decide(context, _Token())
     )
 
     assert isinstance(decision, StartCapabilityDecision)
@@ -299,9 +295,55 @@ def test_memory_scoped_flashcards_fail_closed_on_unbound_history() -> None:
     )
 
     decision = asyncio.run(
-        FlashcardProfileRoutingTutorDecisionPort(_StartingDecisionPort()).decide(
-            context, _Token()
-        )
+        FlashcardProfileRoutingTutorDecisionPort(_StartingDecisionPort()).decide(context, _Token())
     )
 
     assert not isinstance(decision, StartCapabilityDecision)
+
+
+def test_history_only_start_requires_validated_observation() -> None:
+    decision = asyncio.run(
+        FlashcardProfileRoutingTutorDecisionPort(_StartingDecisionPort()).decide(
+            _context("Crea flashcard su quello che abbiamo discusso finora"), _Token()
+        )
+    )
+    assert isinstance(decision, AskLearnerDecision)
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Crea flashcard sulla meiosi usando anche quanto discusso prima",
+        "Crea flashcard sulla meiosi e su quello che abbiamo discusso finora",
+    ],
+)
+def test_auxiliary_history_preserves_explicit_topic(prompt: str) -> None:
+    base = _context(prompt)
+    context = replace(
+        base,
+        tutor_snapshot={
+            **base.tutor_snapshot,
+            "agent_observations": (
+                {
+                    "tool_name": "conversation.read",
+                    "status": "succeeded",
+                    "result": {
+                        "through_sequence": 1,
+                        "entries": (
+                            {
+                                "role": "learner",
+                                "course_sequence": 1,
+                                "excerpt": "La glicolisi produce energia.",
+                            },
+                        ),
+                    },
+                },
+            ),
+        },
+    )
+    decision = asyncio.run(
+        FlashcardProfileRoutingTutorDecisionPort(_StartingDecisionPort()).decide(context, _Token())
+    )
+    assert isinstance(decision, StartCapabilityDecision)
+    assert decision.inputs["query"] == "old"
+    assert decision.inputs["scope"] == "old"
