@@ -5,6 +5,7 @@ from collections.abc import Mapping
 
 from cardine.hosts import (
     AdvertisedCapability,
+    AskLearnerDecision,
     AssistantMessageDecision,
     InvokeToolDecision,
     StartCapabilityDecision,
@@ -148,7 +149,7 @@ def test_answered_clarification_enriches_the_single_model_call() -> None:
     assert resolution["current_answer"] == "negli istoni"
 
 
-def test_history_scoped_flashcards_with_complete_window_use_one_model_call() -> None:
+def test_history_scoped_start_without_validated_read_requests_concrete_topic() -> None:
     expected = StartCapabilityDecision(
         "propose_flashcards",
         {
@@ -168,7 +169,7 @@ def test_history_scoped_flashcards_with_complete_window_use_one_model_call() -> 
         )
     )
 
-    assert decision == expected
+    assert isinstance(decision, AskLearnerDecision)
     assert delegate.calls == 1
 
 
