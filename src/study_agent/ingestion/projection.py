@@ -9,7 +9,7 @@ from typing import cast
 from study_agent.domain._validation import JsonObject, JsonValue
 from study_agent.domain.artifact import ArtifactRevisionStatus, LessonMaterialVariant
 from study_agent.domain.events import DomainEvent
-from study_agent.domain.identifiers import BlobId, SubstrateId
+from study_agent.domain.identifiers import BlobId, SourceId, SubstrateId
 from study_agent.domain.provenance import (
     ContentOrigin,
     DocumentConversionProvenance,
@@ -419,6 +419,11 @@ def validate_generated_source_admission(
         raise ValueError("generated source artifact batch is not generated")
     if raw_batch.get("run_id") != str(provenance.material_run_id):
         raise ValueError("generated source batch run does not match")
+    _validate_root_lifetime_since_proposal(
+        state,
+        provenance.root_source_id,
+        raw_batch,
+    )
     causation = str(provenance.human_decision_event_id)
     command = commands.get(causation)
     if not isinstance(command, Mapping) or command.get("result_id") != revision_id:
@@ -553,6 +558,53 @@ def validate_generated_source_admission(
                     found_projected_complete = True
         if not found_projected_complete:
             raise ValueError("study material requires a prior projected complete source")
+
+
+def _validate_root_lifetime_since_proposal(
+    state: JsonObject,
+    root_source_id: SourceId,
+    batch: Mapping[str, JsonValue],
+) -> None:
+    """Reject a run if its root was retired after its proposal was recorded."""
+
+    lifetimes = _mapping(state.get("source_lifetime", {}), "source lifetime")
+    raw_lifetime = lifetimes.get(str(root_source_id))
+    if raw_lifetime is None:
+        return
+    lifetime = _mapping(raw_lifetime, "root source lifetime")
+    status = lifetime.get("status")
+    if status == "retired":
+        raise ValueError("generated material root source is retired")
+    if status != "restored":
+        raise ValueError("root source lifetime status is corrupt")
+
+    requests = _mapping(state.get("source_lifetime_requests", {}), "source lifetime requests")
+    retired_prefix = f"retired:{root_source_id}:"
+    has_retirement = any(
+        isinstance(intent, str) and intent.startswith(retired_prefix)
+        for intent in requests.values()
+    )
+    if not has_retirement:
+        raise ValueError("restored root source has no canonical retirement history")
+
+    recorded_at = batch.get("recorded_at")
+    restored_at = lifetime.get("occurred_at")
+    if not isinstance(recorded_at, str) or not isinstance(restored_at, str):
+        raise ValueError("root source lifetime chronology is corrupt")
+    try:
+        proposal_time = datetime.fromisoformat(recorded_at.replace("Z", "+00:00"))
+        restore_time = datetime.fromisoformat(restored_at.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValueError("root source lifetime chronology is corrupt") from error
+    if (
+        proposal_time.tzinfo is None
+        or proposal_time.utcoffset() is None
+        or restore_time.tzinfo is None
+        or restore_time.utcoffset() is None
+    ):
+        raise ValueError("root source lifetime chronology is not timezone-aware")
+    if restore_time > proposal_time:
+        raise ValueError("generated material root was restored after its proposal")
 
 
 def reduce_generated_source_revision(
