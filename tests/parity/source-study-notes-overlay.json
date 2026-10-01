@@ -20,7 +20,7 @@
     },
     {
       "path": "src/cardine/demo/browser.js",
-      "sha256": "5392c67f47d7de24f3b6845d3dcf3e5505cbf65e7ecdbb6e4abb4536bfb4b5e7"
+      "sha256": "83db1ace3b6419bc34f8a69a4d63fd115d9e1603d686f918b3a460800ddbb78a"
     },
     {
       "path": "src/cardine/demo/browser.py",
@@ -56,7 +56,7 @@
     },
     {
       "path": "src/study_agent/ingestion/projection.py",
-      "sha256": "8834426b657c344c1fb229a82e41d38c0799a45cf4bdfa3fc7fd50220b087efb"
+      "sha256": "df71701b96054f0d64ea79ba93423f4be407575a5620c2c341a08d853efc999d"
     },
     {
       "path": "src/study_agent/ingestion/service.py",
