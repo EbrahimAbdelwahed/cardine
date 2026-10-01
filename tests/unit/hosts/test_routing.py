@@ -12,6 +12,7 @@ from cardine.hosts.contracts import (
     AdvertisedCapability,
     AnswerDialogueDecision,
     AssistantMessageDecision,
+    InvokeToolDecision,
     PendingContinuationDescriptor,
     StartCapabilityDecision,
     TutorDecision,
@@ -158,6 +159,7 @@ def context(
     *,
     capabilities: tuple[AdvertisedCapability, ...] = (capability(),),
     pending_schema: JsonObject | None = None,
+    tools: tuple[JsonObject, ...] = (),
 ) -> TutorHostContext:
     return TutorHostContext(
         "course",
@@ -170,7 +172,7 @@ def context(
                 {"kind": "assistant", "content": "PRIVATE SOURCE TEXT"},
                 {"kind": "learner", "content": "Review valves"},
             ),
-            "harness_tools": ({"name": "hidden", "input_schema": TOPIC},),
+            "harness_tools": tools,
         },
         {"estimates": ({"label": "PRIVATE EVIDENCE"},)},
         capabilities,
@@ -544,3 +546,258 @@ def test_telemetry_failure_cannot_change_the_returned_decision() -> None:
         record_receipt=fail,
     )
     assert decide(port) == StartCapabilityDecision("a.capability", {})
+
+
+def tool(name: str, schema: JsonObject = EMPTY) -> JsonObject:
+    return {"name": name, "input_schema": schema}
+
+
+def test_tool_route_and_selection_are_only_currently_advertised() -> None:
+    judge, model, legacy = Judge("invoke_tool", "study.read"), Model(), Legacy()
+    ctx = context(tools=(tool("study.read"), tool("study.write")))
+    assert decide(router(judge, model, legacy), ctx) == InvokeToolDecision("study.read", {})
+    assert legacy.calls == 0 and not model.requests
+    assert "invoke_tool" in {item.key for item in judge.requests[0].options}
+    assert {item.key for item in judge.requests[1].options} == {"study.read", "study.write"}
+    projected = cast(JsonObject, judge.requests[0].state)
+    assert projected["tools"] == ("study.read", "study.write")
+    assert "input_schema" not in repr(judge.requests[0])
+    assert "PRIVATE" not in repr(judge.requests[1])
+
+
+def test_no_advertised_tools_means_no_tool_route() -> None:
+    judge = Judge("start_capability")
+    decide(router(judge, Model()))
+    assert "invoke_tool" not in {item.key for item in judge.requests[0].options}
+
+
+def test_pending_dialogue_cannot_select_an_advertised_tool() -> None:
+    judge, model = Judge("response_1"), Model()
+    ctx = context(pending_schema={"type": "boolean"}, tools=(tool("study.write"),))
+    assert decide(router(judge, model), ctx) == AnswerDialogueDecision("b" * 64, True)
+    assert {item.key for item in judge.requests[0].options} == {"response_0", "response_1"}
+    assert "study.write" not in repr(judge.requests[0])
+
+
+def test_selected_tool_model_sees_only_its_schema_and_minimum_binding_context() -> None:
+    judge, model = Judge("invoke_tool", "study.write"), Model({"topic": "valves"})
+    ctx = context(tools=(tool("study.read"), tool("study.write", TOPIC)))
+    result = decide(router(judge, model), ctx)
+    assert result == InvokeToolDecision("study.write", {"topic": "valves"})
+    assert len(model.requests) == 1
+    constraint = model.requests[0].structured_output
+    assert constraint is not None and constraint.schema == TOPIC
+    payload = json.loads(model.requests[0].messages[1].content)
+    assert payload == {"latest_learner_utterance": "Review valves", "tool_name": "study.write"}
+    assert "capability" not in model.requests[0].messages[1].content
+    assert "study.read" not in model.requests[0].messages[1].content
+    assert "course" not in model.requests[0].messages[1].content
+    assert "session" not in model.requests[0].messages[1].content
+    assert "fingerprint" not in model.requests[0].messages[1].content
+
+
+def test_fixed_tool_arguments_require_no_generation_or_second_router() -> None:
+    fixed: JsonObject = {
+        **TOPIC,
+        "properties": {
+            "topic": {"type": "string", "enum": ("valves",)},
+        },
+    }
+    judge, model, legacy = Judge("invoke_tool"), Model(), Legacy()
+    result = decide(router(judge, model, legacy), context(tools=(tool("study.write", fixed),)))
+    assert result == InvokeToolDecision("study.write", {"topic": "valves"})
+    assert len(judge.requests) == 1 and not model.requests and legacy.calls == 0
+
+
+def test_duplicate_tool_names_preserve_validators_first_descriptor_schema() -> None:
+    judge, model = Judge("invoke_tool"), Model({"topic": "valves"})
+    ctx = context(tools=(tool("study.write", TOPIC), tool("study.write")))
+    result = decide(router(judge, model), ctx)
+    assert result == InvokeToolDecision("study.write", {"topic": "valves"})
+    validate_decision(result, ctx)
+    assert len(judge.requests) == 1
+    constraint = model.requests[0].structured_output
+    assert constraint is not None and constraint.schema == TOPIC
+
+
+def test_invalid_tool_descriptors_never_enter_choice_options() -> None:
+    invalid_schema: JsonObject = {"type": "unsupported"}
+    ctx = context(tools=(tool("bad.schema", invalid_schema), tool(" "), tool("x" * 129)))
+    judge = Judge("start_capability")
+    decide(router(judge, Model()), ctx)
+    assert "invoke_tool" not in {item.key for item in judge.requests[0].options}
+
+
+def test_unknown_selected_tool_emergency_fallback_is_exactly_once() -> None:
+    class UnknownToolJudge(Judge):
+        async def judge(self, request: ChoiceJudgementRequest) -> ChoiceJudgement:
+            result = await super().judge(request)
+            if len(self.requests) == 2:
+                object.__setattr__(result, "selected_key", "not.advertised")
+            return result
+
+    judge, legacy = UnknownToolJudge("invoke_tool", "study.read"), Legacy()
+    result = decide(
+        router(judge, Model(), legacy),
+        context(
+            tools=(
+                tool("study.read"),
+                tool("study.write"),
+            )
+        ),
+    )
+    assert result == legacy.decision and legacy.calls == 1
+
+
+def test_bad_tool_argument_payload_falls_back_only_when_configured() -> None:
+    legacy = Legacy()
+    with pytest.raises(RetryableTutorDecisionError, match="routing failed"):
+        decide(
+            router(
+                Judge("invoke_tool"),
+                Model({"topic": 17}),
+                legacy,
+                configured=replace(policy(), emergency_fallback=False),
+            ),
+            context(tools=(tool("study.write", TOPIC),)),
+        )
+    assert legacy.calls == 0
+    assert (
+        decide(
+            router(
+                Judge("invoke_tool"),
+                Model({"topic": 17}),
+                legacy,
+            ),
+            context(tools=(tool("study.write", TOPIC),)),
+        )
+        == legacy.decision
+    )
+    assert legacy.calls == 1
+
+
+def test_tool_argument_generation_failure_in_shadow_calls_legacy_once() -> None:
+    legacy = Legacy()
+    receipts: list[TutorRoutingReceipt] = []
+    result = decide(
+        router(
+            Judge("invoke_tool"),
+            Model(RuntimeError("PRIVATE RAW PAYLOAD")),
+            legacy,
+            mode=FeatureMode.SHADOW,
+            receipts=receipts,
+        ),
+        context(tools=(tool("study.write", TOPIC),)),
+    )
+    assert result == legacy.decision and legacy.calls == 1
+    assert receipts[0].selected_tool_name == "study.write"
+    assert "PRIVATE" not in repr(receipts)
+
+
+def test_tool_shadow_receipt_records_selection_and_returns_legacy() -> None:
+    legacy = Legacy()
+    receipts: list[TutorRoutingReceipt] = []
+    result = decide(
+        router(
+            Judge("invoke_tool"),
+            Model(),
+            legacy,
+            mode=FeatureMode.SHADOW,
+            receipts=receipts,
+        ),
+        context(tools=(tool("study.read"),)),
+    )
+    assert result == legacy.decision and legacy.calls == 1
+    assert receipts[0].candidate_kind is TutorDecisionKind.INVOKE_TOOL
+    assert receipts[0].selected_tool_name == "study.read"
+    assert receipts[0].selected_capability_id is None
+    assert receipts[0].candidate_validated and receipts[0].disagreement
+
+
+def test_explicit_tool_threshold_controls_selection_and_policy_identity() -> None:
+    strict = replace(policy(), tool=RoutingThreshold(0.99, 0.3))
+    assert strict.fingerprint != policy().fingerprint
+    legacy = Legacy()
+    ctx = context(tools=(tool("study.read"), tool("study.write")))
+    result = decide(
+        router(
+            Judge("invoke_tool", "study.read"),
+            Model(),
+            legacy,
+            configured=strict,
+        ),
+        ctx,
+    )
+    assert result == legacy.decision and legacy.calls == 1
+
+
+def test_tool_generation_cancellation_never_enters_emergency_fallback() -> None:
+    legacy = Legacy()
+    with pytest.raises(RetryableTutorDecisionError, match="interrupted"):
+        decide(
+            router(
+                Judge("invoke_tool"),
+                Model(ModelError(ModelErrorCode.CANCELLED, "cancelled")),
+                legacy,
+            ),
+            context(tools=(tool("study.write", TOPIC),)),
+        )
+    assert legacy.calls == 0
+
+
+def test_existing_host_runner_executes_selected_tool_once_with_host_owned_authority() -> None:
+    from types import SimpleNamespace
+
+    from cardine.hosts import TutorHostLimits, TutorHostRunner, TutorHostRunStatus
+    from study_agent.domain import CourseId, SessionId
+
+    ctx = context(tools=(tool("study.write", TOPIC),))
+    judge, model, legacy = Judge("invoke_tool"), Model({"topic": "valves"}), Legacy()
+    port = router(judge, model, legacy)
+
+    class Assembler:
+        def assemble(self, *args: object, **kwargs: object) -> TutorHostContext:
+            return ctx
+
+    class ToolGateway:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, JsonObject, CourseId, SessionId, str]] = []
+
+        async def invoke(
+            self,
+            name: str,
+            arguments: JsonObject,
+            course: CourseId,
+            session: SessionId,
+            turn: str,
+        ) -> object:
+            self.calls.append((name, arguments, course, session, turn))
+            return SimpleNamespace(error=None, value={"high_water_sequence": 9})
+
+    tool_gateway = ToolGateway()
+    runner = TutorHostRunner(
+        port,
+        None,
+        None,
+        object(),  # type: ignore[arg-type]
+        object(),  # type: ignore[arg-type]
+        object(),  # type: ignore[arg-type]
+        object(),  # type: ignore[arg-type]
+        TutorHostLimits(2, 2, 1, 1_000),
+        context_assembler=Assembler(),  # type: ignore[arg-type]
+        tool_gateway=tool_gateway,
+    )
+    result = asyncio.run(runner.run(CourseId("course"), SessionId("session"), "turn-1", Token()))
+    assert result.status is TutorHostRunStatus.ASSISTANT_MESSAGE
+    assert tool_gateway.calls == [
+        (
+            "study.write",
+            {"topic": "valves"},
+            CourseId("course"),
+            SessionId("session"),
+            "turn-1",
+        )
+    ]
+    assert legacy.calls == 0 and len(model.requests) == 1
+    assert result.presentation_receipt is not None
+    assert result.presentation_receipt.observed_host_context_sequence == 9

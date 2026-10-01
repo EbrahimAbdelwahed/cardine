@@ -1,7 +1,8 @@
 """Bounded semantic routing with the existing tutor validation authority.
 
-This is an opt-in decision port. Production composition remains unchanged until
-shadow benchmarks and policy calibration pass. No provider SDK belongs here.
+Composition chooses an explicit OFF, SHADOW or ON policy. The host retains
+validation and execution authority for capabilities, tools and continuations.
+No provider SDK belongs here.
 """
 
 from __future__ import annotations
@@ -46,12 +47,14 @@ from .contracts import (
     AnswerDialogueDecision,
     AskLearnerDecision,
     AssistantMessageDecision,
+    InvokeToolDecision,
     StartCapabilityDecision,
     StopDecision,
     TutorDecision,
     TutorDecisionKind,
     TutorHostContext,
     TutorStopReason,
+    _context_tools,
     validate_decision,
 )
 
@@ -80,6 +83,9 @@ class TutorRoutingPolicy:
     emergency_fallback: bool = True
     maximum_utterance_characters: int = MAX_HOST_TEXT
     maximum_output_tokens: int = 1_024
+    # None deliberately shares the explicitly configured advertised-capability
+    # threshold. Callers may configure a separate tool-selection policy.
+    tool: RoutingThreshold | None = None
 
     def __post_init__(self) -> None:
         if not self.version or self.version != self.version.strip():
@@ -89,6 +95,8 @@ class TutorRoutingPolicy:
             for item in (self.route, self.capability, self.boolean_dialogue, self.enum_dialogue)
         ):
             raise TypeError("routing policy thresholds must be immutable RoutingThreshold values")
+        if self.tool is not None and not isinstance(self.tool, RoutingThreshold):
+            raise TypeError("tool threshold must be an immutable RoutingThreshold value")
         if not isinstance(self.mode, FeatureMode):
             raise TypeError("routing mode must be a FeatureMode")
         if not isinstance(self.emergency_fallback, bool):
@@ -110,6 +118,9 @@ class TutorRoutingPolicy:
                 "emergency_fallback": self.emergency_fallback,
                 "maximum_utterance_characters": self.maximum_utterance_characters,
                 "maximum_output_tokens": self.maximum_output_tokens,
+                "tool_threshold": None
+                if self.tool is None
+                else (self.tool.minimum_probability, self.tool.minimum_margin),
                 "thresholds": tuple(
                     (threshold.minimum_probability, threshold.minimum_margin)
                     for threshold in (
@@ -162,6 +173,7 @@ class TutorRoutingReceipt:
     narrow_generation_latency_ms: float
     legacy_latency_ms: float | None
     fallback_reason: str | None
+    selected_tool_name: str | None = None
 
 
 @dataclass(slots=True)
@@ -170,6 +182,7 @@ class _Trace:
     generation_used: bool = False
     generation_latency_ms: float = 0
     capability_id: str | None = None
+    tool_name: str | None = None
     candidate_kind: TutorDecisionKind | None = None
     candidate_validated: bool = False
 
@@ -285,6 +298,7 @@ class RoutingTutorDecisionPort:
             trace.generation_latency_ms,
             legacy_latency,
             failure,
+            trace.tool_name,
         )
         # Telemetry is derived state and never decision authority.
         with suppress(Exception):
@@ -342,6 +356,12 @@ class RoutingTutorDecisionPort:
                 **state,
                 "capabilities": tuple(item.id for item in context.advertised_capabilities),
             }
+        tools = _advertised_tools(context)
+        if tools:
+            routes.append(
+                ChoiceOption(TutorDecisionKind.INVOKE_TOOL.value, "Invoke an advertised study tool")
+            )
+            state = {**state, "tools": tuple(name for name, _ in tools)}
         route = await self._choose(
             "route", state, tuple(routes), self._policy.route, interruption, trace
         )
@@ -372,6 +392,30 @@ class RoutingTutorDecisionPort:
                     trace,
                 )
             return StartCapabilityDecision(descriptor.id, inputs)
+        if route == TutorDecisionKind.INVOKE_TOOL.value:
+            tool_name = await self._choose(
+                "tool",
+                {"latest_learner_utterance": state["latest_learner_utterance"]},
+                tuple(ChoiceOption(name, name) for name, _ in tools),
+                self._policy.tool or self._policy.capability,
+                interruption,
+                trace,
+            )
+            schema = next(schema for name, schema in tools if name == tool_name)
+            trace.tool_name = tool_name
+            arguments = _fixed_inputs(schema)
+            if arguments is None:
+                arguments = await self._generate(
+                    "tool_arguments",
+                    {
+                        "latest_learner_utterance": state["latest_learner_utterance"],
+                        "tool_name": tool_name,
+                    },
+                    schema,
+                    interruption,
+                    trace,
+                )
+            return InvokeToolDecision(tool_name, arguments)
         if route == TutorDecisionKind.STOP.value:
             reason = await self._choose(
                 "stop_reason",
@@ -545,6 +589,23 @@ class RoutingTutorDecisionPort:
 def _check_interruption(interruption: TutorInterruptionToken) -> None:
     if interruption.is_interrupted():
         raise _RoutingInterrupted("tutor routing interrupted", failure_reason="interrupted")
+
+
+def _advertised_tools(context: TutorHostContext) -> tuple[tuple[str, JsonObject], ...]:
+    # Use the validator's descriptor projection. Preserve its first-match
+    # semantics for duplicate names rather than binding a different schema.
+    tools: dict[str, JsonObject] = {}
+    for descriptor in _context_tools(context):
+        name, schema = descriptor["name"], descriptor["input_schema"]
+        if (
+            isinstance(name, str)
+            and name
+            and name == name.strip()
+            and len(name) <= 128
+            and isinstance(schema, Mapping)
+        ):
+            tools.setdefault(name, schema)
+    return tuple(sorted(tools.items()))
 
 
 def _latest_utterance(context: TutorHostContext, limit: int) -> str:
