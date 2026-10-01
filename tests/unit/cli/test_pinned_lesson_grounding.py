@@ -20,18 +20,19 @@ from study_agent.ports import ModelPort, RetrievalQuery
 from tests.course_fixtures import create_canonical_course
 
 
-def _recording_builder(builds: list[int]) -> ModelAdapterBuilder:
+def _unexpected_provider(builds: list[int]) -> ModelAdapterBuilder:
     def build(config: ModelAdapterConfig, credential: str | None) -> ModelPort:
         del config, credential
         builds.append(1)
-        # These tests assert that invalid pins never reach adapter construction.
-        return cast(ModelPort, object())
+        raise AssertionError("provider must not be constructed for invalid lesson pins")
 
     return build
 
 
 def _repository(tmp_path: Path, builds: list[int]) -> tuple[Path, CourseId]:
     root = tmp_path / "repository"
+
+    build = _unexpected_provider(builds)
 
     initialize_local_repository(
         root,
@@ -40,7 +41,7 @@ def _repository(tmp_path: Path, builds: list[int]) -> tuple[Path, CourseId]:
     course_id = CourseId("course-pinned-lesson")
     with LocalRepository.open(
         root,
-        model_adapters=ModelAdapterRegistry({"fixture-adapter": _recording_builder(builds)}),
+        model_adapters=ModelAdapterRegistry({"fixture-adapter": build}),
         environment={},
     ) as repository:
         create_canonical_course(repository.events, course_id)
@@ -78,9 +79,7 @@ def test_invalid_foreign_and_partial_pins_fail_before_provider_construction(
 
     with LocalRepository.open(
         root,
-        model_adapters=ModelAdapterRegistry(
-            {"fixture-adapter": _recording_builder(builds)}
-        ),
+        model_adapters=ModelAdapterRegistry({"fixture-adapter": _unexpected_provider(builds)}),
         environment={},
     ) as repository:
         receipt = repository.course_index_receipt(course_id, repository.rebuild_retrieval())
@@ -103,9 +102,7 @@ def test_whole_source_pin_is_not_a_current_lesson_candidate(tmp_path: Path) -> N
     pin = _pin(root, course_id)
     with LocalRepository.open(
         root,
-        model_adapters=ModelAdapterRegistry(
-            {"fixture-adapter": _recording_builder(builds)}
-        ),
+        model_adapters=ModelAdapterRegistry({"fixture-adapter": _unexpected_provider(builds)}),
         environment={},
     ) as repository:
         receipt = repository.course_index_receipt(course_id, repository.rebuild_retrieval())
@@ -134,3 +131,69 @@ def test_pinned_retrieval_discards_cross_section_and_partial_chunks(tmp_path: Pa
         outside = scoped.search(RetrievalQuery(course_id, "altro"))
         assert outside.evidence == ()
         assert outside.status.value == "insufficient"
+
+
+@pytest.mark.parametrize(
+    ("current", "query"),
+    [
+        ("crea flashcard su questa lezione", "crea flashcard su questa lezione"),
+        (
+            "crea flashcard su questa lezione, intendo lezione 999",
+            "crea flashcard su questa lezione, intendo lezione 999",
+        ),
+        (
+            "Ho difficoltà con glicolisi; crea flashcard su lezione 999",
+            "glicolisi",
+        ),
+    ],
+)
+def test_unresolved_nearest_explicit_lesson_cannot_fall_back(
+    current: str, query: str
+) -> None:
+    from types import SimpleNamespace
+
+    from cardine.cli.repository import _RepositoryTutorGateway
+
+    looked_up = []
+
+    def resolve(course: object, text: str) -> object:
+        looked_up.append(text)
+        return object() if text == "lezione 1" else None
+
+    interactions = [
+        SimpleNamespace(kind=SimpleNamespace(value="human"), content=text)
+        for text in ("lezione 1", "lezione 999", current)
+    ]
+    gateway = object.__new__(_RepositoryTutorGateway)
+    gateway._lesson_pin = None
+    gateway._course_id = CourseId("course")
+    from study_agent.domain import SessionId
+
+    gateway._session_id = SessionId("session")
+    gateway._repository = SimpleNamespace(
+        resolve_lesson_scope=resolve,
+        sessions=SimpleNamespace(interactions=lambda *args: interactions),
+    )  # type: ignore[assignment]
+    import asyncio
+
+    from study_agent.capabilities import TutorCapabilityId
+
+    calls: list[str] = []
+
+    async def start(*args: object) -> None:
+        calls.append("unscoped")
+
+    gateway._flashcards = SimpleNamespace(start=start, start_for_pin=start)  # type: ignore[assignment]
+    gateway._require_provider_consent = lambda: None  # type: ignore[method-assign]
+    with pytest.raises(ValueError, match="lesson scope is unavailable"):
+        asyncio.run(
+            gateway.start(
+                TutorCapabilityId.PROPOSE_FLASHCARDS,
+                {"query": query},
+                cast(ExecutionContext, object()),
+            )
+        )
+    assert calls == []
+    assert "lezione 1" not in looked_up
+    if query == "glicolisi":
+        assert current in looked_up

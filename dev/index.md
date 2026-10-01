@@ -9,6 +9,7 @@ archive and must not be treated as Cardine's current state.
 
 ## Start here
 
+- [PR #3 automatic review fixes](handoffs/2026-10-01--cardine--pr3-review-fixes--handoff.md) — explicit current-turn lesson scope remains authoritative after model query distillation, and unsuccessful normal turn receipts settle Tool Chips as failed.
 - [PR #5 automatic review follow-up](handoffs/2026-10-01--cardine--pr5-review-fixes.md) — history-derived flashcard scope is rebuilt only from validated bounded conversation observations; material emphasis and Italian uncertainty commitments are preserved and checked.
 
 - [Flashcard generation repair publication](logs/2026-09-29--cardine--flashcard-generation-publication--log.md) — the owner authorized publishing the generation repair to PR #5; empty-array wire schema, truthful failure and new-turn retry regressions verified offline; preview update and live generation remain pending.

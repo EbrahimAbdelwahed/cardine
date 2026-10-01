@@ -16,10 +16,7 @@ from typing import cast
 import pytest
 
 from cardine.cli.repository import LocalRepository, ModelAdapterRegistry
-from cardine.demo.ui_application import (
-    RepositoryUiApplication,
-    UiRequestError,
-)
+from cardine.demo.ui_application import RepositoryUiApplication, UiRequestError
 from study_agent.adapters.filesystem import initialize_local_repository
 from study_agent.domain import (
     CorrelationId,
@@ -82,7 +79,7 @@ class _ClosureModel:
 
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
         del request
-        if False:  # pragma: no cover - keeps this method an async generator
+        if False:  # pragma: no cover
             yield ModelStreamEvent(None)
         raise AssertionError("closure fixture does not stream")
 
@@ -217,8 +214,6 @@ def test_browser_control_matrix_keyboard_and_responsive_contracts() -> None:
     assert 'id="view-root" class="view-root" aria-live="polite"' not in page
     assert 'id="rail-toggle" aria-expanded="false" aria-controls="rail"' in page
 
-    # Every mutating UI family has one delegated, keyboard-focusable button
-    # path; no raw provider/repository controls are rendered in the page.
     for command in (
         "artifact",
         "enroll",

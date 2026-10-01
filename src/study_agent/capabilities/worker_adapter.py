@@ -145,13 +145,9 @@ class GatewayIsolatedCapabilityRunAdapter:
         binding, execution_inputs = self._selection(task)
         self._require_continuation(task, continuation, execution_inputs)
         try:
-            outcome = await self._gateway._resume_bound(
-                binding, continuation, response, context
-            )
+            outcome = await self._gateway._resume_bound(binding, continuation, response, context)
         except CapabilityGatewayError as error:
-            return self._gateway_failure(
-                task, continuation.run_id, error, execution_inputs
-            )
+            return self._gateway_failure(task, continuation.run_id, error, execution_inputs)
         return self._observe(task, binding, outcome, context, execution_inputs)
 
     def _selection(
@@ -237,7 +233,11 @@ class GatewayIsolatedCapabilityRunAdapter:
                 task,
                 GenerationWorkerStatus.FAILED,
                 outcome.run_id,
-                failure_code="gateway_failed",
+                failure_code=(
+                    f"gateway_{outcome.failure_reason}"
+                    if outcome.failure_reason is not None
+                    else "gateway_failed"
+                ),
                 execution_inputs=execution_inputs,
             )
         if isinstance(outcome, TerminatedCapabilityOutcome):
@@ -252,9 +252,7 @@ class GatewayIsolatedCapabilityRunAdapter:
         if not isinstance(outcome, CompletedCapabilityOutcome):
             raise TypeError("gateway returned an unknown capability outcome")
         try:
-            observation, _ = _completed_observation(
-                task, binding, outcome, execution_inputs
-            )
+            observation, _ = _completed_observation(task, binding, outcome, execution_inputs)
             receipt = _expected_completed_receipt(task, observation)
             self._proof_owner.create(
                 task,
@@ -353,12 +351,10 @@ def _completed_observation(
         for item in task.expected_validations
     )
     actual = tuple(
-        (item.step_id, item.source, item.validator_id, item.validator_version)
-        for item in observed
+        (item.step_id, item.source, item.validator_id, item.validator_version) for item in observed
     )
     if actual != expected or not all(
-        item.passed and item.disposition is ValidatorDisposition.CONTINUE
-        for item in observed
+        item.passed and item.disposition is ValidatorDisposition.CONTINUE for item in observed
     ):
         raise ValueError("verified validation provenance differs from worker task")
     prompt = prompts[0]
@@ -465,16 +461,11 @@ def _fallback_validations(
     )
 
 
-def _validation(
-    step: ValidateStep, details: Mapping[str, JsonValue]
-) -> ObservedValidationReceipt:
+def _validation(step: ValidateStep, details: Mapping[str, JsonValue]) -> ObservedValidationReceipt:
     receipt = _mapping(details.get("validator"), "validation receipt")
-    observed = _validation_receipt(
-        step.id, ValidationReceiptSource.VALIDATE_STEP, receipt
-    )
-    if (
-        observed.validator_id != step.validator.id
-        or observed.validator_version != str(step.validator.version)
+    observed = _validation_receipt(step.id, ValidationReceiptSource.VALIDATE_STEP, receipt)
+    if observed.validator_id != step.validator.id or observed.validator_version != str(
+        step.validator.version
     ):
         raise ValueError("validation receipt differs from declared step")
     return observed
@@ -486,8 +477,12 @@ def _validation_receipt(
     receipt: Mapping[str, JsonValue],
 ) -> ObservedValidationReceipt:
     allowed = {
-        "validator_id", "validator_version", "passed", "disposition",
-        "result_fingerprint", "reason",
+        "validator_id",
+        "validator_version",
+        "passed",
+        "disposition",
+        "result_fingerprint",
+        "reason",
     }
     if set(receipt) not in (allowed, {*allowed, "result"}):
         raise ValueError("validation receipt fields are not exact")

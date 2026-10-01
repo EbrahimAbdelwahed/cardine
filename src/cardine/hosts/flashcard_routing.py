@@ -21,6 +21,7 @@ from .contracts import (
     TutorDecision,
     TutorHostContext,
 )
+from .source_grounding import requires_study_memory_routing
 
 _PROPOSE_FLASHCARDS = "propose_flashcards"
 _FLASHCARD_ACTION = (
@@ -131,61 +132,56 @@ class FlashcardProfileRoutingTutorDecisionPort(TutorDecisionPort):
     async def decide(
         self, context: TutorHostContext, interruption: TutorInterruptionToken
     ) -> TutorDecision:
-        decision = await self._delegate.decide(context, interruption)
         if context.pending_continuation is not None:
-            return decision
+            return await self._delegate.decide(context, interruption)
         learner_text = _latest_learner_text(context)
         if learner_text is None or not _is_flashcard_generation_request(learner_text):
-            return decision
+            return await self._delegate.decide(context, interruption)
         if not any(item.id == _PROPOSE_FLASHCARDS for item in context.advertised_capabilities):
-            return decision
-        if isinstance(decision, InvokeToolDecision):
-            return decision
+            return await self._delegate.decide(context, interruption)
         history_scoped = _purely_history_scoped(learner_text)
-        if history_scoped:
-            if _validated_conversation_entries(context):
-                if (
-                    isinstance(decision, StartCapabilityDecision)
-                    and decision.capability_id == _PROPOSE_FLASHCARDS
-                ):
-                    return _bounded_memory_flashcard_decision(decision, context)
-                return decision
-            if (
-                not _observed_conversation_history(context)
-                and _omitted_conversation_entries(context) > 0
-                and _has_conversation_read_tool(context)
-            ):
-                return InvokeToolDecision(
-                    "conversation.read",
-                    {
-                        "cursor": _oldest_included_conversation_sequence(context),
-                        "direction": "backward",
-                        "limit": 12,
-                    },
-                )
-            return AskLearnerDecision(
-                "Quali argomenti della conversazione vuoi usare per le flashcard?"
+        observed_history = _observed_conversation_history(context)
+        if (
+            _HISTORY_SCOPED.search(learner_text) is not None
+            and not observed_history
+            and _omitted_conversation_entries(context) > 0
+            and _has_conversation_read_tool(context)
+        ):
+            return InvokeToolDecision(
+                "conversation.read",
+                {
+                    "cursor": _oldest_included_conversation_sequence(context),
+                    "direction": "backward",
+                    "limit": 12,
+                },
             )
         if (
-            isinstance(decision, StartCapabilityDecision)
-            and decision.capability_id == _PROPOSE_FLASHCARDS
+            _HISTORY_SCOPED.search(learner_text) is not None
+            or observed_history
+            or requires_study_memory_routing(learner_text)
         ):
+            decision = await self._delegate.decide(context, interruption)
+            if isinstance(decision, InvokeToolDecision):
+                return decision
             if (
-                _observed_conversation_history(context)
-                or _HISTORY_SCOPED.search(learner_text) is not None
+                isinstance(decision, StartCapabilityDecision)
+                and decision.capability_id == _PROPOSE_FLASHCARDS
             ):
-                return _explicit_memory_flashcard_decision(decision, learner_text)
-            return decision
-        if _observed_conversation_history(context):
-            return decision
+                return (
+                    _bounded_memory_flashcard_decision(decision, context)
+                    if history_scoped
+                    else _explicit_memory_flashcard_decision(decision, learner_text)
+                    if observed_history or _HISTORY_SCOPED.search(learner_text) is not None
+                    else decision
+                )
+            if history_scoped or observed_history:
+                return AskLearnerDecision(
+                    "Quali argomenti della conversazione vuoi usare per le flashcard?"
+                )
         route = select_flashcard_profile(learner_text)
         if route.kind is FlashcardProfileRouteKind.CLARIFICATION:
             return AskLearnerDecision(route.clarification or "Quale profilo preferisci?")
-        return StartCapabilityDecision(
-            _PROPOSE_FLASHCARDS,
-            _flashcard_inputs(learner_text),
-            None,
-        )
+        return StartCapabilityDecision(_PROPOSE_FLASHCARDS, _flashcard_inputs(learner_text), None)
 
 
 def _explicit_memory_flashcard_decision(

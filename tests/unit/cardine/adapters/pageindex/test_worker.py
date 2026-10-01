@@ -17,7 +17,9 @@ def test_worker_executes_only_qualified_subset() -> None:
     root = tree[0]
     assert isinstance(root, dict)
     assert root["title"] == "Lezione 1"
-    child = root["nodes"][0]
+    nodes = root["nodes"]
+    assert isinstance(nodes, list)
+    child = nodes[0]
     assert isinstance(child, dict)
     assert child["title"] == "Dettaglio"
     assert set(root) == {"title", "node_id", "text", "line_num", "nodes"}

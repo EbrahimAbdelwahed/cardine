@@ -13,7 +13,9 @@ import pytest
 
 from cardine.demo.browser import BrowserSurface, create_server
 from cardine.demo.private_access import PrivateAccessController, hash_password
+from cardine.demo.ui_application import _turn_activity_status
 from cardine.diagnostics.turn_activity import TurnActivityStore
+from cardine.hosts import TutorHostRunStatus
 from study_agent.domain._validation import JsonObject
 
 
@@ -86,7 +88,7 @@ def test_activity_route_remains_behind_existing_api_authentication() -> None:
     session = access.login("correct horse battery staple", client_id="test")
     payload = surface.api_get("/api/v1/turns/request/activity", session_token=session.session_token)
     assert payload["state"] == "unknown"
-    assert cast(list[object], payload["records"]) == []
+    assert payload["records"] == ()
 
 
 def test_repository_activity_get_is_independent_of_mutation_lock(tmp_path: Path) -> None:
@@ -116,9 +118,28 @@ def test_repository_activity_get_is_independent_of_mutation_lock(tmp_path: Path)
     assert result[0] == {
         "schema_version": 2,
         "state": "unknown",
-        "records": [],
+        "records": (),
         "omitted": 0,
     }
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (TutorHostRunStatus.COMPLETED, "done"),
+        (TutorHostRunStatus.SUSPENDED, "done"),
+        (TutorHostRunStatus.NEEDS_LEARNER_INPUT, "done"),
+        (TutorHostRunStatus.ASSISTANT_MESSAGE, "done"),
+        (TutorHostRunStatus.FAILED, "failed"),
+        (TutorHostRunStatus.TERMINATED, "failed"),
+        (TutorHostRunStatus.CANCELLED, "failed"),
+        (TutorHostRunStatus.BUDGET_EXHAUSTED, "failed"),
+    ],
+)
+def test_turn_activity_settlement_follows_receipt_status(
+    status: TutorHostRunStatus, expected: str
+) -> None:
+    assert _turn_activity_status(status) == expected
 
 
 def test_repository_session_read_is_independent_of_long_tutor_mutation_lock(

@@ -266,6 +266,7 @@ def test_study_memory_tools_record_and_search_canonical_learner_signal(
     assert found.value is not None
     entries = found.value["entries"]
     assert isinstance(entries, tuple)
+    assert all(isinstance(item, Mapping) for item in entries)
     assert tuple(item["topic"] for item in entries if isinstance(item, Mapping)) == (
         "cinetica enzimatica",
     )

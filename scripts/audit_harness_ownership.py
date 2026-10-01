@@ -61,6 +61,9 @@ TRANSITION_EXPORTS = {
     "require_text",
 }
 REVIEWED_NON_IMPORT_AST_VARIANCE = {
+    # Preserve closed typed gateway failures through the compact worker view.
+    # The exact post-baseline digest below binds this contract correction.
+    "src/study_agent/workers/contracts.py",
     # Current-head review repairs persist verified citation refs through the
     # copied session contract. Exact post-baseline digests bind both paths.
     "src/study_agent/sessions/events.py",
@@ -81,20 +84,50 @@ REVIEWED_NON_IMPORT_AST_VARIANCE = {
 # Exact bytes from committed Wave A product evolution after the historical
 # CA-01/CA-02 snapshots. Preserve the frozen ledgers and reject further drift.
 POST_BASELINE_SHA256 = {
+    "src/study_agent/workers/contracts.py": (
+        "80831c2c0c77e9c09bf20a9e109b503134a2bac39226ca68dcc3b671afca270c"
+    ),
+    "src/study_agent/ports/model.py": (
+        "b5bdee42438f04ea94cd3dfb71e7888ee72a00ac84080665c8fe6af06bfea856"
+    ),
+    "src/study_agent/playbooks/engine.py": (
+        "99b1099885c73a685bf3b8151fc7a1578e8151d074e9758123ebb74af43fe802"
+    ),
+    "src/study_agent/capabilities/worker_adapter.py": (
+        "d9034bd17dce27f8c693b54682ccefbcce699c64cf4dc79f861f7843f4b48c99"
+    ),
+    "src/study_agent/capabilities/gateway.py": (
+        "ddd84bfe31c927a971788cbb0931b761fe5fce4b82ca02461c1db9be6e0c6d87"
+    ),
+    "src/study_agent/capabilities/contracts.py": (
+        "ef5f57cc45726d36acd2f121e239bd0f2f95fc3275394a5ffdc1b97d40493786"
+    ),
     "src/study_agent/adapters/sqlite/run_store.py": (
         "331b2fb71c01a987d800465555e5a959c7f9b1692b4dbb8902987751944dfe58"
+    ),
+    "src/study_agent/adapters/model/openai_compatible.py": (
+        "513227a8d34fd1974aadb78957186688773b7e606224559c052947c595d943ca"
+    ),
+    "src/cardine/hosts/runner.py": (
+        "9f0b54647e5de69031a709ad85864c9312c5111b024deb1c173a8a77af28fcbd"
+    ),
+    "src/cardine/demo/browser.html": (
+        "1bd41e5a0785ffc38f06049f8db654241a29d5a1e28d929c1320aa46b63d6cb0"
+    ),
+    "src/cardine/application/flashcard_proposals.py": (
+        "a122cf65a900c43c09abe409689efddb143aa21492cc28495857824798f68f71"
     ),
     "src/cardine/application/capability_completion.py": (
         "a8745bebd1384ecd3ddce6577841223628ab9423c86ffe8d0d8e2e9d1e7d0c4b"
     ),
     "src/cardine/application/conversation_turn.py": (
-        "f0f20859a832fe0eaea16fe06da8d05ca1b8b71155bf4ea4397068d0c9b3a7bc"
+        "f720cb0b159feeb0fa7242a07dd14f4a55e12be728a9c370ec7382d254bc3183"
     ),
     "src/cardine/cli/repository.py": (
-        "a291e142e6579f6af23dd0b0dad0c221f5574214ce46dcc6dc5392e74f3565cb"
+        "a71844397bc9e5f46639fede24c911e5c0c005b52cbbea98dbe15556d6babaeb"
     ),
     "src/cardine/demo/ui_application.py": (
-        "dbc49571507081e120540add04ce6c7c7cb1af8be55e99350e8c20e3af1df118"
+        "9ce4b20efbda5d2135ee636b886feef274d45d5b9178a9888500cf3ee500b7cc"
     ),
     "src/cardine/hosts/contracts.py": (
         "df3e864ef0131f7c09dcc985529950269fbf6afef81b679c07f213b5ebdd3999"
@@ -127,16 +160,16 @@ POST_BASELINE_SHA256 = {
         "00957942586239a396bae507593b687b1896fee120eba83e37feae592a95ff48"
     ),
     "src/study_agent/prompts/tutor_decision_v1.py": (
-        "828072504ce14499f604fa3951b796e25a1422b4784f72a496ab16b5accf220b"
+        "df410a9934e147a777183d2c03bd282d64edcf4694fa7ebc013905e48a343781"
     ),
     "src/cardine/demo/browser.js": (
-        "66e3c9107c7f25295a03aa10e776a3ae1ea3a55b88ceacc06ba0c42c86bc92f4"
+        "a98cadd44362840c660ad63d208d5c49ab95d40295dd5946911674c13872a02d"
     ),
     "src/cardine/hosts/flashcard_routing.py": (
-        "e91a8ce48b54469829f1f8c5bc808c739d86279ad037e9957965dfc8c801683c"
+        "09eea008b0aaa9c968156a758c601056e9d7455a44b4a8d9d43ef617a2e194be"
     ),
     "src/cardine/hosts/source_grounding.py": (
-        "dce83af15586066e48306ddcfe755a469836e2eeb3fe381d3d32610d6f4ea1f0"
+        "28d9b094d5216e59528c44f50872fc1eb800a0b509c9ea4eb7065a0eb0a4ef3b"
     ),
 }
 
