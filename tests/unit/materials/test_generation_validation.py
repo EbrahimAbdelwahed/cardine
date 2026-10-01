@@ -82,3 +82,21 @@ def test_italian_uncertainty_limitation_is_accepted_and_fail_closed(
             max_characters=1000,
             limitations=("Il testo è completo.",),
         )
+
+
+@pytest.mark.parametrize(
+    "source,output,marker",
+    [
+        ("Maybe A. Maybe B.", "# Lesson\nMaybe A. B.", "uncertainty"),
+        ("A uses 5 mg. B uses 5 mg.", "# Lesson\nA uses 5 mg. B uses a dose.", "numeric"),
+        ("A is important. B is important.", "# Lesson\nA is important. B exists.", "emphasis"),
+    ],
+)
+def test_repeated_claim_markers_cannot_lose_an_occurrence(
+    source: str, output: str, marker: str
+) -> None:
+    with pytest.raises(MaterialValidationError, match=marker):
+        validate_markdown(output, source_text=source, stage="complete", max_characters=1000)
+    assert validate_markdown(
+        "# Lesson\n" + source, source_text=source, stage="complete", max_characters=1000
+    ).text.endswith(source)

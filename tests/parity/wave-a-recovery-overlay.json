@@ -48,7 +48,7 @@
     },
     {
       "path": "src/cardine/demo/browser.js",
-      "sha256": "f95ec37e359544be3e79cc5ba9510360d7423968fb1494a490ef79878b3f341a"
+      "sha256": "1914646d49160845db39f9331b69a4f3e765d709c6364c11d7e0100460a193f5"
     },
     {
       "path": "src/cardine/demo/browser.py",
@@ -84,7 +84,7 @@
     },
     {
       "path": "src/cardine/hosts/flashcard_routing.py",
-      "sha256": "3942dc50697addcda1d9de82785c0b5a37cb522d73e2fc83bf587ff96eb7f5ad"
+      "sha256": "5f2b7b4248731d839b4b7668a1b8e4c3077835f87c6504e957c46836ebd12a19"
     },
     {
       "path": "src/cardine/hosts/runner.py",
@@ -152,7 +152,7 @@
     },
     {
       "path": "src/study_agent/ingestion/projection.py",
-      "sha256": "0fc30e51d24b8f723efad48d2c922f4651b31af0cd9f84e7ff71761d15d1c8e7"
+      "sha256": "852486b6c4b726b789c995e070210b69a4bdfc068ca404966f8019970672bfe1"
     },
     {
       "path": "src/study_agent/ingestion/service.py",

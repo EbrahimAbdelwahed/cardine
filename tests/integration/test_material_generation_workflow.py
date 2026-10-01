@@ -511,3 +511,45 @@ def test_stage_receipt_roundtrip_binds_composition_and_ancestry() -> None:
     raw["output"] = {"id": str(blob.id), "checksum_sha256": "d" * 64, "byte_length": 1}
     with pytest.raises(ValueError):
         StageReceipt.from_json(raw)
+
+
+@pytest.mark.parametrize(
+    "stage", [MaterialGenerationStage.BOUNDARIES, MaterialGenerationStage.COMPLETE_SEGMENT]
+)
+@pytest.mark.parametrize("damage", ["missing", "corrupt"])
+def test_unreadable_persisted_ancestry_is_a_durable_terminal_failure(
+    stage: MaterialGenerationStage, damage: str
+) -> None:
+    blobs = MemoryBlobStore()
+    store = MemoryCheckpointStore()
+    model = ScriptedMaterialModel()
+    service, _ = _service(blobs, store, model)
+    job = service.request_pair(
+        CourseId("course-1"), SessionId("session-1"), _pin(blobs), "damaged-checkpoint"
+    )
+    service_state = MaterialGenerationState.from_bytes(store.load(job.job_id))
+    state, _ = service._prepare_units(service_state, store.load(job.job_id))
+    if stage is MaterialGenerationStage.COMPLETE_SEGMENT:
+        asyncio.run(service.reconcile(job.job_id, bounded_budget=1, context=_context()))
+        state = MaterialGenerationState.from_bytes(store.load(job.job_id))
+    ref = (
+        state.boundaries
+        if stage is MaterialGenerationStage.COMPLETE_SEGMENT
+        else state.unit_manifest
+    )
+    assert ref is not None
+    if damage == "missing":
+        del blobs.values[ref.checksum_sha256]
+    else:
+        blobs.values[ref.checksum_sha256] = b"corrupt manifest"
+    calls = model.calls
+    restarted, command = _service(blobs, store, model)
+    result = asyncio.run(restarted.reconcile(job.job_id, context=_context()))
+    assert result.stage is MaterialGenerationStage.FAILED_TERMINAL
+    assert result.error_code is not None
+    assert model.calls == calls
+    assert command.calls == 0
+    assert (
+        asyncio.run(restarted.reconcile(job.job_id, context=_context())).stage
+        is MaterialGenerationStage.FAILED_TERMINAL
+    )
