@@ -142,7 +142,7 @@ class FlashcardProfileRoutingTutorDecisionPort(TutorDecisionPort):
         history_scoped = _purely_history_scoped(learner_text)
         observed_history = _observed_conversation_history(context)
         if (
-            history_scoped
+            _HISTORY_SCOPED.search(learner_text) is not None
             and not observed_history
             and _omitted_conversation_entries(context) > 0
             and _has_conversation_read_tool(context)
