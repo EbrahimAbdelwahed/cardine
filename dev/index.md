@@ -10,6 +10,7 @@ archive and must not be treated as Cardine's current state.
 
 ## Start here
 
+- [Owner-authorized merges and review limit](handoffs/2026-10-01--review-limit-and-owner-merges.md) — PRs #5/#3/#7/#8/#9 merged; remaining automatic findings recorded; future review stops after two rounds per PR.
 - [Source, PDF and audio study notes](logs/2026-09-30--cardine--source-study-notes--log.md) — approved source-page generation, Groq Turbo transcription, editable PDF lesson ranges, review and dependency-aware publication; based on PR #5.
 - [PR #9 current review repairs](handoffs/2026-10-01--cardine--pr9-current-review-repairs--handoff.md) — stale accepted material publication and oversized audio manifest handling, with scoped verification and submission status.
 - [Combined recent-PR test preview](logs/2026-09-28--cardine--combined-pr-preview--log.md) — isolated integration of PRs #3/#5/#6/#7, copied study data, local port 8766 and the remaining custody gate.
