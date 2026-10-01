@@ -39,3 +39,46 @@ def test_capitalized_month_is_not_an_uncertainty_qualifier() -> None:
         max_characters=1000,
     )
     assert "glicolisi" in accepted.text
+
+
+def test_every_teacher_emphasis_commitment_must_remain() -> None:
+    source = "Important: remember this fondamentale mechanism."
+    with pytest.raises(MaterialValidationError, match="emphasis"):
+        validate_markdown(
+            "# Lesson\nImportant mechanism.",
+            source_text=source,
+            stage="complete",
+            max_characters=1000,
+        )
+
+    accepted = validate_markdown(
+        "# Lesson\nImportant: remember this fondamentale mechanism.",
+        source_text=source,
+        stage="complete",
+        max_characters=1000,
+    )
+    assert "fondamentale" in accepted.text
+
+
+@pytest.mark.parametrize("limitation", ["incertezza", "ambigua", "limitazione"])
+def test_italian_uncertainty_limitation_is_accepted_and_fail_closed(
+    limitation: str,
+) -> None:
+    source = "La causa è ambigua."
+    accepted = validate_markdown(
+        "# Lezione\nLa causa è ambigua.",
+        source_text=source,
+        stage="complete",
+        max_characters=1000,
+        limitations=(f"Il testo conserva l'{limitation} dichiarata.",),
+    )
+    assert accepted.limitations == (f"Il testo conserva l'{limitation} dichiarata.",)
+
+    with pytest.raises(MaterialValidationError, match="not truthful about uncertainty"):
+        validate_markdown(
+            "# Lezione\nLa causa è ambigua.",
+            source_text=source,
+            stage="complete",
+            max_characters=1000,
+            limitations=("Il testo è completo.",),
+        )

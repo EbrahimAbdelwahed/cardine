@@ -134,13 +134,22 @@ def test_pinned_retrieval_discards_cross_section_and_partial_chunks(tmp_path: Pa
 
 
 @pytest.mark.parametrize(
-    "current",
+    ("current", "query"),
     [
-        "crea flashcard su questa lezione",
-        "crea flashcard su questa lezione, intendo lezione 999",
+        ("crea flashcard su questa lezione", "crea flashcard su questa lezione"),
+        (
+            "crea flashcard su questa lezione, intendo lezione 999",
+            "crea flashcard su questa lezione, intendo lezione 999",
+        ),
+        (
+            "Ho difficoltà con glicolisi; crea flashcard su lezione 999",
+            "glicolisi",
+        ),
     ],
 )
-def test_unresolved_nearest_explicit_lesson_cannot_fall_back(current: str) -> None:
+def test_unresolved_nearest_explicit_lesson_cannot_fall_back(
+    current: str, query: str
+) -> None:
     from types import SimpleNamespace
 
     from cardine.cli.repository import _RepositoryTutorGateway
@@ -180,9 +189,11 @@ def test_unresolved_nearest_explicit_lesson_cannot_fall_back(current: str) -> No
         asyncio.run(
             gateway.start(
                 TutorCapabilityId.PROPOSE_FLASHCARDS,
-                {"query": current},
+                {"query": query},
                 cast(ExecutionContext, object()),
             )
         )
     assert calls == []
     assert "lezione 1" not in looked_up
+    if query == "glicolisi":
+        assert current in looked_up

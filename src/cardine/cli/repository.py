@@ -519,11 +519,6 @@ class _RepositoryTutorGateway:
         query = inputs.get("query")
         if not isinstance(query, str) or not query.strip():
             return None
-        direct = self._repository.resolve_lesson_scope(self._course_id, query)
-        if direct is not None:
-            return direct
-        if recent_explicit_lesson_references((query,)):
-            raise ValueError("explicit lesson scope is unavailable")
         human_interactions = tuple(
             interaction
             for interaction in self._repository.sessions.interactions(
@@ -531,9 +526,27 @@ class _RepositoryTutorGateway:
             )
             if interaction.kind.value == "human"
         )
-        if not human_interactions:
+        current_learner_text = (
+            human_interactions[-1].content if human_interactions else None
+        )
+        if current_learner_text is not None:
+            current_references = recent_explicit_lesson_references((current_learner_text,))
+            if current_references:
+                # The current learner turn is trusted scope authority even when
+                # the model distilled it to a topic-only capability query.
+                pin = self._repository.resolve_lesson_scope(
+                    self._course_id, current_references[0]
+                )
+                if pin is None:
+                    raise ValueError("explicit lesson scope is unavailable")
+                return pin
+        direct = self._repository.resolve_lesson_scope(self._course_id, query)
+        if direct is not None:
+            return direct
+        if recent_explicit_lesson_references((query,)):
+            raise ValueError("explicit lesson scope is unavailable")
+        if current_learner_text is None:
             return None
-        current_learner_text = human_interactions[-1].content
         if _DEICTIC_LESSON_SCOPE.search(current_learner_text) is None:
             return None
         references = recent_explicit_lesson_references(
