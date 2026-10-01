@@ -73,3 +73,14 @@ scope/completion tests; Ruff, mypy and ownership audit pass. GitHub CI and
 automatic Codex review must validate the submitted final commit before merge.
 PR #9 source study notes remains a separate outcome and is not part of this
 preview. The original checkout and private preview study data are preserved.
+
+## Final review-fix integration — 2026-10-01
+
+The owner authorized finishing the open-PR merges and parallel Luna workers.
+All seven current review findings have scoped fixes on their existing PRs.
+This preview integrates final recovery #5, reliability #3 and chat #7; #9
+remains a separate outcome. The local combined suite passes 2,571 tests with
+four optional skips. Ruff, mypy and exact custody pass. The primary checkout
+and private study data remain untouched. Publish once per PR after final
+verification; require current-commit GitHub CI and automatic Codex review
+before merging in dependency order #5, #3, #7, #8, #9.
