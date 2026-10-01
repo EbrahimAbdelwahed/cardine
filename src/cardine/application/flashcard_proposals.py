@@ -12,6 +12,7 @@ from cardine.application.flashcard_profile_selection import (
     FlashcardProfileSelectionDecision,
     select_flashcard_profile,
 )
+from cardine.application.study_semantics import FlashcardSemanticPreprocessor
 from cardine.hosts import TutorCapabilityCompletionReference
 from study_agent.adapters.sqlite import NamespacedSQLiteRunStore, SQLiteRunStore
 from study_agent.artifacts import ArtifactService, ArtifactSnapshot
@@ -335,8 +336,8 @@ class FlashcardProposalComposition:
         source_commitments: SourceCommitmentLookupPort,
         sessions: SessionViewPort,
         interaction_id: InteractionId | None = None,
-        retired_source_ids: Callable[[], frozenset[SourceId]]
-        | frozenset[SourceId] = frozenset(),
+        retired_source_ids: Callable[[], frozenset[SourceId]] | frozenset[SourceId] = frozenset(),
+        semantic_preprocessor: FlashcardSemanticPreprocessor | None = None,
     ) -> None:
         self._course_id = course_id
         self._session_id = session_id
@@ -350,6 +351,7 @@ class FlashcardProposalComposition:
         self._source_commitments = source_commitments
         self._sessions = sessions
         self._interaction_id = interaction_id
+        self._semantic_preprocessor = semantic_preprocessor
         if callable(retired_source_ids):
             self._retired_source_ids = retired_source_ids
         else:
@@ -359,9 +361,7 @@ class FlashcardProposalComposition:
         self._owner_store = _namespaced(runs, "generated-owner")
         self._generation_store = _namespaced(runs, "generation-worker")
         self._proof_store = _namespaced(runs, "verified-proof")
-        self._course_profile_fingerprint = sha256(
-            canonical_json_bytes(course_profile)
-        ).hexdigest()
+        self._course_profile_fingerprint = sha256(canonical_json_bytes(course_profile)).hexdigest()
         self._router = ClosedHistoricalPlannedBundleWorkerRouter(
             {
                 HYBRID_MACRO_DETAIL_V1: self._worker_for_request,
@@ -433,6 +433,7 @@ class FlashcardProposalComposition:
             sessions=self._sessions,
             interaction_id=interaction_id,
             retired_source_ids=self._retired_source_ids,
+            semantic_preprocessor=self._semantic_preprocessor,
         )
 
     async def start_for_pin(
@@ -452,7 +453,7 @@ class FlashcardProposalComposition:
                 raise ValueError(
                     decision.clarification or "flashcard profile selection is ambiguous"
                 )
-            request = self._request(public, context, decision)
+            request = await self._request(public, context, decision)
             worker = self._worker_for_request(request)
             service = LessonWorkerService(
                 store=self._lesson_store,
@@ -564,18 +565,26 @@ class FlashcardProposalComposition:
         )
         if not interactions:
             raise ValueError(
-                "explicit flashcard profile selection lacks learner "
-                "interaction evidence"
+                "explicit flashcard profile selection lacks learner interaction evidence"
             )
         return interactions[-1].id
 
-    def _request(
+    async def _request(
         self,
         public: JsonObject,
         context: ExecutionContext,
         decision: FlashcardProfileSelectionDecision,
     ) -> LessonWorkerRequest:
-        plan = _lesson_plan(self._content, self._retired_source_ids())
+        retired = self._retired_source_ids()
+        original = _lesson_unit(self._content, retired)
+        if self._semantic_preprocessor is not None:
+            records = tuple(
+                record
+                for record in self._content.catalog()
+                if record.is_current_revision and record.source.source_id not in retired
+            )
+            original = await self._semantic_preprocessor.prepare(original, records)
+        plan = plan_flashcard_lesson(original)
         interaction_id = self._interaction_id or self._latest_interaction_id()
         receipt = decision.receipt(interaction_id)
         profile = decision.profile
@@ -667,6 +676,7 @@ class FlashcardProposalComposition:
 
     def _page_result_from_detail(self, detail: WorkerDetailView) -> VerifiedFlashcardPageResult:
         from study_agent.artifacts.candidates import FlashcardCandidateBatch
+
         if not isinstance(detail.output, Mapping):
             raise RuntimeError("verified flashcard output is not an object")
         batch = FlashcardCandidateBatch.from_json(detail.output)
@@ -707,6 +717,7 @@ def _profile_binding(
             and record.source.source_id not in composition._retired_source_ids()
         )
         return tuple(dependencies)
+
     if profile == HYBRID_MACRO_DETAIL_V1:
         return hybrid_flashcards_binding(
             dependency_resolver=resolver,
@@ -756,6 +767,13 @@ def _profile_expectation(
 def _lesson_plan(
     content: CourseSourceContent, retired_source_ids: frozenset[SourceId] = frozenset()
 ) -> FlashcardLessonPlan:
+    """The historical OFF projection, retained for deterministic replay tests."""
+    return plan_flashcard_lesson(_lesson_unit(content, retired_source_ids))
+
+
+def _lesson_unit(
+    content: CourseSourceContent, retired_source_ids: frozenset[SourceId] = frozenset()
+) -> LessonGenerationUnit:
     records = tuple(
         record
         for record in content.catalog()
@@ -768,8 +786,7 @@ def _lesson_plan(
         for chunk in record.chunks:
             section = " > ".join(chunk.section_path) or f"chunk {chunk.ordinal + 1}"
             locator = (
-                f"{record.source.title} · {section} · chars "
-                f"{chunk.start_offset}-{chunk.end_offset}"
+                f"{record.source.title} · {section} · chars {chunk.start_offset}-{chunk.end_offset}"
             )
             span = CanonicalSourceSpan(
                 chunk.source_id,
@@ -801,13 +818,11 @@ def _lesson_plan(
                 )
             )
             position += 1
-    return plan_flashcard_lesson(
-        LessonGenerationUnit(
-            "course-current-sources",
-            records[0].source.title if len(records) == 1 else "Current course sources",
-            tuple(topics),
-            tuple(paragraphs),
-        )
+    return LessonGenerationUnit(
+        "course-current-sources",
+        records[0].source.title if len(records) == 1 else "Current course sources",
+        tuple(topics),
+        tuple(paragraphs),
     )
 
 
@@ -885,8 +900,7 @@ def _proposal_context(
     return replace(
         context,
         idempotency_key=(
-            f"{context.idempotency_key or 'flashcard'}:proposal:"
-            f"{position}:{child_run_id}"
+            f"{context.idempotency_key or 'flashcard'}:proposal:{position}:{child_run_id}"
         ),
     )
 

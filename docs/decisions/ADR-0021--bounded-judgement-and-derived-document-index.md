@@ -1,56 +1,55 @@
 # ADR-0021: Bounded semantic judgement and shared derived document indexing
 
-Status: accepted for implementation; production activation gated by evaluation.
+Status: accepted; implemented in Cardine.
 
 ## Context
 
-The Jev/PageIndex unified specification targets reusable Harness boundaries.
-Cardine carries its own copied core and owns its product tutor composition. Its
-current main branch has canonical frozen substrates and deterministic lesson
-planning, but the KB v0.2 tree/unitizer implementation is still absent. This
-change introduces the available seams without manufacturing those missing
-canonical owners or treating another checkout as a dependency.
+The unified specification assumes Harness KB v0.2 unitization. Cardine instead
+owns immutable SourceChunks, a qualified PageIndex worker and product tutor
+composition. Replacing canonical chunk history to imitate absent KB objects would
+break citations and generated-artifact recovery. The owner also explicitly
+selected OpenRouter API and excluded benchmark work on 2026-10-01.
 
 ## Decision
 
-Choice judgements are derived, non-authoritative answers to finite closed
-questions. `ChoiceJudgementPort` is shared by flashcard selection and tutor
-routing; one optional Jev adapter owns transport only. Consumers validate the
-complete probability distribution and own calibrated threshold policies.
+Choice is a provider-neutral finite judgement. One optional async OpenRouter
+Decisions adapter owns authentication, concurrency, deadlines and transport
+retries; consumer policies own thresholds. Resolved model versions are explicit
+configuration so aliases cannot silently reuse versioned semantic analysis.
 
-`DocumentIndex` is the intended primary rebuildable document structure. Its
-nodes, summaries and provider identifiers carry no canonical authority. The
-index commits to source, revision, substrate, producer and configuration.
-Reconciliation verifies frozen bytes and resolves navigation locators to
-host-owned spans. The existing qualified PageIndex subprocess is reused at the
-Cardine adapter boundary rather than adding a second semantic parser.
+The PageIndex coordinator persists one primary, derived DocumentIndex. Its
+navigation projection and flashcard anchors address frozen normalized bytes.
+PDF input uses admitted Markdown plus verified original PDF provenance and an
+exact page map; indexing never introduces another extraction authority. ON
+fails explicitly when indexing is unavailable. Legacy navigation remains only
+in OFF/SHADOW compatibility paths.
 
-Flashcard semantic filtering happens before deterministic planning. The receipt
-retains all analyzed candidates; only CORE and SUPPORTING produce paragraph
-spans. Weak judgements, provider failure and incomplete excerpts retain content.
-The selected lesson scope cannot expand to unrelated indexed passages. Planner,
-worker and trusted scope contracts are unchanged.
+Identity-free structural drafts map to existing canonical chunks and citations
+in knowledge/unitizer. ingestion.identity remains the sole ChunkId creation
+owner. Flashcard runtime classification uses whole chunks before filtering;
+merging classified subspans afterward would reintroduce excluded content and
+violate unchanged full-chunk evidence commitments. Planner, worker, human
+proposal decisions and canonical event history remain authoritative.
 
-Jev selects tutor routes and bounded response/capability choices. The model then
-receives only the selected route's payload schema when generation is needed.
-The router returns existing decisions, validated by the existing validator;
-`TutorHostRunner` retains lifecycle, freshness and execution authority. Legacy
-routing remains authoritative in SHADOW and available as an explicit emergency
-fallback. It is not a second normal semantic router in ON mode.
+Tutor routing selects legal routes, advertised capabilities/tools and closed
+answers. Any generated payload sees only its selected schema, then existing
+validation and execution authority apply. Full-tutor routing is confined to
+OFF/SHADOW and explicitly configured emergency fallback.
 
-No final UnitId owner is introduced. When KB unitization exists, structural
-index drafts must flow through its single materialization owner, preserving
-historical resolution and replay. Legacy structural drafting is migration code
-with removal gated on grounding, retrieval, flashcard quality and replay.
+Derived indexes and analysis caches are versioned and rebuildable; they cannot
+write canonical events. Cached analysis validates canonical candidates,
+judgement provenance and consumer policy. Outages preserve flashcard content
+without permanently caching provider failure. Provider consent applies to each
+Jev call using the same course boundary as generative models.
 
 ## Consequences
 
-Core installation remains independent of provider SDKs. Provider credentials
-remain environment references and derived receipts never append canonical
-study events. OFF preserves current behavior; SHADOW compares candidate output;
-ON requires labeled-data recall/routing quality and measured cost/latency gates.
-Configuration schema migration, production activation and primary-path removal
-remain blocked until those gates and missing KB contracts are satisfied.
+Strict repository configuration v2 contains credential environment references,
+provider operations and immutable consumer policy. V1 readers explicitly migrate
+to OFF without rewriting existing files. The owner waived benchmarks; offline
+contract, migration, replay, packaging and regression tests remain required.
+Conservative configurable thresholds are not claimed to be calibrated quality
+results. No live calls, deployment or merge follow from this implementation.
 
-See [the implementation ledger](../../specs/jev-pageindex/README.md) for current
-verification and pickup. ADR-0010 still owns the unchanged worker design.
+See [the implementation record](../../specs/jev-pageindex/README.md) and
+ADR-0010 for the unchanged worker design.

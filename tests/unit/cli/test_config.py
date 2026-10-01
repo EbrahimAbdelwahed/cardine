@@ -10,6 +10,13 @@ from cardine.cli.config import (
     LocalRepositoryConfig,
     ModelAdapterConfig,
 )
+from study_agent.domain.features import FeatureMode
+from study_agent.repository_config import (
+    CONFIG_SCHEMA_VERSION,
+    DocumentIndexAdapterConfig,
+    JudgementAdapterConfig,
+    SemanticFeaturesConfig,
+)
 from study_agent.repository_config import LocalRepositoryConfig as CoreRepositoryConfig
 
 
@@ -131,3 +138,74 @@ def test_configuration_serialization_rejects_more_than_64_kib() -> None:
 
     with pytest.raises(LocalConfigError, match="64 KiB"):
         config.to_bytes()
+
+
+def test_schema_one_migrates_explicitly_to_off_without_persisting_credentials() -> None:
+    old = b'{"model":null,"schema_version":1}'
+    current = LocalRepositoryConfig.from_bytes(old)
+    assert current.schema_version == CONFIG_SCHEMA_VERSION == 2
+    assert current.features == SemanticFeaturesConfig()
+    assert current.judgement is None
+    assert current.to_bytes() != old
+    assert LocalRepositoryConfig.from_bytes(current.to_bytes()) == current
+
+
+def test_independent_provider_and_feature_policy_configuration_round_trips() -> None:
+    features = SemanticFeaturesConfig(
+        document_index_mode=FeatureMode.ON,
+        flashcard_semantic_mode=FeatureMode.ON,
+        tutor_routing_mode=FeatureMode.SHADOW,
+        exclusion_probability=0.995,
+        emergency_fallback=False,
+    )
+    config = LocalRepositoryConfig(
+        configured().model,
+        judgement=JudgementAdapterConfig(concurrency=32),
+        document_index=DocumentIndexAdapterConfig(timeout_seconds=5),
+        features=features,
+    )
+    assert LocalRepositoryConfig.from_bytes(config.to_bytes()) == config
+    assert b"OPENROUTER_API_KEY" in config.to_bytes()
+    assert b"resolved_model_id" in config.to_bytes()
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("concurrency", True),
+        ("concurrency", 0),
+        ("max_retries", -1),
+        ("timeout_seconds", float("nan")),
+        ("credential_env", "literal-token"),
+        ("credential_env", 3),
+        ("model_id", None),
+        ("resolved_model_id", " "),
+    ],
+)
+def test_judgement_config_rejects_invalid_operational_values(field: str, value: object) -> None:
+    with pytest.raises(LocalConfigError):
+        JudgementAdapterConfig(**{field: value})  # type: ignore[arg-type]
+
+
+def test_enabled_features_require_explicit_providers_and_valid_mode_dependencies() -> None:
+    with pytest.raises(LocalConfigError, match="judgement"):
+        LocalRepositoryConfig(features=SemanticFeaturesConfig(tutor_routing_mode=FeatureMode.ON))
+    with pytest.raises(LocalConfigError, match="document indexing"):
+        SemanticFeaturesConfig(flashcard_semantic_mode=FeatureMode.ON)
+    with pytest.raises(LocalConfigError, match="primary document"):
+        SemanticFeaturesConfig(
+            document_index_mode=FeatureMode.SHADOW, flashcard_semantic_mode=FeatureMode.ON
+        )
+
+
+def test_current_schema_rejects_unknown_feature_fields_and_literal_keys() -> None:
+    import json
+
+    raw = json.loads(EMPTY_CONFIG.to_bytes())
+    raw["features"]["surprise"] = True
+    with pytest.raises(LocalConfigError):
+        LocalRepositoryConfig.from_bytes(json.dumps(raw).encode())
+    raw = json.loads(EMPTY_CONFIG.to_bytes())
+    raw["judgement"] = {**JudgementAdapterConfig().to_json(), "api_key": "never-persist"}
+    with pytest.raises(LocalConfigError):
+        LocalRepositoryConfig.from_bytes(json.dumps(raw).encode())

@@ -68,6 +68,12 @@ REVIEWED_NON_IMPORT_AST_VARIANCE = {
 # Exact bytes from committed Wave A product evolution after the historical
 # CA-01/CA-02 snapshots. Preserve the frozen ledgers and reject further drift.
 POST_BASELINE_SHA256 = {
+    "src/cardine/cli/registry.py": (
+        "e8c6abdbf326efb92d49b10618741a5f452ac42556e27c2acfe1a5991460e377"
+    ),
+    "src/cardine/application/flashcard_proposals.py": (
+        "a0c6a76345a7b61fe1f31ae48af37913062df5dbe0233564205a71cdab8b859d"
+    ),
     "src/study_agent/ports/__init__.py": (
         "11bb38aeeea33101d1d1fe0dd6cb29d1e8fe112fa38d4c9d49a8141a8e2175c5"
     ),
@@ -81,7 +87,7 @@ POST_BASELINE_SHA256 = {
         "828072504ce14499f604fa3951b796e25a1422b4784f72a496ab16b5accf220b"
     ),
     "src/cardine/cli/repository.py": (
-        "eadd4ed0448a40c37f80d81277a512bb8a7aa195f0f1d8ecfd43cad1f977f00f"
+        "2a6db590171d021bca6b9fffceb5e08a790742c66c1e0651cc82138c0af6f1c6"
     ),
     "src/cardine/demo/browser.js": (
         "66e3c9107c7f25295a03aa10e776a3ae1ea3a55b88ceacc06ba0c42c86bc92f4"
@@ -95,6 +101,9 @@ POST_BASELINE_SHA256 = {
     "src/cardine/hosts/source_grounding.py": (
         "dce83af15586066e48306ddcfe755a469836e2eeb3fe381d3d32610d6f4ea1f0"
     ),
+    "src/study_agent/repository_config.py": (
+        "3ad9cd11a75456ef163e37028e2c5e58444944879874add8553b818c99328e6e"
+    ),
 }
 
 # Explicit Cardine-owned evolution approved by the Jev/PageIndex specification.
@@ -105,16 +114,16 @@ POST_BASELINE_ADDITIONS = {
         "b8abef779a6218b8eed200b15800217b374e6fef4ff384d34efcc665a801e0ec"
     ),
     "src/study_agent/adapters/judgement/jev.py": (
-        "cc694e15dd6ea0c10c082a10814160c40dcbd92d06b37746efd79246b1425a70"
+        "a8905a56c38f4e7d060c0ba5cd25eb23a656833bb26be9e6e86966fcf8dd787b"
     ),
     "src/study_agent/domain/document_index.py": (
-        "8e467b9f29baa96e2d08f6e1bb8cb12e3fda2520f0d4db711afaa79932c8962a"
+        "004d895a70b26ab9e4a3a616079792874be60dd2ef584755efdf1f11b9207c99"
     ),
     "src/study_agent/domain/features.py": (
         "b2941a0d1e5f40fc4b4ae9e6b072abd7337c99bf5b59255420e1c7b730a0c10a"
     ),
     "src/study_agent/flashcards/semantic.py": (
-        "0575dc38e8cd8715a78a297f3d94ca02edc38bd9e43f2875c3a91b177488974b"
+        "6c328980a79df765dc81edb18128bd29e313b5b0b91e4dff94c65adcde88dc47"
     ),
     "src/study_agent/knowledge/__init__.py": (
         "60b3770e79b5c172314488df96e09b006bf6af0c578736c804d3818f5ec19b1b"
@@ -127,6 +136,9 @@ POST_BASELINE_ADDITIONS = {
     ),
     "src/study_agent/ports/judgement.py": (
         "b223ac82d1016a88f89440dd42092b520c7d097fa1323c8882967d5b43bb638a"
+    ),
+    "src/study_agent/knowledge/unitizer.py": (
+        "ab1b3a5a44c78cc7ec1b2f3ca731188c0f79184c951a12f8817d8141836faba8"
     ),
 }
 
@@ -191,8 +203,7 @@ def _declared_package_data(config: Mapping[str, object]) -> set[str]:
                 # Qualified third-party artifacts have their own exact
                 # supply-chain verifier and are not CA-01/CA-02 namespace rows.
                 if not path.is_relative_to(ROOT / "src/cardine/documents/_vendor")
-                and path
-                != ROOT / "src/cardine/adapters/pageindex/page_index_md.py.data"
+                and path != ROOT / "src/cardine/adapters/pageindex/page_index_md.py.data"
             )
     return paths
 
@@ -357,6 +368,7 @@ def _baseline_source(path: str) -> str:
 
 def _normalized_ast(source: str, filename: str) -> object:
     tree = ast.parse(source, filename=filename)
+
     class _ImportStripper(ast.NodeTransformer):
         def visit_Import(self, node: ast.Import) -> None:
             return None
@@ -377,8 +389,7 @@ def _transition_contract() -> tuple[set[str], set[str]]:
         if (
             isinstance(node, ast.Assign)
             and any(
-                isinstance(target, ast.Name) and target.id == "__all__"
-                for target in node.targets
+                isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets
             )
             and isinstance(node.value, (ast.List, ast.Tuple))
         ):
@@ -414,8 +425,7 @@ def _transition_contract() -> tuple[set[str], set[str]]:
             ):
                 consumers.add(relative)
             if isinstance(imported_node, ast.Import) and any(
-                alias.name == "cardine._transition.study_agent"
-                for alias in imported_node.names
+                alias.name == "cardine._transition.study_agent" for alias in imported_node.names
             ):
                 consumers.add(relative)
     return exports, consumers
@@ -484,10 +494,7 @@ def _validate_cardine_transition(
             errors.append(f"moved Cardine path remains present: {old_path}")
         if replacement not in current_paths:
             errors.append(f"Cardine replacement path is absent: {replacement}")
-    expected_moved = {
-        row["path"]: row["replacement_import_or_path"]
-        for row in source_rows
-    }
+    expected_moved = {row["path"]: row["replacement_import_or_path"] for row in source_rows}
     expected_copied = set(COPIED_IMPORT_PATHS)
     expected_transition_paths = set(expected_moved) | expected_copied | TRANSITION_CONSUMERS
     if len(transition_rows) != 119:
@@ -501,10 +508,7 @@ def _validate_cardine_transition(
         moved_row = by_path.get(old_path)
         if moved_row is None:
             continue
-        if (
-            moved_row["source_path"] != replacement
-            or moved_row["disposition"] != "CARDINE_OWNER"
-        ):
+        if moved_row["source_path"] != replacement or moved_row["disposition"] != "CARDINE_OWNER":
             errors.append(f"CA-02 moved transition binding is invalid: {old_path}")
     for path in expected_copied:
         copied_row = by_path.get(path)
@@ -539,9 +543,7 @@ def _validate_cardine_transition(
                     if _normalized_ast(current_source, source_path) != _normalized_ast(
                         baseline_source, f"baseline:{source_path}"
                     ):
-                        errors.append(
-                            f"CA-02 copied-core non-import AST mismatch: {source_path}"
-                        )
+                        errors.append(f"CA-02 copied-core non-import AST mismatch: {source_path}")
         except (OSError, SyntaxError) as error:
             errors.append(f"CA-02 transition source invalid {source_path}: {error}")
     expected_entrypoints = {
@@ -577,9 +579,7 @@ def validate(*, live: bool = False) -> list[str]:
         config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
         targets = _entry_point_targets(config)
         current_paths = (
-            _source_paths(reviewed_current_paths)
-            | _declared_package_data(config)
-            | set(targets)
+            _source_paths(reviewed_current_paths) | _declared_package_data(config) | set(targets)
         )
         transition_rows, transition_entrypoints = _load_transition_overlay()
     except (OSError, ValueError, tomllib.TOMLDecodeError, json.JSONDecodeError) as error:
@@ -607,9 +607,8 @@ def validate(*, live: bool = False) -> list[str]:
         errors.append(f"classification is missing current path: {path}")
     for path in sorted(set(reviewed_by_current_path) - current_paths):
         row = reviewed_by_current_path[path]
-        if (
-            row.get("baseline_state", "clean") == "clean"
-            and not (path.startswith("entrypoint:study-agent") and row["removal_slice"] == "CA-02")
+        if row.get("baseline_state", "clean") == "clean" and not (
+            path.startswith("entrypoint:study-agent") and row["removal_slice"] == "CA-02"
         ):
             errors.append(f"classification has undeclared baseline-only path: {path}")
     transition_sources = {row["source_path"] for row in transition_rows}
@@ -618,9 +617,8 @@ def validate(*, live: bool = False) -> list[str]:
             if (
                 path not in transition_sources
                 and not path.startswith("entrypoint:")
-                and _digest(path, targets) != POST_BASELINE_SHA256.get(
-                    path, reviewed_by_current_path[path]["sha256"]
-                )
+                and _digest(path, targets)
+                != POST_BASELINE_SHA256.get(path, reviewed_by_current_path[path]["sha256"])
             ):
                 errors.append(f"classification sha256 mismatch for committed path: {path}")
         except OSError as error:

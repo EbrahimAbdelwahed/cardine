@@ -1,96 +1,74 @@
 # Bounded judgement and shared document indexing
 
 The owner requested application of [the unified specification](unified-spec.md)
-to Cardine. This record covers this repository; Harness has not changed.
+to Cardine. On 2026-10-01 the owner explicitly excluded benchmarks and selected
+OpenRouter API for Jev. These instructions supersede the original SDK and
+benchmark rollout requirements. No quality, recall, cost or latency measurements
+are claimed, and no live provider request is part of verification.
 
 ## Current pickup
 
-The available contracts and components are implemented. Finish the dependencies
-and evaluate labeled shadow data before production wiring or any primary-path
-switch. This is a draft implementation, not completed rollout.
+Implementation and production composition are complete on
+`codex/jev-pageindex-refactor`, continuing draft [PR #10](https://github.com/EbrahimAbdelwahed/cardine/pull/10).
+Final full offline verification, package verification and publication are the
+remaining closeout steps. No merge, deployment or study-store migration is authorized.
 
-Cardine/main at `1163005` has sources/substrates and lesson planning/workers,
-but no `DocumentTree`, `RetrievableUnit`, `UnitId` or `knowledge/unitizer.py`.
-KB-02 through KB-06 remain unimplemented. The unitizer migration cannot preserve
-an owner which does not exist here; do not invent a parallel authority or import
-another checkout. Tutor contracts remain in `cardine.hosts`.
+## Architecture decisions
 
-## Delivery ledger
+Cardine/main has immutable SourceChunks and historical citations, rather than
+Harness KB v0.2 DocumentTree/RetrievableUnit/UnitId. The unitizer requirement is
+adapted to that actual authority: identity-free index drafts reuse existing
+canonical ChunkIds through `knowledge/unitizer.py`; `ingestion.identity` remains
+the sole creation authority. The runtime classifies whole canonical chunks
+before filtering, preventing a later merge from reintroducing excluded slices.
+No canonical event, chunk identity or planner/worker contract changes.
 
-- [x] Immutable Choice contract with full finite distribution validation.
-- [x] Substrate-bound DocumentIndex; exact pages, lines and Unicode reconciliation.
-- [x] Disjoint local candidates covering the source, with explicit binding failures.
-- [x] Optional Jev SDK adapter, shared loop budget and bounded transport retries.
-- [x] DocumentIndex adapter reusing the qualified PageIndex worker, for Markdown/text.
-- [x] Conservative semantic receipt, identity/cache key and CORE/SUPPORTING projection.
-- [x] Lesson-scope confinement, complete-excerpt exclusion and unchanged planner/worker.
-- [x] Tutor router with closed choices, narrow payloads, validation, fallback/shadow.
-- [x] Architecture and evidence gate tests; provider-free wheel checks and Jev CI lane.
-- [ ] Labeled-data calibration and live recall/routing/cost/latency benchmarks.
-- [ ] Production wiring and versioned provider/feature configuration, after gates.
-- [ ] Raw PDF PageIndex indexing/provider decision beyond the qualified Markdown subset.
-- [ ] Tutor INVOKE_TOOL accommodation before replacing Cardine's current tutor.
-- [ ] KB unitization dependency, one-owner draft/materialization migration and replay.
-- [ ] Legacy primary-runtime removal after grounding/retrieval/flashcard/replay gates.
+The existing PageIndex coordinator now owns one persisted `DocumentIndex`;
+lesson navigation and flashcard anchors consume it. Schema1 derived caches
+rebuild into schema2; disabled state survives configuration changes. ON has no
+hidden legacy semantic parser fallback. PDF indexing uses the already admitted
+normalized Markdown and verified original bytes/page map, with explicit
+provenance; it does not run a second PDF extractor. Historical PDF sources without
+an exact page map report a failed derived index instead of approximating pages.
 
-## Contracts and use
+OpenRouter's [Decisions REST protocol](https://openrouter.ai/docs/api/api-reference/alphadecisions/submit-a-decisions-request)
+is separate from chat completions. Optional `.[jev]` installs native async HTTP;
+there is no TypeSafe SDK dependency. Server-owned `OPENROUTER_API_KEY` is an
+environment reference. The resolved model version is explicitly pinned separately
+from the request alias so changed provider versions cannot silently share analysis.
 
-Core imports work without Jev dependencies. Install `.[jev]` only when composing
-`JevChoiceAdapter`; the credential comes from `TYPESAFE_API_KEY` or server-owned
-constructor input, never persisted source configuration. SDK 0.7.2 protocol
-fixtures use local MockTransport, not the live API. `JEV_CONCURRENCY` defaults to
-64; all adapter instances on one loop share the configured budget. Conflicting
-limits fail explicitly. Compare 16/32/64 in separate benchmark runs.
+`FlashcardSemanticPreprocessor` runs before the unchanged deterministic planner.
+Only CORE/SUPPORTING whole chunks reach the worker; canonical offsets/locators
+are reconciled again by the existing resolver. OFF/SHADOW retain the exact
+original lesson unit. Persisted analysis includes bounded metadata and safe
+receipts, never source excerpts; provider failures retain content without poisoning
+the cache. Input/index/policy/model changes invalidate analysis.
 
-`PageIndexDocumentIndexAdapter` uses the existing qualified, killable PageIndex
-worker. It produces derived line locators over frozen normalized Markdown/text;
-no extra SDK is required for that bundled subset. Raw PDF requests fail explicitly.
-PDF page-range reconciliation is independently supported when a trusted page map
-exists. Neither summaries nor provider text becomes evidence.
+`RoutingTutorDecisionPort` covers all existing decisions, including INVOKE_TOOL.
+Jev selects legal routes and advertised actions, and generation receives only the
+chosen payload schema. Existing validators and runner remain authoritative.
+Full routing is confined to OFF, SHADOW and explicit emergency fallback; ON
+success has no second semantic router. Each Jev call uses existing course consent.
 
-`FlashcardSemanticAnalyzer` takes an explicit `SemanticPolicy` and a pinned
-`judgement_identity` of `producer_id@producer_version/model_id`. A changed or
-unexpected producer/model cannot reuse the semantic cache identity. Resolve
-canonical text from `DocumentIndexContext`; no source text is retained in the
-analysis receipt. `preprocess_generation` returns the exact original unit in
-OFF/SHADOW and only its scoped eligible projection in ON. Its provided original
-paragraphs bound the lesson; it cannot expand selection to the full-source index.
-Projection trims only surrounding whitespace by adjusting canonical offsets to
-meet the existing evidence contract. Gaps remain absent from planned slots.
+## Configuration
 
-`RoutingTutorDecisionPort` takes `TutorRoutingPolicy`, `ChoiceJudgementPort`,
-`ModelPort`, an optional legacy port and an optional derived receipt callback.
-Thresholds are required evaluation inputs. SHADOW keeps the legacy decision;
-ON uses narrow generation after route choice and explicit emergency fallback.
-Pending host validation permits only ANSWER_DIALOGUE, so closed answers need no
-route model call. Fixed capability inputs use `{}` or singleton enum values;
-the existing strict schema excludes `default`/`const`. No arbitrary map from
-trusted context to capability fields is introduced.
+Configuration v2 separates `model`, `judgement`, `document_index`, and `features`.
+Reading v1 explicitly upgrades to v2 with features OFF; it does not modify the
+file. Existing installations retain their behavior until flags are changed.
+Consumer thresholds are explicit conservative policy values, not calibrated claims.
+ON requires a configured judgement adapter; ON flashcard semantics requires ON
+indexing. Operational concurrency is separate from semantic fingerprints.
 
-No operational cache store, canonical events or repository configuration schema
-change was introduced. Components work without a cache; future storage keys
-include canonical content, index/configuration, policy and producer/model identity.
+See `study_agent.repository_config` for the strict schema, and the activation
+example added during closeout. Canonical data and local credentials are not
+included in this PR. Live provider evaluation is excluded by the owner.
 
-## Verification and limits
+## Verification
 
-Untouched main baseline: 2334 passed, four expected optional-provider/PDF skips
-outside the nested sandbox. Final integrated suite on `bce1042`: 2450 passed, four expected skips.
-Ruff, strict mypy (600 files), ownership audit (322 historical rows), wheel/sdist
-verification and a clean core install without Jev passed. Three
-regressions cover actual PageIndex Markdown ending with a newline; the focused
-index/semantic suite passes 44 tests. The Jev CI lane exercises the real SDK
-through MockTransport. PR [#10](https://github.com/EbrahimAbdelwahed/cardine/pull/10) is published as a
-draft; remote CI and automatic GitHub review must be checked against its current
-head before any merge.
-
-A synthetic scheduling probe sent 256 fake SDK requests through two adapter
-instances on each fresh loop. Limits 16/32/64 produced shared peaks 16/32/64 and
-wall times 112.50/64.02/34.15 ms with a scripted 5 ms delay. This verifies budget
-sharing and candidate preservation; it is not a provider performance benchmark.
-
-Production quality gates remain unmeasured. No representative human gold set,
-accepted calibrated thresholds or authorization for paid provider evaluation was
-provided. Unit tests prove correctness boundaries, not study recall or provider
-performance. No source uploads, model spend, deployments or merges occurred.
+Focused provider, index/PDF, unitizer/replay, routing/runner and real repository
+pipeline tests pass. Integrated full run: 2558 passed, four optional skips; two
+schema-version expectations are updated, and the committed ownership audit is
+being refreshed before the final rerun. Ruff and strict mypy pass on 606 files.
+The original 322-row migration ledger remains frozen; evolution has exact hashes.
 
 See [ADR-0021](../../docs/decisions/ADR-0021--bounded-judgement-and-derived-document-index.md).

@@ -111,7 +111,13 @@
 - Tutor payload generation must see only the selected schema, never independently
   reroute or manufacture continuation/action authority. Validate all decisions
   and check exactly-once emergency fallback plus cancellation propagation.
-- Production activation, raw PDF indexing, INVOKE_TOOL routing and the absent
-  KB unitizer are explicit dependencies in specs/jev-pageindex/README.md. Do not
-  mistake their recorded incompleteness for completed integration or silently
-  remove their quality/replay gates.
+- The owner explicitly excluded benchmarks and selected OpenRouter Decisions.
+  Inspect wire protocol, resolved-model identity, consent and credential references;
+  no paid smoke test or quality claim is implied by offline verification.
+- Canonical ChunkId creation remains in ingestion.identity. Structural drafts
+  reuse historical chunks; runtime cardability classifies complete chunks before
+  filtering. Verify recovery still resolves their original IDs and exact locators.
+- Inspect strict configuration v2 and explicit v1 migration to OFF. In ON,
+  PageIndex failure must be explicit and legacy semantic parsers/router wrappers
+  must not run as a second normal path. Test cache identity, tamper detection,
+  outages without persistent poisoning and disabled-state preservation.

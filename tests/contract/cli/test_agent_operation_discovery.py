@@ -235,7 +235,7 @@ def _assert_closed_manifest(manifest: Mapping[str, Any]) -> None:
         "cardine --json operator skill --output PATH"
     )
     assert len(operator_skill["fingerprint"]) == 64
-    assert manifest["repository_schema_versions"] == [1]
+    assert manifest["repository_schema_versions"] == [1, 2]
 
     commands = manifest["commands"]
     command_names = [item["name"] for item in commands]

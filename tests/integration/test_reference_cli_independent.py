@@ -190,7 +190,7 @@ def test_course_isolation_export_determinism_and_doctor_replay(
         "event_replay": "ok",
         "retrieval_rebuild": "ok",
         "run_store": "ok",
-        "schema_version": 1,
+        "schema_version": 2,
         "sqlite_fts5": True,
         "status": "ok",
     }

@@ -1,11 +1,11 @@
 # Current development
 
-The active implementation in this checkout is the
-[Jev/PageIndex refactor](../specs/jev-pageindex/README.md), on
-`codex/jev-pageindex-refactor` based on fetched `origin/main` at `1163005`.
-The spec README records current gates and dependencies. Historical work logs
-and other chats' preview branches do not change this task's base.
+The [Jev/PageIndex implementation](../specs/jev-pageindex/README.md) continues
+`codex/jev-pageindex-refactor` from fetched `origin/main` at `1163005`, in
+managed checkout `4a56/cardine`, draft [PR #10](https://github.com/EbrahimAbdelwahed/cardine/pull/10).
 
-Available components are published in draft [PR #10](https://github.com/EbrahimAbdelwahed/cardine/pull/10).
-Full offline suite: 2450 passed; rollout remains blocked on the gates in the spec
-ledger. No primary runtime/configuration switch or merge has been performed.
+OpenRouter Decisions transport, shared DocumentIndex/PDF provenance, canonical
+chunk materialization, pre-planner semantic cache/gate, complete tutor routing
+and configuration v2 are integrated. The owner excludes benchmarks and live
+provider evaluation. Closeout verification/publication is in progress; merge and
+deployment remain separate owner actions. No local study stores were changed.
