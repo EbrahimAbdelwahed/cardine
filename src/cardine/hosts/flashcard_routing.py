@@ -170,7 +170,10 @@ class FlashcardProfileRoutingTutorDecisionPort(TutorDecisionPort):
             isinstance(decision, StartCapabilityDecision)
             and decision.capability_id == _PROPOSE_FLASHCARDS
         ):
-            if _observed_conversation_history(context):
+            if (
+                _observed_conversation_history(context)
+                or _HISTORY_SCOPED.search(learner_text) is not None
+            ):
                 return _explicit_memory_flashcard_decision(decision, learner_text)
             return decision
         if _observed_conversation_history(context):
@@ -204,6 +207,14 @@ def _purely_history_scoped(learner_text: str) -> bool:
         return False
     remainder = _HISTORY_SCOPED.sub(" ", _FLASHCARD_REQUEST.sub(" ", learner_text))
     generic = _MEMORY_TOPIC_STOPWORDS | {
+        "a",
+        "da",
+        "di",
+        "of",
+        "on",
+        "to",
+        "un",
+        "una",
         "solo",
         "only",
         "argomenti",
@@ -218,11 +229,7 @@ def _purely_history_scoped(learner_text: str) -> bool:
         "covered",
         "studied",
     }
-    return not any(
-        token.casefold() not in generic
-        for token in re.findall(r"[\wÀ-ÿ-]+", remainder)
-        if len(token) >= 3
-    )
+    return not any(token.casefold() not in generic for token in re.findall(r"[\wÀ-ÿ-]+", remainder))
 
 
 def _is_flashcard_generation_request(learner_text: str) -> bool:
