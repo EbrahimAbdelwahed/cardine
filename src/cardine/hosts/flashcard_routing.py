@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Mapping
+from typing import cast
 
 from cardine.application.flashcard_profile_selection import (
     FlashcardProfileRouteKind,
@@ -68,26 +69,53 @@ _HISTORY_SCOPED = re.compile(
 _MEMORY_TOPIC_STOPWORDS = frozenset(
     {
         "abbiamo",
+        "adesso",
+        "alla",
+        "alle",
+        "anche",
         "about",
-        "cards",
         "che",
+        "come",
+        "cards",
         "crea",
         "create",
+        "dai",
+        "dal",
+        "dalla",
+        "dalle",
+        "dei",
         "della",
         "delle",
         "degli",
         "discusso",
         "discussed",
+        "e",
+        "finora",
         "generate",
         "genera",
         "flashcard",
         "flashcards",
+        "gli",
+        "i",
+        "il",
+        "in",
+        "la",
+        "le",
+        "lo",
+        "ma",
+        "nel",
+        "nella",
+        "nelle",
+        "per",
         "quello",
         "questo",
+        "si",
+        "sopra",
         "sulla",
         "sulle",
         "su",
         "that",
+        "the",
         "what",
     }
 )
@@ -250,47 +278,98 @@ def _oldest_included_conversation_sequence(context: TutorHostContext) -> int | N
 
 def _bounded_memory_flashcard_decision(
     decision: StartCapabilityDecision, context: TutorHostContext
-) -> StartCapabilityDecision:
-    """Persist only a topic sketch derived from the canonical current request."""
+) -> TutorDecision:
+    """Persist a bounded topic sketch from validated, high-water history reads."""
 
     inputs = dict(decision.inputs)
-    learner_text = _latest_learner_text(context)
-    if learner_text is None:
-        raise ValueError("memory-informed flashcards require a learner request")
-    topic_terms = tuple(
-        dict.fromkeys(
-            token.casefold()
-            for token in re.findall(r"[\wÀ-ÿ-]+", learner_text, re.UNICODE)
-            if 2 <= len(token) <= 40 and token.casefold() not in _MEMORY_TOPIC_STOPWORDS
-        )
-    )[:6]
+    entries = _validated_conversation_entries(context)
+    topic_terms = _history_topic_terms(entries)
     if not topic_terms:
-        raise ValueError("memory-informed flashcard query has no bounded topic terms")
-    observations = context.tutor_snapshot.get("agent_observations")
-    consulted = 0
-    if isinstance(observations, tuple):
-        for observation in observations:
-            if not isinstance(observation, Mapping):
-                continue
-            result = observation.get("result")
-            if not isinstance(result, Mapping):
-                continue
-            entries = result.get("entries")
-            if isinstance(entries, tuple):
-                consulted += len(entries)
+        return AskLearnerDecision(
+            "Quali argomenti della conversazione vuoi usare per le flashcard?"
+        )
     topic_query = " ".join(topic_terms)
     inputs["query"] = topic_query
     inputs["scope"] = topic_query
     inputs["continuation_summary_json"] = json.dumps(
         {
             "topic_terms": topic_terms,
-            "messages_consulted": min(consulted, 24),
+            "messages_consulted": len(entries),
         },
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
     )
     return StartCapabilityDecision(decision.capability_id, inputs, decision.progress_message)
+
+
+def _validated_conversation_entries(
+    context: TutorHostContext,
+) -> tuple[Mapping[str, object], ...]:
+    observations = context.tutor_snapshot.get("agent_observations")
+    if not isinstance(observations, tuple):
+        return ()
+    entries: list[Mapping[str, object]] = []
+    for observation in observations:
+        if (
+            not isinstance(observation, Mapping)
+            or observation.get("tool_name")
+            not in {"conversation.search", "conversation.read"}
+            or observation.get("status") != "succeeded"
+        ):
+            continue
+        result = observation.get("result")
+        raw_entries = result.get("entries") if isinstance(result, Mapping) else None
+        if (
+            not isinstance(result, Mapping)
+            or type(result.get("through_sequence")) is not int
+            or result.get("through_sequence") != context.tutor_snapshot_sequence
+            or not isinstance(raw_entries, tuple)
+        ):
+            continue
+        result_entries = cast(tuple[object, ...], raw_entries)
+        if len(result_entries) > 24:
+            continue
+        validated: list[Mapping[str, object]] = []
+        for entry in result_entries:
+            role = entry.get("role") if isinstance(entry, Mapping) else None
+            sequence = entry.get("course_sequence") if isinstance(entry, Mapping) else None
+            excerpt = entry.get("excerpt") if isinstance(entry, Mapping) else None
+            if (
+                not isinstance(entry, Mapping)
+                or role not in {"learner", "assistant"}
+                or type(sequence) is not int
+                or not 1 <= sequence <= context.tutor_snapshot_sequence
+                or not isinstance(excerpt, str)
+                or not excerpt.strip()
+                or len(excerpt) > 700
+            ):
+                break
+            validated.append(
+                {"role": role, "course_sequence": sequence, "excerpt": excerpt}
+            )
+        else:
+            entries.extend(validated)
+    return tuple(entries[:24])
+
+
+def _history_topic_terms(entries: tuple[Mapping[str, object], ...]) -> tuple[str, ...]:
+    terms: dict[str, int] = {}
+    for entry in entries:
+        excerpt = entry.get("excerpt")
+        if not isinstance(excerpt, str):
+            continue
+        for token in re.findall(r"[\wÀ-ÿ-]+", excerpt, re.UNICODE):
+            normalized = token.casefold()
+            if (
+                3 <= len(normalized) <= 40
+                and normalized not in _MEMORY_TOPIC_STOPWORDS
+                and not normalized.isdecimal()
+            ):
+                terms[normalized] = terms.get(normalized, 0) + 1
+    return tuple(
+        sorted(terms, key=lambda term: (-terms[term], term))[:6]
+    )
 
 
 __all__ = ["FlashcardProfileRoutingTutorDecisionPort"]
