@@ -263,7 +263,9 @@ def test_memory_scoped_flashcard_wrapper_preserves_progress_message() -> None:
     assert isinstance(decision, StartCapabilityDecision)
     assert decision.progress_message == "Preparo le flashcard"
     assert decision.inputs["scope"] == "glicolisi pompa potassio sodio"
-    assert "finora" not in decision.inputs["query"]
+    query = decision.inputs["query"]
+    assert isinstance(query, str)
+    assert "finora" not in query
 
 
 def test_memory_scoped_flashcards_fail_closed_on_unbound_history() -> None:
