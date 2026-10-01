@@ -9,6 +9,7 @@ from dataclasses import replace
 from hashlib import sha256
 from typing import cast
 from unicodedata import normalize
+from uuid import uuid4
 
 from cardine.adapters.audio.groq import GroqAudioTranscriber
 from cardine.cli.repository import LocalRepository, ModelAdapterConfigurationError
@@ -189,6 +190,7 @@ class MaterialProduct:
         reservation_id: str,
         fingerprint: str,
         job_ids: tuple[str, ...],
+        owner_id: str,
     ) -> None:
         for _ in range(8):
             try:
@@ -215,7 +217,19 @@ class MaterialProduct:
                     or tuple(cast(tuple[str, ...], current["job_ids"])) != job_ids
                 ):
                     raise ValueError("Richiesta lezioni riutilizzata con confini diversi.")
-                return
+                current_owner = current.get("owner_id")
+                if current_owner != owner_id:
+                    raise ValueError("Questa richiesta di lezioni è già in lavorazione; riprova.")
+                reservations[reservation_id] = {
+                    **current,
+                    "owner_id": owner_id,
+                }
+                replacement = canonical_json_bytes(
+                    {"jobs": tuple(jobs), "reservations": reservations}
+                )
+                if self.registry.compare_and_set(self.key, raw, replacement):
+                    return
+                continue
 
             reserved = self._reserved_job_ids(reservations)
             missing = tuple(job_id for job_id in job_ids if job_id not in existing_ids)
@@ -229,13 +243,16 @@ class MaterialProduct:
                 "fingerprint": fingerprint,
                 "job_ids": job_ids,
                 "remaining": additional,
+                "owner_id": owner_id,
             }
-            replacement = canonical_json_bytes({"jobs": tuple(jobs), "reservations": reservations})
+            replacement = canonical_json_bytes(
+                {"jobs": tuple(jobs), "reservations": reservations}
+            )
             if self.registry.compare_and_set(self.key, raw, replacement):
                 return
         raise ValueError("Registro generazioni occupato; riprova.")
 
-    def _release_batch(self, reservation_id: str) -> None:
+    def _release_batch(self, reservation_id: str, owner_id: str) -> None:
         for _ in range(8):
             try:
                 raw = self.registry.load(self.key)
@@ -243,7 +260,8 @@ class MaterialProduct:
                 return
             registry = cast(dict[str, object], json.loads(raw))
             reservations = cast(dict[str, JsonObject], registry.get("reservations", {}))
-            if reservation_id not in reservations:
+            reservation = reservations.get(reservation_id)
+            if reservation is None or reservation.get("owner_id") != owner_id:
                 return
             del reservations[reservation_id]
             replacement = canonical_json_bytes(
@@ -608,7 +626,8 @@ class MaterialProduct:
             )
             for index in range(len(lessons))
         )
-        self._reserve_batch(batch_id, fingerprint, job_ids)
+        owner_id = uuid4().hex
+        self._reserve_batch(batch_id, fingerprint, job_ids, owner_id)
         results: list[JsonObject] = []
         try:
             for index, lesson in enumerate(lessons):
@@ -627,6 +646,11 @@ class MaterialProduct:
                     "end_offset": last.end_offset,
                     "title": str(lesson["title"]),
                 }
+                expected_sequence = self.repo.events.projection(self.course).sequence
+                # Bind the current-parent check to the exact append high-water mark.
+                # Any retirement or revision event between this check and ingestion
+                # makes the expected-sequence precondition fail before admission.
+                self.source(source_id, revision_id)
                 admitted = self.admit_extraction(
                     original=self.repo.blobs.get(record.source.blob),
                     text=text,
@@ -638,6 +662,7 @@ class MaterialProduct:
                         "Estratto della sbobina; pagine e confini "
                         "sono stati confermati dall'utente.",
                     ),
+                    expected_sequence=expected_sequence,
                 )
                 results.append(
                     self.start(
@@ -649,7 +674,7 @@ class MaterialProduct:
                 )
             return tuple(results)
         finally:
-            self._release_batch(batch_id)
+            self._release_batch(batch_id, owner_id)
 
     def admit_extraction(
         self,
@@ -661,6 +686,7 @@ class MaterialProduct:
         adapter: str,
         media_type: str,
         limitations: tuple[str, ...],
+        expected_sequence: int | None = None,
     ) -> TextIngestionResult:
         normalized = normalize("NFC", text.replace("\r\n", "\n").replace("\r", "\n"))
         self._validate_transcript_size(normalized)
@@ -688,6 +714,7 @@ class MaterialProduct:
             content_origin=ContentOrigin.EXTRACTED,
             extraction_provenance=provenance,
             context=self.context,
+            expected_sequence=expected_sequence,
         )
 
     @staticmethod

@@ -962,9 +962,17 @@ def test_pdf_batch_reserves_capacity_before_any_admission(
         assert tuple(repository.events.read(context.course_id)) == before
         assert len(product.jobs()) == 255
         assert not json.loads(product.registry.load(product.key)).get("reservations")
+        for index in range(2):
+            job_id = product._material_job_id(
+                str(context.course_id),
+                str(context.session_id),
+                f"capacity-batch-lesson-{index}",
+            )
+            with pytest.raises(KeyError):
+                product.states.load(job_id)
 
 
-def test_pdf_reservation_protects_slots_and_is_idempotent(tmp_path: Path) -> None:
+def test_pdf_reservation_protects_slots_and_only_owner_releases(tmp_path: Path) -> None:
     import json
 
     from study_agent.state import canonical_json_bytes
@@ -982,10 +990,16 @@ def test_pdf_reservation_protects_slots_and_is_idempotent(tmp_path: Path) -> Non
             "jobs": tuple({"job_id": f"existing-{i}", "kind": "material"} for i in range(254))
         }
         assert product.registry.create(product.key, canonical_json_bytes(seeded))
-        product._reserve_batch("batch", "fingerprint", ("lesson-a", "lesson-b"))
+        product._reserve_batch("batch", "fingerprint", ("lesson-a", "lesson-b"), "owner-a")
         same = product.registry.load(product.key)
-        product._reserve_batch("batch", "fingerprint", ("lesson-a", "lesson-b"))
+        product._reserve_batch("batch", "fingerprint", ("lesson-a", "lesson-b"), "owner-a")
         assert product.registry.load(product.key) == same
+        with pytest.raises(ValueError, match="già in lavorazione"):
+            product._reserve_batch("batch", "fingerprint", ("lesson-a", "lesson-b"), "owner-b")
+        product._release_batch("batch", "owner-b")
+        assert product.registry.load(product.key) == same
+        product._release_batch("batch", "owner-a")
+        product._reserve_batch("batch", "fingerprint", ("lesson-a", "lesson-b"), "owner-b")
         with pytest.raises(ValueError, match="limite"):
             product._register({"job_id": "outsider", "kind": "audio"})
         for job in ("lesson-a", "lesson-b"):
@@ -999,3 +1013,82 @@ def test_pdf_reservation_protects_slots_and_is_idempotent(tmp_path: Path) -> Non
             )
         assert len(product.jobs()) == 256
         assert not json.loads(product.registry.load(product.key)).get("reservations")
+
+
+def test_pdf_parent_retirement_racing_admission_cannot_append_lesson(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from hashlib import sha256
+
+    from study_agent.domain import SourceId
+    from study_agent.domain.provenance import DocumentConversionProvenance, DocumentPageSpan
+    from study_agent.ingestion import TextIngestionError
+
+    root = tmp_path / "repo"
+    initialize_local_repository(root, _config())
+    context = replace(_service_context(), principal_kind=PrincipalKind.HUMAN)
+    with LocalRepository.open(
+        root, model_adapters=_registry(), environment={"OPENAI_API_KEY": "fixture"}
+    ) as repository:
+        _prepare(repository, consent=True)
+        text = "# Lezione 12A\n\nLecture 12 is important; this may be uncertain.\n"
+        original = b"%PDF-fixture"
+        provenance = DocumentConversionProvenance(
+            sha256(original).hexdigest(),
+            sha256(text.encode()).hexdigest(),
+            "fixture-pdf@1",
+            "1",
+            sha256(b"manifest").hexdigest(),
+            "fixture-normalizer@1",
+            ("No images",),
+            page_count=1,
+            page_spans=(DocumentPageSpan(1, 0, len(text)),),
+        )
+        admitted = repository.for_course(context.course_id).ingestion.ingest(
+            filename="pdf.md",
+            content=text.encode(),
+            original_content=original,
+            source_id=SourceId("pdf-source"),
+            title="PDF lesson",
+            trust_level=0,
+            source_role="lesson",
+            content_origin=ContentOrigin.EXTRACTED,
+            conversion_provenance=provenance,
+            context=context,
+        )
+        product = MaterialProduct(repository, context)
+        original_admit = product.admit_extraction
+        retired = False
+
+        def retire_then_admit(**kwargs: object) -> object:
+            nonlocal retired
+            if not retired:
+                retired = True
+                lifetime_context = replace(context, session_id=None)
+                sequence = repository.events.projection(context.course_id).sequence
+                repository.source_lifetime_service.retire(
+                    lifetime_context,
+                    admitted.source.source_id,
+                    "retire-parent-during-admission",
+                    expected_sequence=sequence,
+                )
+            return original_admit(**kwargs)
+
+        monkeypatch.setattr(product, "admit_extraction", retire_then_admit)
+        with pytest.raises(TextIngestionError, match="expected sequence"):
+            product.start_lessons(
+                str(admitted.source.source_id),
+                str(admitted.source.revision_id),
+                [{"title": "Lesson", "start_page": 1, "end_page": 1}],
+                "parent-race",
+            )
+
+        records = repository.for_course(context.course_id).content.catalog()
+        assert not any(
+            record.source.content_origin is ContentOrigin.EXTRACTED
+            and record.source.source_id != admitted.source.source_id
+            for record in records
+        )
+        assert product.jobs() == []
+        registry = json.loads(product.registry.load(product.key))
+        assert not registry.get("reservations")

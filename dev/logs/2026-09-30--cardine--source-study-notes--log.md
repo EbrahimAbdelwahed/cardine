@@ -129,3 +129,12 @@ ledgers remain frozen. Current-head CI and automatic review are required
 before merging; no provider calls or deployment are authorized here.
 
 PDF lesson batches reserve their complete registry capacity using CAS before any canonical extraction admission. Other starts account for outstanding reservations, same-request retries preserve identity, and registration consumes the reserved slots. Nineteen product regressions pass, including a competing registry update before reservation and zero-admission rejection at the 256-job bound. Full mypy passes; publication still awaits current CI/review.
+
+The next review pass closes two batch races. Reservations carry a per-caller
+owner token, so a duplicate in-flight request receives a bounded retry response
+and only the owner can release its capacity; failed calls release their own
+reservation for a later retry. Before each extracted lesson is appended, the
+parent PDF is revalidated and that check is bound to the exact event-stream
+sequence supplied to ingestion. A retirement or revision change in the gap
+therefore prevents the extracted lesson from becoming canonical. The focused
+product suite, typing, Ruff and ownership audit are rerun for this repair.
