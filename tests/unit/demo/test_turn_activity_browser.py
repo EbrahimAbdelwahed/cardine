@@ -192,23 +192,53 @@ def test_retry_poll_survives_previous_terminal_activity() -> None:
     script = r"""
 const fs = require('node:fs'); const vm = require('node:vm');
 const source = fs.readFileSync(process.argv[1], 'utf8');
+const sync = source.slice(source.indexOf('  function syncAttributes'),
+ source.indexOf('\n  function morphElement'));
 const poll = source.slice(source.indexOf('  async function pollTurnActivity'),
  source.indexOf('  function restoreFailedTurnDraft'));
 const snapshots = [
  {state:'failed',records:[{sequence:1}]},
  {state:'running',records:[{sequence:2}]},
+ {state:'running',records:[{sequence:2}]},
  {state:'failed',records:[{sequence:2}]}];
 let reads=0; const rendered=[];
-const state = {activityPollToken:0,navigationVersion:0,pendingTurn:{requestId:'retry'}};
+let openAfterFresh = null; let openAfterReaderCollapse = null;
+const state = {activityPollToken:0,navigationVersion:0,pendingTurn:{
+ requestId:'retry',awaitingRetryActivity:true}};
+const disclosure = {
+ tagName:'DETAILS', dataset:{state:'running'}, open:true,
+ classList:{contains:(name)=>name==='ai-tool-chips'}, attrs:{'data-state':'running',open:''},
+ get attributes(){return Object.entries(this.attrs).map(([name,value])=>({name,value}));},
+ hasAttribute(name){return name in this.attrs;}, getAttribute(name){return this.attrs[name]??null;},
+ removeAttribute(name){delete this.attrs[name];},
+ setAttribute(name,value){this.attrs[name]=String(value);},
+};
 const context = {state, root:{}, text:(value)=>value||'', $:()=>({}),
  captureScroll:()=>({}), restoreScroll:()=>{},
- fetchJson:async()=>snapshots[reads++], aiToolChips:(payload)=>payload.state,
- patch:(_node,value)=>rendered.push(value),
- window:{setTimeout:(resolve)=>{if(reads===3)state.pendingTurn=null; resolve();}}};
-vm.createContext(context); vm.runInContext(poll,context);
-context.pollTurnActivity('retry').then(()=>console.log(JSON.stringify({reads,rendered})));
+ fetchJson:async()=>snapshots[reads++], aiToolChips:(payload)=>({state:payload.state}),
+ patch:(_node,value)=>{
+   const next={tagName:'DETAILS',dataset:{state:value.state},attrs:{'data-state':value.state},
+     get attributes(){return Object.entries(this.attrs).map(([name,value])=>({name,value}));},
+     hasAttribute(name){return name in this.attrs;},
+     getAttribute(name){return this.attrs[name]??null;}};
+   if(value.state==='running')next.attrs.open='';
+   context.syncAttributes(disclosure,next); disclosure.dataset.state=value.state;
+   rendered.push(value.state);
+   if(value.state==='running'&&openAfterFresh===null){openAfterFresh=disclosure.open;disclosure.open=false;disclosure.removeAttribute('open');}
+   else if(value.state==='running')openAfterReaderCollapse=disclosure.open;
+ },
+ window:{setTimeout:(resolve)=>{if(reads===4)state.pendingTurn=null; resolve();}}};
+vm.createContext(context);
+vm.runInContext(`${sync}; this.syncAttributes=syncAttributes; ${poll}`,context);
+context.pollTurnActivity('retry').then(()=>console.log(JSON.stringify({
+ reads,rendered,openAfterFresh,openAfterReaderCollapse})));
 """
     result = subprocess.run(
         ["node", "-e", script, str(browser)], check=True, capture_output=True, text=True
     )
-    assert json.loads(result.stdout) == {"reads": 3, "rendered": ["failed", "running", "failed"]}
+    assert json.loads(result.stdout) == {
+        "reads": 4,
+        "rendered": ["running", "running", "failed"],
+        "openAfterFresh": True,
+        "openAfterReaderCollapse": False,
+    }

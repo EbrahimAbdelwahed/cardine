@@ -2188,6 +2188,7 @@
       && JSON.stringify(state.lastCommand.payload) === JSON.stringify(payload)
     );
     const request = forcedRequest || (retryingCommand ? state.lastCommand.requestId : requestId());
+    const reusingRequest = Boolean(state.lastCommand?.requestId === request);
     const command = Object.freeze({
       endpoint,
       payload: Object.freeze({ ...payload }),
@@ -2196,7 +2197,11 @@
     });
     state.lastCommand = command;
     if (isTutorTurn) {
-      state.pendingTurn = { requestId: request, content: text(payload.content || payload.response) };
+      state.pendingTurn = {
+        requestId: request,
+        content: text(payload.content || payload.response),
+        awaitingRetryActivity: reusingRequest,
+      };
       renderOptimisticTurn(state.pendingTurn.content);
       pollTurnActivity(request).catch(() => {});
     }
@@ -2358,11 +2363,17 @@
   async function pollTurnActivity(requestId) {
     const token = ++state.activityPollToken;
     const navigationVersion = state.navigationVersion;
+    let awaitingRetryActivity = state.pendingTurn?.awaitingRetryActivity === true;
     let failures = 0;
     for (let attempt = 0; attempt < 240 && token === state.activityPollToken && navigationVersion === state.navigationVersion && state.pendingTurn?.requestId === requestId && failures < 3; attempt += 1) {
       try {
         const payload = await fetchJson(`/api/v1/turns/${encodeURIComponent(requestId)}/activity`);
         if (token !== state.activityPollToken || navigationVersion !== state.navigationVersion || state.pendingTurn?.requestId !== requestId) return;
+        if (awaitingRetryActivity && payload.state !== "running") {
+          await new Promise((resolve) => window.setTimeout(resolve, 600));
+          continue;
+        }
+        awaitingRetryActivity = false;
         failures = 0;
         const progressMessage = text(payload.progress_message, "");
         const node = $("[data-turn-activity]", root);
