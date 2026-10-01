@@ -1,7 +1,8 @@
-"""TypeSafe System One Choice transport, independent of consumer policy.
+"""OpenRouter Decisions Choice transport, independent of consumer policy.
 
-Protocol qualified against typesafe-sdk 0.7.2. SDK imports and raw responses
-stay inside this module; importing Cardine's core needs no provider extras.
+Protocol: https://openrouter.ai/docs/api/api-reference/alphadecisions/submit-a-decisions-request
+The alpha wire contract is explicitly versioned here. Optional async HTTP
+imports and raw provider responses stay inside this module.
 """
 
 from __future__ import annotations
@@ -9,10 +10,11 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
-import logging
 import math
 import os
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from time import perf_counter
 from typing import Any
 from weakref import WeakKeyDictionary
@@ -28,6 +30,9 @@ _BUDGETS: WeakKeyDictionary[asyncio.AbstractEventLoop, tuple[int, asyncio.Semaph
     WeakKeyDictionary()
 )
 _NORMALIZATION_TOLERANCE = 1e-6
+_ENDPOINT = "https://openrouter.ai/api/alpha/decisions"
+_PROTOCOL_VERSION = "openrouter-decisions-alpha@1"
+_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 
 
 class JevProviderError(RuntimeError):
@@ -50,28 +55,25 @@ def _shared_budget(limit: int) -> asyncio.Semaphore:
     return existing[1]
 
 
-def _load_sdk() -> Any:
-    return importlib.import_module("typesafe_sdk")
-
-
 class JevChoiceAdapter:
-    """One Choice adapter for all consumers, sharing a per-loop request budget.
+    """Native async OpenRouter Choice with one shared per-loop request budget.
 
-    ``timeout_seconds`` bounds the complete judgement including queueing and
-    SDK transport retries. Cancellation reaches native async HTTP operations.
-    The SDK owns transport retries; malformed semantic results are never retried.
-    Injecting ``sdk_loader`` supports offline SDK-contract fixtures.
+    ``timeout_seconds`` covers queueing, transport attempts, and retry delays.
+    Only HTTP transport failures, rate limits, and temporary server failures
+    retry. Malformed judgements never retry. ``transport`` is an optional native
+    httpx transport for offline fixtures; its lifetime belongs to each call.
     """
 
     def __init__(
         self,
         *,
         api_key: str | None = None,
-        model_id: str = "jev-latest",
+        model_id: str = "typesafe/jev-1.13",
         timeout_seconds: float = 10.0,
         max_retries: int = 2,
         concurrency: int | None = None,
-        sdk_loader: Callable[[], Any] = _load_sdk,
+        retry_backoff_seconds: float = 0.1,
+        transport: object | None = None,
     ) -> None:
         if not model_id or model_id != model_id.strip():
             raise ValueError("model_id must be non-empty trimmed text")
@@ -79,6 +81,8 @@ class JevChoiceAdapter:
             raise ValueError("timeout_seconds must be finite and positive")
         if type(max_retries) is not int or not 0 <= max_retries <= 10:
             raise ValueError("max_retries must be between zero and ten")
+        if not math.isfinite(retry_backoff_seconds) or not 0 <= retry_backoff_seconds <= 2:
+            raise ValueError("retry_backoff_seconds must be between zero and two")
         try:
             limit = (
                 int(os.environ.get("JEV_CONCURRENCY", "64")) if concurrency is None else concurrency
@@ -92,43 +96,109 @@ class JevChoiceAdapter:
         self._timeout = timeout_seconds
         self._retries = max_retries
         self._concurrency = limit
-        self._sdk_loader = sdk_loader
+        self._backoff = retry_backoff_seconds
+        self._transport = transport
 
     async def judge(self, request: ChoiceJudgementRequest) -> ChoiceJudgement:
+        request.__post_init__()
         started = perf_counter()
+        api_key = (
+            self._api_key if self._api_key is not None else os.environ.get("OPENROUTER_API_KEY")
+        )
+        if (
+            not isinstance(api_key, str)
+            or not api_key.strip()
+            or not api_key.isascii()
+            or any(character.isspace() or ord(character) < 33 for character in api_key.strip())
+        ):
+            raise JevProviderError("jev_credentials_unavailable")
         try:
-            sdk = self._sdk_loader()
+            httpx = importlib.import_module("httpx")
         except ImportError:
-            raise JevProviderError("jev_sdk_unavailable") from None
-        # The SDK's DEBUG logger includes request bodies. Disable its output at
-        # this provider boundary so source text cannot leak through app logging.
-        logging.getLogger("typesafe_sdk").disabled = True
+            raise JevProviderError("jev_http_unavailable") from None
         try:
-            question = sdk.Choice(
-                instructions=request.instruction,
-                criteria={option.key: option.description for option in request.options},
-            )
-            retry = sdk.RetryPolicy(max_retries=self._retries, timeout=self._timeout)
             async with asyncio.timeout(self._timeout):
                 async with _shared_budget(self._concurrency):
-                    async with sdk.AsyncTypeSafeClient(
-                        api_key=self._api_key,
-                        model=self._model_id,
-                        retry=retry,
+                    async with httpx.AsyncClient(
                         timeout=self._timeout,
+                        transport=self._transport,
+                        follow_redirects=False,
+                        trust_env=False,
                     ) as client:
-                        response = await client.system_one(
-                            state=_plain_json(request.state),
-                            questions={"answer": question},
-                            model=self._model_id,
-                        )
-            return _normalize_response(response, request, (perf_counter() - started) * 1000)
+                        raw = await self._send(client, httpx, request, api_key.strip())
+                    return _normalize_response(raw, request, (perf_counter() - started) * 1000)
         except JevProviderError:
             raise
         except TimeoutError:
             raise JevProviderError("jev_timeout") from None
         except Exception:
             raise JevProviderError("jev_provider_failure") from None
+
+    async def _send(
+        self, client: Any, httpx: Any, request: ChoiceJudgementRequest, api_key: str
+    ) -> bytes:
+        body = {
+            "model": self._model_id,
+            "state": _plain_json(request.state),
+            "questions": {
+                "decision": {
+                    "type": "choice",
+                    "instructions": request.instruction,
+                    "criteria": {option.key: option.description for option in request.options},
+                }
+            },
+        }
+        for attempt in range(self._retries + 1):
+            retry_after = None
+            try:
+                response = await client.post(
+                    _ENDPOINT,
+                    json=body,
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                )
+            except httpx.TransportError as error:
+                if attempt == self._retries:
+                    code = (
+                        "jev_timeout"
+                        if isinstance(error, httpx.TimeoutException)
+                        else "jev_provider_failure"
+                    )
+                    raise JevProviderError(code) from None
+            else:
+                if response.status_code == 200:
+                    if len(response.content) > _MAX_RESPONSE_BYTES:
+                        raise JevProviderError("jev_malformed_response")
+                    return bytes(response.content)
+                if (
+                    response.status_code not in {408, 429}
+                    and not 500 <= response.status_code <= 599
+                ):
+                    raise JevProviderError("jev_provider_failure")
+                if attempt == self._retries:
+                    raise JevProviderError("jev_provider_failure")
+                retry_after = _retry_delay(response.headers.get("Retry-After"))
+            delay = min(2.0, self._backoff * 2**attempt) if retry_after is None else retry_after
+            await asyncio.sleep(delay)
+        raise JevProviderError("jev_provider_failure")
+
+
+def _retry_delay(value: str | None) -> float | None:
+    if value is None:
+        return None
+    try:
+        delay = float(value)
+    except ValueError:
+        try:
+            when = parsedate_to_datetime(value)
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=UTC)
+            delay = (when - datetime.now(UTC)).total_seconds()
+        except (TypeError, ValueError, OverflowError):
+            return None
+    return max(0.0, delay) if math.isfinite(delay) else None
 
 
 def _plain_json(value: object) -> Any:
@@ -149,14 +219,12 @@ def _unique_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
 
 
 def _normalize_response(
-    response: Any, request: ChoiceJudgementRequest, latency_ms: float
+    content: bytes, request: ChoiceJudgementRequest, latency_ms: float
 ) -> ChoiceJudgement:
     try:
-        # Validate original JSON before using SDK maps: dict decoding can hide
-        # duplicate probability keys. Never expose or persist the raw payload.
-        raw = json.loads(response.raw_http_response.content, object_pairs_hook=_unique_pairs)
-        answer = raw["answers"]["answer"]
-        if set(raw["answers"]) != {"answer"} or answer["type"] != "choice":
+        raw = json.loads(content, object_pairs_hook=_unique_pairs)
+        answer = raw["answers"]["decision"]
+        if set(raw["answers"]) != {"decision"} or answer["type"] != "choice":
             raise ValueError("answer set")
         selected = answer["choice"]
         probabilities = answer["probabilities"]
@@ -171,17 +239,26 @@ def _normalize_response(
         total = math.fsum(values)
         if abs(total - 1.0) > _NORMALIZATION_TOLERANCE:
             raise ValueError("normalization")
-        confidence = answer["confidence"]
-        if type(confidence) not in {int, float} or not math.isfinite(confidence):
+        confidence = answer.get("confidence")
+        if confidence is not None and (
+            type(confidence) not in {int, float} or not math.isfinite(confidence)
+        ):
             raise ValueError("confidence")
-        usage = raw.get("usage", {})
+        usage = raw["usage"]
+        if not isinstance(usage, dict):
+            raise ValueError("usage")
         normalized_usage = {}
         for name in ("input_tokens", "output_tokens"):
             value = usage.get(name)
             if value is not None:
                 if type(value) is not int or value < 0:
-                    raise ValueError("usage")
+                    raise ValueError("usage tokens")
                 normalized_usage[name] = value
+        cost = usage.get("cost")
+        if cost is not None:
+            if type(cost) not in {int, float} or not math.isfinite(cost) or cost < 0:
+                raise ValueError("usage cost")
+            normalized_usage["cost"] = cost
         result = ChoiceJudgement(
             selected_key=selected,
             probabilities=tuple(
@@ -189,12 +266,12 @@ def _normalize_response(
                 for key, value in zip(keys, values, strict=True)
             ),
             confidence=confidence,
-            producer_id="typesafe-jev",
-            producer_version="typesafe-sdk-0.7.2",
+            producer_id="openrouter-jev",
+            producer_version=_PROTOCOL_VERSION,
             model_id=raw["model"],
             latency_ms=latency_ms,
             usage=normalized_usage,
         )
         return validate_judgement(request, result)
-    except (AttributeError, KeyError, TypeError, ValueError):
+    except (AttributeError, KeyError, TypeError, ValueError, UnicodeDecodeError):
         raise JevProviderError("jev_malformed_response") from None
