@@ -9,6 +9,8 @@ archive and must not be treated as Cardine's current state.
 
 ## Start here
 
+- [PR #3 automatic review fixes](handoffs/2026-10-01--cardine--pr3-review-fixes--handoff.md) — explicit current-turn lesson scope remains authoritative after model query distillation, and unsuccessful normal turn receipts settle Tool Chips as failed.
+
 - [Flashcard generation repair publication](logs/2026-09-29--cardine--flashcard-generation-publication--log.md) — the owner authorized publishing the generation repair to PR #5; empty-array wire schema, truthful failure and new-turn retry regressions verified offline; preview update and live generation remain pending.
 
 - [Message Scroller and BeUI evaluation](logs/2026-09-28--cardine--message-scroller--log.md) — reader-aware chat navigation implemented; Citations and Prompt Input assessed with canonical source boundaries.
