@@ -40,7 +40,7 @@
     },
     {
       "path": "src/cardine/materials/product.py",
-      "sha256": "b472396f45c156f3071accb61adae95d5ce14d11a4b69b2df45f2eca083b3f49"
+      "sha256": "33d656522c34f92b57d689608604471690d3cc1c041ba908fc26e547a25ff82c"
     },
     {
       "path": "src/study_agent/domain/provenance.py",

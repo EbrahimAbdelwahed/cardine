@@ -127,3 +127,5 @@ combined product. The turn-activity conflict keeps failure settlement from
 and repository paths receive scoped feature custody digests; historical
 ledgers remain frozen. Current-head CI and automatic review are required
 before merging; no provider calls or deployment are authorized here.
+
+PDF lesson batches reserve their complete registry capacity using CAS before any canonical extraction admission. Other starts account for outstanding reservations, same-request retries preserve identity, and registration consumes the reserved slots. Nineteen product regressions pass, including a competing registry update before reservation and zero-admission rejection at the 256-job bound. Full mypy passes; publication still awaits current CI/review.

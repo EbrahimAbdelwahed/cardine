@@ -131,18 +131,128 @@ class MaterialProduct:
                 raw = self.registry.load(self.key)
             except KeyError:
                 raw = b'{"jobs":[]}'
-                self.registry.create(self.key, raw)
-            jobs = cast(list[JsonObject], json.loads(raw)["jobs"])
-            if any(item["job_id"] == descriptor["job_id"] for item in jobs):
+                if not self.registry.create(self.key, raw):
+                    continue
+            registry = cast(dict[str, object], json.loads(raw))
+            jobs = cast(list[JsonObject], registry["jobs"])
+            reservations = cast(dict[str, JsonObject], registry.get("reservations", {}))
+            job_id = str(descriptor["job_id"])
+            if any(str(item["job_id"]) == job_id for item in jobs):
                 return
-            if len(jobs) >= 256:
+
+            reservation_id = descriptor.get("batch_id")
+            if isinstance(reservation_id, str):
+                reservation = reservations.get(reservation_id)
+                if reservation is None or job_id not in cast(
+                    tuple[str, ...], reservation["remaining"]
+                ):
+                    raise ValueError("Prenotazione generazione lezioni non valida; riprova.")
+                if reservation["fingerprint"] != descriptor.get("batch_fingerprint"):
+                    raise ValueError("Richiesta lezioni riutilizzata con confini diversi.")
+                remaining = tuple(
+                    value
+                    for value in cast(tuple[str, ...], reservation["remaining"])
+                    if value != job_id
+                )
+                if remaining:
+                    reservations[reservation_id] = {
+                        **reservation,
+                        "remaining": remaining,
+                    }
+                else:
+                    del reservations[reservation_id]
+            else:
+                occupied = {str(item["job_id"]) for item in jobs} | self._reserved_job_ids(
+                    reservations
+                )
+                if job_id not in occupied and len(occupied) >= 256:
+                    raise ValueError(
+                        "Questo corso ha raggiunto il limite di generazioni della sessione."
+                    )
+
+            jobs.append(descriptor)
+            replacement = canonical_json_bytes({"jobs": tuple(jobs), "reservations": reservations})
+            if self.registry.compare_and_set(self.key, raw, replacement):
+                return
+        raise ValueError("Registro generazioni occupato; riprova.")
+
+    @staticmethod
+    def _reserved_job_ids(reservations: dict[str, JsonObject]) -> set[str]:
+        return {
+            job_id
+            for reservation in reservations.values()
+            for job_id in cast(tuple[str, ...], reservation["remaining"])
+        }
+
+    def _reserve_batch(
+        self,
+        reservation_id: str,
+        fingerprint: str,
+        job_ids: tuple[str, ...],
+    ) -> None:
+        for _ in range(8):
+            try:
+                raw = self.registry.load(self.key)
+            except KeyError:
+                raw = b'{"jobs":[]}'
+                if not self.registry.create(self.key, raw):
+                    continue
+            registry = cast(dict[str, object], json.loads(raw))
+            jobs = cast(list[JsonObject], registry["jobs"])
+            reservations = cast(dict[str, JsonObject], registry.get("reservations", {}))
+            existing_ids = {str(item["job_id"]) for item in jobs}
+            for item in jobs:
+                if (
+                    item.get("batch_id") == reservation_id
+                    and item.get("batch_fingerprint") != fingerprint
+                ):
+                    raise ValueError("Richiesta lezioni riutilizzata con confini diversi.")
+
+            current = reservations.get(reservation_id)
+            if current is not None:
+                if (
+                    current["fingerprint"] != fingerprint
+                    or tuple(cast(tuple[str, ...], current["job_ids"])) != job_ids
+                ):
+                    raise ValueError("Richiesta lezioni riutilizzata con confini diversi.")
+                return
+
+            reserved = self._reserved_job_ids(reservations)
+            missing = tuple(job_id for job_id in job_ids if job_id not in existing_ids)
+            additional = tuple(job_id for job_id in missing if job_id not in reserved)
+            occupied = existing_ids | reserved
+            if len(occupied) + len(additional) > 256:
                 raise ValueError(
                     "Questo corso ha raggiunto il limite di generazioni della sessione."
                 )
-            jobs.append(descriptor)
-            if self.registry.compare_and_set(
-                self.key, raw, canonical_json_bytes({"jobs": tuple(jobs)})
-            ):
+            reservations[reservation_id] = {
+                "fingerprint": fingerprint,
+                "job_ids": job_ids,
+                "remaining": additional,
+            }
+            replacement = canonical_json_bytes({"jobs": tuple(jobs), "reservations": reservations})
+            if self.registry.compare_and_set(self.key, raw, replacement):
+                return
+        raise ValueError("Registro generazioni occupato; riprova.")
+
+    def _release_batch(self, reservation_id: str) -> None:
+        for _ in range(8):
+            try:
+                raw = self.registry.load(self.key)
+            except KeyError:
+                return
+            registry = cast(dict[str, object], json.loads(raw))
+            reservations = cast(dict[str, JsonObject], registry.get("reservations", {}))
+            if reservation_id not in reservations:
+                return
+            del reservations[reservation_id]
+            replacement = canonical_json_bytes(
+                {
+                    "jobs": cast(tuple[JsonObject, ...], registry["jobs"]),
+                    "reservations": reservations,
+                }
+            )
+            if self.registry.compare_and_set(self.key, raw, replacement):
                 return
         raise ValueError("Registro generazioni occupato; riprova.")
 
@@ -174,7 +284,19 @@ class MaterialProduct:
             raise ValueError("Scegli una fonte originale o una trascrizione estratta.")
         return record
 
-    def start(self, source_id: str, revision_id: str, request_id: str) -> JsonObject:
+    @staticmethod
+    def _material_job_id(course: str, session: str, request_id: str) -> str:
+        payload = f"material-generation-job@1\0{course}\0{session}\0{request_id}"
+        return "material-job-sha256:" + sha256(payload.encode()).hexdigest()
+
+    def start(
+        self,
+        source_id: str,
+        revision_id: str,
+        request_id: str,
+        *,
+        batch: tuple[str, str, int] | None = None,
+    ) -> JsonObject:
         record = self.source(source_id, revision_id)
         if record.source.conversion_provenance is not None:
             raise ValueError("Conferma i confini delle lezioni PDF prima di generare le note.")
@@ -188,15 +310,22 @@ class MaterialProduct:
             pin, replace(self.context, principal_kind=PrincipalKind.SERVICE)
         )
         view = service.request_pair(self.course, self.session, pin, request_id)
-        self._register(
-            {
-                "job_id": view.job_id,
-                "source_id": source_id,
-                "revision_id": revision_id,
-                "title": pin.title,
-                "kind": "material",
+        descriptor: JsonObject = {
+            "job_id": view.job_id,
+            "source_id": source_id,
+            "revision_id": revision_id,
+            "title": pin.title,
+            "kind": "material",
+        }
+        if batch is not None:
+            batch_id, fingerprint, index = batch
+            descriptor = {
+                **descriptor,
+                "batch_id": batch_id,
+                "batch_fingerprint": fingerprint,
+                "batch_index": index,
             }
-        )
+        self._register(descriptor)
         return self.status(view.job_id)
 
     def advance(self, job_id: str) -> None:
@@ -371,8 +500,13 @@ class MaterialProduct:
                     # not permission to publish or invent acceptance.
                     break
         self._set_publication_pending(job_id, pending)
-        if not source_stale and state.stage is not MaterialGenerationStage.STALE and any(
-            item["status"] == "accepted" for item in cast(tuple[JsonObject, ...], view["outputs"])
+        if (
+            not source_stale
+            and state.stage is not MaterialGenerationStage.STALE
+            and any(
+                item["status"] == "accepted"
+                for item in cast(tuple[JsonObject, ...], view["outputs"])
+            )
         ):
             self.repo.queue_indexing()
 
@@ -448,39 +582,74 @@ class MaterialProduct:
         # Resolve consent before admitting any selected lesson.
         if not (consent := self.repo.provider_consent.get(self.course)) or not consent.granted:
             raise ProviderConsentRequiredError("provider consent is required")
+        batch_id = (
+            "pdf-lessons:"
+            + sha256(f"{self.course}\0{self.session}\0{request_id}".encode()).hexdigest()
+        )
+        fingerprint = sha256(
+            canonical_json_bytes(
+                {
+                    "source_id": source_id,
+                    "revision_id": revision_id,
+                    "lessons": tuple(
+                        {
+                            "title": str(lesson["title"]),
+                            "start_page": cast(int, lesson["start_page"]),
+                            "end_page": cast(int, lesson["end_page"]),
+                        }
+                        for lesson in lessons
+                    ),
+                }
+            )
+        ).hexdigest()
+        job_ids = tuple(
+            self._material_job_id(
+                str(self.course), str(self.session), request_id + f"-lesson-{index}"
+            )
+            for index in range(len(lessons))
+        )
+        self._reserve_batch(batch_id, fingerprint, job_ids)
         results: list[JsonObject] = []
-        for index, lesson in enumerate(lessons):
-            start, end = int(cast(int, lesson["start_page"])), int(cast(int, lesson["end_page"]))
-            first, last = conversion.page_spans[start - 1], conversion.page_spans[end - 1]
-            text = record.text[first.start_offset : last.end_offset]
-            manifest: JsonObject = {
-                "parent_source_id": source_id,
-                "parent_revision_id": revision_id,
-                "start_page": start,
-                "end_page": end,
-                "start_offset": first.start_offset,
-                "end_offset": last.end_offset,
-                "title": str(lesson["title"]),
-            }
-            admitted = self.admit_extraction(
-                original=self.repo.blobs.get(record.source.blob),
-                text=text,
-                title=str(lesson["title"]),
-                manifest=manifest,
-                adapter="pdf-lesson-extraction@1",
-                media_type="application/pdf",
-                limitations=(
-                    "Estratto della sbobina; pagine e confini sono stati confermati dall'utente.",
-                ),
-            )
-            results.append(
-                self.start(
-                    str(admitted.source.source_id),
-                    str(admitted.source.revision_id),
-                    request_id + f"-lesson-{index}",
+        try:
+            for index, lesson in enumerate(lessons):
+                start, end = (
+                    int(cast(int, lesson["start_page"])),
+                    int(cast(int, lesson["end_page"])),
                 )
-            )
-        return tuple(results)
+                first, last = conversion.page_spans[start - 1], conversion.page_spans[end - 1]
+                text = record.text[first.start_offset : last.end_offset]
+                manifest: JsonObject = {
+                    "parent_source_id": source_id,
+                    "parent_revision_id": revision_id,
+                    "start_page": start,
+                    "end_page": end,
+                    "start_offset": first.start_offset,
+                    "end_offset": last.end_offset,
+                    "title": str(lesson["title"]),
+                }
+                admitted = self.admit_extraction(
+                    original=self.repo.blobs.get(record.source.blob),
+                    text=text,
+                    title=str(lesson["title"]),
+                    manifest=manifest,
+                    adapter="pdf-lesson-extraction@1",
+                    media_type="application/pdf",
+                    limitations=(
+                        "Estratto della sbobina; pagine e confini "
+                        "sono stati confermati dall'utente.",
+                    ),
+                )
+                results.append(
+                    self.start(
+                        str(admitted.source.source_id),
+                        str(admitted.source.revision_id),
+                        request_id + f"-lesson-{index}",
+                        batch=(batch_id, fingerprint, index),
+                    )
+                )
+            return tuple(results)
+        finally:
+            self._release_batch(batch_id)
 
     def admit_extraction(
         self,

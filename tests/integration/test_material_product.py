@@ -97,7 +97,8 @@ def test_product_requires_explicit_decisions_and_publishes_parent_first(tmp_path
 
 
 def test_superseded_source_keeps_human_decision_and_stales_unpublished_job(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from study_agent.domain import SourceId
 
@@ -133,11 +134,14 @@ def test_superseded_source_keeps_human_decision_and_stales_unpublished_job(
                 int(cast(int, view["high_water_sequence"])),
                 "accept-before-source-change",
             )
-        assert next(
-            item
-            for item in cast(tuple[JsonObject, ...], accepted["outputs"])
-            if item["revision_id"] == complete["revision_id"]
-        )["status"] == "accepted"
+        assert (
+            next(
+                item
+                for item in cast(tuple[JsonObject, ...], accepted["outputs"])
+                if item["revision_id"] == complete["revision_id"]
+            )["status"]
+            == "accepted"
+        )
         repository.for_course(context.course_id).ingestion.ingest(
             filename="replacement.md",
             content=b"A newer canonical source revision.",
@@ -664,8 +668,7 @@ def test_oversized_audio_manifest_is_terminal_and_retains_provenance_and_chunks(
                 "duration_seconds": 600,
                 "chunk_count": 1,
                 "spans": tuple(
-                    {"start_ms": index, "end_ms": index + 1}
-                    for index in range(100_000)
+                    {"start_ms": index, "end_ms": index + 1} for index in range(100_000)
                 ),
             }
 
@@ -679,9 +682,7 @@ def test_oversized_audio_manifest_is_terminal_and_retains_provenance_and_chunks(
         _prepare(repository, consent=True)
         product = MaterialProduct(repository, context)
         job_id = str(
-            product.start_audio(b"recording", "lecture.wav", "Audio", "long-manifest")[
-                "job_id"
-            ]
+            product.start_audio(b"recording", "lecture.wav", "Audio", "long-manifest")["job_id"]
         )
         product.advance_audio(job_id, transcriber)
 
@@ -871,3 +872,130 @@ def test_workspace_selection_recovers_jobs_outside_startup_session(
         },
     )
     assert dispatched == [(str(job["job_id"]), other.course_id, other.session_id)]
+
+
+@pytest.mark.parametrize("concurrent", [False, True])
+def test_pdf_batch_reserves_capacity_before_any_admission(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, concurrent: bool
+) -> None:
+    from hashlib import sha256
+
+    from study_agent.domain import SourceId
+    from study_agent.domain.provenance import DocumentConversionProvenance, DocumentPageSpan
+
+    root = tmp_path / "repo"
+    initialize_local_repository(root, _config())
+    context = replace(_service_context(), principal_kind=PrincipalKind.HUMAN)
+    with LocalRepository.open(
+        root, model_adapters=_registry(), environment={"OPENAI_API_KEY": "fixture"}
+    ) as repository:
+        _prepare(repository, consent=True)
+        text = "# Lezione 12A\n\nLecture 12 is important; this may be uncertain.\n"
+        full = text + text.replace("Lezione 12A", "Lezione 12B") * 2
+        original = b"%PDF-fixture"
+        provenance = DocumentConversionProvenance(
+            sha256(original).hexdigest(),
+            sha256(full.encode()).hexdigest(),
+            "fixture-pdf@1",
+            "1",
+            sha256(b"manifest").hexdigest(),
+            "fixture-normalizer@1",
+            ("No images",),
+            page_count=2,
+            page_spans=(
+                DocumentPageSpan(1, 0, len(text)),
+                DocumentPageSpan(2, len(text), len(full)),
+            ),
+        )
+        admitted = repository.for_course(context.course_id).ingestion.ingest(
+            filename="pdf.md",
+            content=full.encode(),
+            original_content=original,
+            source_id=SourceId("pdf-source"),
+            title="PDF lessons",
+            trust_level=0,
+            source_role="lesson",
+            content_origin=ContentOrigin.EXTRACTED,
+            conversion_provenance=provenance,
+            context=context,
+        )
+        product = MaterialProduct(repository, context)
+        import json
+
+        from study_agent.state import canonical_json_bytes
+
+        count = 254 if concurrent else 255
+        seeded: JsonObject = {
+            "jobs": tuple({"job_id": f"existing-{i}", "kind": "material"} for i in range(count))
+        }
+        assert product.registry.create(product.key, canonical_json_bytes(seeded))
+        calls = 0
+        compare = product.registry.compare_and_set
+
+        def racing_compare(key: str, expected: bytes, replacement: bytes) -> bool:
+            nonlocal calls
+            calls += 1
+            if concurrent and calls == 1:
+                competing = json.loads(expected)
+                competing["jobs"].append({"job_id": "concurrent", "kind": "material"})
+                assert compare(key, expected, canonical_json_bytes(competing))
+                return False
+            return compare(key, expected, replacement)
+
+        monkeypatch.setattr(product.registry, "compare_and_set", racing_compare)
+
+        def unexpected_admission(**kwargs: object) -> object:
+            raise AssertionError("capacity rejection must precede canonical admission")
+
+        monkeypatch.setattr(product, "admit_extraction", unexpected_admission)
+        before = tuple(repository.events.read(context.course_id))
+        with pytest.raises(ValueError, match="limite"):
+            product.start_lessons(
+                str(admitted.source.source_id),
+                str(admitted.source.revision_id),
+                [
+                    {"title": "First", "start_page": 1, "end_page": 1},
+                    {"title": "Second", "start_page": 2, "end_page": 2},
+                ],
+                "capacity-batch",
+            )
+        assert tuple(repository.events.read(context.course_id)) == before
+        assert len(product.jobs()) == 255
+        assert not json.loads(product.registry.load(product.key)).get("reservations")
+
+
+def test_pdf_reservation_protects_slots_and_is_idempotent(tmp_path: Path) -> None:
+    import json
+
+    from study_agent.state import canonical_json_bytes
+
+    root = tmp_path / "repo"
+    initialize_local_repository(root, _config())
+    with LocalRepository.open(
+        root, model_adapters=_registry(), environment={"OPENAI_API_KEY": "fixture"}
+    ) as repository:
+        _prepare(repository, consent=True)
+        product = MaterialProduct(
+            repository, replace(_service_context(), principal_kind=PrincipalKind.HUMAN)
+        )
+        seeded: JsonObject = {
+            "jobs": tuple({"job_id": f"existing-{i}", "kind": "material"} for i in range(254))
+        }
+        assert product.registry.create(product.key, canonical_json_bytes(seeded))
+        product._reserve_batch("batch", "fingerprint", ("lesson-a", "lesson-b"))
+        same = product.registry.load(product.key)
+        product._reserve_batch("batch", "fingerprint", ("lesson-a", "lesson-b"))
+        assert product.registry.load(product.key) == same
+        with pytest.raises(ValueError, match="limite"):
+            product._register({"job_id": "outsider", "kind": "audio"})
+        for job in ("lesson-a", "lesson-b"):
+            product._register(
+                {
+                    "job_id": job,
+                    "kind": "material",
+                    "batch_id": "batch",
+                    "batch_fingerprint": "fingerprint",
+                }
+            )
+        assert len(product.jobs()) == 256
+        assert not json.loads(product.registry.load(product.key)).get("reservations")
