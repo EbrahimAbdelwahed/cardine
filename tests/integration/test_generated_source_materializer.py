@@ -151,14 +151,10 @@ def _projection(events: MemoryEvents, blobs: MemoryBlobs) -> Projection:
             state = dict(reducer(state, event, decoded))
         elif event.event_type == PROPOSAL_BATCH_RECORDED:
             state = dict(
-                reduce_proposal_batch_recorded(
-                    state, event, decode_proposal_batch_recorded(event)
-                )
+                reduce_proposal_batch_recorded(state, event, decode_proposal_batch_recorded(event))
             )
         elif event.event_type == DECISION_RECORDED:
-            state = dict(
-                reduce_decision_recorded(state, event, decode_decision_recorded(event))
-            )
+            state = dict(reduce_decision_recorded(state, event, decode_decision_recorded(event)))
     return Projection(COURSE, events.events[-1].course_sequence, state)
 
 
@@ -405,10 +401,12 @@ def _fixture() -> tuple[
     study_digest = sha256(study_markdown).hexdigest()
     blobs.values.update(
         {
-            BlobRef(BlobId(f"sha256:{complete_digest}"), complete_digest, len(complete_markdown)):
-            complete_markdown,
-            BlobRef(BlobId(f"sha256:{study_digest}"), study_digest, len(study_markdown)):
-            study_markdown,
+            BlobRef(
+                BlobId(f"sha256:{complete_digest}"), complete_digest, len(complete_markdown)
+            ): complete_markdown,
+            BlobRef(
+                BlobId(f"sha256:{study_digest}"), study_digest, len(study_markdown)
+            ): study_markdown,
         }
     )
     events = MemoryEvents([root_event, proposal, decision_complete, decision_study])
@@ -447,8 +445,7 @@ def test_materializer_derives_generated_source_and_is_exactly_idempotent() -> No
     assert first.source.structure_origin is StructureOrigin.HUMAN_APPROVED
     assert first.source.generated_provenance is not None
     assert (
-        events.events[-1].causation_id
-        == first.source.generated_provenance.human_decision_event_id
+        events.events[-1].causation_id == first.source.generated_provenance.human_decision_event_id
     )
 
 
@@ -524,9 +521,7 @@ def test_study_material_waits_for_complete_source_then_both_materialize() -> Non
         materializer.materialize(artifact_revision_id=study_revision, context=context)
     assert events.append_calls == 0
 
-    complete = materializer.materialize(
-        artifact_revision_id=complete_revision, context=context
-    )
+    complete = materializer.materialize(artifact_revision_id=complete_revision, context=context)
     study = materializer.materialize(artifact_revision_id=study_revision, context=context)
 
     assert complete.status is GeneratedSourceMaterializationStatus.EMITTED
@@ -574,7 +569,8 @@ def test_generated_source_remains_readable_after_root_revision_changes() -> None
 
     content = CourseSourceContent(COURSE, ProjectedEvents(), blobs)
     generated_before = tuple(
-        row.source for row in content.catalog()
+        row.source
+        for row in content.catalog()
         if row.source.content_origin is ContentOrigin.GENERATED
     )
     assert len(generated_before) == 2
@@ -599,14 +595,47 @@ def test_generated_source_remains_readable_after_root_revision_changes() -> None
         blobs=WritableBlobs(), events=events, clock=FrozenClock(), courses=ExistingCourseView()
     )
     ingestion.ingest(
-        filename="root.md", content=b"# Revised root\n\nDifferent content.\n",
-        source_id=ROOT_SOURCE, title="Root notes", trust_level=90,
+        filename="root.md",
+        content=b"# Revised root\n\nDifferent content.\n",
+        source_id=ROOT_SOURCE,
+        title="Root notes",
+        trust_level=90,
         source_role="primary",
         context=ExecutionContext(PrincipalKind.SERVICE, "ingestion", COURSE, CORRELATION),
     )
     generated_after = tuple(
-        row.source for row in content.catalog()
+        row.source
+        for row in content.catalog()
         if row.source.content_origin is ContentOrigin.GENERATED
     )
     assert generated_after == generated_before
     assert len(replay_calls) == 2
+
+
+@pytest.mark.parametrize("status", ["retired", "active"])
+def test_materializer_obeys_canonical_root_lifetime_before_append(status: str) -> None:
+    _, events, blobs, revision, _ = _fixture()
+
+    def projection(_course: CourseId) -> Projection:
+        original = _projection(events, blobs)
+        return Projection(
+            COURSE,
+            original.sequence,
+            {**original.state, "source_lifetime": {str(ROOT_SOURCE): {"status": status}}},
+        )
+
+    materializer = GeneratedSourceMaterializer(
+        blobs=blobs, events=events, load_projection=projection
+    )
+    context = ExecutionContext(PrincipalKind.SERVICE, "materializer", COURSE, CORRELATION)
+    if status == "retired":
+        with pytest.raises(
+            GeneratedSourceMaterializationError, match="canonical projection"
+        ) as error:
+            materializer.materialize(artifact_revision_id=revision, context=context)
+        assert error.value.__cause__ is not None
+        assert "retired" in str(error.value.__cause__)
+        assert events.append_calls == 0
+    else:
+        materializer.materialize(artifact_revision_id=revision, context=context)
+        assert events.append_calls == 1
