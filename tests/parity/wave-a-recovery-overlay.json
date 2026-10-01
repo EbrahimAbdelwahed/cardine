@@ -36,7 +36,7 @@
     },
     {
       "path": "src/cardine/demo/ai-primitives.js",
-      "sha256": "c7e70d9ab8893f3c7b4a1f1d07d4e5d2a9601f0f7c79ae520c9e32b72fe846d6"
+      "sha256": "393658991ef2e8bb410b6e182dc792a6a70d2ff663b81c67acd074bdc92c543d"
     },
     {
       "path": "src/cardine/demo/browser.css",
@@ -48,7 +48,7 @@
     },
     {
       "path": "src/cardine/demo/browser.js",
-      "sha256": "1914646d49160845db39f9331b69a4f3e765d709c6364c11d7e0100460a193f5"
+      "sha256": "3f0fcc7bbd609d46df6192af4325251fac3fa60e02535d2469f532389f26c135"
     },
     {
       "path": "src/cardine/demo/browser.py",
