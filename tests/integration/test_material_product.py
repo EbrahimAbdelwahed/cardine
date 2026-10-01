@@ -656,7 +656,7 @@ def test_oversized_audio_manifest_is_terminal_and_retains_provenance_and_chunks(
         ) -> tuple[str, JsonObject]:
             self.calls += 1
             preflight()
-            chunk = {"text": "Lecture 12 is important.", "spans": ()}
+            chunk: JsonObject = {"text": "Lecture 12 is important.", "spans": ()}
             recovered.append(chunk)
             save(recovered)
             return "Lecture 12 is important.", {
