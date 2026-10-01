@@ -77,3 +77,36 @@ def test_post_baseline_byte_commitments_reject_further_drift(tmp_path: Path) -> 
     )
     assert result.returncode != 0
     assert "CA-02 transition sha256 mismatch" in result.stderr
+
+
+def test_new_derived_module_commitment_rejects_drift(tmp_path: Path) -> None:
+    clean_root = _clean_archive(tmp_path)
+    path = clean_root / "src/study_agent/flashcards/semantic.py"
+    path.write_text(path.read_text(encoding="utf-8") + "\n# unexpected drift\n", encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, "scripts/audit_harness_ownership.py", "--check"],
+        cwd=clean_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "post-baseline addition sha256 mismatch" in result.stderr
+
+
+def test_new_unclassified_core_file_remains_rejected(tmp_path: Path) -> None:
+    clean_root = _clean_archive(tmp_path)
+    path = clean_root / "src/study_agent/knowledge/unregistered.py"
+    path.write_text("# unregistered core module\n", encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, "scripts/audit_harness_ownership.py", "--check"],
+        cwd=clean_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert (
+        "classification is missing current path: src/study_agent/knowledge/unregistered.py"
+        in result.stderr
+    )

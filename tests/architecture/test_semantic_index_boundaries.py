@@ -7,7 +7,15 @@ ROOT = Path(__file__).parents[2] / "src" / "study_agent"
 
 
 def test_semantic_core_remains_provider_free() -> None:
-    forbidden = ("jev", "typesafe", "pageindex", "study_agent.adapters", "httpx", "requests")
+    forbidden = (
+        "jev",
+        "typesafe",
+        "typesafe_sdk",
+        "pageindex",
+        "study_agent.adapters",
+        "httpx",
+        "requests",
+    )
     paths = [
         ROOT / "domain" / "document_index.py",
         ROOT / "ports" / "document_index.py",
@@ -15,7 +23,7 @@ def test_semantic_core_remains_provider_free() -> None:
         ROOT / "knowledge" / "document_index.py",
     ]
     paths += list((ROOT / "flashcards").glob("*.py"))
-    paths += list((ROOT / "hosts").glob("*.py"))
+    paths += list((ROOT.parent / "cardine" / "hosts").glob("*.py"))
     for path in paths:
         tree = ast.parse(path.read_text())
         for statement in ast.walk(tree):

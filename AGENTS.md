@@ -97,3 +97,21 @@
 - Keep task memory beside the code in this repository's `dev/` tree. Commit
   necessary handoffs with the implementation rather than creating separate PRs
   for orchestration reports. Record durable decisions in their existing home.
+
+## Jev/PageIndex automatic review focus
+
+- Check bounded Choice distributions at every consumer, including exact option
+  coverage, finite normalized probabilities and unknown selected keys.
+- Verify source/revision/substrate hashes and exact locator bounds before any
+  generated evidence. Index summaries and node IDs never authorize citations.
+- Inspect lesson-scope clipping and conservative failure paths: provider errors,
+  weak exclusion and incomplete excerpts must preserve study content.
+- Verify only CORE/SUPPORTING spans reach planned slots and that existing worker
+  evidence validation rejects substituted or appended dropped spans.
+- Tutor payload generation must see only the selected schema, never independently
+  reroute or manufacture continuation/action authority. Validate all decisions
+  and check exactly-once emergency fallback plus cancellation propagation.
+- Production activation, raw PDF indexing, INVOKE_TOOL routing and the absent
+  KB unitizer are explicit dependencies in specs/jev-pageindex/README.md. Do not
+  mistake their recorded incompleteness for completed integration or silently
+  remove their quality/replay gates.

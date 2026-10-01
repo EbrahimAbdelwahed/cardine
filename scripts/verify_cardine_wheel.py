@@ -11,6 +11,12 @@ from pathlib import Path
 
 REQUIRED_FILES = {
     "study_agent/py.typed",
+    "study_agent/domain/document_index.py",
+    "study_agent/ports/judgement.py",
+    "study_agent/flashcards/semantic.py",
+    "study_agent/adapters/judgement/jev.py",
+    "cardine/adapters/document_index/pageindex.py",
+    "cardine/hosts/routing.py",
     "cardine/demo/browser.html",
     "cardine/demo/browser.css",
     "cardine/demo/browser.js",
