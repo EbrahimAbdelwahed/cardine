@@ -345,5 +345,7 @@ def test_auxiliary_history_preserves_explicit_topic(prompt: str) -> None:
         FlashcardProfileRoutingTutorDecisionPort(_StartingDecisionPort()).decide(context, _Token())
     )
     assert isinstance(decision, StartCapabilityDecision)
-    assert decision.inputs["query"] == "old"
-    assert decision.inputs["scope"] == "old"
+    assert "meiosi" in decision.inputs["query"]
+    assert "meiosi" in decision.inputs["scope"]
+    assert "glicolisi" not in decision.inputs["scope"]
+    assert "continuation_summary_json" not in decision.inputs
