@@ -235,7 +235,18 @@ def test_memory_scoped_flashcard_wrapper_preserves_progress_message() -> None:
                 {
                     "tool_name": "conversation.search",
                     "status": "succeeded",
-                    "result": {"entries": ({"content": "glicolisi"},)},
+                    "result": {
+                        "through_sequence": 1,
+                        "entries": (
+                            {
+                                "role": "learner",
+                                "course_sequence": 1,
+                                "excerpt": (
+                                    "Abbiamo discusso la pompa sodio potassio e la glicolisi."
+                                ),
+                            },
+                        ),
+                    },
                 },
             ),
         },
@@ -251,4 +262,44 @@ def test_memory_scoped_flashcard_wrapper_preserves_progress_message() -> None:
 
     assert isinstance(decision, StartCapabilityDecision)
     assert decision.progress_message == "Preparo le flashcard"
-    assert decision.inputs["scope"] == "finora"
+    assert decision.inputs["scope"] == "glicolisi pompa potassio sodio"
+    assert "finora" not in decision.inputs["query"]
+
+
+def test_memory_scoped_flashcards_fail_closed_on_unbound_history() -> None:
+    base = _context("Crea flashcard su quello che abbiamo discusso finora")
+    context = TutorHostContext(
+        base.course_id,
+        base.session_id,
+        base.tutor_snapshot_sequence,
+        base.learner_evidence_through_sequence,
+        {
+            **base.tutor_snapshot,
+            "agent_observations": (
+                {
+                    "tool_name": "conversation.search",
+                    "status": "succeeded",
+                    "result": {
+                        "through_sequence": 2,
+                        "entries": (
+                            {
+                                "role": "learner",
+                                "course_sequence": 2,
+                                "excerpt": "glicolisi enzimi",
+                            },
+                        ),
+                    },
+                },
+            ),
+        },
+        base.learner_evidence,
+        base.advertised_capabilities,
+    )
+
+    decision = asyncio.run(
+        FlashcardProfileRoutingTutorDecisionPort(_StartingDecisionPort()).decide(
+            context, _Token()
+        )
+    )
+
+    assert not isinstance(decision, StartCapabilityDecision)

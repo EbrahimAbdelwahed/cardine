@@ -1,6 +1,7 @@
 # Cardine development memory
 
 Updated: 2026-09-30 CEST
+Updated: 2026-10-01 CEST
 
 This file is the authoritative entrypoint for Cardine development memory.
 Cardine-specific plans, logs, notes, and handoffs belong in this repository's
@@ -11,6 +12,7 @@ archive and must not be treated as Cardine's current state.
 
 - [Source, PDF and audio study notes](logs/2026-09-30--cardine--source-study-notes--log.md) — approved source-page generation, Groq Turbo transcription, editable PDF lesson ranges, review and dependency-aware publication; based on PR #5.
 - [PR #9 current review repairs](handoffs/2026-10-01--cardine--pr9-current-review-repairs--handoff.md) — stale accepted material publication and oversized audio manifest handling, with scoped verification and submission status.
+- [PR #5 automatic review follow-up](handoffs/2026-10-01--cardine--pr5-review-fixes.md) — history-derived flashcard scope is rebuilt only from validated bounded conversation observations; material emphasis and Italian uncertainty commitments are preserved and checked.
 
 - [Flashcard generation repair publication](logs/2026-09-29--cardine--flashcard-generation-publication--log.md) — the owner authorized publishing the generation repair to PR #5; empty-array wire schema, truthful failure and new-turn retry regressions verified offline; preview update and live generation remain pending.
 
