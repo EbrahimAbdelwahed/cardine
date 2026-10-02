@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
+from types import MappingProxyType
 from typing import cast
 
 import pytest
@@ -43,7 +44,22 @@ from study_agent.domain import (
     ValidatorProvenance,
     VersionPins,
 )
-from study_agent.domain._validation import JsonObject
+from study_agent.domain._validation import JsonObject, JsonValue, freeze_object
+
+
+def test_frozen_json_owns_untrusted_proxies_and_keeps_mapping_equality() -> None:
+    nested: dict[str, JsonValue] = {"values": cast(JsonValue, [1, 2])}
+    caller: dict[str, JsonValue] = {"nested": MappingProxyType(nested)}
+    frozen = freeze_object(MappingProxyType(caller))
+    nested["values"] = (9,)
+    caller.clear()
+    expected = {"nested": {"values": (1, 2)}}
+    assert frozen == expected
+    assert expected == frozen
+    assert str(frozen) == str(MappingProxyType({"nested": MappingProxyType({"values": (1, 2)})}))
+    with pytest.raises(TypeError):
+        frozen["new"] = True  # type: ignore[index]
+    assert freeze_object(frozen) == frozen
 
 
 def test_event_envelope_is_versioned_sequenced_and_deeply_immutable() -> None:

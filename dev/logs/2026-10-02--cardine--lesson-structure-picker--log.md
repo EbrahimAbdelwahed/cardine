@@ -49,3 +49,17 @@ mixed-mode rejection, no premature publication, parent retirement and consent.
 Full pytest/Ruff/mypy/build verification and current-head GitHub CI/automatic
 review are pending at this implementation checkpoint. No local reviewer was
 launched. Automatic review is limited to two rounds per PR.
+
+## Main integration
+
+Initial implementation commit `8440553`: full suite 2891 passed, four expected
+optional/live skips in 173.69 seconds. Ruff, mypy (665 files), ownership audit,
+wheel/sdist build and package verification passed. The normal isolated build
+was used because the shared development environment has no setuptools backend.
+
+While this task ran, main advanced to `0990dbf` via PR #15 (native streaming).
+Integrated that published main into this task branch. Browser/API changes merged
+without conflicts. Resolved dev/index by retaining both entries and custody
+audit by applying latency then this continuation's three runtime bindings.
+Historical latency and source-note overlays remain unchanged. Reverification
+on the combined commit is pending.

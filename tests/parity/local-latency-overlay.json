@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "decision": "ADR-0024--local-read-budgets-and-live-drafts",
+  "rows": [
+    {
+      "path": "src/cardine/adapters/model/openai_luna.py",
+      "sha256": "5b309c26285577c9d1923ef3ba6d6a3494d8c05fd939a171379a69cc09bc0309"
+    },
+    {
+      "path": "src/cardine/adapters/model/streaming.py",
+      "sha256": "8c8e9421abb04c49a857c06ba0ec890612e7454eb68d2e0faaf2ddffe4e3b0cf"
+    },
+    {
+      "path": "src/cardine/cli/repository.py",
+      "sha256": "baf0ed42796e458cd081fca46c3ccd8d5dd8d22d171d25b7439537b4e38e496f"
+    },
+    {
+      "path": "src/cardine/demo/ai-primitives.css",
+      "sha256": "b38e2398175b5999da94fd3309d5117efb79fa802c283af7d1cda6b84c9ee392"
+    },
+    {
+      "path": "src/cardine/demo/ai-primitives.js",
+      "sha256": "f8fa848d1bf5665ab0f3f3e9ad3937c2e0270c1caebf62f15a529f893e3a2dfa"
+    },
+    {
+      "path": "src/cardine/demo/browser.js",
+      "sha256": "4adb435cf8bfd8798ff9855c01cb93782e41bb7ac3c7718cac705e05b8ab8cab"
+    },
+    {
+      "path": "src/cardine/demo/turn_output.py",
+      "sha256": "575fbe29b61fa2edd738a68ff72a7f615132a04e107bcc026ffdd1da7feb9c6d"
+    },
+    {
+      "path": "src/cardine/demo/ui_application.py",
+      "sha256": "dc8ced8dbadb4a95080259c5466f2ab4c41c322f2ecc4b059668442c790ee46f"
+    },
+    {
+      "path": "src/study_agent/adapters/filesystem/blob_store.py",
+      "sha256": "f855daade7a9ab0b3c42e02db0b1ad656b0a360e446e458e7a8fb90a92c702e3"
+    },
+    {
+      "path": "src/study_agent/adapters/sqlite/event_store.py",
+      "sha256": "ace72e1008ac456049c3ad5f770cc6128e4d244b04dc48fafdd9277fb3845334"
+    },
+    {
+      "path": "src/study_agent/domain/_validation.py",
+      "sha256": "ff45fc63e14bd7f6902b35623798688d2fab4c6377819b5181e4f02318f06636"
+    },
+    {
+      "path": "src/study_agent/retrieval/content.py",
+      "sha256": "a1c299487c247c985973e2fffbefd96bafa9f4dbe65bb9d8a68e6c9c645d7c12"
+    }
+  ]
+}

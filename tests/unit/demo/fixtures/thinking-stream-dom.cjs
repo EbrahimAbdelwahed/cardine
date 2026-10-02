@@ -5,9 +5,6 @@ require(process.argv[2]);
 const timers = new Map();
 let timerId = 0;
 global.setTimeout = (fn, delay) => { fn.delay = delay; const id = ++timerId; timers.set(id, fn); return id; };
-global.clearTimeout = (id) => timers.delete(id);
-let reduced = false;
-global.matchMedia = () => ({ matches: reduced });
 const copies = [];
 Object.defineProperty(global, 'navigator', { value: { clipboard: { writeText: async (text) => copies.push(text) } }, configurable: true });
 
@@ -15,7 +12,7 @@ class Element {
   constructor(tag, doc, text = '') {
     this.tagName = tag.toUpperCase(); this.ownerDocument = doc; this.children = [];
     this.attrs = {}; this.dataset = {}; this.listeners = new Map(); this.parentNode = null;
-    this.nodeType = tag === '#text' ? 3 : 1; this._text = text;
+    this._text = text;
     this.classList = { add: (name) => this.classes.add(name), contains: (name) => this.classes.has(name) };
     this.classes = new Set();
   }
@@ -29,13 +26,6 @@ class Element {
   get textContent() { return this._text + this.children.map((child) => child.textContent).join(''); }
   set textContent(value) { this._text = value; this.children = []; }
   appendChild(child) { child.parentNode = this; this.children.push(child); return child; }
-  replaceWith(fragment) {
-    const siblings = this.parentNode.children;
-    const at = siblings.indexOf(this);
-    fragment.children.forEach((child) => { child.parentNode = this.parentNode; });
-    siblings.splice(at, 1, ...fragment.children);
-  }
-  remove() { if (this.parentNode) this.parentNode.children = this.parentNode.children.filter((child) => child !== this); }
   addEventListener(type, fn) { const listeners = this.listeners.get(type) || []; listeners.push(fn); this.listeners.set(type, listeners); }
   removeEventListener(type, fn) { this.listeners.set(type, (this.listeners.get(type) || []).filter((item) => item !== fn)); }
   click() { (this.listeners.get('click') || []).slice().forEach((fn) => fn()); }
@@ -54,17 +44,10 @@ class Element {
 }
 class Document {
   createElement(tag) { return new Element(tag, this); }
-  createDocumentFragment() { return this.createElement('fragment'); }
-  createTreeWalker(root) {
-    const texts = [];
-    const visit = (node) => { if (node.nodeType === 3) texts.push(node); else node.children.forEach(visit); };
-    visit(root); let index = 0;
-    return { nextNode: () => texts[index++] || null };
-  }
 }
 function fixture() {
   const doc = new Document(); const root = doc.createElement('main');
-  const article = root.appendChild(doc.createElement('article')); article.className = 'ai-answer--chat'; article.setAttribute('data-ai-stream', 'true');
+  const article = root.appendChild(doc.createElement('article')); article.className = 'ai-answer--chat';
   const copy = article.appendChild(doc.createElement('div')); copy.className = 'ai-answer__markdown';
   const p = copy.appendChild(doc.createElement('p'));
   p.appendChild(new Element('#text', doc, 'Una risposta '));
@@ -78,31 +61,14 @@ function fixture() {
   });
   return { root, article, copy, strong, controls };
 }
-function flush(includeAnnouncements = true) {
-  for (let i = 0; timers.size && i < 200; i++) { const [id, fn] = timers.entries().next().value; if (!includeAnnouncements && fn.delay === 1000) break; timers.delete(id); fn(); }
-}
 function section(source, start, end) { return source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start))); }
 async function run() {
-  const first = fixture(); const text = first.copy.textContent; let starts = 0;
-  const destroy = CardineAI.enhance(first.root, { onStreamStart: () => starts++ });
-  const duplicate = CardineAI.enhance(first.root, { onStreamStart: () => starts++ }); duplicate();
-  const streaming = first.article.hasAttribute('data-ai-stream') && first.copy.getAttribute('aria-hidden') === 'true' && timers.size === 1;
-  const firstVisible = first.copy.querySelectorAll('.ai-stream-word').filter((word) => word.classList.contains('is-visible')).length;
-  flush(false);
-  const announcement = first.article.children.find(child => child.getAttribute('role') === 'status');
-  const announced = announcement?.textContent === text;
-  flush();
-  const announcementRemoved = !first.article.children.includes(announcement);
-  const completed = !first.article.hasAttribute('data-ai-stream') && !first.copy.hasAttribute('aria-hidden') && first.copy.textContent === text && first.strong.tagName === 'STRONG';
+  const first = fixture(); const fullText = first.copy.textContent;
+  const destroy = CardineAI.enhance(first.root);
+  const immediate = first.copy.textContent === fullText && !first.copy.hasAttribute('aria-hidden')
+    && !first.article.hasAttribute('aria-busy') && first.strong.tagName === 'STRONG' && timers.size === 0;
   destroy();
-  const rebind = CardineAI.enhance(first.root, { onStreamStart: () => starts++ }); rebind();
-  const interrupted = fixture(); const stop = CardineAI.enhance(interrupted.root); stop();
-  const cancelled = timers.size === 0 && !interrupted.article.hasAttribute('data-ai-stream') && !interrupted.copy.hasAttribute('aria-hidden');
-  reduced = true;
-  const reducedFixture = fixture(); const reducedCleanup = CardineAI.enhance(reducedFixture.root);
-  const reducedInstant = timers.size === 0 && reducedFixture.copy.querySelectorAll('.ai-stream-word').length === 0 && !reducedFixture.article.hasAttribute('data-ai-stream');
-  reducedCleanup(); reduced = false;
-  const actions = fixture(); actions.article.removeAttribute('data-ai-stream'); let retry = 0; const feedback = [];
+  const actions = fixture(); let retry = 0; const feedback = [];
   const remove = CardineAI.enhance(actions.root, { onRetry: () => retry++, onFeedback: (value) => feedback.push(value) });
   const duplicateActions = CardineAI.enhance(actions.root, { onRetry: () => retry++ }); duplicateActions();
   actions.controls.copy.click(); await Promise.resolve();
@@ -123,10 +89,28 @@ async function run() {
   const poll = section(browser, '  async function pollTurnActivity', '\n  function restoreFailedTurnDraft');
   let resolveFetch, patches = 0;
   const state = { activityPollToken: 0, navigationVersion: 0, pendingTurn: { requestId: 'one' } };
-  const pollingContext = { state, fetchJson: () => new Promise((resolve) => { resolveFetch = resolve; }), text: (value) => value || '', $: () => ({}), patch: () => patches++, aiToolChips: () => '', root: {}, captureScroll: () => ({}), restoreScroll: () => {}, window: { setTimeout: global.setTimeout } };
+  const pollingContext = { state, fetchJson: (path) => path.endsWith('/output') ? Promise.resolve({state:'unavailable',text:''}) : new Promise((resolve) => { resolveFetch = resolve; }), text: (value) => value || '', $: () => ({}), patch: () => patches++, aiToolChips: () => '', root: {}, captureScroll: () => ({}), restoreScroll: () => {}, window: { setTimeout: global.setTimeout } };
   vm.createContext(pollingContext); vm.runInContext(poll, pollingContext);
   const polling = pollingContext.pollTurnActivity('one'); state.navigationVersion++; resolveFetch({ state: 'running', records: [{ sequence: 1 }] }); await polling;
   const stalePollIgnored = patches === 0 && timers.size === 0;
+
+  const liveDraft = { hidden: true }; const draftTexts = []; let liveReads = 0;
+  const liveText = { get textContent(){ return draftTexts.at(-1); }, set textContent(value){ draftTexts.push(value); } };
+  const liveState = { activityPollToken: 0, navigationVersion: 0, pendingTurn: { requestId: 'live' } };
+  const liveContext = {
+    state: liveState,
+    fetchJson: async (path) => path.endsWith('/output')
+      ? { state: 'generating', text: liveReads > 1500 ? 'late token' : '<img src=x onerror=alert(1)>token' }
+      : (liveReads++, { state: 'running', records: [] }),
+    text: (value) => value || '',
+    $: (selector) => selector === '[data-turn-draft]' ? liveDraft : selector === '[data-turn-draft-text]' ? liveText : null,
+    root: {}, captureScroll: () => ({}), restoreScroll: () => {},
+    window: { setTimeout: (resolve, delay) => { if(liveReads === 1700)liveState.pendingTurn = null; resolve(); return delay; } },
+  };
+  vm.createContext(liveContext); vm.runInContext(poll, liveContext);
+  await liveContext.pollTurnActivity('live');
+  const liveDraftSafe = !liveDraft.hidden && draftTexts.includes('<img src=x onerror=alert(1)>token') && !('innerHTML' in liveText);
+  const longTurnStreamed = liveReads === 1700 && liveText.textContent === 'late token';
 
   const retrySource = section(browser, '  async function retryAnswer', '\n  function renderFonti');
   const retryCalls = []; const original = { endpoint: '/api/v1/session/turns', payload: { content: 'Original prompt', lesson_pin: { lesson_id: 'original' } } };
@@ -140,9 +124,10 @@ async function run() {
     let resolveFetch;
     const commandState = {
       navigationVersion: 1, route: 'sessione', lastCommand: null, pendingTurn: null,
-      revealedAnswers: new Set(), streamAnswerId: '', turnCommands: {}, turnActivities: {},
+      turnCommands: {}, turnActivities: {},
       activityPollToken: 0, highWaterSequence: 0,
     };
+    let renders = 0;
     const context = {
       state: commandState, text: (value, fallback = '') => String(value || fallback),
       object: (value) => value || {}, array: (value) => value || [],
@@ -151,7 +136,7 @@ async function run() {
       fetchJson: () => new Promise((resolve) => { resolveFetch = resolve; }),
       updateSequence: () => {}, first: (_value, _keys, fallback) => fallback,
       statusLabel: (status) => status, INCOMPLETE_TURN_STATUSES: new Set(),
-      renderSessione: () => {}, refreshBootstrapCounts: async () => {},
+      renderSessione: () => renders++, refreshBootstrapCounts: async () => {},
       $$: () => [], $: () => null, root: {},
     };
     vm.createContext(context); vm.runInContext(commandSource, context);
@@ -159,10 +144,10 @@ async function run() {
     if (navigateAway) { commandState.route = 'fonti'; commandState.navigationVersion += 1; }
     resolveFetch({ presentation_id: 'answer-1', status: 'completed', result: {} });
     await task;
-    return { revealed: commandState.revealedAnswers.has('answer-1'), stream: commandState.streamAnswerId };
+    return { rendered: renders, settled: commandState.pendingTurn === null, retryRemembered: commandState.turnCommands['answer-1'].requestId === 'turn-request' };
   }
   const offRouteAnswer = await commandAfterNavigation(true);
   const onRouteAnswer = await commandAfterNavigation(false);
-  console.log(JSON.stringify({ streaming, firstVisible, completed, announced, announcementRemoved, starts, cancelled, reducedInstant, copies, retry, feedback, exclusive, collapsed, preservedChoice, stalePollIgnored, retryCalls, offRouteAnswer, onRouteAnswer }));
+  console.log(JSON.stringify({ immediate, copies, retry, feedback, exclusive, collapsed, preservedChoice, stalePollIgnored, liveDraftSafe, longTurnStreamed, retryCalls, offRouteAnswer, onRouteAnswer }));
 }
 run().catch((error) => { console.error(error); process.exit(1); });
