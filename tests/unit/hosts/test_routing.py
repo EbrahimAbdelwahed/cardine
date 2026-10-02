@@ -752,7 +752,9 @@ def test_existing_host_runner_executes_selected_tool_once_with_host_owned_author
     from study_agent.domain import CourseId, SessionId
 
     ctx = context(tools=(tool("study.write", TOPIC),))
-    judge, model, legacy = Judge("invoke_tool"), Model({"topic": "valves"}), Legacy()
+    judge = Judge("invoke_tool", "assistant_message")
+    model = Model({"topic": "valves"}, {"message": "Recorded valves."})
+    legacy = Legacy()
     port = router(judge, model, legacy)
 
     class Assembler:
@@ -761,7 +763,7 @@ def test_existing_host_runner_executes_selected_tool_once_with_host_owned_author
 
     class ToolGateway:
         def __init__(self) -> None:
-            self.calls: list[tuple[str, JsonObject, CourseId, SessionId, str]] = []
+            self.calls: list[tuple[str, JsonObject, CourseId, SessionId, str, int]] = []
 
         async def invoke(
             self,
@@ -770,8 +772,9 @@ def test_existing_host_runner_executes_selected_tool_once_with_host_owned_author
             course: CourseId,
             session: SessionId,
             turn: str,
+            snapshot_sequence: int,
         ) -> object:
-            self.calls.append((name, arguments, course, session, turn))
+            self.calls.append((name, arguments, course, session, turn, snapshot_sequence))
             return SimpleNamespace(error=None, value={"high_water_sequence": 9})
 
     tool_gateway = ToolGateway()
@@ -796,8 +799,9 @@ def test_existing_host_runner_executes_selected_tool_once_with_host_owned_author
             CourseId("course"),
             SessionId("session"),
             "turn-1",
+            ctx.tutor_snapshot_sequence,
         )
     ]
-    assert legacy.calls == 0 and len(model.requests) == 1
+    assert legacy.calls == 0 and len(model.requests) == 2
     assert result.presentation_receipt is not None
-    assert result.presentation_receipt.observed_host_context_sequence == 9
+    assert result.presentation_receipt.observed_host_context_sequence == ctx.tutor_snapshot_sequence
