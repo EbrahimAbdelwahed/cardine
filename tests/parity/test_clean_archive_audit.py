@@ -84,6 +84,7 @@ def test_recovery_custody_rejects_mutated_core_and_new_unclassified_file(
 ) -> None:
     clean_root = _clean_archive(tmp_path)
     protected = (
+        "src/cardine/demo/browser.py",
         "src/study_agent/domain/__init__.py",
         "src/study_agent/tutor_snapshot/reader.py",
         "src/study_agent/ingestion/preparation.py",

@@ -1,0 +1,11 @@
+--- a/tests/parity/wave-a-recovery-overlay.json
++++ b/tests/parity/wave-a-recovery-overlay.json
+@@ -52,7 +52,7 @@
+     },
+     {
+       "path": "src/cardine/demo/browser.py",
+-      "sha256": "f21cba1d1359a8a5da747cd80620ece4542053781014f14fe811d36a186bf75d"
++      "sha256": "c86b41928c2a17af7bd3ce2a813bdc93e0ff36ba66c1c9c49f11bade3412b48f"
+     },
+     {
+       "path": "src/cardine/demo/product_settings.py",

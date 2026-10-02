@@ -25,6 +25,10 @@ For a model-backed local Cardine preview, install the provider extra as well:
 .venv/bin/python -m pip install -e '.[dev,openai]'
 ```
 
+The standard Cardine installation includes FSRS 6.3.1. `cardine-shell-web`
+configures scheduled recall by default; no recall startup flag is required.
+The `recall` extra remains supported for existing installation commands.
+
 Repeat the editable installation after moving the checkout so console scripts
 point to the current Cardine package. Offline tests do not require provider
 credentials. The loopback browser accepts a process-local key through Settings;

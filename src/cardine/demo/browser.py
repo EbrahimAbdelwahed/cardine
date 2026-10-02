@@ -987,6 +987,8 @@ def main() -> None:
     if args.production and not args.private:
         parser.error("--production requires --private")
     try:
+        from study_agent.adapters.scheduling import PyFsrsSchedulingPolicy
+
         from .ui_application import RepositoryUiApplication
 
         private_access = None
@@ -998,6 +1000,7 @@ def main() -> None:
             args.course_id,
             args.session_id,
             environment=environment,
+            recall_scheduler_factory=PyFsrsSchedulingPolicy,
         )
         if args.private:
             from .private_access import PrivateAccessController

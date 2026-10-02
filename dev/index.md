@@ -1,7 +1,6 @@
 # Cardine development memory
 
-Updated: 2026-09-30 CEST
-Updated: 2026-10-01 CEST
+Updated: 2026-10-02 CEST
 
 This file is the authoritative entrypoint for Cardine development memory.
 Cardine-specific plans, logs, notes, and handoffs belong in this repository's
@@ -9,6 +8,8 @@ Cardine-specific plans, logs, notes, and handoffs belong in this repository's
 archive and must not be treated as Cardine's current state.
 
 ## Start here
+
+- [Scheduled recall by default](logs/2026-10-02--cardine--recall-default--log.md) — standard server FSRS composition integrated with main, including the merged student journal and source-note generation.
 
 - [Minimal student journal](logs/2026-10-01--cardine--student-journal--log.md) — owner-approved replacement
   for learner-evidence estimates, session-note memory writes and product context conflicts.
