@@ -200,7 +200,7 @@ def test_source_viewer_is_lateral_on_sources_and_resizable_from_chat() -> None:
     css = (DEMO_DIR / "browser.css").read_text(encoding="utf-8")
     javascript = (DEMO_DIR / "browser.js").read_text(encoding="utf-8")
 
-    assert 'class="section-grid section-grid--materials"' in javascript
+    assert 'class="section-grid section-grid--materials sources-workspace"' in javascript
     assert 'class="section-grid__side materials-pane"' in javascript
     assert 'class="materials-viewer"' in javascript
     assert 'data-source-viewer-resize' in page
