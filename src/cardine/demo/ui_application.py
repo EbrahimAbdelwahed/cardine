@@ -1294,7 +1294,9 @@ class RepositoryUiApplication(UiApplicationPort):
         request_id, sequence, payload = _workspace_command(
             command,
             required_keys=keys,
-            optional_keys={"lessons"} if not (prepare or resume or decision) else set(),
+            optional_keys={"lessons", "selected_lessons"}
+            if not (prepare or resume or decision)
+            else set(),
         )
         context = self._context(request_id, request_id)
         try:
@@ -1335,13 +1337,19 @@ class RepositoryUiApplication(UiApplicationPort):
                     )
                 if path != "/api/v1/material-generations":
                     raise UiRequestError("route not found", status_code=404)
-                lessons = payload.get("lessons")
-                if lessons is not None:
+                if "lessons" in payload and "selected_lessons" in payload:
+                    raise UiRequestError("Scegli una divisione completa o le lezioni selezionate.")
+                selected = "selected_lessons" in payload
+                lessons = payload.get("selected_lessons" if selected else "lessons")
+                if selected or "lessons" in payload:
                     if not isinstance(lessons, list) or any(
                         not isinstance(item, dict) for item in lessons
                     ):
                         raise UiRequestError("lesson boundaries are invalid")
-                    jobs = product.start_lessons(
+                    start_lessons = (
+                        product.start_selected_lessons if selected else product.start_lessons
+                    )
+                    jobs = start_lessons(
                         str(payload["source_id"]), str(payload["revision_id"]), lessons, request_id
                     )
                 else:

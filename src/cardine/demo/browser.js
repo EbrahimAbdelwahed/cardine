@@ -2475,22 +2475,29 @@
       if (scope !== state.bootstrap || !control.isConnected) return;
       if (array(prepared.lessons).length) {
         const pane = $("#material-jobs");
-        patch(pane, `<section class="notes-job"><h2>Dividi il PDF per lezioni</h2><p>Verifica titoli e intervalli. Ogni riga: titolo | pagina iniziale | pagina finale. Tutte le pagine devono essere coperte una volta.</p><form data-notes-lessons><label for="notes-lesson-ranges">Lezioni del PDF</label><textarea id="notes-lesson-ranges" rows="8">${esc(array(prepared.lessons).map((item) => `${item.title} | ${item.start_page} | ${item.end_page}`).join("\n"))}</textarea><button class="button" type="submit">Conferma lezioni e genera note</button><p data-notes-error role="status"></p></form></section>`);
-        $("[data-notes-lessons]", pane).addEventListener("submit", async (event) => {
+        patch(pane, `<section class="notes-job"><h2>Verifica le lezioni del PDF</h2><p>Correggi titoli e intervalli. Ogni riga: titolo | pagina iniziale | pagina finale. La divisione deve coprire tutte le pagine una volta. Nel passaggio successivo scegli quali lezioni generare.</p><form data-notes-lessons><label for="notes-lesson-ranges">Lezioni del PDF</label><textarea id="notes-lesson-ranges" rows="8">${esc(array(prepared.lessons).map((item) => `${item.title} | ${item.start_page} | ${item.end_page}`).join("\n"))}</textarea><button class="button" type="submit">Conferma confini e scegli lezioni</button><p data-notes-error role="status"></p></form></section>`);
+        $("[data-notes-lessons]", pane).addEventListener("submit", (event) => {
           event.preventDefault();
           const form = event.currentTarget;
-          const button = $("button", form);
-          button.disabled = true;
           try {
             const lessons = $("textarea", form).value.split("\n").filter((line) => line.trim()).map((line) => {
-              const [title, start, end] = line.split("|").map((item) => item.trim());
+              const parts = line.split("|").map((item) => item.trim());
+              if (parts.length !== 3) throw new Error("Ogni riga deve contenere titolo | pagina iniziale | pagina finale.");
+              const [title, start, end] = parts;
               return {title, start_page: Number(start), end_page: Number(end)};
             });
-            await fetchJson("/api/v1/material-generations", {method: "POST", body: JSON.stringify(commandPayload({...pin, lessons}))});
-            form.remove();
-            await refreshMaterialJobs();
+            let previous = 0;
+            if (!lessons.length || lessons.length > 64) throw new Error("Inserisci da 1 a 64 lezioni.");
+            for (const lesson of lessons) {
+              if (!lesson.title || lesson.title.length > 240 || !Number.isInteger(lesson.start_page) || !Number.isInteger(lesson.end_page) || lesson.start_page !== previous + 1 || lesson.end_page < lesson.start_page || lesson.end_page > prepared.page_count) {
+                throw new Error("La divisione deve coprire tutte le pagine in ordine, senza vuoti o sovrapposizioni.");
+              }
+              previous = lesson.end_page;
+            }
+            if (previous !== prepared.page_count) throw new Error("Mancano pagine nella divisione per lezioni.");
+            const boundaryEditor = pane.firstElementChild;
+            showNoteLessonSelection(pane, pin, lessons, scope, () => pane.replaceChildren(boundaryEditor));
           } catch (error) { $("[data-notes-error]", form).textContent = error.message; }
-          finally { button.disabled = false; }
         });
       } else {
         await fetchJson("/api/v1/material-generations", {method: "POST", body: JSON.stringify(commandPayload(pin))});
@@ -2498,6 +2505,47 @@
       }
     } catch (error) { setStatus("unavailable", error.message); }
     finally { control.disabled = false; }
+  }
+
+  function showNoteLessonSelection(pane, pin, lessons, scope, editBoundaries) {
+    pane.replaceChildren();
+    patch(pane, `<section class="notes-job"><h2>Scegli le lezioni da generare</h2><p>Verranno elaborate solo le lezioni selezionate. Le altre pagine del PDF restano escluse.</p><form data-notes-lessons><fieldset class="notes-lesson-selection"><legend>Lezioni del PDF</legend>${lessons.map((lesson, index) => `<label><input type="checkbox" name="lesson" value="${index}"><span>${esc(lesson.title)} · pagine ${lesson.start_page}–${lesson.end_page}</span></label>`).join("")}</fieldset><div class="state-actions"><button class="button button--quiet" type="button" data-notes-select-all>Seleziona tutte</button><button class="button button--quiet" type="button" data-notes-edit>Modifica confini</button><button class="button" type="submit" disabled>Seleziona almeno una lezione</button></div><p data-notes-error role="status"></p></form></section>`);
+    const form = $("[data-notes-lessons]", pane);
+    const submit = $('[type="submit"]', form);
+    let submission = null;
+    let selectionKey = "[]";
+    const selectedLessons = () => $$('input[name="lesson"]:checked', form).map((input) => lessons[Number(input.value)]);
+    const update = () => {
+      const selected = selectedLessons();
+      const nextSelectionKey = JSON.stringify(selected);
+      if (nextSelectionKey !== selectionKey) submission = null;
+      selectionKey = nextSelectionKey;
+      const count = selected.length;
+      submit.disabled = !count;
+      submit.textContent = count ? `Genera note per ${count} ${count === 1 ? "lezione" : "lezioni"}` : "Seleziona almeno una lezione";
+    };
+    form.addEventListener("change", update);
+    $('[data-notes-select-all]', form).addEventListener("click", () => {
+      $$('input[name="lesson"]', form).forEach((input) => { input.checked = true; });
+      update();
+    });
+    $('[data-notes-edit]', form).addEventListener("click", editBoundaries);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (scope !== state.bootstrap || !form.isConnected) return;
+      const selected_lessons = selectedLessons();
+      if (!selected_lessons.length) return;
+      submission ||= commandPayload({...pin, selected_lessons});
+      const controls = $$('input, button', form);
+      controls.forEach((control) => { control.disabled = true; });
+      try {
+        await fetchJson("/api/v1/material-generations", {method: "POST", body: JSON.stringify(submission)});
+        if (scope !== state.bootstrap || !form.isConnected) return;
+        form.remove();
+        await refreshMaterialJobs();
+      } catch (error) { $("[data-notes-error]", form).textContent = error.message; }
+      finally { controls.forEach((control) => { control.disabled = false; }); }
+    });
   }
 
   async function refreshMaterialJobs() {
