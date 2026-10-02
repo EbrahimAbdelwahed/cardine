@@ -16,10 +16,19 @@ from .assessment import (
 )
 from .clock import ClockPort
 from .course import CourseCatalogPort, CourseNotFoundError, CourseViewPort
+from .document_index import DocumentIndexPort, DocumentIndexRequest
 from .host_file import (
     HostFileIdentityPort,
     HostFileIngestionPort,
     HostFileSnapshotStore,
+)
+from .judgement import (
+    ChoiceJudgement,
+    ChoiceJudgementPort,
+    ChoiceJudgementRequest,
+    ChoiceOption,
+    ChoiceProbability,
+    validate_judgement,
 )
 from .model import (
     CancellationToken,
@@ -98,11 +107,18 @@ __all__ = [
     "AssistantTurnViewPort",
     "BlobStore",
     "CancellationToken",
+    "ChoiceJudgement",
+    "ChoiceJudgementPort",
+    "ChoiceJudgementRequest",
+    "ChoiceOption",
+    "ChoiceProbability",
     "ClockPort",
     "CourseCatalogPort",
     "CourseNotFoundError",
     "CourseViewPort",
     "DeterministicClosedGradingPolicyPort",
+    "DocumentIndexPort",
+    "DocumentIndexRequest",
     "EventSequenceConflictError",
     "EventStore",
     "EvidenceStatus",
@@ -158,4 +174,5 @@ __all__ = [
     "WorkaroundApprovalAuthority",
     "WorkaroundExecutor",
     "retrieval_read_set_fingerprint",
+    "validate_judgement",
 ]

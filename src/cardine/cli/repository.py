@@ -14,7 +14,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Protocol, cast
 
 from cardine.adapters.model.retrieval_query_recovery import RetrievalQueryRecovery
-from cardine.adapters.pageindex import PageIndexCoordinator, PageIndexRevision
+from cardine.adapters.pageindex import PageIndexCoordinator, PageIndexRevision, PageIndexWorker
 from cardine.application.capability_completion import (
     MAX_COMPLETION_CONTENT_CHARS,
 )
@@ -27,6 +27,12 @@ from cardine.application.indexing import (
     IndexingStatus,
 )
 from cardine.application.student_state import StudentStateService
+from cardine.application.study_semantics import (
+    ConsentChoiceJudgementPort,
+    FlashcardSemanticPreprocessor,
+    RoutingReceiptStore,
+    document_revision,
+)
 from cardine.courses import (
     CourseService,
     ProjectionCourseCatalog,
@@ -48,6 +54,7 @@ from cardine.hosts import (
     decision_fingerprint,
 )
 from cardine.hosts.flashcard_routing import FlashcardProfileRoutingTutorDecisionPort
+from cardine.hosts.routing import RoutingThreshold, RoutingTutorDecisionPort, TutorRoutingPolicy
 from cardine.hosts.scope_resolution import recent_explicit_lesson_references
 from cardine.integrations.study_agent.course_policy import (
     ConsentModelPort,
@@ -80,16 +87,14 @@ from cardine.materials import (
     PinnedTranscriptInput,
 )
 from study_agent.adapters.filesystem import (
-    BlobIntegrityError,
-    BlobNotFoundError,
     FilesystemBlobStore,
     LocalRepositoryError,
     LocalRepositoryPaths,
-    UnsafeBlobPathError,
     initialize_local_repository,
     validate_local_repository_layout,
 )
 from study_agent.adapters.filesystem.repository_target import RepositoryObservationHandle
+from study_agent.adapters.judgement.jev import JevChoiceAdapter
 from study_agent.adapters.model import (
     ADAPTER_ID as OPENAI_COMPATIBLE_ADAPTER_ID,
 )
@@ -153,8 +158,6 @@ from study_agent.capabilities.fingerprints import (
     capability_retry_fingerprint,
 )
 from study_agent.domain import (
-    BlobId,
-    BlobRef,
     ChunkId,
     Citation,
     ContentOrigin,
@@ -171,7 +174,9 @@ from study_agent.domain import (
     SourceKind,
 )
 from study_agent.domain._validation import JsonObject, JsonValue
+from study_agent.domain.features import FeatureMode
 from study_agent.domain.session import MAX_TUTOR_SOURCE_LOCATOR_CHARS
+from study_agent.flashcards.semantic import FlashcardSemanticAnalyzer, SemanticPolicy
 from study_agent.grounding import (
     EvidenceSufficiencyValidator,
     GroundedAnswerIntegrityValidator,
@@ -194,6 +199,7 @@ from study_agent.playbooks import (
 )
 from study_agent.playbooks.builtin import GROUNDED_ANSWER_FLOW
 from study_agent.ports import IndexReceipt, ModelCapabilities, ModelPort
+from study_agent.ports.judgement import ChoiceJudgementPort
 from study_agent.ports.retrieval import (
     EvidenceStatus,
     RetrievalDocument,
@@ -205,6 +211,7 @@ from study_agent.ports.retrieval import (
     retrieval_read_set_fingerprint,
 )
 from study_agent.ports.scheduling import SchedulingPolicyPort
+from study_agent.ports.tutor_host import TutorDecisionPort
 from study_agent.ports.tutor_runner import (
     TutorCompletionHandoffStore,
     TutorContinuationStore,
@@ -220,7 +227,6 @@ from study_agent.repository_config import LocalRepositoryConfig, ModelAdapterCon
 from study_agent.retrieval import (
     CourseSourceContent,
     SourceContentError,
-    SourceContentErrorCode,
     SourceRevisionRecord,
 )
 from study_agent.sessions import (
@@ -1448,6 +1454,7 @@ class LocalRepository:
         recall_scheduler_factory: Callable[[], SchedulingPolicyPort] | None = None,
         tutor_host_runner: TutorHostRunner | None = None,
         tutor_continuation_store: TutorContinuationStore | None = None,
+        judgement: ChoiceJudgementPort | None = None,
     ) -> None:
         if recall_scheduler is not None and recall_scheduler_factory is not None:
             raise TypeError("recall_scheduler and recall_scheduler_factory are mutually exclusive")
@@ -1521,7 +1528,15 @@ class LocalRepository:
             events_database, registry, connection_identity_guard=events_guard
         )
         self.runs = SQLiteRunStore(runs_database, connection_identity_guard=runs_guard)
-        self.pageindex = PageIndexCoordinator(self.runs)
+        self.pageindex = PageIndexCoordinator(
+            self.runs,
+            worker=PageIndexWorker(
+                timeout_seconds=config.document_index.timeout_seconds,
+                max_input_bytes=config.document_index.max_input_bytes,
+            ),
+        )
+        self._judgement = judgement
+        self._routing_receipts = RoutingReceiptStore(self.runs)
         self.indexing = IndexingCoordinator(NamespacedSQLiteRunStore(self.runs, "cardine-indexing"))
         self.provider_consent = ProjectionConsentView(self.events.projection)
         self.source_lifetime = ProjectionSourceLifetimeView(self.events.projection)
@@ -1669,6 +1684,26 @@ class LocalRepository:
             fallback_message_policy=_cardine_fallback_message,
         )
 
+    def _course_judgement(self, course_id: CourseId) -> ChoiceJudgementPort:
+        if self._judgement is None:
+            config = self.config.judgement
+            if config is None:
+                raise ModelAdapterConfigurationError("no judgement adapter is configured")
+            environment = os.environ if self._environment is None else self._environment
+            credential = environment.get(config.credential_env)
+            if not isinstance(credential, str) or not credential.strip():
+                raise ModelAdapterConfigurationError(
+                    "configured judgement credential is unavailable"
+                )
+            self._judgement = JevChoiceAdapter(
+                api_key=credential,
+                model_id=config.model_id,
+                timeout_seconds=config.timeout_seconds,
+                max_retries=config.max_retries,
+                concurrency=config.concurrency,
+            )
+        return ConsentChoiceJudgementPort(self._judgement, course_id, self.provider_consent)
+
     def tutor_conversation(
         self,
         course_id: CourseId,
@@ -1702,6 +1737,29 @@ class LocalRepository:
             course_id,
             self.provider_consent,
         )
+        features = self.config.features
+        judgement: ChoiceJudgementPort | None = None
+        if features.tutor_routing_mode is not FeatureMode.OFF or (
+            features.flashcard_semantic_mode is not FeatureMode.OFF
+        ):
+            judgement = self._course_judgement(course_id)
+        analyzer: FlashcardSemanticAnalyzer | None = None
+        if features.flashcard_semantic_mode is not FeatureMode.OFF:
+            selected_judgement = self.config.judgement
+            if selected_judgement is None or judgement is None:
+                raise ModelAdapterConfigurationError("semantic judgement is not configured")
+            analyzer = FlashcardSemanticAnalyzer(
+                judgement,
+                SemanticPolicy(
+                    "flashcard-cardability",
+                    features.policy_version,
+                    features.anchor_probability,
+                    features.context_probability,
+                    features.exclusion_probability,
+                    features.semantic_margin,
+                ),
+                judgement_identity=f"openrouter-jev@openrouter-decisions-alpha@1/{selected_judgement.resolved_model_id}",
+            )
         selected_session_id = (
             session_id if session_id is not None else self.sessions.list_sessions(course_id)[0].id
         )
@@ -1720,6 +1778,14 @@ class LocalRepository:
                 source_commitments=self._source_catalog,
                 sessions=self.sessions,
                 retired_source_ids=lambda: self.source_lifetime.retired_source_ids(course_id),
+                semantic_preprocessor=FlashcardSemanticPreprocessor(
+                    content=self.for_course(course_id).content,
+                    blobs=self.blobs,
+                    indexes=self.pageindex,
+                    runs=self.runs,
+                    features=features,
+                    analyzer=analyzer,
+                ),
             )
             self.artifact_service = ArtifactService(
                 self.events,
@@ -1745,12 +1811,32 @@ class LocalRepository:
             flashcards,
             lesson_pin,
         )
+        legacy = FlashcardProfileRoutingTutorDecisionPort(
+            SourceGroundedTutorDecisionPort(
+                ClarificationRecoveryTutorDecisionPort(ModelTutorDecisionPort(model))
+            )
+        )
+        decision_port: TutorDecisionPort = legacy
+        if features.tutor_routing_mode is not FeatureMode.OFF:
+            if judgement is None:
+                raise ModelAdapterConfigurationError("semantic judgement is not configured")
+            decision_port = RoutingTutorDecisionPort(
+                judgement,
+                model,
+                TutorRoutingPolicy(
+                    features.policy_version,
+                    RoutingThreshold(features.route_probability, features.route_margin),
+                    RoutingThreshold(features.capability_probability, features.capability_margin),
+                    RoutingThreshold(features.boolean_probability, features.boolean_margin),
+                    RoutingThreshold(features.enum_probability, features.enum_margin),
+                    mode=features.tutor_routing_mode,
+                    emergency_fallback=features.emergency_fallback,
+                ),
+                legacy=legacy,
+                record_receipt=self._routing_receipts.record,
+            )
         runner = TutorHostRunner(
-            FlashcardProfileRoutingTutorDecisionPort(
-                SourceGroundedTutorDecisionPort(
-                    ClarificationRecoveryTutorDecisionPort(ModelTutorDecisionPort(model))
-                )
-            ),
+            decision_port,
             self.tutor_snapshots,
             self.student_state,
             gateway,
@@ -1804,6 +1890,7 @@ class LocalRepository:
         recall_scheduler_factory: Callable[[], SchedulingPolicyPort] | None = None,
         tutor_host_runner: TutorHostRunner | None = None,
         tutor_continuation_store: TutorContinuationStore | None = None,
+        judgement: ChoiceJudgementPort | None = None,
     ) -> LocalRepository:
         paths = LocalRepositoryPaths.at(root)
         config = LocalRepositoryConfig.load(paths.config)
@@ -1816,6 +1903,7 @@ class LocalRepository:
             recall_scheduler_factory=recall_scheduler_factory,
             tutor_host_runner=tutor_host_runner,
             tutor_continuation_store=tutor_continuation_store,
+            judgement=judgement,
         )
 
     @classmethod
@@ -1830,6 +1918,7 @@ class LocalRepository:
         recall_scheduler_factory: Callable[[], SchedulingPolicyPort] | None = None,
         tutor_host_runner: TutorHostRunner | None = None,
         tutor_continuation_store: TutorContinuationStore | None = None,
+        judgement: ChoiceJudgementPort | None = None,
     ) -> LocalRepository:
         """Compose mutable adapters while retaining an inspected repository owner."""
         if not isinstance(observation, RepositoryObservationHandle):
@@ -1846,6 +1935,7 @@ class LocalRepository:
             recall_scheduler_factory=recall_scheduler_factory,
             tutor_host_runner=tutor_host_runner,
             tutor_continuation_store=tutor_continuation_store,
+            judgement=judgement,
         )
 
     def for_course(self, course_id: CourseId) -> CourseRepository:
@@ -2090,62 +2180,17 @@ class LocalRepository:
         course_ids = (course_id,) if course_id is not None else self.events.list_course_ids()
         for selected_course in course_ids:
             retired = self.source_lifetime.retired_source_ids(selected_course)
-            state = self.events.projection(selected_course).state
-            raw_sources = state.get("sources", {})
-            if not isinstance(raw_sources, Mapping):
-                raise LocalRepositoryError("source projection is incompatible")
-            for source_id, raw_source in sorted(raw_sources.items()):
-                if not isinstance(source_id, str) or not isinstance(raw_source, Mapping):
-                    raise LocalRepositoryError("source projection is incompatible")
-                if SourceId(source_id) in retired:
+            content = CourseSourceContent(selected_course, self.events, self.blobs)
+            for record in content.catalog():
+                if not record.is_current_revision or record.source.source_id in retired:
                     continue
-                revision_id = raw_source.get("current_revision_id")
-                raw_revisions = raw_source.get("revisions")
-                if not isinstance(revision_id, str) or not isinstance(raw_revisions, Mapping):
-                    raise LocalRepositoryError("source projection is incompatible")
-                raw_revision = raw_revisions.get(revision_id)
-                if not isinstance(raw_revision, Mapping):
-                    raise LocalRepositoryError("source projection is incompatible")
-                raw_manifest = raw_revision.get("source")
-                if not isinstance(raw_manifest, Mapping):
-                    raise LocalRepositoryError("source projection is incompatible")
-                if raw_manifest.get("kind") != "markdown":
-                    continue
-                raw_blob = raw_manifest.get("normalized_blob")
-                if not isinstance(raw_blob, Mapping):
-                    raise LocalRepositoryError("source projection is incompatible")
-                blob_id = raw_blob.get("id")
-                checksum = raw_blob.get("checksum_sha256")
-                byte_length = raw_blob.get("byte_length")
-                if (
-                    not isinstance(blob_id, str)
-                    or not isinstance(checksum, str)
-                    or type(byte_length) is not int
+                # Historical OFF navigation covered Markdown only. ON/shadow index
+                # every admitted text substrate through the shared structure owner.
+                if self.config.features.document_index_mode is FeatureMode.OFF and (
+                    record.source.kind is not SourceKind.MARKDOWN
                 ):
-                    raise LocalRepositoryError("source projection is incompatible")
-                try:
-                    reference = BlobRef(BlobId(blob_id), checksum, byte_length)
-                    content = self.blobs.get(reference).decode("utf-8", errors="strict")
-                except BlobNotFoundError as error:
-                    raise SourceContentError(
-                        SourceContentErrorCode.NOT_FOUND,
-                        "source projection content is unavailable",
-                    ) from error
-                except (BlobIntegrityError, UnsafeBlobPathError, UnicodeError, ValueError) as error:
-                    raise SourceContentError(
-                        SourceContentErrorCode.INTEGRITY_ERROR,
-                        "source projection content failed integrity validation",
-                    ) from error
-                digest = sha256(content.encode("utf-8")).hexdigest()
-                revisions.append(
-                    PageIndexRevision(
-                        str(selected_course),
-                        source_id,
-                        revision_id,
-                        content,
-                        digest,
-                    )
-                )
+                    continue
+                revisions.append(document_revision(record, self.blobs))
                 if limit is not None and len(revisions) >= limit:
                     return tuple(revisions)
         return tuple(
@@ -2197,7 +2242,7 @@ class LocalRepository:
         for revision in self._pageindex_revisions(course_id):
             if revision.source_id == str(source_id) and revision.revision_id == str(revision_id):
                 return revision
-        raise LookupError("active Markdown revision was not found")
+        raise LookupError("active source revision was not found")
 
     def rebuild_pageindex(
         self, course_id: CourseId, source_id: SourceId, revision_id: RevisionId
@@ -2259,13 +2304,25 @@ class LocalRepository:
         statuses = {
             (item.source_id, item.revision_id): item for item in self.pageindex_status(course_id)
         }
-        fallback_sources = tuple(
-            source
+        primary_index = self.config.features.document_index_mode is FeatureMode.ON
+        if primary_index and any(
+            statuses.get((source.source_id, source.revision_id)) is None
+            or statuses[(source.source_id, source.revision_id)].status is not PageIndexStatus.READY
             for source in sources
-            if not (
-                source.kind.casefold() == "markdown"
-                and statuses.get((source.source_id, source.revision_id)) is not None
-                and statuses[(source.source_id, source.revision_id)].status is PageIndexStatus.READY
+        ):
+            raise LessonSelectionError("document index is unavailable; reconcile source indexing")
+        fallback_sources = (
+            ()
+            if primary_index
+            else tuple(
+                source
+                for source in sources
+                if not (
+                    source.kind.casefold() == "markdown"
+                    and statuses.get((source.source_id, source.revision_id)) is not None
+                    and statuses[(source.source_id, source.revision_id)].status
+                    is PageIndexStatus.READY
+                )
             )
         )
         lexical = LessonSelectionService(_RepositoryLessonEvidence(retrieval)).search(
@@ -2273,13 +2330,14 @@ class LocalRepository:
         )
         candidates = list(lexical.candidates)
         for source in sources:
-            if source.kind.casefold() != "markdown":
+            if not primary_index and source.kind.casefold() != "markdown":
                 continue
             projection = statuses.get((source.source_id, source.revision_id))
             if projection is None or projection.status is not PageIndexStatus.READY:
                 continue
             for item in projection.candidates:
-                if not lesson_title_matches(item.title, query):
+                title = source.title if item.node_id == "document-root" else item.title
+                if not lesson_title_matches(title, query):
                     continue
                 identity = "\0".join(
                     (
@@ -2288,7 +2346,7 @@ class LocalRepository:
                         source.revision_id,
                         str(item.start_offset),
                         str(item.end_offset),
-                        item.title,
+                        title,
                     )
                 ).encode()
                 candidates.append(
@@ -2297,7 +2355,7 @@ class LocalRepository:
                         source.course_id,
                         source.source_id,
                         source.revision_id,
-                        item.title,
+                        title,
                         item.start_offset,
                         item.end_offset,
                         source.content_sha256,
@@ -2359,7 +2417,9 @@ class LocalRepository:
         source = LessonSelectionService(
             _RepositoryLessonEvidence(self.for_course(CourseId(pin.course_id)).retrieval)
         ).validate_pin(pin, sources)
-        if source.kind.casefold() == "markdown":
+        if source.kind.casefold() == "markdown" or (
+            self.config.features.document_index_mode is FeatureMode.ON
+        ):
             candidates = self.search_lessons(CourseId(pin.course_id), pin.section_title).candidates
             if not any(
                 item.source_id == pin.source_id
