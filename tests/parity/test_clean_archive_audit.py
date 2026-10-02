@@ -115,3 +115,73 @@ def test_recovery_custody_rejects_mutated_core_and_new_unclassified_file(
     )
     assert result.returncode != 0
     assert "classification is missing current path" in result.stderr
+
+
+def test_student_journal_custody_rejects_each_changed_source_and_retired_source(
+    tmp_path: Path,
+) -> None:
+    clean_root = _clean_archive(tmp_path)
+    manifest = json.loads(
+        (clean_root / "tests/parity/student-journal-overlay.json").read_text(encoding="utf-8")
+    )
+    for row in manifest["rows"]:
+        path = clean_root / row["path"]
+        original = path.read_bytes()
+        path.write_bytes(original + b"\n# unapproved journal drift\n")
+        result = subprocess.run(
+            [sys.executable, "scripts/audit_harness_ownership.py", "--check"],
+            cwd=clean_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode != 0, row["path"]
+        assert f"recovery overlay sha256 mismatch for {row['path']}" in result.stderr
+        path.write_bytes(original)
+    for relative in manifest["removed"]:
+        path = clean_root / relative
+        path.write_text("# unexpectedly restored source\n", encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, "scripts/audit_harness_ownership.py", "--check"],
+            cwd=clean_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode != 0
+        assert f"student journal retired source is present: {relative}" in result.stderr
+        path.unlink()
+
+
+def test_student_journal_custody_rejects_missing_binding(tmp_path: Path) -> None:
+    clean_root = _clean_archive(tmp_path)
+    path = clean_root / "tests/parity/student-journal-overlay.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest["rows"].pop()
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, "scripts/audit_harness_ownership.py", "--check"],
+        cwd=clean_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "student journal overlay has incomplete scope" in result.stderr
+
+
+def test_student_journal_custody_cannot_add_an_unapproved_path(tmp_path: Path) -> None:
+    clean_root = _clean_archive(tmp_path)
+    path = clean_root / "tests/parity/student-journal-overlay.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest["rows"].append({"path": "src/study_agent/unapproved.py", "sha256": "0" * 64})
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, "scripts/audit_harness_ownership.py", "--check"],
+        cwd=clean_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "student journal overlay has invalid binding" in result.stderr
