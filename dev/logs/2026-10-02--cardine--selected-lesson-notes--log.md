@@ -44,3 +44,22 @@ Final documentation is delivered in the same branch/PR. Current-head CI and
 automatic GitHub review must be checked on the submitted head; no manual review
 request has been posted and no review round is claimed complete. The PR will be
 marked ready after this documentation is pushed. No remaining local source work.
+
+
+## PR #14 automatic review repair
+
+The owner requested resolving the initial automatic review's P2 retry finding
+before the previously requested merge. An unchanged select-all action now keeps
+the cached submission; only a changed lesson set invalidates its request ID.
+The offline real-browser regression captures failed POST payloads and verifies
+identical retries after unchanged select-all, plus a fresh ID and reduced payload
+after unchecking a lesson. The scoped custody overlay binds the updated JS bytes.
+
+Verification: full offline suite passed (2,824 passed, 50 skips in the dev-only
+environment). After installing the optional OpenAI/httpx extra, all 53 Jev unit
+cases passed; the remaining four skips are the optional PDF containment check
+and three disabled live-provider tests. Ruff, mypy (663 files), JS syntax,
+ownership audit, sdist/wheel build and exact package verification passed.
+No provider call or model spend. This repair is delivered to the existing branch
+and PR #14. The initial review covered 917f071; one follow-up review is permitted
+and will be requested after push. Current-commit CI/review and merge remain pending.

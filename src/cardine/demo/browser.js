@@ -2513,10 +2513,14 @@
     const form = $("[data-notes-lessons]", pane);
     const submit = $('[type="submit"]', form);
     let submission = null;
+    let selectionKey = "[]";
     const selectedLessons = () => $$('input[name="lesson"]:checked', form).map((input) => lessons[Number(input.value)]);
     const update = () => {
-      submission = null;
-      const count = selectedLessons().length;
+      const selected = selectedLessons();
+      const nextSelectionKey = JSON.stringify(selected);
+      if (nextSelectionKey !== selectionKey) submission = null;
+      selectionKey = nextSelectionKey;
+      const count = selected.length;
       submit.disabled = !count;
       submit.textContent = count ? `Genera note per ${count} ${count === 1 ? "lezione" : "lezioni"}` : "Seleziona almeno una lezione";
     };

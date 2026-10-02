@@ -195,3 +195,68 @@ def test_pdf_notes_generate_only_checked_lessons(tmp_path: Path) -> None:
             record.source.revision_id == pdf.source.revision_id and record.is_current_revision
             for record in repository.for_course(COURSE).content.catalog()
         )
+
+
+def test_pdf_notes_retry_id_survives_unchanged_select_all(tmp_path: Path) -> None:
+    from tests.integration.test_selected_lesson_notes import prepare_pdf
+
+    root = tmp_path / "repository"
+    initialize_local_repository(root, _config())
+    with LocalRepository.open(root) as repository:
+        prepare_pdf(repository)
+    app = RepositoryUiApplication(
+        root,
+        COURSE,
+        SESSION,
+        model_adapters=_registry(),
+        environment={"OPENAI_API_KEY": "fixture"},
+    )
+    with _serve(application=app) as url, _real_browser(url) as browser:
+        browser.wait_for("Boolean(document.querySelector('[data-route=fonti]'))")
+        browser.evaluate("document.querySelector('[data-route=fonti]').click()")
+        browser.wait_for("document.querySelectorAll('[data-generate-notes]').length === 2")
+        browser.evaluate(
+            "Array.from(document.querySelectorAll('[data-generate-notes]')).find("
+            "button => JSON.parse(button.dataset.generateNotes).source_id === "
+            "'selected-pdf').click()"
+        )
+        browser.wait_for("Boolean(document.querySelector('[data-notes-lessons] textarea'))")
+        browser.evaluate(
+            "document.querySelector('[data-notes-lessons] button[type=submit]').click()"
+        )
+        browser.wait_for("document.querySelectorAll('input[name=lesson]').length === 4")
+        # Capture actual POST payloads and simulate a lost response without model calls.
+        browser.evaluate(
+            "window.noteRequests = []; const originalFetch = window.fetch;"
+            "window.fetch = (url, options) => {"
+            "if (url === '/api/v1/material-generations' && options?.method === 'POST') {"
+            "window.noteRequests.push(JSON.parse(options.body));"
+            "return Promise.reject(new Error('Lost response')); }"
+            "return originalFetch(url, options); };"
+            "document.querySelector('[data-notes-select-all]').click()"
+        )
+        for attempt in range(1, 4):
+            browser.evaluate(
+                "document.querySelector('[data-notes-lessons] button[type=submit]').click()"
+            )
+            browser.wait_for(
+                f"window.noteRequests.length === {attempt} && "
+                "!document.querySelector('[data-notes-lessons] button[type=submit]').disabled"
+            )
+            if attempt == 1:
+                # Selecting every already-selected lesson must retain the failed request.
+                browser.evaluate("document.querySelector('[data-notes-select-all]').click()")
+            elif attempt == 2:
+                browser.evaluate(
+                    "const input = document.querySelector('input[name=lesson]');"
+                    "input.checked = false;"
+                    "input.dispatchEvent(new Event('change', {bubbles: true}))"
+                )
+        assert browser.evaluate(
+            "JSON.stringify(window.noteRequests[0]) === JSON.stringify(window.noteRequests[1])"
+        )
+        assert browser.evaluate(
+            "window.noteRequests[0].request_id !== window.noteRequests[2].request_id"
+        )
+        assert browser.evaluate("window.noteRequests[0].payload.selected_lessons.length === 4")
+        assert browser.evaluate("window.noteRequests[2].payload.selected_lessons.length === 3")
