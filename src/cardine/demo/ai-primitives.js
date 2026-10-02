@@ -289,12 +289,10 @@
       var prompt = bounded(read(followUp, ["prompt", "value", "text"], label), label);
       return '<button class="ai-follow-up" type="button" data-ai-follow-up="' + escapeAttribute(prompt) + '">' + (config.chat ? chatIcon("follow", 11) : "") + escapeText(label) + "</button>";
     }).join("");
-    var reveal = config.reveal === true ? ' data-ai-reveal="true"' : "";
     var chat = config.chat === true;
-    var stream = chat && config.stream === true ? ' data-ai-stream="true"' : "";
-    return '<article class="ai-answer' + (chat ? ' ai-answer--chat' : '') + '"' + stream + '>' +
+    return '<article class="ai-answer' + (chat ? ' ai-answer--chat' : '') + '">' +
       (chat ? '' : '<div class="ai-answer__header"><p class="ai-eyebrow">risposta</p>' + statusPill(config.status, config.statusLabel) + '</div>') +
-      '<div class="ai-answer__body">' + (answer ? '<div class="ai-answer__markdown"' + reveal + '>' + renderMarkdown(answer) + "</div>" : '<p class="ai-empty">Nessuna risposta disponibile.</p>') +
+      '<div class="ai-answer__body">' + (answer ? '<div class="ai-answer__markdown">' + renderMarkdown(answer) + "</div>" : '<p class="ai-empty">Nessuna risposta disponibile.</p>') +
       "</div>" + (chat ? '<div class="ai-answer__footer">' + answerActions(config) + sourceDisclosure + '</div>' : sourceDisclosure) +
       (followHtml ? '<div class="ai-answer__follow-ups" aria-label="Continua lo studio">' + (chat ? '<p>Follow-ups</p>' : '') + followHtml + "</div>" : "") + "</article>";
   }
@@ -655,38 +653,6 @@
     return cleanups;
   }
 
-  function bindAnswerReveals(root) {
-    var cleanups = [];
-    var reduceMotion = global.matchMedia && global.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    Array.prototype.forEach.call(root.querySelectorAll(".ai-answer__body p[data-ai-reveal]"), function (copy) {
-      if (copy.dataset.aiEnhanced === "true" || reduceMotion) return;
-      if ((copy.textContent || "").trim().length < 2) return;
-      var announcement = copy.ownerDocument.createElement("span");
-      var fullAnswer = copy.textContent || "";
-      announcement.className = "ai-visually-hidden";
-      announcement.setAttribute("role", "status");
-      announcement.setAttribute("aria-live", "polite");
-      announcement.setAttribute("aria-atomic", "true");
-      copy.parentNode.appendChild(announcement);
-      copy.dataset.aiEnhanced = "true";
-      copy.setAttribute("aria-hidden", "true");
-      copy.classList.add("is-revealing");
-      var timer = setTimeout(function () {
-        copy.classList.remove("is-revealing");
-        copy.removeAttribute("aria-hidden");
-        announcement.textContent = fullAnswer;
-      }, 280);
-      cleanups.push(function () {
-        clearTimeout(timer);
-        copy.classList.remove("is-revealing");
-        copy.removeAttribute("aria-hidden");
-        if (announcement.parentNode) announcement.parentNode.removeChild(announcement);
-        delete copy.dataset.aiEnhanced;
-      });
-    });
-    return cleanups;
-  }
-
   function bindChatAnswers(root, config) {
     var cleanups = [];
     Array.prototype.forEach.call(root.querySelectorAll(".ai-answer--chat"), function (article) {
@@ -721,59 +687,6 @@
         control.addEventListener("click", onClick);
         cleanups.push(function () { control.removeEventListener("click", onClick); });
       });
-      if (!copy || article.getAttribute("data-ai-stream") !== "true") return;
-      if (typeof config.onStreamStart === "function") config.onStreamStart(article);
-      var doc = copy.ownerDocument;
-      if (!doc || !doc.createTreeWalker || (global.matchMedia && global.matchMedia("(prefers-reduced-motion: reduce)").matches)) {
-        article.removeAttribute("data-ai-stream");
-        return;
-      }
-      var walker = doc.createTreeWalker(copy, 4);
-      var nodes = [], node;
-      while ((node = walker.nextNode())) nodes.push(node);
-      var words = [];
-      nodes.forEach(function (textNode) {
-        var fragment = doc.createDocumentFragment();
-        (textNode.textContent.match(/\S+\s*|\s+/g) || []).forEach(function (word) {
-          var span = doc.createElement("span");
-          span.className = "ai-stream-word";
-          span.textContent = word;
-          fragment.appendChild(span);
-          words.push(span);
-        });
-        textNode.replaceWith(fragment);
-      });
-      // Announce the verified answer once, rather than every visual word.
-      var announcement = doc.createElement("span");
-      announcement.className = "ai-visually-hidden";
-      announcement.setAttribute("role", "status");
-      article.appendChild(announcement);
-      copy.setAttribute("aria-hidden", "true");
-      article.setAttribute("aria-busy", "true");
-      var cursor = 0, timer, announcementTimer;
-      var batch = Math.max(1, Math.ceil(words.length / 160));
-      function finish(announce) {
-        clearTimeout(timer);
-        clearTimeout(announcementTimer);
-        words.forEach(function (word) { word.classList.add("is-visible"); });
-        article.removeAttribute("data-ai-stream");
-        article.removeAttribute("aria-busy");
-        copy.removeAttribute("aria-hidden");
-        if (announce) {
-          announcement.textContent = copy.innerText || copy.textContent || "";
-          announcementTimer = setTimeout(function () { announcement.remove(); }, 1000);
-        } else announcement.remove();
-      }
-      function advance() {
-        if (typeof config.onStreamProgress === "function") config.onStreamProgress(article, "before");
-        words.slice(cursor, cursor + batch).forEach(function (word) { word.classList.add("is-visible"); });
-        cursor += batch;
-        if (typeof config.onStreamProgress === "function") config.onStreamProgress(article, "after");
-        if (cursor >= words.length) finish(true);
-        else timer = setTimeout(advance, 24);
-      }
-      advance();
-      cleanups.push(function () { finish(false); });
     });
     return cleanups;
   }
@@ -787,7 +700,6 @@
     bindInsights(root).forEach(function (cleanup) { cleanups.push(cleanup); });
     bindFineTune(root, config).forEach(function (cleanup) { cleanups.push(cleanup); });
     bindChatAnswers(root, config).forEach(function (cleanup) { cleanups.push(cleanup); });
-    bindAnswerReveals(root).forEach(function (cleanup) { cleanups.push(cleanup); });
     Array.prototype.forEach.call(root.querySelectorAll("[data-ai-follow-up]"), function (control) {
       if (control.dataset.aiEnhanced === "true") return;
       control.dataset.aiEnhanced = "true";

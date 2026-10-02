@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -93,3 +94,23 @@ def test_sqlite_conflict_implements_portable_sequence_conflict(tmp_path: Path) -
 
     assert isinstance(caught.value, SequenceConflictError)
     assert (caught.value.expected, caught.value.actual) == (0, 1)
+
+
+def test_repeated_reads_observe_external_append_and_projection_byte_changes(tmp_path: Path) -> None:
+    path = tmp_path / "events.sqlite3"
+    course_id = CourseId("cached-course")
+    store = SQLiteEventStore(path, registry())
+    store.append(course_id, 0, (make_event(course_id, 1),))
+    assert store.projection(course_id).sequence == 1
+    assert store.read(course_id) == (make_event(course_id, 1),)
+
+    external = SQLiteEventStore(path, registry())
+    external.append(course_id, 1, (make_event(course_id, 2),))
+    assert store.projection(course_id).sequence == 2
+    assert store.read(course_id) == (make_event(course_id, 1), make_event(course_id, 2))
+    with sqlite3.connect(path) as connection:
+        connection.execute("UPDATE projections SET state = ? WHERE course_id = ?", (
+            b"not-json", str(course_id),
+        ))
+    with pytest.raises(ValueError):
+        store.projection(course_id)

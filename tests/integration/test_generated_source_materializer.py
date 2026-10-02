@@ -91,7 +91,7 @@ from study_agent.ingestion.projection import (
     reduce_source_revision,
 )
 from study_agent.ports.storage import EventSequenceConflictError
-from study_agent.retrieval import CourseSourceContent
+from study_agent.retrieval import CourseSourceContent, SourceContentError
 from study_agent.state import EventRegistry, Projection
 from tests.course_fixtures import ExistingCourseView
 
@@ -614,6 +614,39 @@ def test_new_proposal_after_root_restore_is_admissible() -> None:
 
     assert result.status is GeneratedSourceMaterializationStatus.EMITTED
     assert events.append_calls == 1
+
+
+def test_warm_generated_catalog_rechecks_changed_admission_history() -> None:
+    materializer, events, blobs, revision, _ = _fixture()
+    materializer.materialize(
+        artifact_revision_id=revision,
+        context=ExecutionContext(PrincipalKind.SERVICE, "materializer", COURSE, CORRELATION),
+    )
+    valid_projection = _projection(events, blobs)
+
+    class ProjectedEvents(MemoryEvents):
+        def projection(self, course_id: CourseId) -> Projection:
+            assert course_id == COURSE
+            return valid_projection
+
+        def projections_at(
+            self, course_id: CourseId, sequences: Sequence[int]
+        ) -> dict[int, Projection]:
+            assert course_id == COURSE
+            return {
+                sequence: _projection(MemoryEvents(self.events[:sequence]), blobs)
+                for sequence in sequences
+            }
+
+    reader = ProjectedEvents(events.events)
+    content = CourseSourceContent(COURSE, reader, blobs)
+    assert any(row.source.content_origin is ContentOrigin.GENERATED for row in content.catalog())
+    # Leave the source manifest and projection high-water sequence unchanged.
+    # The historical HUMAN admission is still canonical and must be rechecked.
+    decision = reader.events[2]
+    reader.events[2] = replace(decision, actor=Actor(PrincipalKind.SERVICE, "tampered"))
+    with pytest.raises(SourceContentError):
+        content.catalog()
 
 
 def test_generated_source_remains_readable_after_root_revision_changes() -> None:
