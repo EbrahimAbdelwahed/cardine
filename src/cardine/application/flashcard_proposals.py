@@ -12,6 +12,7 @@ from cardine.application.flashcard_profile_selection import (
     FlashcardProfileSelectionDecision,
     select_flashcard_profile,
 )
+from cardine.application.study_semantics import FlashcardSemanticPreprocessor
 from cardine.hosts import TutorCapabilityCompletionReference
 from study_agent.adapters.sqlite import NamespacedSQLiteRunStore, SQLiteRunStore
 from study_agent.artifacts import ArtifactService, ArtifactSnapshot
@@ -349,6 +350,7 @@ class FlashcardProposalComposition:
         sessions: SessionViewPort,
         interaction_id: InteractionId | None = None,
         retired_source_ids: Callable[[], frozenset[SourceId]] | frozenset[SourceId] = frozenset(),
+        semantic_preprocessor: FlashcardSemanticPreprocessor | None = None,
     ) -> None:
         self._course_id = course_id
         self._session_id = session_id
@@ -362,6 +364,7 @@ class FlashcardProposalComposition:
         self._source_commitments = source_commitments
         self._sessions = sessions
         self._interaction_id = interaction_id
+        self._semantic_preprocessor = semantic_preprocessor
         if callable(retired_source_ids):
             self._retired_source_ids = retired_source_ids
         else:
@@ -443,6 +446,7 @@ class FlashcardProposalComposition:
             sessions=self._sessions,
             interaction_id=interaction_id,
             retired_source_ids=self._retired_source_ids,
+            semantic_preprocessor=self._semantic_preprocessor,
         )
 
     async def start_for_pin(
@@ -462,7 +466,7 @@ class FlashcardProposalComposition:
                 raise ValueError(
                     decision.clarification or "flashcard profile selection is ambiguous"
                 )
-            request = self._request(public, context, decision)
+            request = await self._request(public, context, decision)
             worker = self._worker_for_request(request)
             service = LessonWorkerService(
                 store=self._lesson_store,
@@ -590,13 +594,22 @@ class FlashcardProposalComposition:
             )
         return interactions[-1].id
 
-    def _request(
+    async def _request(
         self,
         public: JsonObject,
         context: ExecutionContext,
         decision: FlashcardProfileSelectionDecision,
     ) -> LessonWorkerRequest:
-        plan = _lesson_plan(self._content, self._retired_source_ids())
+        retired = self._retired_source_ids()
+        original = _lesson_unit(self._content, retired)
+        if self._semantic_preprocessor is not None:
+            records = tuple(
+                record
+                for record in self._content.catalog()
+                if record.is_current_revision and record.source.source_id not in retired
+            )
+            original = await self._semantic_preprocessor.prepare(original, records)
+        plan = plan_flashcard_lesson(original)
         interaction_id = self._interaction_id or self._latest_interaction_id()
         receipt = decision.receipt(interaction_id)
         profile = decision.profile
@@ -784,6 +797,13 @@ def _profile_expectation(
 def _lesson_plan(
     content: CourseSourceContent, retired_source_ids: frozenset[SourceId] = frozenset()
 ) -> FlashcardLessonPlan:
+    """The historical OFF projection, retained for deterministic replay tests."""
+    return plan_flashcard_lesson(_lesson_unit(content, retired_source_ids))
+
+
+def _lesson_unit(
+    content: CourseSourceContent, retired_source_ids: frozenset[SourceId] = frozenset()
+) -> LessonGenerationUnit:
     records = tuple(
         record
         for record in content.catalog()
@@ -825,13 +845,11 @@ def _lesson_plan(
                 )
             )
             position += 1
-    return plan_flashcard_lesson(
-        LessonGenerationUnit(
-            "course-current-sources",
-            records[0].source.title if len(records) == 1 else "Current course sources",
-            tuple(topics),
-            tuple(paragraphs),
-        )
+    return LessonGenerationUnit(
+        "course-current-sources",
+        records[0].source.title if len(records) == 1 else "Current course sources",
+        tuple(topics),
+        tuple(paragraphs),
     )
 
 

@@ -120,7 +120,7 @@ POST_BASELINE_SHA256 = {
         "1bd41e5a0785ffc38f06049f8db654241a29d5a1e28d929c1320aa46b63d6cb0"
     ),
     "src/cardine/application/flashcard_proposals.py": (
-        "a122cf65a900c43c09abe409689efddb143aa21492cc28495857824798f68f71"
+        "a0c6a76345a7b61fe1f31ae48af37913062df5dbe0233564205a71cdab8b859d"
     ),
     "src/cardine/application/capability_completion.py": (
         "a8745bebd1384ecd3ddce6577841223628ab9423c86ffe8d0d8e2e9d1e7d0c4b"
@@ -129,10 +129,10 @@ POST_BASELINE_SHA256 = {
         "f720cb0b159feeb0fa7242a07dd14f4a55e12be728a9c370ec7382d254bc3183"
     ),
     "src/cardine/cli/repository.py": (
-        "a71844397bc9e5f46639fede24c911e5c0c005b52cbbea98dbe15556d6babaeb"
+        "2a6db590171d021bca6b9fffceb5e08a790742c66c1e0651cc82138c0af6f1c6"
     ),
     "src/cardine/demo/ui_application.py": (
-        "9ce4b20efbda5d2135ee636b886feef274d45d5b9178a9888500cf3ee500b7cc"
+        "a3099df6a060ea0c927de35ee07fd68a597b84f3c21400e1dfd45776f68c43d9"
     ),
     "src/cardine/hosts/contracts.py": (
         "df3e864ef0131f7c09dcc985529950269fbf6afef81b679c07f213b5ebdd3999"
@@ -165,18 +165,64 @@ POST_BASELINE_SHA256 = {
         "00957942586239a396bae507593b687b1896fee120eba83e37feae592a95ff48"
     ),
     "src/study_agent/prompts/tutor_decision_v1.py": (
-        "df410a9934e147a777183d2c03bd282d64edcf4694fa7ebc013905e48a343781"
+        "828072504ce14499f604fa3951b796e25a1422b4784f72a496ab16b5accf220b"
     ),
     "src/cardine/demo/browser.js": (
-        "f95ec37e359544be3e79cc5ba9510360d7423968fb1494a490ef79878b3f341a"
+        "66e3c9107c7f25295a03aa10e776a3ae1ea3a55b88ceacc06ba0c42c86bc92f4"
     ),
     "src/cardine/hosts/flashcard_routing.py": (
-        "09eea008b0aaa9c968156a758c601056e9d7455a44b4a8d9d43ef617a2e194be"
+        "e91a8ce48b54469829f1f8c5bc808c739d86279ad037e9957965dfc8c801683c"
     ),
     "src/cardine/hosts/source_grounding.py": (
-        "28d9b094d5216e59528c44f50872fc1eb800a0b509c9ea4eb7065a0eb0a4ef3b"
+        "dce83af15586066e48306ddcfe755a469836e2eeb3fe381d3d32610d6f4ea1f0"
+    ),
+    "src/cardine/cli/registry.py": (
+        "e8c6abdbf326efb92d49b10618741a5f452ac42556e27c2acfe1a5991460e377"
+    ),
+    "src/study_agent/ports/__init__.py": (
+        "11bb38aeeea33101d1d1fe0dd6cb29d1e8fe112fa38d4c9d49a8141a8e2175c5"
+    ),
+    "src/study_agent/repository_config.py": (
+        "3ad9cd11a75456ef163e37028e2c5e58444944879874add8553b818c99328e6e"
     ),
 }
+
+# Explicit Cardine-owned evolution approved by the Jev/PageIndex specification.
+# Preserve the 322 historical CA-01 rows; new files have exact byte commitments,
+# not a prefix exception. No Harness installed-package migration is implied.
+POST_BASELINE_ADDITIONS = {
+    "src/study_agent/adapters/judgement/__init__.py": (
+        "b8abef779a6218b8eed200b15800217b374e6fef4ff384d34efcc665a801e0ec"
+    ),
+    "src/study_agent/adapters/judgement/jev.py": (
+        "a8905a56c38f4e7d060c0ba5cd25eb23a656833bb26be9e6e86966fcf8dd787b"
+    ),
+    "src/study_agent/domain/document_index.py": (
+        "004d895a70b26ab9e4a3a616079792874be60dd2ef584755efdf1f11b9207c99"
+    ),
+    "src/study_agent/domain/features.py": (
+        "b2941a0d1e5f40fc4b4ae9e6b072abd7337c99bf5b59255420e1c7b730a0c10a"
+    ),
+    "src/study_agent/flashcards/semantic.py": (
+        "6c328980a79df765dc81edb18128bd29e313b5b0b91e4dff94c65adcde88dc47"
+    ),
+    "src/study_agent/knowledge/__init__.py": (
+        "60b3770e79b5c172314488df96e09b006bf6af0c578736c804d3818f5ec19b1b"
+    ),
+    "src/study_agent/knowledge/document_index.py": (
+        "c793034bf0232d3e14cd895a6b69ab093475bd34257efcac6c8bf04a988dc0e2"
+    ),
+    "src/study_agent/ports/document_index.py": (
+        "5ca1262be14d93a3019814c0e742e93b60c7583bfed0964f1d85de452c27f210"
+    ),
+    "src/study_agent/ports/judgement.py": (
+        "b223ac82d1016a88f89440dd42092b520c7d097fa1323c8882967d5b43bb638a"
+    ),
+    "src/study_agent/knowledge/unitizer.py": (
+        "ab1b3a5a44c78cc7ec1b2f3ca731188c0f79184c951a12f8817d8141836faba8"
+    ),
+}
+
 
 COPIED_IMPORT_PATHS = {
     "src/study_agent/adapters/memory/host_file.py",
@@ -724,6 +770,12 @@ def validate(*, live: bool = False) -> list[str]:
             and reviewed_by_current_path[path]["path"] == path
         )
     }
+    for path, expected_digest in POST_BASELINE_ADDITIONS.items():
+        try:
+            if _digest(path, targets) != expected_digest:
+                errors.append(f"post-baseline addition sha256 mismatch: {path}")
+        except OSError:
+            errors.append(f"post-baseline addition is absent: {path}")
     for path, expected_digest in recovery_hashes.items():
         try:
             if _digest(path, targets) != expected_digest:
@@ -734,7 +786,10 @@ def validate(*, live: bool = False) -> list[str]:
         if path not in current_paths or _digest(path, targets) != expected_digest:
             errors.append(f"third-party notice missing or altered: {path}")
     for path in sorted(
-        current_paths - set(reviewed_by_current_path) - RECOVERY_NEW_CORE_PATHS
+        current_paths
+        - set(reviewed_by_current_path)
+        - RECOVERY_NEW_CORE_PATHS
+        - set(POST_BASELINE_ADDITIONS)
         - set(THIRD_PARTY_NOTICES)
     ):
         errors.append(f"classification is missing current path: {path}")

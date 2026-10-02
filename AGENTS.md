@@ -109,3 +109,27 @@
 - Keep task memory beside the code in this repository's `dev/` tree. Commit
   necessary handoffs with the implementation rather than creating separate PRs
   for orchestration reports. Record durable decisions in their existing home.
+
+## Jev/PageIndex automatic review focus
+
+- Check bounded Choice distributions at every consumer, including exact option
+  coverage, finite normalized probabilities and unknown selected keys.
+- Verify source/revision/substrate hashes and exact locator bounds before any
+  generated evidence. Index summaries and node IDs never authorize citations.
+- Inspect lesson-scope clipping and conservative failure paths: provider errors,
+  weak exclusion and incomplete excerpts must preserve study content.
+- Verify only CORE/SUPPORTING spans reach planned slots and that existing worker
+  evidence validation rejects substituted or appended dropped spans.
+- Tutor payload generation must see only the selected schema, never independently
+  reroute or manufacture continuation/action authority. Validate all decisions
+  and check exactly-once emergency fallback plus cancellation propagation.
+- The owner explicitly excluded benchmarks and selected OpenRouter Decisions.
+  Inspect wire protocol, resolved-model identity, consent and credential references;
+  no paid smoke test or quality claim is implied by offline verification.
+- Canonical ChunkId creation remains in ingestion.identity. Structural drafts
+  reuse historical chunks; runtime cardability classifies complete chunks before
+  filtering. Verify recovery still resolves their original IDs and exact locators.
+- Inspect strict configuration v2 and explicit v1 migration to OFF. In ON,
+  PageIndex failure must be explicit and legacy semantic parsers/router wrappers
+  must not run as a second normal path. Test cache identity, tamper detection,
+  outages without persistent poisoning and disabled-state preservation.
