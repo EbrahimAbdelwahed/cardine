@@ -15,6 +15,7 @@ from uuid import uuid4
 from cardine.adapters.audio.groq import GroqAudioTranscriber
 from cardine.cli.repository import LocalRepository, ModelAdapterConfigurationError
 from cardine.integrations.study_agent.course_policy import ProviderConsentRequiredError
+from cardine.knowledge import PageIndexStatus
 from cardine.materials.generation_contracts import (
     MAX_SOURCE_BYTES,
     MAX_TRANSCRIPT_CHARACTERS,
@@ -529,6 +530,7 @@ class MaterialProduct:
 
     def lessons(self, source_id: str, revision_id: str) -> JsonObject:
         record = self.source(source_id, revision_id)
+        structure = self._lesson_structure(record)
         provenance = record.source.conversion_provenance
         if provenance is None or not provenance.page_spans:
             return {
@@ -536,6 +538,7 @@ class MaterialProduct:
                 "revision_id": revision_id,
                 "lessons": (),
                 "page_count": None,
+                **structure,
             }
         starts: list[tuple[int, str]] = []
         for span in provenance.page_spans:
@@ -559,7 +562,122 @@ class MaterialProduct:
             "revision_id": revision_id,
             "lessons": cast(tuple[JsonObject, ...], lessons),
             "page_count": count,
+            **structure,
         }
+
+    def _lesson_structure(self, record: SourceRevisionRecord) -> JsonObject:
+        """Expose verified navigation spans, never provider summaries or evidence IDs."""
+        source_id, revision_id = str(record.source.source_id), str(record.source.revision_id)
+        digest = sha256(record.text.encode("utf-8")).hexdigest()
+        projection = next(
+            (
+                item
+                for item in self.repo.pageindex_status(self.course)
+                if item.source_id == source_id and item.revision_id == revision_id
+            ),
+            None,
+        )
+        status = "absent" if projection is None else projection.status.value
+        if projection is None or projection.status is not PageIndexStatus.READY:
+            return {"structure_status": status, "structure": ()}
+        if projection.content_sha256 != digest or any(
+            item.content_sha256 != digest
+            or not 0 <= item.start_offset < item.end_offset <= len(record.text)
+            for item in projection.candidates
+        ):
+            raise ValueError(
+                "La struttura non corrisponde alla fonte corrente; reindicizza la fonte."
+            )
+        return {
+            "structure_status": status,
+            "structure": tuple(
+                {
+                    "title": item.title,
+                    "start_offset": item.start_offset,
+                    "end_offset": item.end_offset,
+                    "content_sha256": digest,
+                }
+                for item in sorted(
+                    projection.candidates,
+                    key=lambda item: (item.start_offset, -item.end_offset, item.title),
+                )
+                if len(item.title) <= 240
+            ),
+        }
+
+    def start_structure_lesson(
+        self, source_id: str, revision_id: str, lesson: dict[str, object], request_id: str
+    ) -> tuple[JsonObject, ...]:
+        """HUMAN-selected exact span becomes an extracted transcript with canonical lineage."""
+        record = self.source(source_id, revision_id)
+        if (
+            set(lesson) != {"title", "start_offset", "end_offset", "content_sha256"}
+            or type(lesson["start_offset"]) is not int
+            or type(lesson["end_offset"]) is not int
+            or type(lesson["title"]) is not str
+            or type(lesson["content_sha256"]) is not str
+        ):
+            raise ValueError("Selezione della struttura non valida.")
+        structure = self._lesson_structure(record)
+        if lesson not in cast(tuple[JsonObject, ...], structure["structure"]):
+            raise ValueError(
+                "La lezione non è più disponibile nella struttura; aggiorna la selezione."
+            )
+        start, end = lesson["start_offset"], lesson["end_offset"]
+        text = record.text[start:end]
+        self._validate_transcript_size(
+            normalize("NFC", text.replace("\r\n", "\n").replace("\r", "\n"))
+        )
+        if not (consent := self.repo.provider_consent.get(self.course)) or not consent.granted:
+            raise ProviderConsentRequiredError("provider consent is required")
+        manifest: JsonObject = {
+            "parent_source_id": source_id,
+            "parent_revision_id": revision_id,
+            "parent_content_sha256": str(lesson["content_sha256"]),
+            "start_offset": start,
+            "end_offset": end,
+            "title": str(lesson["title"]),
+        }
+        fingerprint = sha256(canonical_json_bytes(manifest)).hexdigest()
+        # Bind the original request to its selection before any canonical admission.
+        batch_id = (
+            "structure-lesson:"
+            + sha256(f"{self.course}\0{self.session}\0{request_id}".encode()).hexdigest()
+        )
+        job_id = self._material_job_id(str(self.course), str(self.session), request_id)
+        owner_id = uuid4().hex
+        if any(
+            item["job_id"] == job_id and item.get("batch_id") != batch_id for item in self.jobs()
+        ):
+            raise ValueError("Richiesta riutilizzata con una selezione diversa.")
+        self._reserve_batch(batch_id, fingerprint, (job_id,), owner_id)
+        try:
+            sequence = self.repo.events.projection(self.course).sequence
+            self.source(source_id, revision_id)
+            admitted = self.admit_extraction(
+                original=self.repo.blobs.get(record.source.blob),
+                text=text,
+                title=str(lesson["title"]),
+                manifest=manifest,
+                adapter="canonical-lesson-extraction@1",
+                media_type="application/pdf"
+                if record.source.conversion_provenance
+                else "text/plain",
+                limitations=(
+                    "Estratto limitato ai confini della struttura confermati dall'utente.",
+                ),
+                expected_sequence=sequence,
+            )
+            return (
+                self.start(
+                    str(admitted.source.source_id),
+                    str(admitted.source.revision_id),
+                    request_id,
+                    batch=(batch_id, fingerprint, 0),
+                ),
+            )
+        finally:
+            self._release_batch(batch_id, owner_id)
 
     def start_lessons(
         self, source_id: str, revision_id: str, lessons: list[dict[str, object]], request_id: str

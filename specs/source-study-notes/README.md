@@ -137,3 +137,47 @@ retains its request ID across failed submissions while selection is unchanged.
 Existing batch reservations, extraction manifests, restart checkpoints and
 parent lifetime validation remain authoritative. Unselected lessons produce
 no extraction or model job. Chat-triggered note generation remains deferred.
+
+## PageIndex lesson dropdown — owner-approved continuation, 2026-10-02
+
+The source note action opens a dropdown over the existing ready PageIndex
+navigation for the exact current source/revision. It supports Markdown/text
+and PDF, preserves nested sections, starts unselected, and submits only the
+explicitly chosen lesson. The browser confirms the scope before starting.
+An explicit whole-source choice remains available for non-PDF input.
+
+Preparation returns `structure_status` and `structure`, whose entries carry
+only title, exact Unicode offsets and the canonical text SHA-256. The new
+`structure_lesson` generation payload is mutually exclusive with `lessons`
+and `selected_lessons`. The server revalidates the exact ready projection,
+source/revision, digest, bounds, selected candidate, consent and capacity before
+admission. PDF selections retain exact character boundaries even when lessons
+share a page; they never expand to whole pages. Node IDs and summaries do not
+cross this boundary or authorize evidence/citations.
+
+A selected canonical slice is admitted with immutable extraction lineage
+(parent source/revision/text hash and exact offsets), then enters the existing
+paired-material pipeline. The canonical extraction and its SourceChunks own
+citations and evidence. HUMAN proposal decisions and dependency-aware
+publication stay unchanged. Request identity binds the exact selection;
+unchanged retries reuse the job, changed selections require a new request.
+A retired/replaced parent blocks generation and publication as before.
+
+Loading, queued/indexing, missing/disabled/degraded structure and failed reads
+are explicit. Refresh retries preparation without model work. Absent structure
+cannot start structural generation. The existing PDF boundary editor and
+multiple-lesson selection remain an explicit alternative. Uploads made from
+Sources stay on Sources; first-source study setup remains available on Today.
+Source admission still completes independently of derived indexing, and note
+preparation does not run extraction or initiate model calls.
+
+Integration points for the parallel Sources layout task: retain
+`[data-generate-notes]` with its exact source/revision JSON, `#material-jobs`,
+and the `[data-notes-lessons]` polling guard. No CSS or source-grid layout change
+is part of this continuation. Its new custody overlay binds only the three
+changed runtime paths, preserving all historical custody overlays.
+
+Offline coverage: `test_structure_lesson_notes.py`,
+`test_structure_lesson_notes_journey.py`, existing PDF selection and material
+journeys, plus exact custody drift checks. Run pytest, Ruff, mypy, ownership
+audit and package build before delivery. No paid provider tests are authorized.

@@ -2445,10 +2445,8 @@
         pollIndexing(status).catch(() => {});
       }
       state.studySetup = null;
-      if (!indexingContinues) {
-        await refreshBootstrapCounts();
-        await loadRoute("oggi");
-      }
+      await refreshBootstrapCounts();
+      await loadRoute(state.route === "fonti" ? "fonti" : "oggi");
     } catch (error) {
       if (status) status.textContent = error.message;
     } finally {
@@ -2465,46 +2463,109 @@
   }
 
   async function prepareNotes(control) {
+    const pane = $("#material-jobs");
+    if (!pane || control.disabled) return;
     control.disabled = true;
+    const scope = state.bootstrap;
+    const pin = JSON.parse(control.dataset.generateNotes);
+    // This marker keeps job polling from replacing loading, selection or errors.
+    patch(pane, `<section class="notes-job" data-notes-lessons aria-busy="true"><h2>Scegli una lezione</h2><p role="status">Carico la struttura della fonte…</p></section>`);
+    const loading = pane.firstElementChild;
     try {
-      const scope = state.bootstrap;
-      const pin = JSON.parse(control.dataset.generateNotes);
       const prepared = await fetchJson("/api/v1/material-generations/prepare", {
         method: "POST", body: JSON.stringify(commandPayload(pin)),
       });
-      if (scope !== state.bootstrap || !control.isConnected) return;
-      if (array(prepared.lessons).length) {
-        const pane = $("#material-jobs");
-        patch(pane, `<section class="notes-job"><h2>Verifica le lezioni del PDF</h2><p>Correggi titoli e intervalli. Ogni riga: titolo | pagina iniziale | pagina finale. La divisione deve coprire tutte le pagine una volta. Nel passaggio successivo scegli quali lezioni generare.</p><form data-notes-lessons><label for="notes-lesson-ranges">Lezioni del PDF</label><textarea id="notes-lesson-ranges" rows="8">${esc(array(prepared.lessons).map((item) => `${item.title} | ${item.start_page} | ${item.end_page}`).join("\n"))}</textarea><button class="button" type="submit">Conferma confini e scegli lezioni</button><p data-notes-error role="status"></p></form></section>`);
-        $("[data-notes-lessons]", pane).addEventListener("submit", (event) => {
-          event.preventDefault();
-          const form = event.currentTarget;
-          try {
-            const lessons = $("textarea", form).value.split("\n").filter((line) => line.trim()).map((line) => {
-              const parts = line.split("|").map((item) => item.trim());
-              if (parts.length !== 3) throw new Error("Ogni riga deve contenere titolo | pagina iniziale | pagina finale.");
-              const [title, start, end] = parts;
-              return {title, start_page: Number(start), end_page: Number(end)};
-            });
-            let previous = 0;
-            if (!lessons.length || lessons.length > 64) throw new Error("Inserisci da 1 a 64 lezioni.");
-            for (const lesson of lessons) {
-              if (!lesson.title || lesson.title.length > 240 || !Number.isInteger(lesson.start_page) || !Number.isInteger(lesson.end_page) || lesson.start_page !== previous + 1 || lesson.end_page < lesson.start_page || lesson.end_page > prepared.page_count) {
-                throw new Error("La divisione deve coprire tutte le pagine in ordine, senza vuoti o sovrapposizioni.");
-              }
-              previous = lesson.end_page;
-            }
-            if (previous !== prepared.page_count) throw new Error("Mancano pagine nella divisione per lezioni.");
-            const boundaryEditor = pane.firstElementChild;
-            showNoteLessonSelection(pane, pin, lessons, scope, () => pane.replaceChildren(boundaryEditor));
-          } catch (error) { $("[data-notes-error]", form).textContent = error.message; }
-        });
-      } else {
-        await fetchJson("/api/v1/material-generations", {method: "POST", body: JSON.stringify(commandPayload(pin))});
+      if (scope !== state.bootstrap || !control.isConnected || pane.firstElementChild !== loading) return;
+      showNoteStructureSelection(pane, pin, prepared, scope);
+    } catch (error) {
+      if (scope !== state.bootstrap || pane.firstElementChild !== loading) return;
+      patch(pane, `<section class="notes-job" data-notes-lessons><h2>Struttura non disponibile</h2><p role="status">${esc(error.message)}</p><button class="button" type="button" data-notes-reload>Riprova</button></section>`);
+      $('[data-notes-reload]', pane).addEventListener("click", () => prepareNotes(control));
+    } finally { control.disabled = false; }
+  }
+
+  function showNoteStructureSelection(pane, pin, prepared, scope) {
+    const structure = array(prepared.structure);
+    const pdf = Number.isInteger(prepared.page_count);
+    const status = text(prepared.structure_status, "absent");
+    const waiting = ["queued", "indexing"].includes(status);
+    const detail = structure.length
+      ? "Scegli una lezione o una sezione dello scheletro PageIndex. Verrà elaborato solo il suo testo, senza ampliare i confini alle pagine vicine."
+      : waiting ? "La fonte è salvata. La struttura delle lezioni è ancora in elaborazione: aggiorna fra poco."
+      : status === "failed" ? "L’estrazione della struttura non è riuscita. Puoi riprovare dopo aver reindicizzato la fonte."
+      : "Non è disponibile una struttura delle lezioni per questa fonte.";
+    const options = structure.map((lesson, index) => {
+      const depth = structure.filter((parent) => parent.start_offset <= lesson.start_offset && parent.end_offset >= lesson.end_offset && (parent.start_offset < lesson.start_offset || parent.end_offset > lesson.end_offset)).length;
+      return `<option value="${index}">${esc(`${"› ".repeat(Math.min(depth, 8))}${lesson.title}`)}</option>`;
+    }).join("");
+    patch(pane, `<section class="notes-job"><h2>Scegli una lezione</h2><p role="status">${esc(detail)}</p><form data-notes-lessons><div class="field"><label for="notes-structure-lesson">Lezione o sezione della fonte</label><select id="notes-structure-lesson" name="structure_lesson"><option value="">Scegli una lezione…</option>${options}${!pdf ? '<option value="whole">Intera fonte</option>' : ""}</select></div><p data-notes-boundary class="field-note"></p><div class="state-actions"><button class="button" type="submit" disabled>Genera note per la lezione scelta</button><button class="button button--quiet" type="button" data-notes-reload>Aggiorna struttura</button>${pdf ? '<button class="button button--quiet" type="button" data-notes-boundaries>Modifica confini PDF / scegli più lezioni</button>' : ""}<button class="button button--quiet" type="button" data-notes-cancel>Annulla</button></div><p data-notes-error role="status"></p></form></section>`);
+    const form = $('[data-notes-lessons]', pane);
+    const select = $('select', form);
+    const submit = $('[type="submit"]', form);
+    let submission = null;
+    let previous = "";
+    select.addEventListener("change", () => {
+      if (select.value !== previous) submission = null;
+      previous = select.value;
+      submit.disabled = !select.value;
+      submit.textContent = select.value === "whole" ? "Genera note per l’intera fonte" : "Genera note per la lezione scelta";
+      const lesson = select.value !== "" && select.value !== "whole" ? structure[Number(select.value)] : null;
+      $('[data-notes-boundary]', form).textContent = lesson ? `${lesson.title} · ${lesson.end_offset - lesson.start_offset} caratteri. Confermi questi confini avviando la generazione.` : select.value === "whole" ? "Verrà elaborata l’intera revisione della fonte." : "";
+    });
+    $('[data-notes-cancel]', form).addEventListener("click", async () => {
+      form.remove();
+      await refreshMaterialJobs();
+    });
+    $('[data-notes-reload]', form).addEventListener("click", () => {
+      const control = $$('[data-generate-notes]').find((item) => item.dataset.generateNotes === JSON.stringify(pin));
+      if (control) prepareNotes(control);
+    });
+    if (pdf) $('[data-notes-boundaries]', form).addEventListener("click", () => showNoteBoundaryEditor(pane, pin, prepared, scope));
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (scope !== state.bootstrap || !form.isConnected || !select.value || submit.disabled) return;
+      submission ||= commandPayload({...pin, ...(select.value === "whole" ? {} : {structure_lesson: structure[Number(select.value)]})});
+      const controls = $$('select, button', form);
+      controls.forEach((item) => { item.disabled = true; });
+      try {
+        await fetchJson("/api/v1/material-generations", {method: "POST", body: JSON.stringify(submission)});
+        if (scope !== state.bootstrap || !form.isConnected) return;
+        form.remove();
         await refreshMaterialJobs();
+      } catch (error) {
+        if (form.isConnected) $('[data-notes-error]', form).textContent = error.message;
+      } finally {
+        controls.forEach((item) => { item.disabled = false; });
+        submit.disabled = !select.value;
       }
-    } catch (error) { setStatus("unavailable", error.message); }
-    finally { control.disabled = false; }
+    });
+  }
+
+  function showNoteBoundaryEditor(pane, pin, prepared, scope) {
+    patch(pane, `<section class="notes-job"><h2>Verifica le lezioni del PDF</h2><p>Correggi titoli e intervalli. Ogni riga: titolo | pagina iniziale | pagina finale. La divisione deve coprire tutte le pagine una volta. Nel passaggio successivo scegli quali lezioni generare.</p><form data-notes-lessons><label for="notes-lesson-ranges">Lezioni del PDF</label><textarea id="notes-lesson-ranges" rows="8">${esc(array(prepared.lessons).map((item) => `${item.title} | ${item.start_page} | ${item.end_page}`).join("\n"))}</textarea><button class="button" type="submit">Conferma confini e scegli lezioni</button><p data-notes-error role="status"></p></form></section>`);
+    $("[data-notes-lessons]", pane).addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      try {
+        const lessons = $("textarea", form).value.split("\n").filter((line) => line.trim()).map((line) => {
+          const parts = line.split("|").map((item) => item.trim());
+          if (parts.length !== 3) throw new Error("Ogni riga deve contenere titolo | pagina iniziale | pagina finale.");
+          const [title, start, end] = parts;
+          return {title, start_page: Number(start), end_page: Number(end)};
+        });
+        let previous = 0;
+        if (!lessons.length || lessons.length > 64) throw new Error("Inserisci da 1 a 64 lezioni.");
+        for (const lesson of lessons) {
+          if (!lesson.title || lesson.title.length > 240 || !Number.isInteger(lesson.start_page) || !Number.isInteger(lesson.end_page) || lesson.start_page !== previous + 1 || lesson.end_page < lesson.start_page || lesson.end_page > prepared.page_count) {
+            throw new Error("La divisione deve coprire tutte le pagine in ordine, senza vuoti o sovrapposizioni.");
+          }
+          previous = lesson.end_page;
+        }
+        if (previous !== prepared.page_count) throw new Error("Mancano pagine nella divisione per lezioni.");
+        const boundaryEditor = pane.firstElementChild;
+        showNoteLessonSelection(pane, pin, lessons, scope, () => pane.replaceChildren(boundaryEditor));
+      } catch (error) { $("[data-notes-error]", form).textContent = error.message; }
+    });
   }
 
   function showNoteLessonSelection(pane, pin, lessons, scope, editBoundaries) {
@@ -2625,6 +2686,7 @@
       if (!["queued", "indexing"].includes(status)) {
         await refreshBootstrapCounts();
         if (state.route === "oggi") await loadRoute("oggi");
+        if (state.route === "fonti" && !$("[data-notes-lessons]")) await loadRoute("fonti");
         return;
       }
       await new Promise((resolve) => window.setTimeout(resolve, 750));

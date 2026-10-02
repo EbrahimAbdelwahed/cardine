@@ -9,6 +9,8 @@ archive and must not be treated as Cardine's current state.
 
 ## Start here
 
+- [Source structure dropdown and scoped notes](logs/2026-10-02--cardine--lesson-structure-picker--log.md) — ready PageIndex spans feed a direct lesson dropdown, exact scoped extraction and restart-safe note proposals; full delivery verification pending.
+
 - [Selected PDF lesson notes](logs/2026-10-02--cardine--selected-lesson-notes--log.md) — boundary editing and explicit lesson selection, independent generation and retry identity.
 
 - [Scheduled recall by default](logs/2026-10-02--cardine--recall-default--log.md) — standard server FSRS composition integrated with main, including the merged student journal and source-note generation.
