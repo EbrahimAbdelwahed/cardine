@@ -70,6 +70,9 @@
     needs_learner_input: "attende una risposta",
     suspended: "sospesa",
     needs_review: "richiede revisione",
+    proposed: "da approvare",
+    accepted: "approvato",
+    rejected: "rifiutato",
     stale: "stato da aggiornare",
     degraded: "funzionalità ridotta",
     recovered: "pronta",
@@ -139,6 +142,10 @@
     studySetup: null,
     lastTurn: null,
     turnActivities: Object.create(null),
+    turnCommands: Object.create(null),
+    answerFeedback: Object.create(null),
+    revealedAnswers: new Set(),
+    streamAnswerId: "",
     authProbeUnavailable: false,
     indexingPollToken: 0,
     activityPollToken: 0,
@@ -1063,6 +1070,10 @@
   }
 
   function syncAttributes(current, next) {
+    // Live activity collapses once on completion. Subsequent refreshes retain
+    // the reader's disclosure choice, including opening completed traces.
+    if (current.tagName === "DETAILS" && current.classList.contains("ai-tool-chips")
+      && current.dataset.state === "running" && next.dataset.state !== "running") current.open = false;
     for (const attribute of Array.from(current.attributes)) {
       // A disclosure the reader opened stays open across a refresh.
       if (attribute.name === "open" && current.tagName === "DETAILS") continue;
@@ -1305,11 +1316,20 @@
     resize.observe(content);
     resize.observe(viewport);
     const mutation = new MutationObserver(grow);
-    mutation.observe(content, { childList: true, subtree: true, characterData: true });
+    // Streaming reveals words by toggling their visibility class without
+    // changing text nodes or geometry, so observe those changes as well.
+    mutation.observe(content, {
+      attributes: true,
+      attributeFilter: ["class"],
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
     update();
     return {
       get following() { return following; },
       resume,
+      refresh: schedule,
       destroy() {
         resize.disconnect();
         mutation.disconnect();
@@ -1363,11 +1383,28 @@
     conversationScroller = null;
     patch(root, html);
     bindDynamicControls();
+    let streamScroll = null;
     destroyPrimitiveEnhancements = typeof CardineAI.enhance === "function"
       ? CardineAI.enhance(root, {
         populateComposer: false,
         onFollowUp: (prompt, control) => populateComposerPrompt(prompt, control),
         onFineTune: (prompt, control) => populateComposerPrompt(prompt, control),
+        onRetry: retryAnswer,
+        onFeedback: (feedback, control) => {
+          const id = control.closest("[data-message-id]")?.dataset.messageId;
+          if (id) state.answerFeedback[id] = feedback;
+        },
+        onStreamProgress: (_article, phase) => {
+          if (phase === "before") streamScroll = captureScroll();
+          else {
+            if (streamScroll) restoreScroll(streamScroll, false);
+            conversationScroller?.refresh();
+          }
+        },
+        onStreamStart: (article) => {
+          const id = article.closest("[data-message-id]")?.dataset.messageId;
+          if (id) state.revealedAnswers.add(id);
+        },
       })
       : () => {};
     syncComposers();
@@ -1590,7 +1627,7 @@
   function renderSourceFirstOnboarding(course, materials) {
     const authenticated = state.auth.mode !== "private" || state.auth.authenticated;
     const uploadBody = authenticated
-      ? `<form class="source-upload-form" data-source-upload novalidate><label for="source-upload-file">File PDF, testo o Markdown <span class="field-optional">(facoltativo)</span></label><input id="source-upload-file" name="file" type="file" accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown"><p class="field-note">I PDF devono contenere testo selezionabile. Scansioni e immagini richiedono OCR e vengono rifiutate senza salvare una fonte.</p><label for="source-upload-text">Testo della fonte <span class="field-required">obbligatorio se non carichi un file</span></label><textarea id="source-upload-text" name="content" rows="6" maxlength="196608" placeholder="Incolla appunti, programma o una lezione…"></textarea><label for="source-upload-title">Titolo <span class="field-optional">(facoltativo)</span></label><input id="source-upload-title" name="title" maxlength="240" placeholder="es. Lezione 1 · Emodinamica"><div class="state-actions"><button class="button" type="submit">Aggiungi questa fonte</button><span class="settings-card__status" data-source-upload-status role="status"></span></div></form>`
+      ? `<form class="source-upload-form" data-source-upload novalidate><label for="source-upload-file">File PDF, testo, Markdown o audio <span class="field-optional">(facoltativo)</span></label><input id="source-upload-file" name="file" type="file" accept=".pdf,.txt,.md,.mp3,.wav,.m4a,.mp4,.ogg,.webm,.flac,.aac"><p class="field-note">I PDF devono contenere testo selezionabile. Scansioni e immagini richiedono OCR e vengono rifiutate senza salvare una fonte.</p><label for="source-upload-text">Testo della fonte <span class="field-required">obbligatorio se non carichi un file</span></label><textarea id="source-upload-text" name="content" rows="6" maxlength="196608" placeholder="Incolla appunti, programma o una lezione…"></textarea><label for="source-upload-title">Titolo <span class="field-optional">(facoltativo)</span></label><input id="source-upload-title" name="title" maxlength="240" placeholder="es. Lezione 1 · Emodinamica"><div class="state-actions"><button class="button" type="submit">Aggiungi fonte / trascrivi audio</button><span class="settings-card__status" data-source-upload-status role="status"></span></div></form>`
       : `<p class="field-note">Accedi per aggiungere fonti al corso e iniziare il setup.</p><div class="state-actions"><button class="button" type="button" data-route="login">Accedi</button></div>`;
     setupView(1, "Partiamo dai materiali.", "Prima leggiamo le fonti del corso; solo dopo sceglieremo l’argomento iniziale insieme.",
       `<section class="study-setup-card" aria-labelledby="source-setup-heading"><h2 id="source-setup-heading">Aggiungi una fonte</h2><p>Cardine usa solo le fonti salvate nel repository del corso. Puoi aggiungere una lezione alla volta.</p>${uploadBody}</section>`);
@@ -1790,22 +1827,30 @@
     const citations = array(first(item, ["citations", "sources"], []));
     if (Object.keys(citation).length) citations.unshift(citation);
     const followUps = array(first(item, ["follow_ups", "followUps", "suggestions", "actions"], []));
-    const thinking = array(first(item, ["thinking", "trace", "steps", "activity"], []));
     const tools = array(first(item, ["activity_records", "tools", "tool_activity", "capabilities", "retrieval"], []));
-    const answer = aiAnswer({ answer: text(content, "Messaggio senza testo visualizzabile."), citations, followUps, status: first(item, ["status", "state"], "ready"), reveal: showFineTune });
-    const thinkingView = thinking.length ? aiThinking({ steps: thinking, summary: "Come ho costruito questa risposta" }) : "";
-    const toolsView = tools.length ? aiToolChips({ records: tools, state: text(first(item, ["activity_state", "state"], "settled"), "settled") }) : "";
-    const fineTune = showFineTune ? aiFineTune({
-      title: "Continua",
-      detail: "Ogni opzione prepara un follow-up nel campo di scrittura, senza inviarlo.",
-      styles: [
-        { label: "Più breve", prompt: "Rispondi di nuovo in modo più breve e diretto." },
-        { label: "Con esempi", prompt: "Rispondi di nuovo usando esempi clinici concreti." },
-        { label: "Fammi una domanda", prompt: "Fammi una domanda di richiamo attivo su questo punto." },
-      ],
-    }) : "";
-    const legacyCitation = Object.keys(citation).length ? `<button class="provenance-chip" type="button" data-provenance='${esc(JSON.stringify(citation))}'>fonte · ${esc(first(citation, ["locator", "title", "revision"], "metadati disponibili"))}</button>` : "";
-    return `<article class="thread-message thread-message--assistant"><p class="thread-message__role">${esc(role === "system" ? "sistema" : "tutor")}</p>${answer}${thinkingView}${toolsView}${legacyCitation}${fineTune}</article>`;
+    const id = text(first(item, ["interaction_id", "presentation_id"], ""));
+    const suggested = followUps.length ? followUps : showFineTune ? [
+      { label: "Spiegamelo con un esempio", prompt: "Spiegamelo usando un esempio clinico concreto." },
+      { label: "Fammi una domanda di richiamo", prompt: "Fammi una domanda di richiamo attivo su questo punto." },
+    ] : [];
+    const answer = aiAnswer({
+      answer: text(content, "Messaggio senza testo visualizzabile."), citations, followUps: suggested,
+      status: first(item, ["status", "state"], "ready"), chat: true,
+      stream: Boolean(id && id === state.streamAnswerId && !state.revealedAnswers.has(id)),
+      canRetry: Boolean(state.turnCommands[id]), feedback: state.answerFeedback[id],
+    });
+    const toolsView = tools.length ? `<div class="thread-message__activity">${aiToolChips({ records: tools, state: text(first(item, ["activity_state"], "settled"), "settled") })}</div>` : "";
+    return `<article class="thread-message thread-message--assistant" ${id ? `data-key="message-${esc(id)}" data-message-id="${esc(id)}"` : ""}><p class="thread-message__role">${esc(role === "system" ? "sistema" : "tutor")}</p>${toolsView}${answer}</article>`;
+  }
+
+  async function retryAnswer(control) {
+    if (state.pendingTurn || state.loading) return;
+    const id = control.closest("[data-message-id]")?.dataset.messageId;
+    const original = state.turnCommands[id];
+    if (!original) return;
+    // Regeneration is a new turn; a transport retry reuses its request key.
+    // Keep the original lesson scope instead of using today's composer pin.
+    await executeCommand(original.endpoint, original.payload, null, "sessione", requestId());
   }
 
   function renderFonti(payload) {
@@ -1843,7 +1888,8 @@
       records: recordRows,
     });
     const searchView = aiSidebarSearch({ placeholder: "Cerca in Cardine", shortcut: "/" });
-    setView("fonti", `<section class="section-grid section-grid--materials"><section class="section-grid__main" aria-labelledby="material-heading"><p class="section-kicker">libreria del corso</p><h1 class="section-title" id="material-heading">Fonti del corso</h1><p class="section-copy">Apri una fonte per leggerla nel pannello laterale.</p><div class="ai-fonts-search">${searchView}</div><ul class="source-list">${rows}</ul><div class="ai-fonts-context">${contextView}</div><details class="ai-fonts-records"><summary>Registro delle revisioni</summary>${registerView}</details></section><aside class="section-grid__side materials-pane"><section class="materials-viewer" id="materials-viewer" aria-labelledby="materials-viewer-title"><header class="materials-viewer__header"><div><p class="eyebrow" id="materials-viewer-kind">fonte del corso</p><h2 id="materials-viewer-title">Documento</h2></div></header><div class="source-viewer__content" id="materials-viewer-content"><p class="empty-state">Scegli una fonte dall’elenco per aprirla qui.</p></div></section><div class="side-card"><p class="section-kicker">da sapere</p><h2 class="side-card__title">Le fonti arrivano dal repository</h2><p class="side-card__copy">Il viewer è in sola lettura e apre soltanto revisioni canoniche appartenenti a questo corso.</p></div></aside></section>`);
+    const upload = ["local_repository", "private"].includes(text(first(state.bootstrap, ["mode"], "local_repository"))) ? `<details class="notes-upload"><summary>Aggiungi una fonte o trascrivi una registrazione</summary><form data-source-upload class="source-upload-form"><label for="notes-source-file">PDF, testo o audio</label><input id="notes-source-file" name="file" type="file" accept=".pdf,.txt,.md,.mp3,.wav,.m4a,.mp4,.ogg,.webm,.flac,.aac"><label for="notes-source-title">Titolo</label><input id="notes-source-title" name="title" maxlength="240"><label for="notes-source-text">Oppure incolla la sbobina</label><textarea id="notes-source-text" name="content" rows="4" maxlength="196608"></textarea><p class="field-note">Gli audio vengono trascritti con Groq e poi rielaborati in note. Richiede consenso al provider e configurazione del server.</p><button class="button" type="submit">Aggiungi fonte / trascrivi e genera note</button><p data-source-upload-status role="status"></p></form></details>` : "";
+    setView("fonti", `<section class="section-grid section-grid--materials"><section class="section-grid__main" aria-labelledby="material-heading"><p class="section-kicker">libreria del corso</p><h1 class="section-title" id="material-heading">Fonti del corso</h1><p class="section-copy">Apri una fonte per leggerla nel pannello laterale.</p>${upload}<div class="ai-fonts-search">${searchView}</div><ul class="source-list">${rows}</ul><div class="ai-fonts-context">${contextView}</div><details class="ai-fonts-records"><summary>Registro delle revisioni</summary>${registerView}</details></section><aside class="section-grid__side materials-pane"><section class="materials-viewer" id="materials-viewer" aria-labelledby="materials-viewer-title"><header class="materials-viewer__header"><div><p class="eyebrow" id="materials-viewer-kind">fonte del corso</p><h2 id="materials-viewer-title">Documento</h2></div></header><div class="source-viewer__content" id="materials-viewer-content"><p class="empty-state">Scegli una fonte dall’elenco per aprirla qui.</p></div></section><div class="side-card"><p class="section-kicker">da sapere</p><h2 class="side-card__title">Le fonti arrivano dal repository</h2><p class="side-card__copy">Il viewer è in sola lettura e apre soltanto revisioni canoniche appartenenti a questo corso.</p></div></aside><section id="material-jobs" aria-label="Note di studio" aria-live="polite"></section></section>`);
   }
 
   function renderSource(item) {
@@ -1866,9 +1912,12 @@
     // Opaque identifiers belong in the provenance sheet, not as the loudest
     // thing in the row: 64 monospaced characters wrapping mid-token used to
     // outrank the title of the source itself.
-    const sourceAction = viewerReference
+    let sourceAction = viewerReference
       ? `<button class="button button--quiet" type="button" data-source-viewer-mode="page" data-source-viewer='${esc(JSON.stringify({ ...viewerReference, title }))}'>Apri fonte</button>`
       : `<button class="button button--quiet" type="button" data-provenance='${esc(JSON.stringify({ title, revision, checksum, type, excerpt: first(source, ["excerpt", "quote"], "") }))}'>Provenienza</button>`;
+    if (source.can_generate_notes && ["local_repository", "private"].includes(text(first(state.bootstrap, ["mode"], "local_repository")))) {
+      sourceAction += `<button class="button button--quiet" type="button" data-generate-notes='${esc(JSON.stringify({source_id: source.source_id, revision_id: source.revision_id}))}'>Genera note di studio</button><details class="notes-info"><summary aria-label="Informazioni sulla generazione di note">ⓘ</summary><p>Segmenta la lezione, rielabora i passaggi e li unisce in una sbobina completa. Le note diventano fonti di studio dopo la tua approvazione.</p></details>`;
+    }
     return `<li class="source-row"><div><h3 class="source-row__title">${esc(title)}</h3><p class="source-row__meta"><span>Revisione <span class="checksum">${esc(shortId(revision))}</span></span><span>Checksum <span class="checksum">${esc(shortId(checksum))}</span></span></p></div><div class="source-row__value source-row__type">Tipo <b>${esc(type)}</b></div><div class="source-row__value">Frammenti <b>${esc(chunks)}</b></div><div class="source-row__button">${sourceAction}</div></li>`;
   }
 
@@ -2115,6 +2164,7 @@
       && JSON.stringify(state.lastCommand.payload) === JSON.stringify(payload)
     );
     const request = forcedRequest || (retryingCommand ? state.lastCommand.requestId : requestId());
+    const reusingRequest = Boolean(state.lastCommand?.requestId === request);
     const command = Object.freeze({
       endpoint,
       payload: Object.freeze({ ...payload }),
@@ -2123,7 +2173,11 @@
     });
     state.lastCommand = command;
     if (isTutorTurn) {
-      state.pendingTurn = { requestId: request, content: text(payload.content || payload.response) };
+      state.pendingTurn = {
+        requestId: request,
+        content: text(payload.content || payload.response),
+        awaitingRetryActivity: reusingRequest,
+      };
       renderOptimisticTurn(state.pendingTurn.content);
       pollTurnActivity(request).catch(() => {});
     }
@@ -2137,6 +2191,14 @@
       const activity = object(receipt.activity);
       const settledRecords = array(receipt.activity_records);
       const presentationId = text(receipt.presentation_id, "");
+      if (isTutorTurn && presentationId) {
+        if (commandNavigationVersion === state.navigationVersion && state.route === "sessione") {
+          state.streamAnswerId = presentationId;
+        } else {
+          state.revealedAnswers.add(presentationId);
+        }
+        if (endpoint === "/api/v1/session/turns") state.turnCommands[presentationId] = command;
+      }
       if (isTutorTurn && presentationId && settledRecords.length) {
         state.turnActivities[presentationId] = { records: settledRecords, state: "settled" };
       }
@@ -2248,9 +2310,11 @@
     const pendingCopy = flashcards
       ? "Sto generando e verificando le proposte flashcard…"
       : "Sto preparando una risposta basata sulle fonti del corso…";
-    const pending = `<article class="thread-message thread-message--assistant thread-message--pending" data-optimistic-turn><p class="thread-message__role">tutor</p><p class="thread-message__text" data-turn-progress>${pendingCopy}</p><div class="thread-message__activity" data-turn-activity aria-live="polite"></div></article>`;
+    const pending = `<article class="thread-message thread-message--assistant thread-message--pending" data-optimistic-turn><p class="thread-message__role">tutor</p><div class="thread-message__activity" data-turn-activity aria-live="polite">${aiToolChips({state: "running", records: [], progress_message: pendingCopy})}</div></article>`;
     const thread = $(".session-thread", root);
     if (thread) {
+      const empty = $(".empty-state", thread);
+      if (empty) empty.hidden = true;
       thread.insertAdjacentHTML("beforeend", outgoing + pending);
       const scroller = $(".conversation-scroll", root);
       if (scroller) scroller.scrollTop = scroller.scrollHeight;
@@ -2268,29 +2332,34 @@
 
   function removeOptimisticTurn() {
     $$('[data-optimistic-turn]', root).forEach((item) => item.remove());
+    const empty = $(".session-thread > .empty-state", root);
+    if (empty) empty.hidden = false;
   }
 
   async function pollTurnActivity(requestId) {
     const token = ++state.activityPollToken;
     const navigationVersion = state.navigationVersion;
+    let awaitingRetryActivity = state.pendingTurn?.awaitingRetryActivity === true;
     let failures = 0;
     for (let attempt = 0; attempt < 240 && token === state.activityPollToken && navigationVersion === state.navigationVersion && state.pendingTurn?.requestId === requestId && failures < 3; attempt += 1) {
       try {
         const payload = await fetchJson(`/api/v1/turns/${encodeURIComponent(requestId)}/activity`);
+        if (token !== state.activityPollToken || navigationVersion !== state.navigationVersion || state.pendingTurn?.requestId !== requestId) return;
+        if (awaitingRetryActivity && payload.state !== "running") {
+          await new Promise((resolve) => window.setTimeout(resolve, 600));
+          continue;
+        }
+        awaitingRetryActivity = false;
         failures = 0;
         const progressMessage = text(payload.progress_message, "");
-        const progressNode = $("[data-turn-progress]", root);
-        if (progressNode && progressMessage && token === state.activityPollToken) {
-          // Keep model text out of HTML parsing; textContent preserves the
-          // escaped pending bubble even when the provider returns markup.
-          progressNode.textContent = progressMessage;
-        }
         const node = $("[data-turn-activity]", root);
-        if (node && token === state.activityPollToken) patch(node, aiToolChips(payload));
-        // A retry reuses its request ID, so its first GET can still observe
-        // the previous terminal attempt before POST enters capture. Keep
-        // polling until the command clears pendingTurn (or navigation cancels).
-
+        if (node && token === state.activityPollToken) {
+          const scroll = captureScroll();
+          patch(node, aiToolChips({ ...payload, progress_message: progressMessage }));
+          const progressNode = $("[data-turn-progress]", node);
+          if (progressNode && progressMessage) progressNode.textContent = progressMessage;
+          restoreScroll(scroll, false);
+        }
         await new Promise((resolve) => window.setTimeout(resolve, 600));
       } catch (_) {
         failures += 1;
@@ -2316,22 +2385,23 @@
     const status = $("[data-source-upload-status]", form);
     const titleInput = $("input[name=title]", form);
     const extension = selected ? selected.name.split(".").pop()?.toLowerCase() : "md";
-    if (selected && !["txt", "md", "pdf"].includes(extension || "")) {
-      if (status) status.textContent = "Sono supportati file .pdf, .txt e .md.";
+    if (selected && !["txt", "md", "pdf", "mp3", "wav", "m4a", "mp4", "ogg", "webm", "flac", "aac"].includes(extension || "")) {
+      if (status) status.textContent = "Sono supportati PDF, testo, Markdown e registrazioni audio.";
       return;
     }
     const isPdf = selected && extension === "pdf";
-    const maximum = isPdf ? 256 * 1024 * 1024 : 196608;
+    const isAudio = selected && ["mp3", "wav", "m4a", "mp4", "ogg", "webm", "flac", "aac"].includes(extension);
+    const maximum = isPdf ? 256 * 1024 * 1024 : isAudio ? 128 * 1024 * 1024 : 196608;
     if (selected && selected.size > maximum) {
       if (status) status.textContent = isPdf ? "Il PDF supera il limite di 256 MiB." : "Il file supera il limite di 192 KB.";
       return;
     }
-    const content = selected && !isPdf ? await selected.text() : pasted;
-    if (!isPdf && !text(content).trim()) {
+    const content = selected && !isPdf && !isAudio ? await selected.text() : pasted;
+    if (!isPdf && !isAudio && !text(content).trim()) {
       if (status) status.textContent = "Scegli un file .txt/.md oppure incolla una fonte testuale.";
       return;
     }
-    if (!isPdf && new TextEncoder().encode(content).length > 196608) {
+    if (!isPdf && !isAudio && new TextEncoder().encode(content).length > 196608) {
       if (status) status.textContent = "Il testo supera il limite di 192 KB per questa prima importazione.";
       return;
     }
@@ -2341,7 +2411,13 @@
     if (submit) submit.disabled = true;
     if (status) status.textContent = "Salvo e indicizzo la fonte…";
     try {
-      const receipt = isPdf
+      const receipt = isAudio
+        ? await fetchJson("/api/v1/sources/import/audio", {
+            method: "POST", headers: { "Content-Type": "application/octet-stream",
+              "X-File-Name": encodeURIComponent(filename), "X-Source-Title": encodeURIComponent(title),
+              "Idempotency-Key": requestId() }, body: selected,
+          })
+        : isPdf
         ? await fetchJson("/api/v1/sources/import/pdf", {
             method: "POST",
             headers: {
@@ -2357,6 +2433,11 @@
             body: JSON.stringify(commandPayload({ filename, title, content })),
           });
       updateSequence(first(receipt, ["high_water_sequence"], state.highWaterSequence));
+      if (isAudio) {
+        await loadRoute("fonti");
+        await refreshMaterialJobs();
+        return;
+      }
       const indexing = object(receipt.indexing);
       const indexingContinues = ["queued", "indexing"].includes(text(indexing.status));
       if (indexingContinues) {
@@ -2372,6 +2453,105 @@
       if (status) status.textContent = error.message;
     } finally {
       if (submit) submit.disabled = false;
+    }
+  }
+
+  let materialPoll = null;
+  const materialPreviews = new Map();
+  function bindNoteControl(control, event, handler) {
+    if (control._notesBound) return;
+    control._notesBound = true;
+    control.addEventListener(event, handler);
+  }
+
+  async function prepareNotes(control) {
+    control.disabled = true;
+    try {
+      const scope = state.bootstrap;
+      const pin = JSON.parse(control.dataset.generateNotes);
+      const prepared = await fetchJson("/api/v1/material-generations/prepare", {
+        method: "POST", body: JSON.stringify(commandPayload(pin)),
+      });
+      if (scope !== state.bootstrap || !control.isConnected) return;
+      if (array(prepared.lessons).length) {
+        const pane = $("#material-jobs");
+        patch(pane, `<section class="notes-job"><h2>Dividi il PDF per lezioni</h2><p>Verifica titoli e intervalli. Ogni riga: titolo | pagina iniziale | pagina finale. Tutte le pagine devono essere coperte una volta.</p><form data-notes-lessons><label for="notes-lesson-ranges">Lezioni del PDF</label><textarea id="notes-lesson-ranges" rows="8">${esc(array(prepared.lessons).map((item) => `${item.title} | ${item.start_page} | ${item.end_page}`).join("\n"))}</textarea><button class="button" type="submit">Conferma lezioni e genera note</button><p data-notes-error role="status"></p></form></section>`);
+        $("[data-notes-lessons]", pane).addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const form = event.currentTarget;
+          const button = $("button", form);
+          button.disabled = true;
+          try {
+            const lessons = $("textarea", form).value.split("\n").filter((line) => line.trim()).map((line) => {
+              const [title, start, end] = line.split("|").map((item) => item.trim());
+              return {title, start_page: Number(start), end_page: Number(end)};
+            });
+            await fetchJson("/api/v1/material-generations", {method: "POST", body: JSON.stringify(commandPayload({...pin, lessons}))});
+            form.remove();
+            await refreshMaterialJobs();
+          } catch (error) { $("[data-notes-error]", form).textContent = error.message; }
+          finally { button.disabled = false; }
+        });
+      } else {
+        await fetchJson("/api/v1/material-generations", {method: "POST", body: JSON.stringify(commandPayload(pin))});
+        await refreshMaterialJobs();
+      }
+    } catch (error) { setStatus("unavailable", error.message); }
+    finally { control.disabled = false; }
+  }
+
+  async function refreshMaterialJobs() {
+    clearTimeout(materialPoll);
+    if (state.route !== "fonti" || !$("#material-jobs") || $("[data-notes-lessons]")) return;
+    const scope = state.bootstrap;
+    const pane = $("#material-jobs");
+    const payload = await fetchJson("/api/v1/material-generations");
+    if (scope !== state.bootstrap || pane !== $("#material-jobs")) return;
+    if (state.route !== "fonti" || !$("#material-jobs") || $("[data-notes-lessons]")) return;
+    const labels = {queued: "In coda", transcribing: "Trascrizione audio", boundaries: "Segmentazione",
+      complete_segment: "Rielaborazione", complete_merge: "Unione dei segmenti", study: "Versione studio",
+      publication_retryable: "Salvataggio in attesa: nuovo tentativo",
+      proposal: "Preparazione anteprima", proposed: "Note pronte da revisionare", retryable: "Interrotto: puoi riprendere",
+      stale: "Fonte aggiornata: rigenera", failed_terminal: "Generazione non riuscita"};
+    const jobs = array(payload.items);
+    patch($("#material-jobs"), jobs.map((job) => `<section class="notes-job" data-key="${esc(job.job_id)}"><h2>Note di studio · ${esc(job.title)}</h2><p>${esc(labels[job.stage] || job.stage)}${job.transcribed_chunks ? ` · ${esc(job.transcribed_chunks)} ${job.transcribed_chunks === 1 ? "blocco trascritto" : "blocchi trascritti"}` : ""}${job.segment_count ? ` · ${esc(job.segment_count)} ${job.segment_count === 1 ? "segmento elaborato" : "segmenti elaborati"}` : ""}</p>${job.error ? `<p role="status">${esc(job.error)}</p>` : ""}${array(job.outputs).map((output) => `<details class="notes-output" data-key="${esc(output.revision_id)}" data-note-preview-job="${esc(job.job_id)}" data-note-preview-revision="${esc(output.revision_id)}"><summary>${output.variant === "complete" ? "Sbobina completa" : "Materiale studio"} · ${esc(statusLabel(output.status))}</summary><div class="notes-markdown">${materialPreviews.get(output.revision_id) || "Apri per leggere le note."}</div>${array(output.limitations).map((item) => `<p class="field-note">${esc(item)}</p>`).join("")}${output.status === "proposed" ? `<div class="state-actions"><button class="button" data-note-decision="accept" data-note-revision="${esc(output.revision_id)}" data-note-job="${esc(job.job_id)}">Approva</button><button class="button button--quiet" data-note-decision="reject" data-note-revision="${esc(output.revision_id)}" data-note-job="${esc(job.job_id)}">Rifiuta</button></div>` : output.publication === "published" ? `<p>Salvato come fonte di studio.</p><button class="button button--quiet" data-source-viewer-mode="page" data-source-viewer='${esc(JSON.stringify({source_id: output.published_source_id, revision_id: output.published_revision_id, viewer_kind: "markdown", title: output.title}))}'>Apri note</button>` : output.status === "accepted" ? `<p>Approvato. La pubblicazione richiede il materiale completo approvato e una fonte ancora valida.</p>` : ""}</details>`).join("")}${!["proposed", "stale", "failed_terminal"].includes(job.stage) ? `<button class="button button--quiet" data-note-resume="${esc(job.job_id)}">${job.stage === "publication_retryable" ? "Riprova salvataggio" : "Riprendi generazione"}</button>` : ""}<p data-note-error role="status"></p></section>`).join(""));
+    $$('[data-note-preview-job]').forEach((details) => bindNoteControl(details, "toggle", async () => {
+      if (!details.open || materialPreviews.has(details.dataset.notePreviewRevision)) return;
+      try {
+        const job = await fetchJson(`/api/v1/material-generations/${encodeURIComponent(details.dataset.notePreviewJob)}`);
+        const output = array(job.outputs).find((item) => item.revision_id === details.dataset.notePreviewRevision);
+        if (output && details.isConnected) {
+          const rendered = CardineAI.markdown(output.markdown);
+          materialPreviews.set(output.revision_id, rendered);
+          patch($(".notes-markdown", details), rendered);
+        }
+      } catch (error) { $(".notes-markdown", details).textContent = error.message; }
+    }));
+    $$('[data-note-decision]').forEach((button) => bindNoteControl(button, "click", async () => {
+      const decisionScope = state.bootstrap;
+      button.disabled = true;
+      try {
+        // Refresh the canonical sequence immediately before the HUMAN command.
+        const job = await fetchJson(`/api/v1/material-generations/${encodeURIComponent(button.dataset.noteJob)}`);
+        if (!button.isConnected || decisionScope !== state.bootstrap) return;
+        updateSequence(job.high_water_sequence);
+        const receipt = await fetchJson(`/api/v1/material-generations/${encodeURIComponent(button.dataset.noteJob)}/decisions`, {
+          method: "POST", body: JSON.stringify(commandPayload({revision_id: button.dataset.noteRevision, decision: button.dataset.noteDecision})),
+        });
+        updateSequence(receipt.high_water_sequence);
+        await refreshMaterialJobs();
+      } catch (error) { $("[data-note-error]", button.closest(".notes-job")).textContent = error.message; button.disabled = false; }
+    }));
+    $$('[data-note-resume]').forEach((button) => bindNoteControl(button, "click", async () => {
+      button.disabled = true;
+      try {
+        await fetchJson(`/api/v1/material-generations/${encodeURIComponent(button.dataset.noteResume)}/resume`, {method: "POST", body: JSON.stringify(commandPayload({}))});
+        await refreshMaterialJobs();
+      } catch (error) { $("[data-note-error]", button.closest(".notes-job")).textContent = error.message; button.disabled = false; }
+    }));
+    $$('[data-source-viewer]', $("#material-jobs")).forEach((button) => bindNoteControl(button, "click", () => openSourceViewer(button.dataset.sourceViewer, button.dataset.sourceViewerMode)));
+    if (jobs.some((job) => !["proposed", "stale", "failed_terminal", "retryable"].includes(job.stage))) {
+      materialPoll = setTimeout(() => refreshMaterialJobs().catch(() => {}), 2500);
     }
   }
 
@@ -2539,6 +2719,8 @@
       if (submit) submit.disabled = !text(control.value).trim();
     }));
     $$('[data-command]').forEach((control) => control.addEventListener("click", () => commandFromControl(control)));
+    $$('[data-generate-notes]').forEach((control) => control.addEventListener("click", () => prepareNotes(control)));
+    if (state.route === "fonti" && $("#material-jobs")) refreshMaterialJobs().catch(() => {});
     $$('[data-provenance]').forEach((control) => control.addEventListener("click", () => openProvenance(control.dataset.provenance)));
     $$('[data-source-viewer]').forEach((control) => control.addEventListener("click", () => openSourceViewer(control.dataset.sourceViewer, control.dataset.sourceViewerMode)));
     $$('[data-retry-route]').forEach((control) => control.addEventListener("click", () => loadRoute(control.dataset.retryRoute)));

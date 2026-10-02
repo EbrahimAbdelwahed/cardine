@@ -223,7 +223,6 @@ def _success_document(capsys: pytest.CaptureFixture[str]) -> dict[str, Any]:
 
 
 def _assert_closed_manifest(manifest: Mapping[str, Any]) -> None:
-    """Assert the public discovery schema, including every closed object shape."""
     assert set(manifest) == _ROOT_KEYS
     assert manifest["contract_version"] == "agent-operations@1"
     assert manifest["offline_default"] is True
@@ -258,9 +257,9 @@ def _assert_closed_manifest(manifest: Mapping[str, Any]) -> None:
     tools = manifest["study_tools"]
     tool_names = [item["manifest"]["name"] for item in tools]
     assert tool_names == sorted(_TOOL_FINGERPRINTS)
-    assert {item["manifest"]["name"]: item["fingerprint"] for item in tools} == (
-        _TOOL_FINGERPRINTS
-    )
+    assert {
+        item["manifest"]["name"]: item["fingerprint"] for item in tools
+    } == _TOOL_FINGERPRINTS
     for tool in tools:
         assert set(tool) == _TOOL_ENTRY_KEYS
         assert set(tool["manifest"]) == _TOOL_MANIFEST_KEYS
@@ -272,7 +271,6 @@ def test_describe_has_the_exact_closed_contract_and_stable_order(
     assert main(("--json", "describe")) == 0
     manifest = _success_document(capsys)["data"]
     _assert_closed_manifest(manifest)
-
     assert main(("--json", "describe")) == 0
     assert _success_document(capsys)["data"] == manifest
 
@@ -282,10 +280,13 @@ def test_describe_models_repeated_init_settings_as_cli_strings(
 ) -> None:
     assert main(("--json", "describe")) == 0
     manifest = _success_document(capsys)["data"]
-
-    init_command = next(item for item in manifest["commands"] if item["name"] == "init")
+    init_command = next(
+        item for item in manifest["commands"] if item["name"] == "init"
+    )
     model_setting = next(
-        item for item in init_command["arguments"] if item["name"] == "model_setting"
+        item
+        for item in init_command["arguments"]
+        if item["name"] == "model_setting"
     )
     assert {
         "value_type": model_setting["value_type"],
@@ -307,7 +308,6 @@ def test_each_discovered_command_maps_to_exactly_one_parser_leaf(
     command_names = {
         item["name"] for item in _success_document(capsys)["data"]["commands"]
     }
-
     parser = build_parser()
     parsed_names = [
         parser.parse_args(arguments).command_name
@@ -358,20 +358,16 @@ def test_discovery_is_offline_and_side_effect_free_in_an_empty_directory(
     monkeypatch.setattr(socket, "socket", _NoNetworkSocket)
     monkeypatch.setattr(socket, "create_connection", forbidden)
     monkeypatch.setattr(sqlite3, "connect", forbidden)
-
     assert main(("--json", *arguments), environment=_UnreadableEnvironment()) == 0
     document = _success_document(capsys)
     assert document["command"] == command
     assert tuple(tmp_path.iterdir()) == before == ()
 
 
-def test_tool_list_and_describe_are_consistent(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
+def test_tool_list_and_describe_are_consistent(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(("--json", "tool", "list")) == 0
     listed = _success_document(capsys)["data"]["tools"]
     assert [item["manifest"]["name"] for item in listed] == sorted(_TOOL_FINGERPRINTS)
-
     assert main(("--json", "tool", "describe", "grounding.ask")) == 0
     described = _success_document(capsys)["data"]["tool"]
     assert described == next(

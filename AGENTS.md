@@ -55,10 +55,22 @@
   correctness, security, migration, and data-loss rules in the automatic review
   instructions and cover them with executable CI. Keep human product decisions
   and existing acceptance criteria explicit.
+- Limit automatic review to at most two rounds per PR: the initial review and
+  one follow-up after fixes. Count rounds across commits, chats, and agents;
+  pushes, rebases, or a handoff do not reset the count. Do not request duplicate
+  reviews while one is pending or start a third round automatically.
+- After the second round, stop the review/fix cycle and report remaining findings,
+  CI status, and merge readiness to the owner. Do not keep fixing new findings
+  and requesting reviews without a new explicit owner instruction. Reaching
+  the limit does not itself authorize a merge or waive failing checks.
 - Before an authorized merge, require applicable CI and review evidence for the
   current submitted commit, resolve actionable findings, and check dependencies.
   A missing review, absent check, failed run, or old green commit is not approval.
-  After a fix, push to the same PR and reassess the updated commit.
+  After a fix, push to the same PR and reassess the updated commit within the
+  two-round limit. If a gate remains unmet when the limit is reached, stop and
+  report it instead of launching another round. An explicit owner instruction
+  to merge without further review overrides the review gate for that merge;
+  report any outstanding findings and checks in the handoff.
 - At handoff, report checkout, branch, commit, PR URL, verification, outstanding
   review/CI, and any remaining local work. Distinguish implemented, published,
   reviewed, and merged; do not call pending work complete.

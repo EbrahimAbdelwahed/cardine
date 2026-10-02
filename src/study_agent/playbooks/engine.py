@@ -76,8 +76,10 @@ _CHECKPOINT_SCHEMA_VERSION = 1
 _SAFE_MODEL_FAILURE_REASONS = frozenset(
     {
         ModelErrorCode.AUTHENTICATION.value,
+        ModelErrorCode.AUTHORIZATION.value,
         ModelErrorCode.MODEL_UNAVAILABLE.value,
         ModelErrorCode.ENDPOINT_INCOMPATIBLE.value,
+        ModelErrorCode.SCHEMA_INCOMPATIBLE.value,
         ModelErrorCode.RATE_LIMITED.value,
         ModelErrorCode.TIMEOUT.value,
         ModelErrorCode.PROTOCOL_ERROR.value,
@@ -123,9 +125,7 @@ class PlaybookEngine:
     ) -> PlaybookRunResult:
         frozen_inputs = freeze_object(inputs)
         dependencies = tuple(read_dependencies)
-        activated_fallbacks = self._preflight(
-            skill, definition, pins, dependencies
-        )
+        activated_fallbacks = self._preflight(skill, definition, pins, dependencies)
         if set(frozen_inputs) != set(definition.input_keys):
             self._raise(
                 EngineErrorCode.INVALID_INPUT,
@@ -174,9 +174,7 @@ class PlaybookEngine:
     ) -> PlaybookRunResult:
         frozen_inputs = freeze_object(inputs)
         dependencies = tuple(read_dependencies)
-        activated_fallbacks = self._preflight(
-            skill, definition, pins, dependencies
-        )
+        activated_fallbacks = self._preflight(skill, definition, pins, dependencies)
         stored, suspended_payload = self._load(run_id, definition)
         checkpoint = stored.checkpoint
         if checkpoint.status is not RunStatus.SUSPENDED:
@@ -213,9 +211,7 @@ class PlaybookEngine:
         outputs[dialogue.output_key] = frozen_resume
         resume_details: dict[str, JsonValue] = {
             "output_fingerprint": _json_fingerprint(frozen_resume),
-            "resume_generation_fingerprint": _checkpoint_fingerprint(
-                suspended_payload
-            ),
+            "resume_generation_fingerprint": _checkpoint_fingerprint(suspended_payload),
             "resume_generation_updated_at": checkpoint.updated_at.isoformat(),
         }
         claimed_traces = (
@@ -292,9 +288,7 @@ class PlaybookEngine:
                 "incomplete checkpoint has no successful deterministic termination",
             )
         status = (
-            PlaybookRunStatus.TERMINATED
-            if termination is not None
-            else PlaybookRunStatus.COMPLETED
+            PlaybookRunStatus.TERMINATED if termination is not None else PlaybookRunStatus.COMPLETED
         )
         return VerifiedRunRecord(
             run_id,
@@ -402,9 +396,7 @@ class PlaybookEngine:
             step = steps[trace.step_id]
             receipts: tuple[Mapping[str, JsonValue], ...]
             if isinstance(step, ValidateStep):
-                receipts = (
-                    cast(Mapping[str, JsonValue], trace.details["validator"]),
-                )
+                receipts = (cast(Mapping[str, JsonValue], trace.details["validator"]),)
             elif isinstance(step, ModelStep):
                 raw = cast(
                     tuple[JsonValue, ...],
@@ -416,10 +408,7 @@ class PlaybookEngine:
             for receipt in receipts:
                 validator_id = cast(str, receipt["validator_id"])
                 executor = self._validators.get(validator_id)
-                if (
-                    executor is None
-                    or str(executor.version) != receipt["validator_version"]
-                ):
+                if executor is None or str(executor.version) != receipt["validator_version"]:
                     self._raise(
                         EngineErrorCode.INCOMPATIBLE_CHECKPOINT,
                         f"recovered validator is unavailable: {validator_id}",
@@ -486,10 +475,7 @@ class PlaybookEngine:
                     EngineErrorCode.UNSUPPORTED_FALLBACK,
                     f"unsupported fallback strategy: {fallback.strategy}",
                 )
-            if (
-                fallback.strategy == STRUCTURED_OUTPUT_JSON_FALLBACK
-                and not fallback.validator_ids
-            ):
+            if fallback.strategy == STRUCTURED_OUTPUT_JSON_FALLBACK and not fallback.validator_ids:
                 self._raise(
                     EngineErrorCode.UNSUPPORTED_FALLBACK,
                     "structured-output fallback requires a validator",
@@ -497,11 +483,7 @@ class PlaybookEngine:
             for validator_id in fallback.validator_ids:
                 version = declared_validators.get(validator_id)
                 validator = self._validators.get(validator_id)
-                if (
-                    version is None
-                    or validator is None
-                    or str(validator.version) != str(version)
-                ):
+                if version is None or validator is None or str(validator.version) != str(version):
                     self._raise(
                         EngineErrorCode.UNSUPPORTED_VALIDATOR,
                         f"fallback validator unavailable: {validator_id}",
@@ -526,8 +508,7 @@ class PlaybookEngine:
                     )
                 if (
                     step.prompt_bindings
-                    and (step.prompt.id, str(step.prompt.version))
-                    not in self._prompt_composers
+                    and (step.prompt.id, str(step.prompt.version)) not in self._prompt_composers
                 ):
                     self._raise(
                         EngineErrorCode.INCOMPATIBLE_PINS,
@@ -568,10 +549,7 @@ class PlaybookEngine:
                     )
             elif isinstance(step, ValidateStep):
                 declared_version = declared_validators.get(step.validator.id)
-                if (
-                    declared_version is None
-                    or str(declared_version) != str(step.validator.version)
-                ):
+                if declared_version is None or str(declared_version) != str(step.validator.version):
                     self._raise(
                         EngineErrorCode.UNSUPPORTED_VALIDATOR,
                         f"validator step is not declared by the skill: {step.validator.id}",
@@ -605,19 +583,13 @@ class PlaybookEngine:
             step = definition.steps[index]
             mutable_traces.append(self._trace(step, StepTraceStatus.STARTED))
             try:
-                should_suspend = isinstance(
-                    step, DialogueStep
-                ) and self._dialogue_should_suspend(step, mutable_outputs)
+                should_suspend = isinstance(step, DialogueStep) and self._dialogue_should_suspend(
+                    step, mutable_outputs
+                )
                 if isinstance(step, DialogueStep):
-                    value = (
-                        step.gate.default_response
-                        if step.gate is not None
-                        else None
-                    )
+                    value = step.gate.default_response if step.gate is not None else None
                     termination = None
-                    trace_details = freeze_object(
-                        {"dialogue_disposition": "skipped"}
-                    )
+                    trace_details = freeze_object({"dialogue_disposition": "skipped"})
                 else:
                     value, termination, trace_details = await self._execute_step(
                         step,
@@ -628,20 +600,14 @@ class PlaybookEngine:
                     )
             except PlaybookEngineError as error:
                 cancelled = error.failure.code is EngineErrorCode.CANCELLED
-                failure_details: dict[str, JsonValue] = {
-                    "error_code": error.failure.code.value
-                }
+                failure_details: dict[str, JsonValue] = {"error_code": error.failure.code.value}
                 model_failure_reason = _model_failure_reason_from_failure(error.failure)
                 if model_failure_reason is not None:
                     failure_details["model_failure_reason"] = model_failure_reason
                 mutable_traces.append(
                     self._trace(
                         step,
-                        (
-                            StepTraceStatus.CANCELLED
-                            if cancelled
-                            else StepTraceStatus.FAILED
-                        ),
+                        (StepTraceStatus.CANCELLED if cancelled else StepTraceStatus.FAILED),
                         failure_details,
                     )
                 )
@@ -709,9 +675,7 @@ class PlaybookEngine:
                     "output_fingerprint": _json_fingerprint(value),
                 }
             )
-            mutable_traces.append(
-                self._trace(step, StepTraceStatus.COMPLETED, trace_details)
-            )
+            mutable_traces.append(self._trace(step, StepTraceStatus.COMPLETED, trace_details))
             is_final = index + 1 == len(definition.steps)
             next_status = RunStatus.COMPLETED if is_final or termination else RunStatus.RUNNING
             checkpoint = self._checkpoint(
@@ -791,9 +755,7 @@ class PlaybookEngine:
             prompt_inputs = self._resolve_bindings(
                 {}, step.prompt_bindings, run_inputs, outputs, step.id
             )
-            composer = self._prompt_composers.get(
-                (step.prompt.id, str(step.prompt.version))
-            )
+            composer = self._prompt_composers.get((step.prompt.id, str(step.prompt.version)))
             if composer is None:
                 request = step.request
                 composed = None
@@ -849,8 +811,7 @@ class PlaybookEngine:
                 )
             if (
                 response.invocation.adapter_id != self._model_adapter.id
-                or response.invocation.adapter_version
-                != str(self._model_adapter.version)
+                or response.invocation.adapter_version != str(self._model_adapter.version)
             ):
                 self._raise(
                     EngineErrorCode.MODEL_ERROR,
@@ -943,18 +904,12 @@ class PlaybookEngine:
                     f"validator execution failed: {type(error).__name__}",
                     step.id,
                 )
-            termination = (
-                outcome
-                if outcome.disposition is ValidatorDisposition.TERMINATE
-                else None
-            )
+            termination = outcome if outcome.disposition is ValidatorDisposition.TERMINATE else None
             executor = self._validators[step.validator.id]
             return (
                 outcome.result,
                 termination,
-                freeze_object(
-                    {"validator": _validator_receipt(executor, outcome)}
-                ),
+                freeze_object({"validator": _validator_receipt(executor, outcome)}),
             )
         self._raise(EngineErrorCode.BINDING_ERROR, "unsupported step at runtime", step.id)
 
@@ -977,10 +932,7 @@ class PlaybookEngine:
                     step_id,
                 )
             receipts.append(_validator_receipt(executor, outcome, include_result=True))
-            if (
-                not outcome.passed
-                or outcome.disposition is ValidatorDisposition.TERMINATE
-            ):
+            if not outcome.passed or outcome.disposition is ValidatorDisposition.TERMINATE:
                 self._raise(
                     EngineErrorCode.VALIDATOR_ERROR,
                     f"fallback validator rejected output: {validator_id}",
@@ -1060,9 +1012,7 @@ class PlaybookEngine:
                 f"run checkpoint compare-and-set failed: {type(error).__name__}",
             )
 
-    def _load(
-        self, run_id: RunId, definition: PlaybookDefinition
-    ) -> tuple[_StoredRun, bytes]:
+    def _load(self, run_id: RunId, definition: PlaybookDefinition) -> tuple[_StoredRun, bytes]:
         try:
             payload = self._run_store.load(run_id)
         except Exception:
@@ -1145,9 +1095,9 @@ def _plain(value: object) -> object:
 
 
 def _json_fingerprint(value: JsonValue) -> str:
-    encoded = json.dumps(
-        _plain(freeze_json(value)), sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")
+    encoded = json.dumps(_plain(freeze_json(value)), sort_keys=True, separators=(",", ":")).encode(
+        "utf-8"
+    )
     return sha256(b"study-agent-json-result-v1\0" + encoded).hexdigest()
 
 
@@ -1186,8 +1136,7 @@ def _encode_stored_run(stored: _StoredRun) -> bytes:
                 "playbook": _artifact_payload(checkpoint.pins.playbook),
                 "prompt": _artifact_payload(checkpoint.pins.prompt),
                 "tool_behaviors": [
-                    (item.tool_name, str(item.version))
-                    for item in checkpoint.pins.tool_behaviors
+                    (item.tool_name, str(item.version)) for item in checkpoint.pins.tool_behaviors
                 ],
                 "model_adapter": _artifact_payload(checkpoint.pins.model_adapter),
                 "state_contract": _artifact_payload(checkpoint.pins.state_contract),
@@ -1326,12 +1275,8 @@ def playbook_definition_fingerprint(definition: PlaybookDefinition) -> str:
                         "metadata": _plain(step.request.metadata),
                     },
                     "output_schema": _plain(step.output_schema.value),
-                    "required_capabilities": [
-                        item.name for item in step.required_capabilities
-                    ],
-                    "bindings": [
-                        _binding_payload(item) for item in step.prompt_bindings
-                    ],
+                    "required_capabilities": [item.name for item in step.required_capabilities],
+                    "bindings": [_binding_payload(item) for item in step.prompt_bindings],
                 }
             )
         elif isinstance(step, DialogueStep):
@@ -1397,9 +1342,7 @@ def _validate_checkpoint_shape(
         if next_index == 0 or not isinstance(definition.steps[next_index - 1], DialogueStep):
             _checkpoint_error("suspended checkpoint does not follow dialogue")
         completed_count -= 1
-    expected_outputs = {
-        definition.steps[index].output_key for index in range(completed_count)
-    }
+    expected_outputs = {definition.steps[index].output_key for index in range(completed_count)}
     if not suspended_dialogue and next_index > 0:
         expected_outputs.add(definition.steps[next_index - 1].output_key)
     if set(checkpoint.outputs) != expected_outputs:
@@ -1410,8 +1353,7 @@ def _validate_checkpoint_shape(
         step = definition.steps[index]
         expected_trace.append((step.id, step.kind, StepTraceStatus.STARTED))
         if isinstance(step, DialogueStep) and (
-            step.gate is None
-            or _checkpoint_dialogue_gate_condition(step, checkpoint.outputs)
+            step.gate is None or _checkpoint_dialogue_gate_condition(step, checkpoint.outputs)
         ):
             expected_trace.append((step.id, step.kind, StepTraceStatus.SUSPENDED))
         expected_trace.append((step.id, step.kind, StepTraceStatus.COMPLETED))
@@ -1489,15 +1431,11 @@ def _validate_checkpoint_shape(
                 "response_id",
             }:
                 _checkpoint_error("model invocation trace receipt is invalid")
-            if (
-                invocation["adapter_id"] != checkpoint.pins.model_adapter.id
-                or invocation["adapter_version"]
-                != str(checkpoint.pins.model_adapter.version)
-            ):
+            if invocation["adapter_id"] != checkpoint.pins.model_adapter.id or invocation[
+                "adapter_version"
+            ] != str(checkpoint.pins.model_adapter.version):
                 _checkpoint_error("model invocation trace differs from adapter pin")
-            if not isinstance(invocation["model_id"], str) or not invocation[
-                "model_id"
-            ].strip():
+            if not isinstance(invocation["model_id"], str) or not invocation["model_id"].strip():
                 _checkpoint_error("model invocation trace has no model identity")
             response_id = invocation["response_id"]
             if response_id is not None and (
@@ -1514,9 +1452,7 @@ def _validate_checkpoint_shape(
                 _validate_validator_receipt(receipt, result=None, require_result=True)
         elif isinstance(step, DialogueStep):
             if step.gate is not None:
-                should_suspend = _checkpoint_dialogue_gate_condition(
-                    step, checkpoint.outputs
-                )
+                should_suspend = _checkpoint_dialogue_gate_condition(step, checkpoint.outputs)
                 if should_suspend:
                     if set(trace.details) != {
                         "output_fingerprint",
@@ -1525,14 +1461,16 @@ def _validate_checkpoint_shape(
                     }:
                         _checkpoint_error("resumed dialogue receipt fields are invalid")
                 else:
-                    if set(trace.details) != {
-                        "dialogue_disposition",
-                        "output_fingerprint",
-                    } or trace.details.get("dialogue_disposition") != "skipped":
-                        _checkpoint_error("skipped dialogue receipt fields are invalid")
-                    if _json_fingerprint(output) != _json_fingerprint(
-                        step.gate.default_response
+                    if (
+                        set(trace.details)
+                        != {
+                            "dialogue_disposition",
+                            "output_fingerprint",
+                        }
+                        or trace.details.get("dialogue_disposition") != "skipped"
                     ):
+                        _checkpoint_error("skipped dialogue receipt fields are invalid")
+                    if _json_fingerprint(output) != _json_fingerprint(step.gate.default_response):
                         _checkpoint_error("skipped dialogue output differs from default")
             elif set(trace.details) not in (
                 {"output_fingerprint"},
@@ -1610,9 +1548,7 @@ def _validate_validator_receipt(
     if disposition is ValidatorDisposition.CONTINUE and value["passed"] is not True:
         _checkpoint_error("failed validator trace cannot continue")
     fingerprinted = value["result"] if require_result else result
-    if fingerprinted is None or value["result_fingerprint"] != _json_fingerprint(
-        fingerprinted
-    ):
+    if fingerprinted is None or value["result_fingerprint"] != _json_fingerprint(fingerprinted):
         _checkpoint_error("validator result fingerprint does not match result")
 
 
@@ -1676,9 +1612,7 @@ def _recovered_termination(
 
 
 def _checkpoint_error(message: str) -> NoReturn:
-    raise PlaybookEngineError(
-        EngineFailure(EngineErrorCode.INCOMPATIBLE_CHECKPOINT, message)
-    )
+    raise PlaybookEngineError(EngineFailure(EngineErrorCode.INCOMPATIBLE_CHECKPOINT, message))
 
 
 def _dialogue_gate_condition(
@@ -1768,9 +1702,7 @@ _SCHEMA_KEYWORDS = frozenset(
         "uniqueItems",
     }
 )
-_SCHEMA_TYPES = frozenset(
-    {"object", "array", "string", "number", "integer", "boolean", "null"}
-)
+_SCHEMA_TYPES = frozenset({"object", "array", "string", "number", "integer", "boolean", "null"})
 
 
 def _validate_schema_definition(schema: JsonObject, path: str = "schema") -> None:
@@ -1788,15 +1720,11 @@ def _validate_schema_definition(schema: JsonObject, path: str = "schema") -> Non
             schema_types = tuple(item for item in schema_type if isinstance(item, str))
         else:
             _schema_error(f"unsupported schema type at {path}")
-        if any(
-            not isinstance(item, str) or item not in _SCHEMA_TYPES
-            for item in schema_types
-        ):
+        if any(not isinstance(item, str) or item not in _SCHEMA_TYPES for item in schema_types):
             _schema_error(f"unsupported schema type at {path}")
     required = schema.get("required")
     if required is not None and (
-        not isinstance(required, tuple)
-        or any(not isinstance(item, str) for item in required)
+        not isinstance(required, tuple) or any(not isinstance(item, str) for item in required)
     ):
         _schema_error(f"required must be an array of strings at {path}")
     properties = schema.get("properties")
@@ -1875,9 +1803,7 @@ def _validate_schema(
             _schema_error(f"{label} has unexpected property {sorted(extras)[0]}", step_id)
         if isinstance(additional, Mapping):
             for name in extras:
-                _validate_schema(
-                    additional, value[name], label, step_id, f"{path}.{name}"
-                )
+                _validate_schema(additional, value[name], label, step_id, f"{path}.{name}")
     item_schema = schema.get("items")
     if isinstance(value, tuple) and isinstance(item_schema, Mapping):
         for index, item in enumerate(value):
@@ -1921,9 +1847,7 @@ def _validate_bounds(
 
 
 def _schema_error(message: str, step_id: str | None = None) -> NoReturn:
-    raise PlaybookEngineError(
-        EngineFailure(EngineErrorCode.SCHEMA_ERROR, message, step_id)
-    )
+    raise PlaybookEngineError(EngineFailure(EngineErrorCode.SCHEMA_ERROR, message, step_id))
 
 
 def _numeric_schema_bound(schema: JsonObject, keyword: str, path: str) -> int | float | None:
@@ -1935,9 +1859,7 @@ def _numeric_schema_bound(schema: JsonObject, keyword: str, path: str) -> int | 
     return value
 
 
-def _nonnegative_integer_schema_bound(
-    schema: JsonObject, keyword: str, path: str
-) -> int | None:
+def _nonnegative_integer_schema_bound(schema: JsonObject, keyword: str, path: str) -> int | None:
     value = schema.get(keyword)
     if value is None:
         return None

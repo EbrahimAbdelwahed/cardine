@@ -172,15 +172,17 @@ def test_start_capability_progress_message_is_closed_capability_template() -> No
     assert isinstance(decision, Mapping)
     branches = decision["anyOf"]
     assert isinstance(branches, tuple)
-
-    def is_start_branch(item: Mapping[str, object]) -> bool:
-        nested = item.get("properties")
-        if not isinstance(nested, Mapping):
-            return False
-        kind = nested.get("kind")
-        return isinstance(kind, Mapping) and kind.get("enum") == ("start_capability",)
-
-    branch = next(item for item in branches if isinstance(item, Mapping) and is_start_branch(item))
+    branch = None
+    for item in branches:
+        assert isinstance(item, Mapping)
+        item_properties = item["properties"]
+        assert isinstance(item_properties, Mapping)
+        kind = item_properties["kind"]
+        assert isinstance(kind, Mapping)
+        if kind.get("enum") == ("start_capability",):
+            branch = item
+            break
+    assert branch is not None
     branch_properties = branch["properties"]
     assert isinstance(branch_properties, Mapping)
     progress = branch_properties["progress_message"]

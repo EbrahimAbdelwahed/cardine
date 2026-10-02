@@ -24,7 +24,7 @@
     },
     {
       "path": "src/cardine/cli/repository.py",
-      "sha256": "ff97b8d075e1a2d2bcd44ce4f92fb61ced2dcc3f0e45da2346898b062a97cdd2"
+      "sha256": "526f8430d5b843bd05ead39a0503e2fcfcb715191f880f6802724d99ae5c0b8e"
     },
     {
       "path": "src/cardine/demo/anatomy.py",
@@ -32,15 +32,15 @@
     },
     {
       "path": "src/cardine/demo/browser.css",
-      "sha256": "826b8d889b0d4f0cb0798ac7f03427fff4e94567f337fa6cd6b7119d97aa240b"
+      "sha256": "387005ed23a0ca875e5706d2894fd4f9541b6815e47342c3d746886013edc740"
     },
     {
       "path": "src/cardine/demo/browser.html",
-      "sha256": "3b3e6d0411dc202447a90b475badbd776b0155e09a0b9a0eb8d49f71b4a91cc6"
+      "sha256": "1ec96112d898e72123159a187178bcaee177329efc24c811d054573cffb385b6"
     },
     {
       "path": "src/cardine/demo/browser.js",
-      "sha256": "888cb2ad30f449f91a3082100c7674447aace48a6fbc80fae267fa1add154822"
+      "sha256": "c37dc3fc25ff37d3708df6ba5ab61ec57f9014aa56b03feccfe30548f34da259"
     },
     {
       "path": "src/cardine/demo/product_shell.py",
@@ -48,11 +48,11 @@
     },
     {
       "path": "src/cardine/demo/ui_application.py",
-      "sha256": "af2d23c99cb37dd29c7442f9dccb6e8c7d57c44fe8f7c8eba4fafbb3a0da0ae8"
+      "sha256": "f1e9a40d6e0c5d2036cb9c4c9e3afa4b40fc1017d4ba5c85b841b1568893d8ff"
     },
     {
       "path": "src/cardine/diagnostics/turn_activity.py",
-      "sha256": "460b3eb04a1409c8598cc8f4683cc153e1e8e9e41d22fd05c2780c374a14e7df"
+      "sha256": "ef7b4e36d71fa375c0cf184d4f05bcffa540e5ab5ce709162c2556f476e33d8d"
     },
     {
       "path": "src/cardine/hosts/context.py",
@@ -64,11 +64,11 @@
     },
     {
       "path": "src/cardine/hosts/runner.py",
-      "sha256": "d0cedd9f6f0f2ccc4fbd2bfe25c99b881ad2d936dbf773be7b93804221508200"
+      "sha256": "8d46ce13ba51f899bd9d0e8e2eb46ee246d753a25df98727b300d9e74db3d293"
     },
     {
       "path": "src/cardine/hosts/source_grounding.py",
-      "sha256": "d348e180ed0032548dce0f7a526b92612f1081f19c25583f737281cea29054af"
+      "sha256": "823984be281f870ff5d35cda62c7aea5ce5c1fb0cf1050613f5b208e3a884d84"
     },
     {
       "path": "src/study_agent/adapters/filesystem/repository_target.py",

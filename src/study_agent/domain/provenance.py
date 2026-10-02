@@ -120,6 +120,52 @@ class DocumentConversionProvenance:
 
 
 @dataclass(frozen=True, slots=True)
+class TextExtractionProvenance:
+    """A transcript or selected lesson extracted from immutable source bytes.
+
+    The content-addressed manifest carries audio time spans or parent PDF page
+    ranges. This is extraction lineage, never permission to publish study notes.
+    """
+
+    input_sha256: str
+    text_sha256: str
+    manifest_sha256: str
+    adapter_id: str
+    media_type: str
+    limitations: tuple[str, ...]
+    manifest_byte_length: int
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.manifest_byte_length) is not int
+            or not 1 <= self.manifest_byte_length <= 2 * 1024 * 1024
+        ):
+            raise ValueError("extraction manifest size is invalid")
+        for name in ("input_sha256", "text_sha256", "manifest_sha256"):
+            _require_fingerprint(getattr(self, name), name)
+        for name in ("adapter_id", "media_type"):
+            require_text(getattr(self, name), name)
+        object.__setattr__(self, "limitations", tuple(self.limitations))
+        if not self.limitations or len(self.limitations) > 16:
+            raise ValueError("extraction limitations must be bounded and non-empty")
+        for item in self.limitations:
+            require_text(item, "extraction limitation")
+            if len(item) > 1000:
+                raise ValueError("extraction limitation is oversized")
+
+    def to_json(self) -> JsonObject:
+        return {
+            "input_sha256": self.input_sha256,
+            "text_sha256": self.text_sha256,
+            "manifest_sha256": self.manifest_sha256,
+            "manifest_byte_length": self.manifest_byte_length,
+            "adapter_id": self.adapter_id,
+            "media_type": self.media_type,
+            "limitations": self.limitations,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class GeneratedDocumentProvenance:
     """Lineage proof for a generated Markdown source admitted after review.
 
@@ -162,6 +208,7 @@ class GeneratedDocumentProvenance:
         require_aware(self.human_decision_at, "human_decision_at")
         if type(self.schema_version) is not int or self.schema_version != 1:
             raise ValueError("generated document provenance schema_version must equal 1")
+
 
 @dataclass(frozen=True, slots=True)
 class PromptProvenance:

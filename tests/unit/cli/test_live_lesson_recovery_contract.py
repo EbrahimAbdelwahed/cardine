@@ -203,7 +203,10 @@ def test_repository_chat_explain_with_resolved_section_reaches_model_with_canoni
         result = asyncio.run(
             conversation.turn(
                 ConversationTurnCommand(
-                    "Spiegami il contenuto della lezione",
+                    # Keep this regression on the model-selected explain path;
+                    # explicit "spiegami/leggi" language is intentionally
+                    # intercepted by the deterministic source fast path.
+                    "Lezione 1",
                     ExecutionContext(
                         PrincipalKind.HUMAN,
                         "live-lesson-learner",

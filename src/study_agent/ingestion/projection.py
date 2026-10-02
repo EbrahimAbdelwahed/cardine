@@ -106,6 +106,8 @@ def source_manifest(source: SourceDocument) -> JsonObject:
     }
     if source.conversion_provenance is not None:
         manifest["conversion_provenance"] = _conversion(source.conversion_provenance)
+    if source.extraction_provenance is not None:
+        manifest["extraction_provenance"] = source.extraction_provenance.to_json()
     if source.generated_provenance is not None:
         manifest["generated_provenance"] = _generated(source.generated_provenance)
     return manifest
