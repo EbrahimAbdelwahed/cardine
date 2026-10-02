@@ -52,6 +52,14 @@ parsing, citation validation and canonical publication remain unchanged. The
 final receipt replaces the draft without an artificial word reveal. The original
 decision/tool/flashcard generation paths are preserved.
 
+The owner's follow-up requested dead-code removal. The old word-by-word reveal,
+unused staged reveal, related CSS/animations, timer/DOM machinery and browser
+reveal tracking/callbacks are deleted. DOM tests now cover immediate final text,
+real provider drafts, actions and navigation. Duplicate custody row validation
+loops share one strict exact-scope helper. The first full test run found a text
+representation regression in frozen objects; the previous string/repr contract
+is restored rather than changing prompts or weakening its existing test.
+
 See [ADR-0024](../../docs/decisions/ADR-0024--local-read-budgets-and-live-drafts.md)
 and the exact-byte `tests/parity/local-latency-overlay.json` custody binding.
 

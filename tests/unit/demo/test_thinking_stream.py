@@ -18,8 +18,7 @@ def test_stream_actions_disclosure_and_stale_poll_lifecycle() -> None:
     )
     observed = json.loads(result.stdout)
     assert observed == {
-        "streaming": True, "firstVisible": 1, "completed": True, "starts": 1,
-        "announced": True, "announcementRemoved": True, "cancelled": True, "reducedInstant": True,
+        "immediate": True,
         "copies": ["Una risposta verificata <img> con fonti."], "retry": 1,
         "feedback": ["like", "dislike", ""], "exclusive": True,
         "collapsed": True, "preservedChoice": True, "stalePollIgnored": True,
@@ -29,8 +28,8 @@ def test_stream_actions_disclosure_and_stale_poll_lifecycle() -> None:
             {"content": "Original prompt", "lesson_pin": {"lesson_id": "original"}},
             None, "sessione", "new-key",
         ]],
-        "offRouteAnswer": {"revealed": True, "stream": ""},
-        "onRouteAnswer": {"revealed": False, "stream": "answer-1"},
+        "offRouteAnswer": {"rendered": 0, "settled": True, "retryRemembered": True},
+        "onRouteAnswer": {"rendered": 1, "settled": True, "retryRemembered": True},
     }
 
 
@@ -46,7 +45,7 @@ console.log(JSON.stringify({
  initial: CardineAI.toolChips({state: 'running', records: []}),
  live: CardineAI.toolChips({state: 'running', records: rows}),
  settled: CardineAI.toolChips({state: 'settled', records: rows.map(row => ({...row, status:'done'}))}),
- answer: CardineAI.answer({chat:true, stream:true, canRetry:true, answer:'**Verificato** <script>x</script>', followUps:['Continua']}),
+ answer: CardineAI.answer({chat:true, canRetry:true, answer:'**Verificato** <script>x</script>', followUps:['Continua']}),
 }));
 """
     result = subprocess.run(
@@ -67,4 +66,3 @@ console.log(JSON.stringify({
     for label in ("Copy", "Retry", "Like", "Dislike"):
         assert f'aria-label="{label}"' in rendered["answer"]
     assert "Follow-ups" in rendered["answer"]
-    assert 'data-ai-stream="true"' in rendered["answer"]

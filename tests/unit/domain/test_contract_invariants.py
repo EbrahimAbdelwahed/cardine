@@ -56,6 +56,7 @@ def test_frozen_json_owns_untrusted_proxies_and_keeps_mapping_equality() -> None
     expected = {"nested": {"values": (1, 2)}}
     assert frozen == expected
     assert expected == frozen
+    assert str(frozen) == str(MappingProxyType({"nested": MappingProxyType({"values": (1, 2)})}))
     with pytest.raises(TypeError):
         frozen["new"] = True  # type: ignore[index]
     assert freeze_object(frozen) == frozen

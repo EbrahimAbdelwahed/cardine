@@ -15,8 +15,16 @@
       "sha256": "baf0ed42796e458cd081fca46c3ccd8d5dd8d22d171d25b7439537b4e38e496f"
     },
     {
+      "path": "src/cardine/demo/ai-primitives.css",
+      "sha256": "b38e2398175b5999da94fd3309d5117efb79fa802c283af7d1cda6b84c9ee392"
+    },
+    {
+      "path": "src/cardine/demo/ai-primitives.js",
+      "sha256": "f8fa848d1bf5665ab0f3f3e9ad3937c2e0270c1caebf62f15a529f893e3a2dfa"
+    },
+    {
       "path": "src/cardine/demo/browser.js",
-      "sha256": "59e4efe538714adcbac60e0759aa4b88f3e91f96ad9a0a2ce785926680f57e91"
+      "sha256": "4c2bdf876448b5053bcca08763d68ab407e99da9f4b78abf70b43f70b153c24d"
     },
     {
       "path": "src/cardine/demo/turn_output.py",
@@ -36,7 +44,7 @@
     },
     {
       "path": "src/study_agent/domain/_validation.py",
-      "sha256": "b727ee2780af74cee2e7912af32f0a5dd6a7cb5aea13bc5fe44a6cde38d4e4a0"
+      "sha256": "ff45fc63e14bd7f6902b35623798688d2fab4c6377819b5181e4f02318f06636"
     },
     {
       "path": "src/study_agent/retrieval/content.py",

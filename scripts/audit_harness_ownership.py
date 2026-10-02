@@ -31,6 +31,8 @@ LATENCY_PATHS = {
     "src/cardine/adapters/model/streaming.py",
     "src/cardine/cli/repository.py",
     "src/cardine/demo/browser.js",
+    "src/cardine/demo/ai-primitives.js",
+    "src/cardine/demo/ai-primitives.css",
     "src/cardine/demo/ui_application.py",
     "src/cardine/demo/turn_output.py",
     "src/study_agent/adapters/sqlite/event_store.py",
@@ -449,6 +451,30 @@ def _load_recovery_overlay() -> dict[str, str]:
     return hashes
 
 
+def _bound_hashes(rows: object, allowed: set[str], label: str) -> dict[str, str]:
+    """Validate an exact custody scope with no duplicate or unchecked digests."""
+    if not isinstance(rows, list):
+        raise ValueError(f"{label} has invalid rows")
+    hashes: dict[str, str] = {}
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != {"path", "sha256"}:
+            raise ValueError(f"{label} has invalid row")
+        path, digest = row["path"], row["sha256"]
+        if (
+            not isinstance(path, str)
+            or path not in allowed
+            or path in hashes
+            or not isinstance(digest, str)
+            or len(digest) != 64
+            or any(c not in "0123456789abcdef" for c in digest)
+        ):
+            raise ValueError(f"{label} has invalid binding")
+        hashes[path] = digest
+    if set(hashes) != allowed:
+        raise ValueError(f"{label} has incomplete scope")
+    return hashes
+
+
 def _load_student_journal_overlay() -> dict[str, str]:
     """Bind the fixed journal scope to exact bytes without changing old approval records."""
     raw = json.loads(STUDENT_JOURNAL_OVERLAY.read_text(encoding="utf-8"))
@@ -463,22 +489,7 @@ def _load_student_journal_overlay() -> dict[str, str]:
         or set(raw["removed"]) != STUDENT_JOURNAL_REMOVED
     ):
         raise ValueError("student journal overlay has invalid scope")
-    hashes: dict[str, str] = {}
-    for row in raw["rows"]:
-        if not isinstance(row, dict) or set(row) != {"path", "sha256"}:
-            raise ValueError("student journal overlay has invalid row")
-        path, digest = row["path"], row["sha256"]
-        if (
-            path not in STUDENT_JOURNAL_PATHS
-            or path in hashes
-            or not isinstance(digest, str)
-            or len(digest) != 64
-            or any(c not in "0123456789abcdef" for c in digest)
-        ):
-            raise ValueError("student journal overlay has invalid binding")
-        hashes[path] = digest
-    if set(hashes) != STUDENT_JOURNAL_PATHS:
-        raise ValueError("student journal overlay has incomplete scope")
+    hashes = _bound_hashes(raw["rows"], STUDENT_JOURNAL_PATHS, "student journal overlay")
     for path in STUDENT_JOURNAL_REMOVED:
         if (ROOT / path).exists():
             raise ValueError(f"student journal retired source is present: {path}")
@@ -809,24 +820,7 @@ def _load_study_notes_overlay() -> dict[str, str]:
         or raw["plan"] != "specs/source-study-notes/README.md"
     ):
         raise ValueError("study notes overlay fields are invalid")
-    rows = raw["rows"]
-    if not isinstance(rows, list) or len(rows) != len(STUDY_NOTES_PATHS):
-        raise ValueError("study notes custody must bind the exact feature path set")
-    hashes: dict[str, str] = {}
-    for row in rows:
-        if not isinstance(row, dict) or set(row) != {"path", "sha256"}:
-            raise ValueError("study notes custody row is invalid")
-        source, digest = row["path"], row["sha256"]
-        if source not in STUDY_NOTES_PATHS or source in hashes:
-            raise ValueError("study notes custody path is invalid or duplicated")
-        if (
-            not isinstance(digest, str)
-            or len(digest) != 64
-            or any(char not in "0123456789abcdef" for char in digest)
-        ):
-            raise ValueError("study notes custody digest is invalid")
-        hashes[source] = digest
-    return hashes
+    return _bound_hashes(raw["rows"], STUDY_NOTES_PATHS, "study notes overlay")
 
 
 def _load_latency_overlay() -> dict[str, str]:
@@ -844,20 +838,7 @@ def _load_latency_overlay() -> dict[str, str]:
         or not isinstance(raw["rows"], list)
     ):
         raise ValueError("latency overlay fields are invalid")
-    hashes: dict[str, str] = {}
-    for row in raw["rows"]:
-        if not isinstance(row, dict) or set(row) != {"path", "sha256"}:
-            raise ValueError("latency overlay row is invalid")
-        path, digest = row["path"], row["sha256"]
-        if (
-            path not in LATENCY_PATHS or path in hashes or not isinstance(digest, str)
-            or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest)
-        ):
-            raise ValueError("latency overlay binding is invalid")
-        hashes[path] = digest
-    if set(hashes) != LATENCY_PATHS:
-        raise ValueError("latency overlay must bind the exact authorized scope")
-    return hashes
+    return _bound_hashes(raw["rows"], LATENCY_PATHS, "latency overlay")
 
 
 def validate(*, live: bool = False) -> list[str]:

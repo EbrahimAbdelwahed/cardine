@@ -25,6 +25,12 @@ class _FrozenObject(Mapping[str, JsonValue]):
     def __len__(self) -> int:
         return len(self._data)
 
+    def __str__(self) -> str:
+        return str(self._data)
+
+    def __repr__(self) -> str:
+        return repr(self._data)
+
 
 def require_text(value: str, field_name: str) -> None:
     if not value or value != value.strip():

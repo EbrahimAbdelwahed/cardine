@@ -144,8 +144,6 @@
     turnActivities: Object.create(null),
     turnCommands: Object.create(null),
     answerFeedback: Object.create(null),
-    revealedAnswers: new Set(),
-    streamAnswerId: "",
     authProbeUnavailable: false,
     indexingPollToken: 0,
     activityPollToken: 0,
@@ -1383,7 +1381,6 @@
     conversationScroller = null;
     patch(root, html);
     bindDynamicControls();
-    let streamScroll = null;
     destroyPrimitiveEnhancements = typeof CardineAI.enhance === "function"
       ? CardineAI.enhance(root, {
         populateComposer: false,
@@ -1393,17 +1390,6 @@
         onFeedback: (feedback, control) => {
           const id = control.closest("[data-message-id]")?.dataset.messageId;
           if (id) state.answerFeedback[id] = feedback;
-        },
-        onStreamProgress: (_article, phase) => {
-          if (phase === "before") streamScroll = captureScroll();
-          else {
-            if (streamScroll) restoreScroll(streamScroll, false);
-            conversationScroller?.refresh();
-          }
-        },
-        onStreamStart: (article) => {
-          const id = article.closest("[data-message-id]")?.dataset.messageId;
-          if (id) state.revealedAnswers.add(id);
         },
       })
       : () => {};
@@ -1836,7 +1822,6 @@
     const answer = aiAnswer({
       answer: text(content, "Messaggio senza testo visualizzabile."), citations, followUps: suggested,
       status: first(item, ["status", "state"], "ready"), chat: true,
-      stream: false,
       canRetry: Boolean(state.turnCommands[id]), feedback: state.answerFeedback[id],
     });
     const toolsView = tools.length ? `<div class="thread-message__activity">${aiToolChips({ records: tools, state: text(first(item, ["activity_state"], "settled"), "settled") })}</div>` : "";
@@ -2192,11 +2177,6 @@
       const settledRecords = array(receipt.activity_records);
       const presentationId = text(receipt.presentation_id, "");
       if (isTutorTurn && presentationId) {
-        if (commandNavigationVersion === state.navigationVersion && state.route === "sessione") {
-          state.streamAnswerId = presentationId;
-        } else {
-          state.revealedAnswers.add(presentationId);
-        }
         if (endpoint === "/api/v1/session/turns") state.turnCommands[presentationId] = command;
       }
       if (isTutorTurn && presentationId && settledRecords.length) {

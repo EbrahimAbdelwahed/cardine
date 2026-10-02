@@ -43,6 +43,9 @@ and grants it no citations, actions or study-state authority. Completion, failur
 or cancellation erase the draft. The final validated receipt replaces it without
 an artificial reveal animation. Drafts never enter diagnostics, event history,
 exports or persistent storage. Stale polling cannot update another turn or route.
+The obsolete word-reveal implementation, its CSS, timers, callbacks and browser
+state are removed. Custody row checks share one exact-scope validator instead of
+adding another duplicate validation loop.
 
 Offline tests exercise output before provider completion, rejection of invalid
 evidence, draft cleanup and deterministic work budgets for large-source reads
