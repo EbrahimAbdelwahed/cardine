@@ -115,7 +115,11 @@ from study_agent.ports import (
 from study_agent.ports.lesson_worker import FlashcardProfileExecutionBinding
 from study_agent.ports.retrieval import RetrievalDocument, retrieval_catalog_fingerprint
 from study_agent.prompts import CanonicalPromptComposer
-from study_agent.retrieval import CourseSourceContent, SourceRevisionRecord
+from study_agent.retrieval import (
+    CourseSourceContent,
+    SourceRevisionRecord,
+    canonical_source_locator,
+)
 from study_agent.skills import ArtifactReference, SemanticVersion
 from study_agent.state import canonical_json_bytes
 from study_agent.tools.planned_flashcard_scope_bridge import planned_flashcard_scope_tool
@@ -246,6 +250,9 @@ class _LessonEvidenceResolver:
     ) -> None:
         self._content = content
         self._retired_source_ids = retired_source_ids
+        self._documents_by_span: (
+            dict[tuple[SourceId, RevisionId, int, int], RetrievalDocument] | None
+        ) = None
 
     def resolve(
         self,
@@ -256,22 +263,28 @@ class _LessonEvidenceResolver:
     ) -> ResolvedPlannedBundleEvidence:
         del context
         evidence: list[RetrievalEvidence] = []
-        for slot in bundle.slots:
-            document = next(
+        if self._documents_by_span is None:
+            documents = self._content.documents(include_superseded=True)
+            indexed = {
                 (
-                    item
-                    # A persisted lesson bundle may point at a superseded
-                    # revision (or a source retired after generation). Its
-                    # canonical evidence remains resolvable for recovery;
-                    # active-source filtering belongs to new planning and
-                    # provider inputs in ``_request``/``_profile_binding``.
-                    for item in self._content.documents(include_superseded=True)
-                    if item.source_id == slot.span.source_id
-                    and item.revision_id == slot.span.revision_id
-                    and item.chunk.start_offset == slot.span.start_offset
-                    and item.chunk.end_offset == slot.span.end_offset
-                ),
-                None,
+                    item.source_id,
+                    item.revision_id,
+                    item.chunk.start_offset,
+                    item.chunk.end_offset,
+                ): item
+                for item in documents
+            }
+            if len(indexed) != len(documents):
+                raise LessonWorkerConflictError("canonical source spans are not unique")
+            self._documents_by_span = indexed
+        for slot in bundle.slots:
+            document = self._documents_by_span.get(
+                (
+                    slot.span.source_id,
+                    slot.span.revision_id,
+                    slot.span.start_offset,
+                    slot.span.end_offset,
+                )
             )
             if document is None:
                 raise LessonWorkerConflictError("planned source chunk changed")
@@ -479,7 +492,19 @@ class FlashcardProposalComposition:
                 "flashcard lesson generation could not be verified",
                 _failure_reason(error),
             )
-        if compact.status is not LessonWorkerStatus.COMPLETED or compact.candidate_count < 1:
+        if compact.status is LessonWorkerStatus.FAILED:
+            return FailedCapabilityOutcome(
+                compact.run_id,
+                "flashcard lesson generation failed safely",
+                _worker_failure_reason(compact.failure_codes),
+            )
+        if compact.status is not LessonWorkerStatus.COMPLETED:
+            return FailedCapabilityOutcome(
+                compact.run_id,
+                "flashcard lesson generation did not reach a terminal state",
+                "capability_execution_failed",
+            )
+        if compact.candidate_count < 1:
             return _terminated(
                 compact.run_id,
                 request,
@@ -604,7 +629,12 @@ class FlashcardProposalComposition:
             str(public["scope"] or str(public["query"])),
             str(public["language"]),
             _candidate_ceiling(public["candidate_ceiling"]),
-            None,
+            {
+                "generation_request_fingerprint": sha256(
+                    b"cardine-flashcard-generation-request@1\0"
+                    + str(interaction_id).encode("utf-8")
+                ).hexdigest(),
+            },
             expectation,
             8,
             commitments,
@@ -785,15 +815,12 @@ def _lesson_unit(
     for record in records:
         for chunk in record.chunks:
             section = " > ".join(chunk.section_path) or f"chunk {chunk.ordinal + 1}"
-            locator = (
-                f"{record.source.title} · {section} · chars {chunk.start_offset}-{chunk.end_offset}"
-            )
             span = CanonicalSourceSpan(
                 chunk.source_id,
                 chunk.revision_id,
                 chunk.start_offset,
                 chunk.end_offset,
-                locator,
+                canonical_source_locator(record, chunk, chunk.start_offset, chunk.end_offset),
             )
             topic_key = f"topic-{position:04d}"
             paragraph_key = f"paragraph-{position:04d}"
@@ -914,13 +941,33 @@ def _fallback_run_id(inputs: JsonObject, context: ExecutionContext) -> RunId:
     return RunId(f"flashcard-fallback-sha256:{digest}")
 
 
+def _worker_failure_reason(failure_codes: tuple[str, ...]) -> str:
+    codes = frozenset(failure_codes)
+    exact = {
+        "gateway_authentication": "authentication",
+        "gateway_authorization": "authorization",
+        "gateway_model_unavailable": "model_unavailable",
+        "gateway_endpoint_incompatible": "endpoint_incompatible",
+        "gateway_schema_incompatible": "schema_incompatible",
+        "gateway_rate_limited": "rate_limited",
+        "gateway_timeout": "timeout",
+        "gateway_protocol_error": "protocol_error",
+        "gateway_unavailable": "unavailable",
+    }
+    for code, reason in exact.items():
+        if code in codes:
+            return reason
+    if any("stale" in code or "scope" in code for code in codes):
+        return "scope_stale"
+    if any("validation" in code or "proof" in code for code in codes):
+        return "capability_validation_failed"
+    return "capability_execution_failed"
+
+
 def _failure_reason(error: Exception) -> str:
-    text = str(error).casefold()
-    if any(term in text for term in ("credential", "authentication", "model")):
-        return "model_unavailable"
-    if "timeout" in text:
-        return "timeout"
-    return "unavailable"
+    if isinstance(error, LessonWorkerConflictError):
+        return "scope_stale"
+    return "capability_execution_failed"
 
 
 def _read_set_fingerprint(evidence: tuple[RetrievalEvidence, ...]) -> str:

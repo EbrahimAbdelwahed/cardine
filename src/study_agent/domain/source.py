@@ -6,7 +6,13 @@ from enum import StrEnum
 
 from ._validation import JsonObject, freeze_object, require_aware, require_text
 from .identifiers import BlobId, ChunkId, RevisionId, SourceId
-from .provenance import ContentOrigin, DocumentConversionProvenance, StructureOrigin
+from .provenance import (
+    ContentOrigin,
+    DocumentConversionProvenance,
+    GeneratedDocumentProvenance,
+    StructureOrigin,
+    TextExtractionProvenance,
+)
 
 
 class SourceKind(StrEnum):
@@ -49,6 +55,9 @@ class SourceDocument:
     ingestion_method: str
     content_origin: ContentOrigin = ContentOrigin.ORIGINAL
     conversion_provenance: DocumentConversionProvenance | None = None
+    generated_provenance: GeneratedDocumentProvenance | None = None
+
+    extraction_provenance: TextExtractionProvenance | None = None
 
     def __post_init__(self) -> None:
         require_text(self.title, "title")
@@ -70,15 +79,37 @@ class SourceDocument:
         if not 0 <= self.trust_level <= 100:
             raise ValueError("trust_level must be between 0 and 100")
         if self.content_origin is ContentOrigin.EXTRACTED:
-            if self.conversion_provenance is None:
+            if (self.conversion_provenance is None) == (self.extraction_provenance is None):
                 raise ValueError("extracted content requires conversion provenance")
-            if self.conversion_provenance.page_spans and (
-                self.conversion_provenance.page_spans[-1].end_offset
-                > self.normalized_character_length
+            if self.generated_provenance is not None:
+                raise ValueError("extracted content cannot carry generated provenance")
+            if (
+                self.conversion_provenance is not None
+                and self.conversion_provenance.page_spans
+                and (
+                    self.conversion_provenance.page_spans[-1].end_offset
+                    > self.normalized_character_length
+                )
             ):
                 raise ValueError("conversion page span exceeds normalized content")
+            if self.extraction_provenance is not None and (
+                self.extraction_provenance.input_sha256 != self.blob.checksum_sha256
+                or self.extraction_provenance.text_sha256 != self.normalized_blob.checksum_sha256
+            ):
+                raise ValueError("extraction digests do not match immutable source blobs")
+        elif self.content_origin is ContentOrigin.GENERATED:
+            if self.extraction_provenance is not None:
+                raise ValueError("generated content cannot carry extraction provenance")
+            if self.generated_provenance is None:
+                raise ValueError("generated content requires generated provenance")
+            if self.conversion_provenance is not None:
+                raise ValueError("generated content cannot carry conversion provenance")
+        elif self.extraction_provenance is not None:
+            raise ValueError("original content cannot carry extraction provenance")
         elif self.conversion_provenance is not None:
             raise ValueError("conversion provenance requires extracted content")
+        elif self.generated_provenance is not None:
+            raise ValueError("generated provenance requires generated content")
 
 
 @dataclass(frozen=True, slots=True)

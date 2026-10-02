@@ -780,6 +780,7 @@ def tutor_presentation_recorded_payload(record: TutorPresentationRecord) -> Json
         "response_schema": record.response_schema,
         "idempotency_key": record.idempotency_key,
         "command_fingerprint": record.command_fingerprint,
+        **({"source_refs": record.source_refs} if record.source_refs else {}),
     }
 
 
@@ -954,6 +955,7 @@ def decode_tutor_presentation_recorded(event: DomainEvent) -> SessionTutorPresen
                 "idempotency_key",
                 "command_fingerprint",
             }
+            | ({"source_refs"} if "source_refs" in event.payload else set())
         ),
     )
     try:
@@ -1011,6 +1013,13 @@ def decode_tutor_presentation_recorded(event: DomainEvent) -> SessionTutorPresen
         ),
         event_id=event.event_id,
         course_sequence=event.course_sequence,
+        source_refs=tuple(
+            _object(
+                ref, f"payload.source_refs[{index}]",
+                frozenset({"source_id", "revision_id", "locator"}),
+            )
+            for index, ref in enumerate(_array(payload["source_refs"], "payload.source_refs"))
+        ) if "source_refs" in payload else (),
     )
     receipt = TutorPresentationReceipt(
         host_turn_id=record.host_turn_id,
@@ -1022,6 +1031,7 @@ def decode_tutor_presentation_recorded(event: DomainEvent) -> SessionTutorPresen
         continuation_fingerprint=record.continuation_fingerprint,
         capability_identity=record.capability_identity,
         response_schema=record.response_schema,
+        source_refs=record.source_refs,
     )
     if record.receipt_fingerprint != receipt.fingerprint:
         raise ValueError("presentation receipt fingerprint mismatch")

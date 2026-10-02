@@ -39,6 +39,10 @@ class _Delegate:
         return {"delegated": True, "path": path}
 
 
+class _LocalDelegate(_Delegate):
+    mode = "local_repository"
+
+
 def test_runtime_store_overlay_reverts_to_base_without_secret_repr_leak() -> None:
     store = RuntimeCredentialStore({"OPENAI_API_KEY": "base", "OTHER": "value"})
 
@@ -156,6 +160,42 @@ def test_settings_application_marks_only_bootstrap_and_session_as_private() -> N
     assert session == {"schema_version": 1, "mode": "private"}
     assert materials == delegate.payloads["/api/v1/materials"]
     assert delegate.get_calls == ["/api/v1/bootstrap", "/api/v1/session", "/api/v1/materials"]
+
+
+def test_settings_application_preserves_local_repository_mode_and_shared_store() -> None:
+    delegate = _LocalDelegate()
+    credentials = RuntimeCredentialStore()
+    app = PrivateSettingsApplication(
+        delegate,
+        credentials=credentials,
+        mode="local_repository",
+    )
+
+    assert app.mode == "local_repository"
+    assert app.get("/api/v1/bootstrap") == {
+        "schema_version": 1,
+        "mode": "local_repository",
+    }
+    assert app.get("/api/v1/session") == {
+        "schema_version": 1,
+        "mode": "local_repository",
+    }
+    settings = app.get("/api/v1/settings")
+    assert settings["mode"] == "local_repository"
+    assert "account" not in settings
+    assert settings["model"] == {
+        "provider": "openai",
+        "model": LUNA_MODEL_LABEL,
+        "adapter_id": LUNA_ADAPTER_ID,
+        "credential_configured": False,
+    }
+
+    result = app.post("/api/v1/settings/model/credential", {"api_key": SECRET})
+
+    assert result["credential_configured"] is True
+    assert credentials.get("OPENAI_API_KEY") == SECRET
+    assert SECRET not in str(settings)
+    assert SECRET not in str(result)
 
 
 @pytest.mark.parametrize(

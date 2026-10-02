@@ -1,5 +1,6 @@
 """Provider-neutral contracts for bounded external tutor hosts."""
 
+from .clarification_recovery import ClarificationRecoveryTutorDecisionPort
 from .context import CapabilityDiscoveryPort, TutorHostContextAssembler
 from .contracts import (
     HOST_CONTEXT_SCHEMA_VERSION,
@@ -59,6 +60,7 @@ __all__ = [
     "AskLearnerDecision",
     "AssistantMessageDecision",
     "CapabilityDiscoveryPort",
+    "ClarificationRecoveryTutorDecisionPort",
     "HostActionIdentity",
     "HostFileDescriptor",
     "HostFileError",

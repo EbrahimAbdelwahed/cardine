@@ -16,10 +16,7 @@ from typing import cast
 import pytest
 
 from cardine.cli.repository import LocalRepository, ModelAdapterRegistry
-from cardine.demo.ui_application import (
-    RepositoryUiApplication,
-    UiRequestError,
-)
+from cardine.demo.ui_application import RepositoryUiApplication, UiRequestError
 from study_agent.adapters.filesystem import initialize_local_repository
 from study_agent.domain import (
     CorrelationId,
@@ -41,6 +38,7 @@ from study_agent.ports import (
     ModelStreamEvent,
 )
 from study_agent.repository_config import LocalRepositoryConfig, ModelAdapterConfig
+from tests.receipt_assertions import without_transient_activity
 
 COURSE = CourseId("closure-course")
 SESSION = SessionId("closure-session")
@@ -81,7 +79,7 @@ class _ClosureModel:
 
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
         del request
-        if False:  # pragma: no cover - keeps this method an async generator
+        if False:  # pragma: no cover
             yield ModelStreamEvent(None)
         raise AssertionError("closure fixture does not stream")
 
@@ -191,7 +189,9 @@ def test_repository_route_control_matrix_and_restart_safe_chat(tmp_path: Path) -
 
     # Exact retry is a no-op after restart; a different request at the old
     # sequence is rejected before model invocation or canonical writes.
-    assert restarted.post("/api/v1/session/turns", command) == receipt
+    retry = restarted.post("/api/v1/session/turns", command)
+    assert without_transient_activity(retry) == without_transient_activity(receipt)
+    assert retry["activity_records"] == ()
     with pytest.raises(UiRequestError) as stale:
         restarted.post(
             "/api/v1/session/turns",
@@ -214,8 +214,6 @@ def test_browser_control_matrix_keyboard_and_responsive_contracts() -> None:
     assert 'id="view-root" class="view-root" aria-live="polite"' not in page
     assert 'id="rail-toggle" aria-expanded="false" aria-controls="rail"' in page
 
-    # Every mutating UI family has one delegated, keyboard-focusable button
-    # path; no raw provider/repository controls are rendered in the page.
     for command in (
         "artifact",
         "enroll",

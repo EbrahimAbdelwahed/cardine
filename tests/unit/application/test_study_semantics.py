@@ -310,3 +310,24 @@ def test_primary_navigation_uses_shared_index_for_text_and_reports_failure(tmp_p
         repo.disable_pageindex(COURSE, result.source.source_id, result.source.revision_id)
         with pytest.raises(ValueError, match="document index is unavailable"):
             repo.search_lessons(COURSE, "Text lesson")
+
+
+def test_shadow_index_failure_preserves_original_and_skips_judgement(tmp_path: Path) -> None:
+    with repository(tmp_path) as repo:
+        source = repo.for_course(COURSE).content
+        repo.pageindex.disable(document_revision(source.catalog()[0], repo.blobs))
+        judge = Judge()
+        original = _lesson_unit(source)
+        preprocessor = FlashcardSemanticPreprocessor(
+            content=source,
+            blobs=repo.blobs,
+            indexes=repo.pageindex,
+            runs=repo.runs,
+            features=SemanticFeaturesConfig(
+                document_index_mode=FeatureMode.SHADOW,
+                flashcard_semantic_mode=FeatureMode.SHADOW,
+            ),
+            analyzer=FlashcardSemanticAnalyzer(judge, POLICY, judgement_identity="fake@1/test"),
+        )
+        assert asyncio.run(preprocessor.prepare(original, source.catalog())) is original
+        assert judge.requests == []

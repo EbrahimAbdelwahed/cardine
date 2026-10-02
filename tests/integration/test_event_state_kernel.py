@@ -142,6 +142,25 @@ def test_projection_rebuild_is_byte_identical_and_event_rows_are_append_only(
         connection.execute("DELETE FROM events WHERE course_id = ?", (str(events[0].course_id),))
 
 
+def test_projection_at_replays_only_the_requested_canonical_prefix(tmp_path: Path) -> None:
+    store = SQLiteEventStore(tmp_path / "events.sqlite3", note_registry())
+    course_id = CourseId("course-1")
+    store.append(course_id, 0, (make_event(1), make_event(2)))
+
+    assert store.projection_at(course_id, 0).sequence == 0
+    first = store.projection_at(course_id, 1)
+    assert first.sequence == 1
+    assert first.state["notes"] == ("note-1",)
+    assert store.projection_at(course_id, 2).state["notes"] == ("note-1", "note-2")
+    prefixes = store.projections_at(course_id, (0, 1, 2))
+    assert {sequence: state.state.get("notes", ()) for sequence, state in prefixes.items()} == {
+        0: (), 1: ("note-1",), 2: ("note-1", "note-2")
+    }
+
+    with pytest.raises(ValueError, match="non-negative"):
+        store.projection_at(course_id, -1)
+
+
 def test_failed_rebuild_preserves_previous_projection(tmp_path: Path) -> None:
     should_fail = False
     registry = EventRegistry()

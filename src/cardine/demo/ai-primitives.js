@@ -68,6 +68,118 @@
       escapeText(value(label, normalized.replace(/_/g, " "))) + "</span>";
   }
 
+  function renderInlineMarkdown(input) {
+    var code = [];
+    var tokenized = value(input, "").replace(/`([^`\n]+)`/g, function (_match, content) {
+      var index = code.push(escapeText(content)) - 1;
+      return "CARDINECODETOKEN" + index + "END";
+    });
+    var rendered = escapeText(tokenized)
+      .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/__([^_\n]+)__/g, "<strong>$1</strong>")
+      .replace(/(^|[\s(])\*([^*\n]+)\*/g, "$1<em>$2</em>")
+      .replace(/(^|[\s(])_([^_\n]+)_/g, "$1<em>$2</em>");
+    return rendered.replace(/CARDINECODETOKEN(\d+)END/g, function (match, index) {
+      return code[Number(index)] === undefined ? match : "<code>" + code[Number(index)] + "</code>";
+    });
+  }
+
+  function markdownBlockStart(line) {
+    return /^(?:#{1,4}\s+|```|>\s?|[-*+]\s+|\d+[.)]\s+|(?:---+|___+|\*\*\*+)\s*$)/.test(line);
+  }
+
+  function renderMarkdown(input) {
+    var lines = value(input, "").replace(/\r\n?/g, "\n").split("\n");
+    var output = [];
+    var index = 0;
+    while (index < lines.length) {
+      var line = lines[index];
+      if (!line.trim()) { index += 1; continue; }
+      if (/^```[^\n]*$/.test(line)) {
+        var code = [];
+        index += 1;
+        while (index < lines.length && !/^```\s*$/.test(lines[index])) {
+          code.push(lines[index]);
+          index += 1;
+        }
+        if (index < lines.length) index += 1;
+        output.push("<pre><code>" + escapeText(code.join("\n")) + "</code></pre>");
+        continue;
+      }
+      var heading = line.match(/^(#{1,4})\s+(.+)$/);
+      if (heading) {
+        var level = Math.min(heading[1].length + 1, 4);
+        output.push("<h" + level + ">" + renderInlineMarkdown(heading[2]) + "</h" + level + ">");
+        index += 1;
+        continue;
+      }
+      if (/^(?:---+|___+|\*\*\*+)\s*$/.test(line)) {
+        output.push("<hr>");
+        index += 1;
+        continue;
+      }
+      if (/^>\s?/.test(line)) {
+        var quote = [];
+        while (index < lines.length && /^>\s?/.test(lines[index])) {
+          quote.push(lines[index].replace(/^>\s?/, ""));
+          index += 1;
+        }
+        output.push("<blockquote><p>" + renderInlineMarkdown(quote.join(" ")) + "</p></blockquote>");
+        continue;
+      }
+      var unordered = line.match(/^[-*+]\s+(.+)$/);
+      var ordered = line.match(/^\d+[.)]\s+(.+)$/);
+      if (unordered || ordered) {
+        var tag = unordered ? "ul" : "ol";
+        var matcher = unordered ? /^[-*+]\s+(.+)$/ : /^\d+[.)]\s+(.+)$/;
+        var items = [];
+        while (index < lines.length) {
+          var item = lines[index].match(matcher);
+          if (!item) break;
+          items.push("<li>" + renderInlineMarkdown(item[1]) + "</li>");
+          index += 1;
+        }
+        output.push("<" + tag + ">" + items.join("") + "</" + tag + ">");
+        continue;
+      }
+      var paragraph = [line.trim()];
+      index += 1;
+      while (index < lines.length && lines[index].trim() && !markdownBlockStart(lines[index])) {
+        paragraph.push(lines[index].trim());
+        index += 1;
+      }
+      output.push("<p>" + renderInlineMarkdown(paragraph.join(" ")) + "</p>");
+    }
+    return output.join("");
+  }
+
+  function verifiedSourcePresentation(input) {
+    var answer = bounded(input, "");
+    var legacySources = [];
+    answer = answer.replace(
+      /\n\nFonti: [^\n]+\n«[\s\S]*?»(?:, [^\n]+\n«[\s\S]*?»)*/g,
+      function (block) {
+        var locator = /(?:Fonti: |», )([^\n]+)\n«/g;
+        var match;
+        while ((match = locator.exec(block)) !== null) legacySources.push(match[1].trim());
+        return "";
+      }
+    );
+    var marker = "\n\nFonti verificate:";
+    var markerIndex = answer.lastIndexOf(marker);
+    if (markerIndex < 0) return { answer: answer.trim(), sources: legacySources };
+    var lines = answer.slice(markerIndex + marker.length).trim().split("\n");
+    if (!lines.length || lines.some(function (line) { return !/^-\s+\S/.test(line); })) {
+      return { answer: answer.trim(), sources: legacySources };
+    }
+    return {
+      answer: answer.slice(0, markerIndex).trim(),
+      sources: legacySources.concat(
+        lines.map(function (line) { return line.replace(/^-\s+/, "").trim(); })
+      )
+    };
+  }
+
   function renderLoading(options) {
     var config = options || {};
     var label = bounded(config.label, "Preparazione del tutor");
@@ -97,27 +209,94 @@
       '</small></span></summary><ol class="ai-thinking__steps">' + (rows || '<li class="ai-empty">Nessun passaggio dichiarato.</li>') + "</ol></details>";
   }
 
+  /* Adapted from Beautiful UI Thinking / Streaming Text (MIT, Shane Levine).
+     Attribution: icons/LICENSE.beautifului.txt, https://www.beautifului.dev. */
+  function chatIcon(name, size) {
+    var paths = {
+      copy: '<rect x="9" y="9" width="12" height="12" rx="2.5"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>',
+      retry: '<path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"></path>',
+      like: '<path d="M7 10v12M15 5.88L14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88z"></path>',
+      dislike: '<path d="M17 14V2M9 18.12L10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88z"></path>',
+      follow: '<path d="M9 10l-5 5 5 5M20 4v7a4 4 0 0 1-4 4H4"></path>',
+      search: '<circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path>',
+      globe: '<circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"></path>',
+      check: '<path d="M5 12l4 4L19 6"></path>',
+      failed: '<path d="M6 6l12 12M18 6L6 18"></path>',
+      caret: '<path d="M6 9l6 6 6-6"></path>',
+      sparkle: '<path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"></path>'
+    };
+    return '<svg aria-hidden="true" width="' + (size || 15) + '" height="' + (size || 15) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + (paths[name] || paths.check) + '</svg>';
+  }
+
+  function answerActions(config) {
+    return '<div class="ai-answer__actions" aria-label="Azioni della risposta">' +
+      ["copy", "retry", "like", "dislike"].map(function (action) {
+        var label = { copy: "Copy", retry: "Retry", like: "Like", dislike: "Dislike" }[action];
+        var feedback = action === "like" || action === "dislike";
+        return '<button type="button" class="ai-answer__action" data-ai-answer-action="' + action + '" aria-label="' + label + '" data-tooltip="' + label + '"' +
+          (feedback ? ' aria-pressed="' + (config.feedback === action ? "true" : "false") + '"' : "") +
+          (action === "retry" && !config.canRetry ? " disabled" : "") + '>' + chatIcon(action) + '</button>';
+      }).join("") + '<span class="ai-visually-hidden" data-ai-action-status role="status"></span></div>';
+  }
+
   function renderAnswer(options) {
     var config = options || {};
-    var answer = bounded(read(config, ["answer", "text", "content"], ""), "");
-    var citations = list(config.citations || config.sources);
+    var presentation = verifiedSourcePresentation(read(config, ["answer", "text", "content"], ""));
+    var answer = presentation.answer;
+    var citations = list(config.citations || config.sources).concat(presentation.sources);
     var followUps = list(config.followUps || config.follow_ups);
-    var citationHtml = citations.map(function (citation, index) {
+    var seenCitations = Object.create(null);
+    var omittedCitationCount = 0;
+    var citationRows = citations.map(function (citation) {
       var item = typeof citation === "object" && citation !== null ? citation : { label: citation };
-      return '<span class="ai-citation" data-citation-index="' + escapeAttribute(index) + '">' +
-        '<span class="ai-citation__index" aria-hidden="true">' + escapeText(index + 1) + '</span>' +
-        escapeText(read(item, ["label", "title", "locator", "path"], "Fonte")) + "</span>";
-    }).join("");
+      var label = bounded(read(item, ["label", "title", "locator", "path"], "Fonte"), "Fonte");
+      var omitted = label.match(/^Altre (\d+) citazioni verificate\.$/i);
+      if (omitted) {
+        omittedCitationCount += Number(omitted[1]);
+        return "";
+      }
+      if (seenCitations[label]) return "";
+      seenCitations[label] = true;
+      var sourceId = read(item, ["source_id"], "");
+      var revisionId = read(item, ["revision_id"], "");
+      var viewerKind = value(read(item, ["viewer_kind"], ""), "");
+      var page = read(item, ["page"], null);
+      var viewerReference = sourceId && revisionId ? {
+        title: read(item, ["title", "label"], label),
+        source_id: sourceId,
+        revision_id: revisionId,
+        viewer_kind: viewerKind,
+        page: typeof page === "number" && page > 0 ? page : null
+      } : null;
+      var opening = viewerReference
+        ? '<button type="button" class="ai-citation" data-source-viewer="' + escapeAttribute(JSON.stringify(viewerReference)) + '" data-tooltip="' + escapeAttribute(label) + '">'
+        : '<span class="ai-citation" data-tooltip="' + escapeAttribute(label) + '">';
+      var closing = viewerReference ? "</button>" : "</span>";
+      return opening +
+        '<span class="icon icon--book-open" aria-hidden="true"></span>' +
+        '<span class="ai-citation__label">' + escapeText(label) + "</span>" + closing;
+    }).filter(Boolean);
+    var citationCount = citationRows.length + omittedCitationCount;
+    var citationLabel = citationCount === 1 ? "1 fonte verificata" : citationCount + " fonti verificate";
+    var citationHtml = citationRows.join("");
+    var sourceDisclosure = citationCount ? '<details class="ai-answer__source-disclosure"><summary>' +
+      '<span class="icon icon--book-open" aria-hidden="true"></span><span>' + escapeText(citationLabel) +
+      '</span><span class="ai-disclosure-caret" aria-hidden="true"></span></summary>' +
+      (citationHtml ? '<footer class="ai-answer__sources" aria-label="Fonti">' + citationHtml + "</footer>" : "") +
+      "</details>" : "";
     var followHtml = followUps.map(function (followUp) {
       var label = bounded(read(followUp, ["label", "title", "text"], followUp), "Continua");
       var prompt = bounded(read(followUp, ["prompt", "value", "text"], label), label);
-      return '<button class="ai-follow-up" type="button" data-ai-follow-up="' + escapeAttribute(prompt) + '">' + escapeText(label) + "</button>";
+      return '<button class="ai-follow-up" type="button" data-ai-follow-up="' + escapeAttribute(prompt) + '">' + (config.chat ? chatIcon("follow", 11) : "") + escapeText(label) + "</button>";
     }).join("");
     var reveal = config.reveal === true ? ' data-ai-reveal="true"' : "";
-    return '<article class="ai-answer"><div class="ai-answer__header"><p class="ai-eyebrow">risposta</p>' + statusPill(config.status, config.statusLabel) +
-      '</div><div class="ai-answer__body">' + (answer ? '<p' + reveal + '>' + escapeText(answer) + "</p>" : '<p class="ai-empty">Nessuna risposta disponibile.</p>') +
-      '</div>' + (citationHtml ? '<footer class="ai-answer__sources" aria-label="Fonti">' + citationHtml + "</footer>" : "") +
-      (followHtml ? '<div class="ai-answer__follow-ups" aria-label="Continua lo studio">' + followHtml + "</div>" : "") + "</article>";
+    var chat = config.chat === true;
+    var stream = chat && config.stream === true ? ' data-ai-stream="true"' : "";
+    return '<article class="ai-answer' + (chat ? ' ai-answer--chat' : '') + '"' + stream + '>' +
+      (chat ? '' : '<div class="ai-answer__header"><p class="ai-eyebrow">risposta</p>' + statusPill(config.status, config.statusLabel) + '</div>') +
+      '<div class="ai-answer__body">' + (answer ? '<div class="ai-answer__markdown"' + reveal + '>' + renderMarkdown(answer) + "</div>" : '<p class="ai-empty">Nessuna risposta disponibile.</p>') +
+      "</div>" + (chat ? '<div class="ai-answer__footer">' + answerActions(config) + sourceDisclosure + '</div>' : sourceDisclosure) +
+      (followHtml ? '<div class="ai-answer__follow-ups" aria-label="Continua lo studio">' + (chat ? '<p>Follow-ups</p>' : '') + followHtml + "</div>" : "") + "</article>";
   }
 
   function renderApproval(options) {
@@ -146,6 +325,38 @@
     }).join("");
     return '<section class="ai-tool-stack" aria-labelledby="ai-tool-stack-title"><header><div><p class="ai-eyebrow">attività</p><h2 id="ai-tool-stack-title">' + escapeText(config.title || "Strumenti usati") +
       '</h2></div>' + statusPill(config.status, config.statusLabel) + '</header><ul>' + (chips || '<li class="ai-empty">Nessuna attività dichiarata.</li>') + "</ul></section>";
+  }
+
+  function renderToolChips(options) {
+    var config = options || {};
+    var records = list(config.records || config.items);
+    var state = value(config.state, "settled");
+    if (!records.length && state !== "running") return "";
+    var failed = records.filter(function (record) {
+      return record && read(record, ["status", "state"], "") === "failed";
+    }).length;
+    var countLabel = records.length === 1 ? "1 attività" : records.length + " attività";
+    var suffix = (state === "running" ? " · in corso" : "") + (failed ? " · " + failed + " errore" + (failed === 1 ? "" : "i") : "");
+    var rows = records.map(function (record, index) {
+      var item = record && typeof record === "object" ? record : { label: record };
+      var itemState = value(read(item, ["status", "state"], "done"), "done");
+      var ref = value(item.ref, "");
+      var renderer = ref === "retrieval.lesson" ? "code" :
+        ["retrieval.search", "conversation.search", "study_memory.search"].indexOf(ref) !== -1 ? "search" : "steps";
+      var target = bounded(read(item, ["target", "title"], ""), "").slice(0, 80);
+      var count = item.count === null || item.count === undefined || item.count === "" ? "" : '<span class="ai-tool-chips__count">' + escapeText(item.count) + " risultati</span>";
+      var marker = itemState === "running" ? '<span class="ai-activity-dot" aria-hidden="true"></span>' : chatIcon(itemState === "failed" ? "failed" : renderer === "search" ? "search" : "check", 12);
+      var label = '<span class="ai-tool-chips__verb">' + escapeText(read(item, ["label", "verb", "title"], "Attività")) + '</span>';
+      var argument = target ? '<span class="ai-tool-chips__target">' + escapeText(target) + '</span>' : '';
+      var body = renderer === "search"
+        ? '<div class="ai-activity-search__query">' + marker + label + '</div>' + ((argument || count) ? '<div class="ai-activity-search__result">' + chatIcon("globe", 14) + argument + count + '</div>' : '')
+        : marker + label + argument + count;
+      return '<li class="ai-tool-chips__chip" data-key="activity-' + escapeAttribute(item.sequence === undefined ? index : item.sequence) + '" data-renderer="' + renderer + '" data-state="' + escapeAttribute(itemState) + '" data-tone="' + escapeAttribute(value(item.kind, "model")) + '">' + body + '<span class="ai-visually-hidden">' + escapeText(itemState === "running" ? "in corso" : itemState === "failed" ? "errore" : "completata") + '</span></li>';
+    }).join("");
+    var rootState = state === "running" ? "running" : state === "failed" || failed ? "failed" : "settled";
+    return '<details class="ai-tool-chips" data-key="turn-activity" data-ai-disclosure data-state="' + rootState + '"' + (rootState === "running" ? ' open' : '') + '>' +
+      '<summary data-ai-disclosure-trigger>' + chatIcon("sparkle", 16) + '<span class="ai-tool-chips__summary"' + (rootState === "running" && config.progress_message ? ' data-turn-progress' : '') + '>' + escapeText(rootState === "running" ? bounded(config.progress_message, "Attività in corso").slice(0, 240) : countLabel + suffix) + '</span>' + (rootState === "running" && records.length ? '<span class="ai-visually-hidden"> · ' + escapeText(countLabel + suffix) + '</span>' : "") + chatIcon("caret", 14) + '</summary>' +
+      '<ul class="ai-tool-chips__list" aria-label="Attività registrate">' + rows + '</ul></details>';
   }
 
   function renderTaskList(options) {
@@ -290,6 +501,7 @@
       answer: renderAnswer,
       approval: renderApproval,
       toolStack: renderToolStack,
+      toolChips: renderToolChips,
       taskList: renderTaskList,
       chatPanel: renderChatPanel,
       recommendation: renderRecommendation,
@@ -475,6 +687,97 @@
     return cleanups;
   }
 
+  function bindChatAnswers(root, config) {
+    var cleanups = [];
+    Array.prototype.forEach.call(root.querySelectorAll(".ai-answer--chat"), function (article) {
+      if (article.dataset.aiChatEnhanced === "true") return;
+      article.dataset.aiChatEnhanced = "true";
+      cleanups.push(function () { delete article.dataset.aiChatEnhanced; });
+      var copy = article.querySelector(".ai-answer__markdown");
+      var status = article.querySelector("[data-ai-action-status]");
+      var controls = Array.prototype.slice.call(article.querySelectorAll("[data-ai-answer-action]"));
+      controls.forEach(function (control) {
+        var onClick = function () {
+          var action = control.getAttribute("data-ai-answer-action");
+          if (action === "copy") {
+            var clipboard = global.navigator && global.navigator.clipboard;
+            var done = function (ok) {
+              if (status) status.textContent = ok ? "Risposta copiata" : "Copia non disponibile";
+              control.setAttribute("data-copy-state", ok ? "copied" : "unavailable");
+            };
+            if (copy && clipboard && clipboard.writeText) clipboard.writeText(copy.innerText || copy.textContent || "").then(function () { done(true); }, function () { done(false); });
+            else done(false);
+          } else if (action === "retry") {
+            if (typeof config.onRetry === "function") config.onRetry(control);
+          } else {
+            var selected = control.getAttribute("aria-pressed") !== "true";
+            controls.forEach(function (other) {
+              if (other.hasAttribute("aria-pressed")) other.setAttribute("aria-pressed", other === control && selected ? "true" : "false");
+            });
+            if (status) status.textContent = selected ? "Preferenza selezionata" : "Preferenza rimossa";
+            if (typeof config.onFeedback === "function") config.onFeedback(selected ? action : "", control);
+          }
+        };
+        control.addEventListener("click", onClick);
+        cleanups.push(function () { control.removeEventListener("click", onClick); });
+      });
+      if (!copy || article.getAttribute("data-ai-stream") !== "true") return;
+      if (typeof config.onStreamStart === "function") config.onStreamStart(article);
+      var doc = copy.ownerDocument;
+      if (!doc || !doc.createTreeWalker || (global.matchMedia && global.matchMedia("(prefers-reduced-motion: reduce)").matches)) {
+        article.removeAttribute("data-ai-stream");
+        return;
+      }
+      var walker = doc.createTreeWalker(copy, 4);
+      var nodes = [], node;
+      while ((node = walker.nextNode())) nodes.push(node);
+      var words = [];
+      nodes.forEach(function (textNode) {
+        var fragment = doc.createDocumentFragment();
+        (textNode.textContent.match(/\S+\s*|\s+/g) || []).forEach(function (word) {
+          var span = doc.createElement("span");
+          span.className = "ai-stream-word";
+          span.textContent = word;
+          fragment.appendChild(span);
+          words.push(span);
+        });
+        textNode.replaceWith(fragment);
+      });
+      // Announce the verified answer once, rather than every visual word.
+      var announcement = doc.createElement("span");
+      announcement.className = "ai-visually-hidden";
+      announcement.setAttribute("role", "status");
+      article.appendChild(announcement);
+      copy.setAttribute("aria-hidden", "true");
+      article.setAttribute("aria-busy", "true");
+      var cursor = 0, timer, announcementTimer;
+      var batch = Math.max(1, Math.ceil(words.length / 160));
+      function finish(announce) {
+        clearTimeout(timer);
+        clearTimeout(announcementTimer);
+        words.forEach(function (word) { word.classList.add("is-visible"); });
+        article.removeAttribute("data-ai-stream");
+        article.removeAttribute("aria-busy");
+        copy.removeAttribute("aria-hidden");
+        if (announce) {
+          announcement.textContent = copy.innerText || copy.textContent || "";
+          announcementTimer = setTimeout(function () { announcement.remove(); }, 1000);
+        } else announcement.remove();
+      }
+      function advance() {
+        if (typeof config.onStreamProgress === "function") config.onStreamProgress(article, "before");
+        words.slice(cursor, cursor + batch).forEach(function (word) { word.classList.add("is-visible"); });
+        cursor += batch;
+        if (typeof config.onStreamProgress === "function") config.onStreamProgress(article, "after");
+        if (cursor >= words.length) finish(true);
+        else timer = setTimeout(advance, 24);
+      }
+      advance();
+      cleanups.push(function () { finish(false); });
+    });
+    return cleanups;
+  }
+
   function enhance(root, callbacks) {
     if (!root || typeof root.querySelectorAll !== "function") return function () {};
     var config = callbacks || {};
@@ -483,6 +786,7 @@
     bindFilters(root).forEach(function (cleanup) { cleanups.push(cleanup); });
     bindInsights(root).forEach(function (cleanup) { cleanups.push(cleanup); });
     bindFineTune(root, config).forEach(function (cleanup) { cleanups.push(cleanup); });
+    bindChatAnswers(root, config).forEach(function (cleanup) { cleanups.push(cleanup); });
     bindAnswerReveals(root).forEach(function (cleanup) { cleanups.push(cleanup); });
     Array.prototype.forEach.call(root.querySelectorAll("[data-ai-follow-up]"), function (control) {
       if (control.dataset.aiEnhanced === "true") return;
@@ -588,12 +892,14 @@
   global.CardineAI = Object.freeze({
     escape: escapeText,
     escapeAttribute: escapeAttribute,
+    markdown: renderMarkdown,
     render: render,
     loading: renderLoading,
     thinking: renderThinking,
     answer: renderAnswer,
     approval: renderApproval,
     toolStack: renderToolStack,
+    toolChips: renderToolChips,
     taskList: renderTaskList,
     chatPanel: renderChatPanel,
     recommendation: renderRecommendation,

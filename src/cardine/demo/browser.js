@@ -73,6 +73,9 @@
     suspended: "sospesa",
     conflicted_context: "contesto in conflitto",
     needs_review: "richiede revisione",
+    proposed: "da approvare",
+    accepted: "approvato",
+    rejected: "rifiutato",
     stale: "stato da aggiornare",
     degraded: "funzionalità ridotta",
     recovered: "pronta",
@@ -142,9 +145,16 @@
     chatCourseCreation: null,
     studySetup: null,
     lastTurn: null,
+    turnActivities: Object.create(null),
+    turnCommands: Object.create(null),
+    answerFeedback: Object.create(null),
+    revealedAnswers: new Set(),
+    streamAnswerId: "",
     authProbeUnavailable: false,
     indexingPollToken: 0,
+    activityPollToken: 0,
     diagnosticTraceId: "",
+    sourceViewerVersion: 0,
     lesson: { query: "", candidates: [], pin: null, answer: null },
   };
 
@@ -283,6 +293,7 @@
   const aiAnswer = (options) => typeof CardineAI.answer === "function" ? CardineAI.answer(options || {}) : "";
   const aiApproval = (options) => typeof CardineAI.approval === "function" ? CardineAI.approval(options || {}) : "";
   const aiToolStack = (options) => typeof CardineAI.toolStack === "function" ? CardineAI.toolStack(options || {}) : "";
+  const aiToolChips = (options) => typeof CardineAI.toolChips === "function" ? CardineAI.toolChips(options || {}) : "";
   const aiTaskList = (options) => typeof CardineAI.taskList === "function" ? CardineAI.taskList(options || {}) : "";
   const aiChatPanel = (options) => typeof CardineAI.chatPanel === "function" ? CardineAI.chatPanel(options || {}) : "";
   const aiRecommendation = (options) => typeof CardineAI.recommendation === "function" ? CardineAI.recommendation(options || {}) : "";
@@ -442,6 +453,10 @@
   function setAccountControl() {
     const control = $("#account-control");
     if (!control) return;
+    if (state.auth.mode === "local_repository") {
+      control.hidden = true;
+      return;
+    }
     const name = $("#account-control-name");
     const status = $("#account-control-status");
     const avatar = $("#account-control-avatar");
@@ -555,6 +570,8 @@
 
   function renderSettings(payload = {}) {
     const settings = object(payload);
+    const settingsMode = text(first(settings, ["mode", "access_mode"], state.auth.mode), state.auth.mode);
+    const localMode = settingsMode === "local_repository";
     const account = object(first(settings, ["account", "identity", "user"], state.auth.account));
     const model = object(first(settings, ["model", "model_status"], {}));
     const modelLabel = text(first(model, ["label", "name", "model"], "GPT-5.6 Luna"), "GPT-5.6 Luna");
@@ -562,7 +579,10 @@
       ? "Chiave presente nel runtime: verifica la connessione prima di iniziare la chat."
       : "Nessuna chiave API configurata";
     const accountLabel = text(first(account, ["label", "email", "name", "username"], "Account personale"), "Account personale");
-    setView("impostazioni", `<section class="settings-surface" aria-labelledby="settings-heading"><p class="eyebrow">area privata · impostazioni</p><h1 id="settings-heading">Impostazioni</h1><p class="section-copy">Gestisci accesso, dati locali e modello.</p>${settings.error ? `<p class="field-error" role="alert"><span class="icon icon--warning-circle" aria-hidden="true"></span>${esc(settings.error)}</p>` : ""}<div class="settings-grid"><section class="settings-card"><h2>Account locale</h2><p>${esc(accountLabel)}</p><p>Uscire chiude questa sessione senza eliminare i dati locali.</p><div class="settings-card__actions"><button class="button button--quiet" type="button" data-auth-logout>Esci</button></div></section><section class="settings-card"><h2>Modello</h2><p>Modello attivo: <strong>${esc(modelLabel)}</strong>.</p><p>${esc(credentialStatus)}</p></section><section class="settings-card"><h2>Chiave API</h2><p>La chiave inserita qui resta disponibile fino al riavvio del servizio. Per mantenerla, configura <code>OPENAI_API_KEY</code> nel secret store del deployment. Cardine non mostra né restituisce il valore.</p><form id="settings-model-form" data-settings-credential autocomplete="off"><label for="settings-credential">Nuova chiave API</label><span class="password-field"><input id="settings-credential" name="api_key" type="password" autocomplete="new-password" spellcheck="false" placeholder="Incolla una nuova chiave" required aria-describedby="credential-settings-help"><button class="text-button" type="button" data-toggle-secret="settings-credential" aria-pressed="false">Mostra</button></span><p class="field-note" id="credential-settings-help">Cardine non scrive il valore nello storage del browser e svuota il campo subito dopo il salvataggio.</p><div class="settings-card__actions"><button class="button" type="submit">Salva nuova chiave</button><button class="button button--danger" type="button" data-settings-remove>Rimuovi chiave temporanea</button><span class="settings-card__status" id="credential-settings-status" role="status"></span></div></form></section><section class="settings-card settings-card--diagnostics"><h2>Diagnostica · Decisione tutor</h2><p>Ogni turno mostra solo la decisione validata. Retention locale bounded; nessun testo, prompt, fonte, cookie, chiave o body provider.</p><div id="preview-diagnostics"><p class="field-note">Carico diagnostica locale…</p></div><div class="settings-card__actions"><button class="button button--quiet" type="button" data-diagnostics-refresh>Aggiorna diagnostica</button></div></section><section class="settings-card"><h2>Dati del corso</h2><p>I dati di studio restano nel repository locale e non vengono inclusi nelle impostazioni del browser.</p></section><section class="settings-card"><h2>Privacy</h2><p>Sessione e chiave temporanea vengono rimosse al riavvio. Cardine non salva segreti nello storage del browser.</p></section></div></section>`);
+    const accountCard = localMode ? "" : `<section class="settings-card" data-settings-account><h2>Account locale</h2><p>${esc(accountLabel)}</p><p>Uscire chiude questa sessione senza eliminare i dati locali.</p><div class="settings-card__actions"><button class="button button--quiet" type="button" data-auth-logout>Esci</button></div></section>`;
+    const eyebrow = localMode ? "ambiente locale · impostazioni" : "area privata · impostazioni";
+    const copy = localMode ? "Gestisci il modello e i dati locali." : "Gestisci accesso, dati locali e modello.";
+    setView("impostazioni", `<section class="settings-surface" aria-labelledby="settings-heading"><p class="eyebrow">${eyebrow}</p><h1 id="settings-heading">Impostazioni</h1><p class="section-copy">${copy}</p>${settings.error ? `<p class="field-error" role="alert"><span class="icon icon--warning-circle" aria-hidden="true"></span>${esc(settings.error)}</p>` : ""}<div class="settings-grid">${accountCard}<section class="settings-card" data-settings-model><h2>Modello</h2><p>Modello attivo: <strong>${esc(modelLabel)}</strong>.</p><p>${esc(credentialStatus)}</p></section><section class="settings-card" data-settings-credential><h2>Chiave API</h2><p>La chiave inserita qui resta disponibile fino al riavvio del servizio. Per mantenerla, configura <code>OPENAI_API_KEY</code> nel secret store del deployment. Cardine non mostra né restituisce il valore.</p><form id="settings-model-form" data-settings-credential autocomplete="off"><label for="settings-credential">Nuova chiave API</label><span class="password-field"><input id="settings-credential" name="api_key" type="password" autocomplete="new-password" spellcheck="false" placeholder="Incolla una nuova chiave" required aria-describedby="credential-settings-help"><button class="text-button" type="button" data-toggle-secret="settings-credential" aria-pressed="false">Mostra</button></span><p class="field-note" id="credential-settings-help">Cardine non scrive il valore nello storage del browser e svuota il campo subito dopo il salvataggio.</p><div class="settings-card__actions"><button class="button" type="submit">Salva nuova chiave</button><button class="button button--danger" type="button" data-settings-remove>Rimuovi chiave temporanea</button><span class="settings-card__status" id="credential-settings-status" role="status"></span></div></form></section><section class="settings-card settings-card--diagnostics" data-settings-diagnostics><h2>Diagnostica · Decisione tutor</h2><p>Ogni turno mostra solo la decisione validata. Retention locale bounded; nessun testo, prompt, fonte, cookie, chiave o body provider.</p><div id="preview-diagnostics"><p class="field-note">Carico diagnostica locale…</p></div><div class="settings-card__actions"><button class="button button--quiet" type="button" data-diagnostics-refresh>Aggiorna diagnostica</button></div></section><section class="settings-card"><h2>Dati del corso</h2><p>I dati di studio restano nel repository locale e non vengono inclusi nelle impostazioni del browser.</p></section><section class="settings-card"><h2>Privacy</h2><p>Sessione e chiave temporanea vengono rimosse al riavvio. Cardine non salva segreti nello storage del browser.</p></section></div></section>`);
   }
 
   async function loadSettings(navigationVersion = state.navigationVersion) {
@@ -584,11 +604,11 @@
   }
 
   function enhanceSettingsSurface() {
-    const cards = $$(".settings-card", root);
-    const modelCard = cards[1];
+    const modelCard = $("[data-settings-model]", root);
+    const credentialCard = $("[data-settings-credential]", root);
     const settingsAvailable = object(state.viewData).settings_available !== false;
-    if (!settingsAvailable && cards[2]) {
-      patch(cards[2], "<h2>Configurazione modello</h2><p>Disponibile soltanto nell’area privata della preview locale.</p>");
+    if (!settingsAvailable && credentialCard) {
+      patch(credentialCard, "<h2>Configurazione modello</h2><p>Disponibile soltanto nell’area privata della preview locale.</p>");
     }
     if (settingsAvailable && modelCard && !$("[data-settings-check]", modelCard)) {
       modelCard.insertAdjacentHTML("beforeend", `<div class="settings-card__actions"><button class="button button--quiet" type="button" data-settings-check>Verifica decisione tutor</button><span class="settings-card__status" id="model-check-status" role="status"></span></div>`);
@@ -598,7 +618,7 @@
       workspaceCard.className = "settings-card";
       workspaceCard.id = "workspace-card";
       patch(workspaceCard, `<h2>Corso e sessione</h2><div id="workspace-manager"><p class="field-note">Carico corsi e sessioni disponibili…</p></div>`);
-      cards[2]?.before(workspaceCard);
+      credentialCard?.before(workspaceCard);
     }
   }
 
@@ -890,9 +910,21 @@
         const reason = kind === "stop" && text(decision.reason, "")
           ? ` · ${esc(text(decision.reason))}`
           : "";
-        return `<article class="turn-trace" data-turn-trace="${esc(traceId)}" data-highlighted="${highlighted}"><header><div><strong>${esc(traceId)}</strong><span>decisione tutor</span></div></header><p><code>${esc(kind)}</code>${reason}</p></article>`;
+        const operations = array(trace.operations).map((item) => {
+          const operation = object(item);
+          const details = [
+            text(operation.phase), text(operation.status),
+            `tentativo ${text(operation.attempt)}`, `${text(operation.duration_ms, "…")} ms`,
+            operation.http_status == null ? "" : `HTTP ${text(operation.http_status)}`,
+            text(operation.outcome, ""), text(operation.error_code, ""), text(operation.error_kind, ""),
+            text(operation.error_type, ""), text(operation.error_location, ""),
+          ].filter(Boolean).map(esc).join(" · ");
+          return `<li><code>${details}</code></li>`;
+        }).join("");
+        const omitted = Number(trace.omitted_operations) || 0;
+        return `<article class="turn-trace" data-turn-trace="${esc(traceId)}" data-highlighted="${highlighted}"><header><div><strong>${esc(traceId)}</strong><span>${esc(text(trace.status, ""))}</span></div></header><p><code>${esc(kind)}</code>${reason}</p>${operations ? `<ol>${operations}</ol>` : ""}${omitted ? `<p class="field-note">Operazioni precedenti omesse: ${esc(String(omitted))}</p>` : ""}</article>`;
       }).join("") : `<p class="field-note">Nessun turno registrato in questa esecuzione.</p>`;
-      patch(target, `<p class="field-note">Memoria locale: ultime ${esc(text(retention.max_traces, "24"))} decisioni validate. Payload acquisiti: no. Telemetria esterna: no.</p>${traceHtml}`);
+      patch(target, `<p class="field-note">Memoria locale: ultimi ${esc(text(retention.max_traces, "24"))} turni, inclusi i fallimenti. Payload acquisiti: no. Telemetria esterna: no.</p>${traceHtml}`);
       if (state.diagnosticTraceId) {
         target.querySelector('[data-highlighted="true"]')?.scrollIntoView({ block: "nearest" });
       }
@@ -921,6 +953,7 @@
 
   function setBusy(busy) {
     state.loading = busy;
+    $(".conversation-scroll", root)?.setAttribute("aria-busy", String(busy));
     $$('[data-command]').forEach((control) => {
       if (busy) {
         control.dataset.disabledBeforeBusy = String(control.disabled);
@@ -1024,7 +1057,8 @@
   /* ------------------------------------------------------------------ */
 
   const PRESERVE_VALUE = new Set(["INPUT", "TEXTAREA"]);
-  const NEAR_BOTTOM = 64;
+  const NEAR_BOTTOM = 56;
+  let conversationScroller = null;
 
   function nodeKey(node) {
     return node.getAttribute("data-key") || node.id || "";
@@ -1041,6 +1075,10 @@
   }
 
   function syncAttributes(current, next) {
+    // Live activity collapses once on completion. Subsequent refreshes retain
+    // the reader's disclosure choice, including opening completed traces.
+    if (current.tagName === "DETAILS" && current.classList.contains("ai-tool-chips")
+      && current.dataset.state === "running" && next.dataset.state !== "running") current.open = false;
     for (const attribute of Array.from(current.attributes)) {
       // A disclosure the reader opened stays open across a refresh.
       if (attribute.name === "open" && current.tagName === "DETAILS") continue;
@@ -1112,12 +1150,217 @@
     morphChildren(container, template.content);
   }
 
+  // BeUI Message Scroller interaction pattern, implemented for Cardine's
+  // dependency-free shell: reader-owned scrolling, message rail and live edge.
+  function enhanceMessageScroller(container) {
+    const viewport = $(".conversation-scroll", container);
+    const rail = $(".message-scroller__rail", container);
+    const latest = $(".message-scroller__latest", container);
+    const content = viewport?.firstElementChild;
+    if (!viewport || !rail || !latest || !content) return null;
+    let following = atEnd();
+    let frame = 0;
+    let messages = [];
+    let targets = [];
+    let signature = "";
+    let navigating = false;
+    let navigationTarget = 0;
+    let activeIndex = -1;
+
+    function atEnd() {
+      return viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= NEAR_BOTTOM;
+    }
+
+    function update() {
+      frame = 0;
+      const overflowing = viewport.scrollHeight > viewport.clientHeight + 1;
+      const nextMessages = $$(".session-thread > .thread-message", content);
+      const previews = nextMessages.map((message, index) => {
+        const learner = message.classList.contains("thread-message--learner");
+        const surface = $(".thread-message__text, .ai-answer__markdown", message);
+        const excerpt = text(surface?.innerText || surface?.textContent).replace(/\s+/g, " ").trim().slice(0, 144);
+        return { label: `${learner ? "tu" : "tutor"} · ${index + 1} di ${nextMessages.length}`, excerpt, learner };
+      });
+      const nextSignature = JSON.stringify(previews);
+      messages = nextMessages;
+      if (signature !== nextSignature) {
+        signature = nextSignature;
+        // Keep the focused rail control alive when output grows.
+        previews.forEach((preview, index) => {
+          let button = rail.children[index];
+          if (!button) {
+            button = document.createElement("button");
+            button.type = "button";
+            button.id = `message-navigation-${index}`;
+            button.className = "message-scroller__tick";
+            const card = document.createElement("span");
+            card.className = "message-scroller__preview";
+            card.setAttribute("aria-hidden", "true");
+            button.appendChild(card);
+            rail.appendChild(button);
+          }
+          button.dataset.messageIndex = String(index);
+          button.dataset.sender = preview.learner ? "learner" : "assistant";
+          button.setAttribute("aria-label", `Vai al messaggio di ${preview.label}: ${preview.excerpt}`);
+          button.setAttribute("aria-controls", "conversation-viewport");
+          button.firstElementChild.textContent = `${preview.label} — ${preview.excerpt}`;
+        });
+        while (rail.children.length > previews.length) rail.lastElementChild.remove();
+        targets = Array.from(rail.children);
+      }
+      rail.hidden = !overflowing || messages.length < 2;
+      latest.hidden = !overflowing || following;
+      viewport.setAttribute("aria-busy", String(state.loading));
+      const bounds = viewport.getBoundingClientRect();
+      let active = 0;
+      let distance = Infinity;
+      messages.forEach((message, index) => {
+        const rect = message.getBoundingClientRect();
+        const delta = Math.abs(rect.top + rect.height / 2 - (bounds.top + bounds.height / 2));
+        if (delta < distance) { distance = delta; active = index; }
+      });
+      if (viewport.scrollTop <= NEAR_BOTTOM) active = 0;
+      else if (atEnd()) active = messages.length - 1;
+      if (active !== activeIndex) {
+        activeIndex = active;
+        const tick = targets[active];
+        if (tick && tick.offsetTop < rail.scrollTop) rail.scrollTop = tick.offsetTop;
+        else if (tick && tick.offsetTop + tick.offsetHeight > rail.scrollTop + rail.clientHeight) {
+          rail.scrollTop = tick.offsetTop + tick.offsetHeight - rail.clientHeight;
+        }
+      }
+      targets.forEach((button, index) => {
+        if (index === active) button.setAttribute("aria-current", "true");
+        else button.removeAttribute("aria-current");
+      });
+    }
+
+    function schedule() {
+      if (!frame) frame = requestAnimationFrame(update);
+    }
+
+    function grow() {
+      // Reflow may happen after rendering (answer reveal, fonts, disclosures).
+      // Follow only the state recorded before the content grew.
+      if (following && !navigating) viewport.scrollTop = viewport.scrollHeight;
+      schedule();
+    }
+
+    function onScroll() {
+      if (!navigating) following = atEnd();
+      schedule();
+    }
+
+    function interrupt(event) {
+      navigating = false;
+      const movingBack = (event?.type === "wheel" && event.deltaY < 0)
+        || ["ArrowUp", "PageUp", "Home"].includes(event?.key);
+      following = movingBack ? false : atEnd();
+      // Cancel an in-flight smooth jump before handing control to the reader.
+      viewport.scrollTo({ top: viewport.scrollTop, behavior: "instant" });
+      schedule();
+    }
+
+    function onKey(event) {
+      if (event.target !== viewport) return;
+      if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) interrupt(event);
+    }
+
+    function jump(event) {
+      const button = event.target.closest("[data-message-index]");
+      const message = button && messages[Number(button.dataset.messageIndex)];
+      if (!message) return;
+      following = false;
+      navigating = true;
+      const top = viewport.scrollTop + message.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 24;
+      navigationTarget = Math.max(0, Math.min(top, viewport.scrollHeight - viewport.clientHeight));
+      viewport.scrollTo({ top: navigationTarget, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+      schedule();
+    }
+
+    function preview(event) {
+      const button = event.target.closest("[data-message-index]");
+      if (button) rail.parentElement.dataset.messagePreview = button.firstElementChild.textContent;
+    }
+
+    function dismissPreview(event) {
+      if (event.type !== "keydown" || event.key === "Escape") delete rail.parentElement.dataset.messagePreview;
+    }
+
+    function onScrollEnd() {
+      // An initial follow can queue scrollend just before a rail jump starts.
+      // That stale event must not re-enable following during the new jump.
+      if (navigating && Math.abs(viewport.scrollTop - navigationTarget) > 2) return;
+      navigating = false;
+      following = atEnd();
+      schedule();
+    }
+
+    function resume() {
+      navigating = false;
+      following = true;
+      viewport.scrollTo({ top: viewport.scrollHeight, behavior: "instant" });
+      schedule();
+    }
+
+    // Latest is hidden after activation; move keyboard focus into the transcript.
+    function returnToLatest() { resume(); viewport.focus({ preventScroll: true }); }
+    viewport.addEventListener("scroll", onScroll, { passive: true });
+    viewport.addEventListener("scrollend", onScrollEnd);
+    viewport.addEventListener("wheel", interrupt, { passive: true });
+    viewport.addEventListener("touchstart", interrupt, { passive: true });
+    viewport.addEventListener("keydown", onKey);
+    rail.addEventListener("click", jump);
+    rail.addEventListener("pointerover", preview);
+    rail.addEventListener("focusin", preview);
+    rail.addEventListener("pointerleave", dismissPreview);
+    rail.addEventListener("focusout", dismissPreview);
+    rail.addEventListener("keydown", dismissPreview);
+    latest.addEventListener("click", returnToLatest);
+    const resize = new ResizeObserver(grow);
+    resize.observe(content);
+    resize.observe(viewport);
+    const mutation = new MutationObserver(grow);
+    // Streaming reveals words by toggling their visibility class without
+    // changing text nodes or geometry, so observe those changes as well.
+    mutation.observe(content, {
+      attributes: true,
+      attributeFilter: ["class"],
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+    update();
+    return {
+      get following() { return following; },
+      resume,
+      refresh: schedule,
+      destroy() {
+        resize.disconnect();
+        mutation.disconnect();
+        cancelAnimationFrame(frame);
+        viewport.removeEventListener("scroll", onScroll);
+        viewport.removeEventListener("scrollend", onScrollEnd);
+        viewport.removeEventListener("wheel", interrupt);
+        viewport.removeEventListener("touchstart", interrupt);
+        viewport.removeEventListener("keydown", onKey);
+        rail.removeEventListener("click", jump);
+        rail.removeEventListener("pointerover", preview);
+        rail.removeEventListener("focusin", preview);
+        rail.removeEventListener("pointerleave", dismissPreview);
+        rail.removeEventListener("focusout", dismissPreview);
+        rail.removeEventListener("keydown", dismissPreview);
+        latest.removeEventListener("click", returnToLatest);
+      },
+    };
+  }
+
   function captureScroll() {
     const conversation = $(".conversation-scroll", root);
     return {
       view: root.scrollTop,
       conversation: conversation ? conversation.scrollTop : 0,
-      pinned: conversation
+      pinned: conversationScroller ? conversationScroller.following : conversation
         ? conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight <= NEAR_BOTTOM
         : true,
     };
@@ -1141,18 +1384,38 @@
     root.dataset.scrollOwner = route === "sessione" ? "conversation" : "view";
     navActive(route);
     destroyPrimitiveEnhancements();
+    conversationScroller?.destroy();
+    conversationScroller = null;
     patch(root, html);
     bindDynamicControls();
+    let streamScroll = null;
     destroyPrimitiveEnhancements = typeof CardineAI.enhance === "function"
       ? CardineAI.enhance(root, {
         populateComposer: false,
         onFollowUp: (prompt, control) => populateComposerPrompt(prompt, control),
         onFineTune: (prompt, control) => populateComposerPrompt(prompt, control),
+        onRetry: retryAnswer,
+        onFeedback: (feedback, control) => {
+          const id = control.closest("[data-message-id]")?.dataset.messageId;
+          if (id) state.answerFeedback[id] = feedback;
+        },
+        onStreamProgress: (_article, phase) => {
+          if (phase === "before") streamScroll = captureScroll();
+          else {
+            if (streamScroll) restoreScroll(streamScroll, false);
+            conversationScroller?.refresh();
+          }
+        },
+        onStreamStart: (article) => {
+          const id = article.closest("[data-message-id]")?.dataset.messageId;
+          if (id) state.revealedAnswers.add(id);
+        },
       })
       : () => {};
     syncComposers();
     root.removeAttribute("aria-busy");
     restoreScroll(snapshot, routeChanged);
+    conversationScroller = enhanceMessageScroller(root);
     if (!routeChanged) {
       const restored = activeId ? document.getElementById(activeId) : null;
       if (restored && restored !== document.activeElement) restored.focus({ preventScroll: true });
@@ -1240,7 +1503,7 @@
     renderLoading(route);
     try {
       const payload = suppliedData || await fetchJson(ROUTES[route].endpoint);
-      if (navigationVersion !== state.navigationVersion) return;
+      if (navigationVersion !== state.navigationVersion) return false;
       state.viewData = payload;
       updateContinuation(payload);
       if (route === "oggi") {
@@ -1260,10 +1523,12 @@
       if (route === "ripasso") renderRipasso(payload);
       if (route === "piano") renderPlan(payload);
       if (route === "conflitti") renderConflitti(payload);
+      return true;
     } catch (error) {
-      if (navigationVersion !== state.navigationVersion) return;
-      if (error.authExpired) return;
+      if (navigationVersion !== state.navigationVersion) return false;
+      if (error.authExpired) return false;
       renderError(route, error);
+      return false;
     }
   }
 
@@ -1320,20 +1585,42 @@
     const createCourse = state.auth.authenticated
       ? `<button class="chat-home__course-action" type="button" data-open-course-creation>Crea un corso</button>`
       : "";
-    setView("oggi", `<section class="chat-home" aria-labelledby="home-heading"><div class="chat-home__center"><p class="eyebrow">${esc(text(course.title, "corso locale"))}</p><h1 id="home-heading">${suspended ? "Riprendiamo da dove eravamo?" : "Come vuoi studiare oggi?"}</h1>${entryForm("hero-entry", "Scrivi al tutor", "Chiedi qualsiasi cosa sul corso…")}${renderLessonStudy()}${createCourse}${renderChatCourseCreation()}${suspended ? `<button class="resume-chat" type="button" data-route="sessione">Riprendi la sessione in corso</button>` : ""}${today}</div>${support}</section>`);
+    setView("oggi", `<section class="chat-home" aria-labelledby="home-heading"><div class="chat-home__center"><p class="eyebrow">${esc(text(course.title, "corso locale"))}</p><h1 id="home-heading">${suspended ? "Riprendiamo da dove eravamo?" : "Come vuoi studiare oggi?"}</h1>${lessonPinAttachment()}${entryForm("hero-entry", "Scrivi al tutor", "Chiedi qualsiasi cosa sul corso…")}${renderLessonStudy()}${createCourse}${renderChatCourseCreation()}${suspended ? `<button class="resume-chat" type="button" data-route="sessione">Riprendi la sessione in corso</button>` : ""}${today}</div>${support}</section>`);
   }
 
+  /* The lesson picker is a disclosure, not a second hero: the composer stays
+     the first thing on the page, and this only chooses which source the chat
+     is anchored to. Questions and flashcards are asked in the chat itself. */
   function renderLessonStudy() {
     const lesson = state.lesson || { query: "", candidates: [], pin: null, answer: null };
     const candidates = Array.isArray(lesson.candidates) ? lesson.candidates : [];
+    const pin = lessonPin();
+    const pinnedId = pin ? text(pin.revision_id) : "";
     const rows = candidates.length
-      ? `<ul class="lesson-search-results">${candidates.map((candidate) => `<li><button class="button button--quiet" type="button" data-lesson-select="${esc(text(candidate.candidate_id))}">${esc(text(candidate.section_title, "Lezione"))}</button><span class="field-note">${esc(shortId(candidate.source_id, 12))} · ${esc(text(candidate.revision_id))}</span></li>`).join("")}</ul>`
+      ? `<ul class="lesson-results">${candidates.map((candidate) => {
+        const item = object(candidate);
+        const selected = pinnedId && text(item.revision_id) === pinnedId;
+        return `<li class="lesson-results__item"><button class="lesson-results__pick" type="button" data-lesson-select="${esc(text(item.candidate_id))}"${selected ? ' aria-current="true"' : ""}><span class="lesson-results__title">${esc(text(item.section_title, "Lezione"))}</span><span class="lesson-results__meta">${esc(shortId(item.source_id, 12))} · ${esc(text(item.revision_id))}</span></button></li>`;
+      }).join("")}</ul>`
       : "";
-    const pin = lesson.pin && typeof lesson.pin === "object";
-    const answer = lesson.answer && typeof lesson.answer === "object"
-      ? `<article class="lesson-answer" aria-live="polite"><p class="section-kicker">risposta ancorata alla lezione</p><pre>${esc(JSON.stringify(lesson.answer, null, 2))}</pre></article>`
+    const empty = !candidates.length && text(lesson.query)
+      ? `<p class="field-note lesson-study__empty">Nessuna lezione trovata per «${esc(text(lesson.query))}». Prova con il titolo esatto o un argomento della lezione.</p>`
       : "";
-    return `<section class="lesson-study" aria-labelledby="lesson-study-heading"><p class="section-kicker">selezione esplicita · grounding</p><h2 id="lesson-study-heading">Cerca una lezione</h2><p class="field-note">La domanda e le flashcard usano solo il pin selezionato e falliscono se la fonte è cambiata.</p><form data-lesson-search novalidate><label for="lesson-query">Titolo o argomento</label><input id="lesson-query" name="query" value="${esc(text(lesson.query))}" required maxlength="512" placeholder="es. Lezione 1"><button class="button" type="submit">Cerca</button></form>${rows}${pin ? `<form data-lesson-ask novalidate><label for="lesson-question">Domanda sulla lezione selezionata</label><textarea id="lesson-question" name="question" required maxlength="4000" placeholder="Cosa spiega questa lezione?"></textarea><button class="button" type="submit">Chiedi sulla lezione selezionata</button></form><form data-lesson-flashcards novalidate><label for="lesson-flashcards-query">Richiesta flashcard</label><input id="lesson-flashcards-query" name="query" required maxlength="4000" value="Crea flashcard dalla lezione selezionata"><button class="button button--quiet" type="submit">Crea flashcard dalla lezione selezionata</button></form>` : ""}${answer}</section>`;
+    const open = Boolean(candidates.length || pin || text(lesson.query));
+    return `<details class="lesson-study"${open ? " open" : ""}><summary class="lesson-study__summary">Studia una lezione specifica</summary><div class="lesson-study__body"><div class="lesson-study__intro"><p class="section-kicker">selezione esplicita · grounding</p><p class="field-note">La lezione scelta resta allegata alla chat: le domande e le flashcard usano solo quella fonte e falliscono se è cambiata.</p></div><form class="lesson-study__form" data-lesson-search novalidate><div class="field"><label for="lesson-query">Titolo o argomento</label><div class="lesson-study__row"><input id="lesson-query" name="query" type="search" value="${esc(text(lesson.query))}" required maxlength="512" placeholder="es. Lezione 1"><button class="button" type="submit">Cerca</button></div></div></form>${rows}${empty}</div></details>`;
+  }
+
+  function lessonPin() {
+    const pin = state.lesson && state.lesson.pin;
+    return pin && typeof pin === "object" ? object(pin) : null;
+  }
+
+  /* A pinned lesson is an attachment on the composer, not a second form:
+     the learner asks and asks for flashcards in the chat, as usual. */
+  function lessonPinAttachment() {
+    const pin = lessonPin();
+    if (!pin) return "";
+    return `<div class="composer-attachment" aria-live="polite"><span class="composer-attachment__label">Fonte allegata</span><span class="composer-attachment__title">${esc(text(pin.section_title, "Lezione"))}</span><span class="composer-attachment__meta">${esc(shortId(pin.source_id, 12))} · ${esc(text(pin.revision_id))}</span><button class="composer-attachment__remove" type="button" data-lesson-unpin aria-label="Rimuovi la fonte allegata" data-tooltip="Rimuovi la fonte allegata">Rimuovi</button></div>`;
   }
 
   /* A three-step setup shows where you are and lets you go back. The frame
@@ -1354,7 +1641,7 @@
   function renderSourceFirstOnboarding(course, materials) {
     const authenticated = state.auth.mode !== "private" || state.auth.authenticated;
     const uploadBody = authenticated
-      ? `<form class="source-upload-form" data-source-upload novalidate><label for="source-upload-file">File PDF, testo o Markdown <span class="field-optional">(facoltativo)</span></label><input id="source-upload-file" name="file" type="file" accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown"><p class="field-note">I PDF devono contenere testo selezionabile. Scansioni e immagini richiedono OCR e vengono rifiutate senza salvare una fonte.</p><label for="source-upload-text">Testo della fonte <span class="field-required">obbligatorio se non carichi un file</span></label><textarea id="source-upload-text" name="content" rows="6" maxlength="196608" placeholder="Incolla appunti, programma o una lezione…"></textarea><label for="source-upload-title">Titolo <span class="field-optional">(facoltativo)</span></label><input id="source-upload-title" name="title" maxlength="240" placeholder="es. Lezione 1 · Emodinamica"><div class="state-actions"><button class="button" type="submit">Aggiungi questa fonte</button><span class="settings-card__status" data-source-upload-status role="status"></span></div></form>`
+      ? `<form class="source-upload-form" data-source-upload novalidate><label for="source-upload-file">File PDF, testo, Markdown o audio <span class="field-optional">(facoltativo)</span></label><input id="source-upload-file" name="file" type="file" accept=".pdf,.txt,.md,.mp3,.wav,.m4a,.mp4,.ogg,.webm,.flac,.aac"><p class="field-note">I PDF devono contenere testo selezionabile. Scansioni e immagini richiedono OCR e vengono rifiutate senza salvare una fonte.</p><label for="source-upload-text">Testo della fonte <span class="field-required">obbligatorio se non carichi un file</span></label><textarea id="source-upload-text" name="content" rows="6" maxlength="196608" placeholder="Incolla appunti, programma o una lezione…"></textarea><label for="source-upload-title">Titolo <span class="field-optional">(facoltativo)</span></label><input id="source-upload-title" name="title" maxlength="240" placeholder="es. Lezione 1 · Emodinamica"><div class="state-actions"><button class="button" type="submit">Aggiungi fonte / trascrivi audio</button><span class="settings-card__status" data-source-upload-status role="status"></span></div></form>`
       : `<p class="field-note">Accedi per aggiungere fonti al corso e iniziare il setup.</p><div class="state-actions"><button class="button" type="button" data-route="login">Accedi</button></div>`;
     setupView(1, "Partiamo dai materiali.", "Prima leggiamo le fonti del corso; solo dopo sceglieremo l’argomento iniziale insieme.",
       `<section class="study-setup-card" aria-labelledby="source-setup-heading"><h2 id="source-setup-heading">Aggiungi una fonte</h2><p>Cardine usa solo le fonti salvate nel repository del corso. Puoi aggiungere una lezione alla volta.</p>${uploadBody}</section>`);
@@ -1487,6 +1774,19 @@
       const messageRole = text(first(object(message), ["role", "speaker", "who"], "assistant"), "assistant").toLowerCase();
       if (!["learner", "user", "student"].includes(messageRole)) lastAssistantIndex = index;
     });
+    displayMessages.forEach((message, index) => {
+      const item = object(message);
+      const presentationId = text(first(item, ["interaction_id", "presentation_id"], ""), "");
+      const remembered = object(state.turnActivities[presentationId]);
+      const records = array(remembered.records);
+      if (presentationId && records.length) {
+        displayMessages[index] = {
+          ...item,
+          activity_records: records,
+          activity_state: text(remembered.state, "settled"),
+        };
+      }
+    });
     const thread = displayMessages.length
       ? displayMessages.map((message, index) => renderMessage(message, index === lastAssistantIndex)).join("")
       : emptyState(
@@ -1505,14 +1805,6 @@
       })
       : "";
     const continuationHtml = continuation && Object.keys(continuation).length ? `<div class="continuation"><p class="section-kicker">richiesta del tutor</p><p class="continuation__prompt">${esc(continuationPrompt)}</p>${continuationApproval}${continuationFingerprint ? entryForm("continuation-entry", "Risposta", "Scrivi la risposta…", "", `data-fingerprint="${esc(continuationFingerprint)}"`) : emptyState("Continuazione non disponibile", "Manca il riferimento necessario per riprendere la conversazione.")}</div>` : "";
-    const activityDisclosure = `<details class="ai-session-activity"><summary>Attività</summary><div class="ai-session-activity__grid">${aiThinking({
-      summary: "Trace di ragionamento non esposto",
-      hint: "Cardine mostra solo attività dichiarata dal contratto.",
-      steps: [{ label: "Risposta canonica disponibile", detail: "Il servizio non espone il ragionamento interno del modello.", status: "unavailable" }],
-    })}${aiToolStack({
-      title: "Attività tecnica",
-      tools: [{ label: "Strumenti usati", detail: "Il servizio non ha dichiarato strumenti usati in questa conversazione.", status: "unavailable" }],
-    })}</div></details>`;
     const createCourse = state.auth.authenticated
       ? `<button class="text-button" type="button" data-open-course-creation>Crea un corso</button>`
       : "";
@@ -1523,7 +1815,7 @@
       title: text(first(snapshot, ["title", "topic"], object(state.bootstrap?.course).title), "Sessione di studio"),
       subtitle: statusLabel(status),
       thread,
-      extras: `${continuationHtml}${activityDisclosure}`,
+      extras: continuationHtml,
       actions: `${createCourse}${tutorStatus}<button class="text-button" type="button" data-route="fonti">Fonti</button>`,
       placeholder: "Rispondi al tutor…",
     }));
@@ -1534,7 +1826,7 @@
      session render the same markup, so they cannot drift apart or invent a
      subtitle that contradicts the real state. */
   function sessionShell({ title, subtitle, thread, extras = "", actions = "", placeholder }) {
-    return `<section class="chat-session" data-ai-chat-ready="true" aria-labelledby="conversation-heading"><header class="conversation-header"><div><h1 id="conversation-heading">${esc(title)}</h1><p>${esc(subtitle)}</p></div><div class="conversation-header__actions">${actions}</div></header><div class="conversation-scroll"><div class="conversation-column"><div class="session-thread">${thread}</div>${extras}</div></div><div class="conversation-composer-dock"><div class="conversation-column">${entryForm("session-entry", "Scrivi al tutor", placeholder)}</div></div></section>`;
+    return `<section class="chat-session" data-ai-chat-ready="true" aria-labelledby="conversation-heading"><header class="conversation-header"><div><h1 id="conversation-heading">${esc(title)}</h1><p>${esc(subtitle)}</p></div><div class="conversation-header__actions">${actions}</div></header><div class="message-scroller"><section id="conversation-viewport" class="conversation-scroll" aria-label="Conversazione" tabindex="0"><div class="conversation-column"><div class="session-thread">${thread}</div>${extras}</div></section><nav class="message-scroller__rail" aria-label="Navigazione messaggi" hidden></nav><button class="message-scroller__latest" type="button" hidden>Vai all’ultimo messaggio <span aria-hidden="true">↓</span></button></div><div class="conversation-composer-dock"><div class="conversation-column">${lessonPinAttachment()}${entryForm("session-entry", "Scrivi al tutor", placeholder)}</div></div></section>`;
   }
 
   function renderMessage(message, showFineTune = false) {
@@ -1546,24 +1838,33 @@
     if (learner) {
       return `<article class="thread-message thread-message--learner"><p class="thread-message__role">tu</p><p class="thread-message__text">${esc(text(content, "Messaggio senza testo visualizzabile."))}</p></article>`;
     }
-    const citations = Object.keys(citation).length ? [citation] : [];
+    const citations = array(first(item, ["citations", "sources"], []));
+    if (Object.keys(citation).length) citations.unshift(citation);
     const followUps = array(first(item, ["follow_ups", "followUps", "suggestions", "actions"], []));
-    const thinking = array(first(item, ["thinking", "trace", "steps", "activity"], []));
-    const tools = array(first(item, ["tools", "tool_activity", "capabilities", "retrieval"], []));
-    const answer = aiAnswer({ answer: text(content, "Messaggio senza testo visualizzabile."), citations, followUps, status: first(item, ["status", "state"], "ready"), reveal: showFineTune });
-    const thinkingView = thinking.length ? aiThinking({ steps: thinking, summary: "Come ho costruito questa risposta" }) : "";
-    const toolsView = tools.length ? aiToolStack({ tools, title: "Attività dichiarata" }) : "";
-    const fineTune = showFineTune ? aiFineTune({
-      title: "Continua",
-      detail: "Ogni opzione prepara un follow-up nel campo di scrittura, senza inviarlo.",
-      styles: [
-        { label: "Più breve", prompt: "Rispondi di nuovo in modo più breve e diretto." },
-        { label: "Con esempi", prompt: "Rispondi di nuovo usando esempi clinici concreti." },
-        { label: "Fammi una domanda", prompt: "Fammi una domanda di richiamo attivo su questo punto." },
-      ],
-    }) : "";
-    const legacyCitation = Object.keys(citation).length ? `<button class="provenance-chip" type="button" data-provenance='${esc(JSON.stringify(citation))}'>fonte · ${esc(first(citation, ["locator", "title", "revision"], "metadati disponibili"))}</button>` : "";
-    return `<article class="thread-message thread-message--assistant"><p class="thread-message__role">${esc(role === "system" ? "sistema" : "tutor")}</p>${answer}${thinkingView}${toolsView}${legacyCitation}${fineTune}</article>`;
+    const tools = array(first(item, ["activity_records", "tools", "tool_activity", "capabilities", "retrieval"], []));
+    const id = text(first(item, ["interaction_id", "presentation_id"], ""));
+    const suggested = followUps.length ? followUps : showFineTune ? [
+      { label: "Spiegamelo con un esempio", prompt: "Spiegamelo usando un esempio clinico concreto." },
+      { label: "Fammi una domanda di richiamo", prompt: "Fammi una domanda di richiamo attivo su questo punto." },
+    ] : [];
+    const answer = aiAnswer({
+      answer: text(content, "Messaggio senza testo visualizzabile."), citations, followUps: suggested,
+      status: first(item, ["status", "state"], "ready"), chat: true,
+      stream: Boolean(id && id === state.streamAnswerId && !state.revealedAnswers.has(id)),
+      canRetry: Boolean(state.turnCommands[id]), feedback: state.answerFeedback[id],
+    });
+    const toolsView = tools.length ? `<div class="thread-message__activity">${aiToolChips({ records: tools, state: text(first(item, ["activity_state"], "settled"), "settled") })}</div>` : "";
+    return `<article class="thread-message thread-message--assistant" ${id ? `data-key="message-${esc(id)}" data-message-id="${esc(id)}"` : ""}><p class="thread-message__role">${esc(role === "system" ? "sistema" : "tutor")}</p>${toolsView}${answer}</article>`;
+  }
+
+  async function retryAnswer(control) {
+    if (state.pendingTurn || state.loading) return;
+    const id = control.closest("[data-message-id]")?.dataset.messageId;
+    const original = state.turnCommands[id];
+    if (!original) return;
+    // Regeneration is a new turn; a transport retry reuses its request key.
+    // Keep the original lesson scope instead of using today's composer pin.
+    await executeCommand(original.endpoint, original.payload, null, "sessione", requestId());
   }
 
   function renderFonti(payload) {
@@ -1601,7 +1902,8 @@
       records: recordRows,
     });
     const searchView = aiSidebarSearch({ placeholder: "Cerca in Cardine", shortcut: "/" });
-    setView("fonti", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="material-heading"><p class="section-kicker">libreria del corso</p><h1 class="section-title" id="material-heading">Fonti del corso</h1><p class="section-copy">Di ogni fonte vedi titolo, revisione e un estratto. Il testo completo resta nel repository del corso.</p><div class="ai-fonts-search">${searchView}</div><ul class="source-list">${rows}</ul><div class="ai-fonts-context">${contextView}</div><details class="ai-fonts-records"><summary>Registro delle revisioni</summary>${registerView}</details></section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">da sapere</p><h2 class="side-card__title">Le fonti arrivano dal repository</h2><p class="side-card__copy">Aggiungi il file al repository del corso e ricarica: Cardine non modifica i materiali canonici dal browser.</p></div></aside></section>`);
+    const upload = ["local_repository", "private"].includes(text(first(state.bootstrap, ["mode"], "local_repository"))) ? `<details class="notes-upload"><summary>Aggiungi una fonte o trascrivi una registrazione</summary><form data-source-upload class="source-upload-form"><label for="notes-source-file">PDF, testo o audio</label><input id="notes-source-file" name="file" type="file" accept=".pdf,.txt,.md,.mp3,.wav,.m4a,.mp4,.ogg,.webm,.flac,.aac"><label for="notes-source-title">Titolo</label><input id="notes-source-title" name="title" maxlength="240"><label for="notes-source-text">Oppure incolla la sbobina</label><textarea id="notes-source-text" name="content" rows="4" maxlength="196608"></textarea><p class="field-note">Gli audio vengono trascritti con Groq e poi rielaborati in note. Richiede consenso al provider e configurazione del server.</p><button class="button" type="submit">Aggiungi fonte / trascrivi e genera note</button><p data-source-upload-status role="status"></p></form></details>` : "";
+    setView("fonti", `<section class="section-grid section-grid--materials"><section class="section-grid__main" aria-labelledby="material-heading"><p class="section-kicker">libreria del corso</p><h1 class="section-title" id="material-heading">Fonti del corso</h1><p class="section-copy">Apri una fonte per leggerla nel pannello laterale.</p>${upload}<div class="ai-fonts-search">${searchView}</div><ul class="source-list">${rows}</ul><div class="ai-fonts-context">${contextView}</div><details class="ai-fonts-records"><summary>Registro delle revisioni</summary>${registerView}</details></section><aside class="section-grid__side materials-pane"><section class="materials-viewer" id="materials-viewer" aria-labelledby="materials-viewer-title"><header class="materials-viewer__header"><div><p class="eyebrow" id="materials-viewer-kind">fonte del corso</p><h2 id="materials-viewer-title">Documento</h2></div></header><div class="source-viewer__content" id="materials-viewer-content"><p class="empty-state">Scegli una fonte dall’elenco per aprirla qui.</p></div></section><div class="side-card"><p class="section-kicker">da sapere</p><h2 class="side-card__title">Le fonti arrivano dal repository</h2><p class="side-card__copy">Il viewer è in sola lettura e apre soltanto revisioni canoniche appartenenti a questo corso.</p></div></aside><section id="material-jobs" aria-label="Note di studio" aria-live="polite"></section></section>`);
   }
 
   function renderSource(item) {
@@ -1611,21 +1913,38 @@
     const checksum = first(source, ["checksum_sha256", "checksum", "sha256"], "checksum non dichiarato");
     const type = first(source, ["type", "kind", "role"], "materiale");
     const chunks = first(source, ["chunk_count", "chunks", "fragment_count"], "—");
+    const viewer = object(source.viewer);
+    const viewerKind = text(viewer.kind);
+    const viewerReference = viewerKind && viewerKind !== "unavailable"
+      ? {
+        source_id: text(source.source_id),
+        revision_id: text(first(source, ["revision_id", "revision"])),
+        viewer_kind: viewerKind,
+        page: null,
+      }
+      : null;
     // Opaque identifiers belong in the provenance sheet, not as the loudest
     // thing in the row: 64 monospaced characters wrapping mid-token used to
     // outrank the title of the source itself.
-    return `<li class="source-row"><div><h3 class="source-row__title">${esc(title)}</h3><p class="source-row__meta"><span>Revisione <span class="checksum">${esc(shortId(revision))}</span></span><span>Checksum <span class="checksum">${esc(shortId(checksum))}</span></span></p></div><div class="source-row__value source-row__type">Tipo <b>${esc(type)}</b></div><div class="source-row__value">Frammenti <b>${esc(chunks)}</b></div><div class="source-row__button"><button class="button button--quiet" type="button" data-provenance='${esc(JSON.stringify({ title, revision, checksum, type, excerpt: first(source, ["excerpt", "quote"], "") }))}'>Provenienza</button></div></li>`;
+    let sourceAction = viewerReference
+      ? `<button class="button button--quiet" type="button" data-source-viewer-mode="page" data-source-viewer='${esc(JSON.stringify({ ...viewerReference, title }))}'>Apri fonte</button>`
+      : `<button class="button button--quiet" type="button" data-provenance='${esc(JSON.stringify({ title, revision, checksum, type, excerpt: first(source, ["excerpt", "quote"], "") }))}'>Provenienza</button>`;
+    if (source.can_generate_notes && ["local_repository", "private"].includes(text(first(state.bootstrap, ["mode"], "local_repository")))) {
+      sourceAction += `<button class="button button--quiet" type="button" data-generate-notes='${esc(JSON.stringify({source_id: source.source_id, revision_id: source.revision_id}))}'>Genera note di studio</button><details class="notes-info"><summary aria-label="Informazioni sulla generazione di note">ⓘ</summary><p>Segmenta la lezione, rielabora i passaggi e li unisce in una sbobina completa. Le note diventano fonti di studio dopo la tua approvazione.</p></details>`;
+    }
+    return `<li class="source-row"><div><h3 class="source-row__title">${esc(title)}</h3><p class="source-row__meta"><span>Revisione <span class="checksum">${esc(shortId(revision))}</span></span><span>Checksum <span class="checksum">${esc(shortId(checksum))}</span></span></p></div><div class="source-row__value source-row__type">Tipo <b>${esc(type)}</b></div><div class="source-row__value">Frammenti <b>${esc(chunks)}</b></div><div class="source-row__button">${sourceAction}</div></li>`;
   }
 
   function renderProposte(payload) {
     const proposals = array(payload);
-    const rows = proposals.length ? proposals.map(renderProposal).join("") : emptyState("Nessuna proposta da decidere", "Le proposte generate non vengono considerate accettate finché non esiste una decisione esplicita.");
-    const bulkCount = proposals.filter((item) => {
-      const proposal = object(item);
-      return (text(first(proposal, ["status", "state"], "pending"), "pending") === "pending" || text(first(proposal, ["status", "state"], "pending"), "pending") === "proposed") && proposal.reviewable === true;
-    }).length;
+    const isPending = (item) => ["pending", "proposed"].includes(text(first(object(item), ["status", "state"], "pending"), "pending"));
+    const pending = proposals.filter(isPending);
+    const decided = proposals.filter((item) => !isPending(item));
+    const rows = pending.length ? pending.map(renderProposal).join("") : emptyState("Nessuna proposta da decidere", "Le proposte generate non vengono considerate accettate finché non esiste una decisione esplicita.");
+    const decidedView = decided.length ? `<details class="decided-proposals"><summary>Già decise (${decided.length})</summary><div class="card-list">${decided.map(renderProposal).join("")}</div></details>` : "";
+    const bulkCount = pending.filter((item) => object(item).reviewable === true).length;
     const bulkView = bulkCount ? `<form data-artifact-bulk novalidate><p class="field-note">Seleziona una o più flashcard e assegna a ciascuna una decisione. L'invio è un'unica operazione atomica.</p><button class="button button--quiet" type="submit">Applica decisioni selezionate (<span data-bulk-count>${bulkCount}</span> disponibili)</button></form>` : "";
-    const diffRows = proposals.slice(0, 12).map((item) => {
+    const diffRows = pending.slice(0, 12).map((item) => {
       const proposal = object(item);
       const status = text(first(proposal, ["status", "state"], "pending"), "pending");
       const revisionId = first(proposal, ["revision_id", "id"], "non dichiarata");
@@ -1633,9 +1952,9 @@
     });
     const diffView = aiDiffTable({ title: "Confronto delle proposte", rows: diffRows, status: proposals.length ? "ready" : "neutral" });
     const approvalView = aiApproval({ title: "Decidi con calma", detail: "La decisione canonica resta nei pulsanti della singola proposta; questo follow-up serve solo a chiedere chiarimenti.", choices: [{ label: "Spiegami cosa cambia", action: "spiega proposta", prompt: "Spiegami cosa cambia nella proposta corrente" }] });
-    const pendingCount = proposals.filter((item) => ["pending", "proposed"].includes(text(first(object(item), ["status", "state"], "pending")))).length;
+    const pendingCount = pending.length;
     const recommendationView = pendingCount ? aiRecommendation({ title: "Rivedi una proposta", detail: `${pendingCount} proposte attendono una decisione esplicita.`, prompt: "Aiutami a rivedere una proposta", actionLabel: "Chiedimi un riepilogo" }) : "";
-    setView("proposte", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="proposal-heading"><p class="section-kicker">proposte · decisione tua</p><h1 class="section-title" id="proposal-heading">Proposte</h1><p class="section-copy">Generato non significa approvato. Ogni decisione è legata a revisione, sequenza e request ID.</p>${bulkView}<div class="card-list">${rows}</div><div class="ai-proposals-diff">${diffView}</div>${approvalView}${recommendationView}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">regola di stato</p><h2 class="side-card__title">Decisioni esplicite</h2><p class="side-card__copy">Puoi decidere singolarmente oppure inviare una selezione in un'unica operazione atomica.</p></div></aside></section>`);
+    setView("proposte", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="proposal-heading"><p class="section-kicker">proposte · decisione tua</p><h1 class="section-title" id="proposal-heading">Proposte</h1><p class="section-copy">Generato non significa approvato. Ogni decisione è legata a revisione, sequenza e request ID.</p>${bulkView}<div class="card-list">${rows}</div>${decidedView}<div class="ai-proposals-diff">${diffView}</div>${approvalView}${recommendationView}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">regola di stato</p><h2 class="side-card__title">Decisioni esplicite</h2><p class="side-card__copy">Puoi decidere singolarmente oppure inviare una selezione in un'unica operazione atomica.</p></div></aside></section>`);
   }
 
   function renderProposal(item) {
@@ -1856,7 +2175,13 @@
       return;
     }
     const endpoint = continuation ? `/api/v1/session/continuations/${encodeURIComponent(form.dataset.fingerprint || "opaque")}/responses` : "/api/v1/session/turns";
-    const payload = continuation ? { response: value } : { content: value };
+    // The attached lesson travels with the turn, so the answer and any
+    // flashcards asked for in the chat stay inside that one source.
+    const pin = lessonPin();
+    const payload = {
+      ...(continuation ? { response: value } : { content: value }),
+      ...(pin ? { lesson_pin: pin } : {}),
+    };
     if (textarea) {
       textarea.value = "";
       resizeComposer(textarea);
@@ -1878,6 +2203,7 @@
       && JSON.stringify(state.lastCommand.payload) === JSON.stringify(payload)
     );
     const request = forcedRequest || (retryingCommand ? state.lastCommand.requestId : requestId());
+    const reusingRequest = Boolean(state.lastCommand?.requestId === request);
     const command = Object.freeze({
       endpoint,
       payload: Object.freeze({ ...payload }),
@@ -1886,8 +2212,13 @@
     });
     state.lastCommand = command;
     if (isTutorTurn) {
-      state.pendingTurn = { requestId: request, content: text(payload.content || payload.response) };
+      state.pendingTurn = {
+        requestId: request,
+        content: text(payload.content || payload.response),
+        awaitingRetryActivity: reusingRequest,
+      };
       renderOptimisticTurn(state.pendingTurn.content);
+      pollTurnActivity(request).catch(() => {});
     }
     setBusy(true);
     setStatus(
@@ -1897,6 +2228,19 @@
     try {
       const receipt = await fetchJson(endpoint, { method: "POST", body: JSON.stringify(commandPayload(payload, request)) });
       const activity = object(receipt.activity);
+      const settledRecords = array(receipt.activity_records);
+      const presentationId = text(receipt.presentation_id, "");
+      if (isTutorTurn && presentationId) {
+        if (commandNavigationVersion === state.navigationVersion && state.route === "sessione") {
+          state.streamAnswerId = presentationId;
+        } else {
+          state.revealedAnswers.add(presentationId);
+        }
+        if (endpoint === "/api/v1/session/turns") state.turnCommands[presentationId] = command;
+      }
+      if (isTutorTurn && presentationId && settledRecords.length) {
+        state.turnActivities[presentationId] = { records: settledRecords, state: "settled" };
+      }
       const flashcardCompleted = text(activity.kind) === "flashcard_generation"
         && text(activity.status) === "completed";
       const traceId = text(receipt.trace_id, "");
@@ -1911,11 +2255,12 @@
       // command for an explicit transient retry action.
       if (commandIsCurrent) state.lastCommand = null;
       if (isTutorTurn && state.pendingTurn?.requestId === request) state.pendingTurn = null;
+      if (isTutorTurn) state.activityPollToken += 1;
       if (endpoint === "/api/v1/session/turns" || endpoint.includes("/session/continuations/")) {
         state.continuationDraft = "";
       }
-      await refreshBootstrapCounts();
       const originIsStillActive = commandNavigationVersion === state.navigationVersion;
+      let routeRefreshed = false;
       if (originIsStillActive && status === "demo_completed" && refreshRoute === "sessione") {
         state.route = "sessione";
         state.viewData = object(receipt.result);
@@ -1926,8 +2271,37 @@
         state.viewData = object(receipt.result);
         renderSessione(state.viewData);
         dismissAlert();
+      } else if (originIsStillActive && isTutorTurn) {
+        // The receipt is the only first-delivery carrier for process-local
+        // activity records. Rendering it directly keeps the settled chips on
+        // the answer without pretending they survive a later reload.
+        state.route = "sessione";
+        state.viewData = object(receipt.result);
+        renderSessione(state.viewData);
       } else if (originIsStillActive) {
-        await loadRoute((isFlashcardCommand || flashcardCompleted) && status === "completed" ? "proposte" : refreshRoute);
+        routeRefreshed = await loadRoute((isFlashcardCommand || flashcardCompleted) && status === "completed" ? "proposte" : refreshRoute);
+      }
+      if (isTutorTurn) {
+        void refreshBootstrapCounts();
+      } else {
+        await refreshBootstrapCounts();
+      }
+      if (routeRefreshed && refreshRoute === "proposte" && endpoint.includes("/artifacts/") && endpoint.endsWith("/decisions")) {
+        const decisions = endpoint === "/api/v1/artifacts/decisions" ? array(payload.decisions) : [payload];
+        const accepted = decisions.filter((item) => text(object(item).decision) === "accepted").length;
+        const rejected = decisions.filter((item) => text(object(item).decision) === "rejected").length;
+        const summary = [
+          accepted ? `${accepted} flashcard ${accepted === 1 ? "accettata" : "accettate"}` : "",
+          rejected ? `${rejected} flashcard ${rejected === 1 ? "rifiutata" : "rifiutate"}` : "",
+        ].filter(Boolean).join(" · ");
+        setStatus("committed", `${summary}. La coda delle proposte è aggiornata.`);
+      }
+      if (isTutorTurn && originIsStillActive && receipt.result) {
+        const assistant = $$(".thread-message--assistant", root).at(-1);
+        if (assistant && settledRecords.length) {
+          const existing = $(".thread-message__activity", assistant);
+          if (existing) patch(existing, aiToolChips({ records: settledRecords, state: "settled" }));
+        }
       }
       const nextComposer = originIsStillActive ? $("#session-entry-text") : null;
       if (nextComposer) nextComposer.focus({ preventScroll: true });
@@ -1975,12 +2349,15 @@
     const pendingCopy = flashcards
       ? "Sto generando e verificando le proposte flashcard…"
       : "Sto preparando una risposta basata sulle fonti del corso…";
-    const pending = `<article class="thread-message thread-message--assistant thread-message--pending" data-optimistic-turn><p class="thread-message__role">tutor</p><p class="thread-message__text">${pendingCopy}</p></article>`;
+    const pending = `<article class="thread-message thread-message--assistant thread-message--pending" data-optimistic-turn><p class="thread-message__role">tutor</p><div class="thread-message__activity" data-turn-activity aria-live="polite">${aiToolChips({state: "running", records: [], progress_message: pendingCopy})}</div></article>`;
     const thread = $(".session-thread", root);
     if (thread) {
+      const empty = $(".empty-state", thread);
+      if (empty) empty.hidden = true;
       thread.insertAdjacentHTML("beforeend", outgoing + pending);
       const scroller = $(".conversation-scroll", root);
       if (scroller) scroller.scrollTop = scroller.scrollHeight;
+      conversationScroller?.resume();
       return;
     }
     setView("sessione", sessionShell({
@@ -1994,6 +2371,40 @@
 
   function removeOptimisticTurn() {
     $$('[data-optimistic-turn]', root).forEach((item) => item.remove());
+    const empty = $(".session-thread > .empty-state", root);
+    if (empty) empty.hidden = false;
+  }
+
+  async function pollTurnActivity(requestId) {
+    const token = ++state.activityPollToken;
+    const navigationVersion = state.navigationVersion;
+    let awaitingRetryActivity = state.pendingTurn?.awaitingRetryActivity === true;
+    let failures = 0;
+    for (let attempt = 0; attempt < 240 && token === state.activityPollToken && navigationVersion === state.navigationVersion && state.pendingTurn?.requestId === requestId && failures < 3; attempt += 1) {
+      try {
+        const payload = await fetchJson(`/api/v1/turns/${encodeURIComponent(requestId)}/activity`);
+        if (token !== state.activityPollToken || navigationVersion !== state.navigationVersion || state.pendingTurn?.requestId !== requestId) return;
+        if (awaitingRetryActivity && payload.state !== "running") {
+          await new Promise((resolve) => window.setTimeout(resolve, 600));
+          continue;
+        }
+        awaitingRetryActivity = false;
+        failures = 0;
+        const progressMessage = text(payload.progress_message, "");
+        const node = $("[data-turn-activity]", root);
+        if (node && token === state.activityPollToken) {
+          const scroll = captureScroll();
+          patch(node, aiToolChips({ ...payload, progress_message: progressMessage }));
+          const progressNode = $("[data-turn-progress]", node);
+          if (progressNode && progressMessage) progressNode.textContent = progressMessage;
+          restoreScroll(scroll, false);
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 600));
+      } catch (_) {
+        failures += 1;
+        await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      }
+    }
   }
 
   function restoreFailedTurnDraft(content, originForm) {
@@ -2013,22 +2424,23 @@
     const status = $("[data-source-upload-status]", form);
     const titleInput = $("input[name=title]", form);
     const extension = selected ? selected.name.split(".").pop()?.toLowerCase() : "md";
-    if (selected && !["txt", "md", "pdf"].includes(extension || "")) {
-      if (status) status.textContent = "Sono supportati file .pdf, .txt e .md.";
+    if (selected && !["txt", "md", "pdf", "mp3", "wav", "m4a", "mp4", "ogg", "webm", "flac", "aac"].includes(extension || "")) {
+      if (status) status.textContent = "Sono supportati PDF, testo, Markdown e registrazioni audio.";
       return;
     }
     const isPdf = selected && extension === "pdf";
-    const maximum = isPdf ? 256 * 1024 * 1024 : 196608;
+    const isAudio = selected && ["mp3", "wav", "m4a", "mp4", "ogg", "webm", "flac", "aac"].includes(extension);
+    const maximum = isPdf ? 256 * 1024 * 1024 : isAudio ? 128 * 1024 * 1024 : 196608;
     if (selected && selected.size > maximum) {
       if (status) status.textContent = isPdf ? "Il PDF supera il limite di 256 MiB." : "Il file supera il limite di 192 KB.";
       return;
     }
-    const content = selected && !isPdf ? await selected.text() : pasted;
-    if (!isPdf && !text(content).trim()) {
+    const content = selected && !isPdf && !isAudio ? await selected.text() : pasted;
+    if (!isPdf && !isAudio && !text(content).trim()) {
       if (status) status.textContent = "Scegli un file .txt/.md oppure incolla una fonte testuale.";
       return;
     }
-    if (!isPdf && new TextEncoder().encode(content).length > 196608) {
+    if (!isPdf && !isAudio && new TextEncoder().encode(content).length > 196608) {
       if (status) status.textContent = "Il testo supera il limite di 192 KB per questa prima importazione.";
       return;
     }
@@ -2038,7 +2450,13 @@
     if (submit) submit.disabled = true;
     if (status) status.textContent = "Salvo e indicizzo la fonte…";
     try {
-      const receipt = isPdf
+      const receipt = isAudio
+        ? await fetchJson("/api/v1/sources/import/audio", {
+            method: "POST", headers: { "Content-Type": "application/octet-stream",
+              "X-File-Name": encodeURIComponent(filename), "X-Source-Title": encodeURIComponent(title),
+              "Idempotency-Key": requestId() }, body: selected,
+          })
+        : isPdf
         ? await fetchJson("/api/v1/sources/import/pdf", {
             method: "POST",
             headers: {
@@ -2054,6 +2472,11 @@
             body: JSON.stringify(commandPayload({ filename, title, content })),
           });
       updateSequence(first(receipt, ["high_water_sequence"], state.highWaterSequence));
+      if (isAudio) {
+        await loadRoute("fonti");
+        await refreshMaterialJobs();
+        return;
+      }
       const indexing = object(receipt.indexing);
       const indexingContinues = ["queued", "indexing"].includes(text(indexing.status));
       if (indexingContinues) {
@@ -2069,6 +2492,105 @@
       if (status) status.textContent = error.message;
     } finally {
       if (submit) submit.disabled = false;
+    }
+  }
+
+  let materialPoll = null;
+  const materialPreviews = new Map();
+  function bindNoteControl(control, event, handler) {
+    if (control._notesBound) return;
+    control._notesBound = true;
+    control.addEventListener(event, handler);
+  }
+
+  async function prepareNotes(control) {
+    control.disabled = true;
+    try {
+      const scope = state.bootstrap;
+      const pin = JSON.parse(control.dataset.generateNotes);
+      const prepared = await fetchJson("/api/v1/material-generations/prepare", {
+        method: "POST", body: JSON.stringify(commandPayload(pin)),
+      });
+      if (scope !== state.bootstrap || !control.isConnected) return;
+      if (array(prepared.lessons).length) {
+        const pane = $("#material-jobs");
+        patch(pane, `<section class="notes-job"><h2>Dividi il PDF per lezioni</h2><p>Verifica titoli e intervalli. Ogni riga: titolo | pagina iniziale | pagina finale. Tutte le pagine devono essere coperte una volta.</p><form data-notes-lessons><label for="notes-lesson-ranges">Lezioni del PDF</label><textarea id="notes-lesson-ranges" rows="8">${esc(array(prepared.lessons).map((item) => `${item.title} | ${item.start_page} | ${item.end_page}`).join("\n"))}</textarea><button class="button" type="submit">Conferma lezioni e genera note</button><p data-notes-error role="status"></p></form></section>`);
+        $("[data-notes-lessons]", pane).addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const form = event.currentTarget;
+          const button = $("button", form);
+          button.disabled = true;
+          try {
+            const lessons = $("textarea", form).value.split("\n").filter((line) => line.trim()).map((line) => {
+              const [title, start, end] = line.split("|").map((item) => item.trim());
+              return {title, start_page: Number(start), end_page: Number(end)};
+            });
+            await fetchJson("/api/v1/material-generations", {method: "POST", body: JSON.stringify(commandPayload({...pin, lessons}))});
+            form.remove();
+            await refreshMaterialJobs();
+          } catch (error) { $("[data-notes-error]", form).textContent = error.message; }
+          finally { button.disabled = false; }
+        });
+      } else {
+        await fetchJson("/api/v1/material-generations", {method: "POST", body: JSON.stringify(commandPayload(pin))});
+        await refreshMaterialJobs();
+      }
+    } catch (error) { setStatus("unavailable", error.message); }
+    finally { control.disabled = false; }
+  }
+
+  async function refreshMaterialJobs() {
+    clearTimeout(materialPoll);
+    if (state.route !== "fonti" || !$("#material-jobs") || $("[data-notes-lessons]")) return;
+    const scope = state.bootstrap;
+    const pane = $("#material-jobs");
+    const payload = await fetchJson("/api/v1/material-generations");
+    if (scope !== state.bootstrap || pane !== $("#material-jobs")) return;
+    if (state.route !== "fonti" || !$("#material-jobs") || $("[data-notes-lessons]")) return;
+    const labels = {queued: "In coda", transcribing: "Trascrizione audio", boundaries: "Segmentazione",
+      complete_segment: "Rielaborazione", complete_merge: "Unione dei segmenti", study: "Versione studio",
+      publication_retryable: "Salvataggio in attesa: nuovo tentativo",
+      proposal: "Preparazione anteprima", proposed: "Note pronte da revisionare", retryable: "Interrotto: puoi riprendere",
+      stale: "Fonte aggiornata: rigenera", failed_terminal: "Generazione non riuscita"};
+    const jobs = array(payload.items);
+    patch($("#material-jobs"), jobs.map((job) => `<section class="notes-job" data-key="${esc(job.job_id)}"><h2>Note di studio · ${esc(job.title)}</h2><p>${esc(labels[job.stage] || job.stage)}${job.transcribed_chunks ? ` · ${esc(job.transcribed_chunks)} ${job.transcribed_chunks === 1 ? "blocco trascritto" : "blocchi trascritti"}` : ""}${job.segment_count ? ` · ${esc(job.segment_count)} ${job.segment_count === 1 ? "segmento elaborato" : "segmenti elaborati"}` : ""}</p>${job.error ? `<p role="status">${esc(job.error)}</p>` : ""}${array(job.outputs).map((output) => `<details class="notes-output" data-key="${esc(output.revision_id)}" data-note-preview-job="${esc(job.job_id)}" data-note-preview-revision="${esc(output.revision_id)}"><summary>${output.variant === "complete" ? "Sbobina completa" : "Materiale studio"} · ${esc(statusLabel(output.status))}</summary><div class="notes-markdown">${materialPreviews.get(output.revision_id) || "Apri per leggere le note."}</div>${array(output.limitations).map((item) => `<p class="field-note">${esc(item)}</p>`).join("")}${output.status === "proposed" ? `<div class="state-actions"><button class="button" data-note-decision="accept" data-note-revision="${esc(output.revision_id)}" data-note-job="${esc(job.job_id)}">Approva</button><button class="button button--quiet" data-note-decision="reject" data-note-revision="${esc(output.revision_id)}" data-note-job="${esc(job.job_id)}">Rifiuta</button></div>` : output.publication === "published" ? `<p>Salvato come fonte di studio.</p><button class="button button--quiet" data-source-viewer-mode="page" data-source-viewer='${esc(JSON.stringify({source_id: output.published_source_id, revision_id: output.published_revision_id, viewer_kind: "markdown", title: output.title}))}'>Apri note</button>` : output.status === "accepted" ? `<p>Approvato. La pubblicazione richiede il materiale completo approvato e una fonte ancora valida.</p>` : ""}</details>`).join("")}${!["proposed", "stale", "failed_terminal"].includes(job.stage) ? `<button class="button button--quiet" data-note-resume="${esc(job.job_id)}">${job.stage === "publication_retryable" ? "Riprova salvataggio" : "Riprendi generazione"}</button>` : ""}<p data-note-error role="status"></p></section>`).join(""));
+    $$('[data-note-preview-job]').forEach((details) => bindNoteControl(details, "toggle", async () => {
+      if (!details.open || materialPreviews.has(details.dataset.notePreviewRevision)) return;
+      try {
+        const job = await fetchJson(`/api/v1/material-generations/${encodeURIComponent(details.dataset.notePreviewJob)}`);
+        const output = array(job.outputs).find((item) => item.revision_id === details.dataset.notePreviewRevision);
+        if (output && details.isConnected) {
+          const rendered = CardineAI.markdown(output.markdown);
+          materialPreviews.set(output.revision_id, rendered);
+          patch($(".notes-markdown", details), rendered);
+        }
+      } catch (error) { $(".notes-markdown", details).textContent = error.message; }
+    }));
+    $$('[data-note-decision]').forEach((button) => bindNoteControl(button, "click", async () => {
+      const decisionScope = state.bootstrap;
+      button.disabled = true;
+      try {
+        // Refresh the canonical sequence immediately before the HUMAN command.
+        const job = await fetchJson(`/api/v1/material-generations/${encodeURIComponent(button.dataset.noteJob)}`);
+        if (!button.isConnected || decisionScope !== state.bootstrap) return;
+        updateSequence(job.high_water_sequence);
+        const receipt = await fetchJson(`/api/v1/material-generations/${encodeURIComponent(button.dataset.noteJob)}/decisions`, {
+          method: "POST", body: JSON.stringify(commandPayload({revision_id: button.dataset.noteRevision, decision: button.dataset.noteDecision})),
+        });
+        updateSequence(receipt.high_water_sequence);
+        await refreshMaterialJobs();
+      } catch (error) { $("[data-note-error]", button.closest(".notes-job")).textContent = error.message; button.disabled = false; }
+    }));
+    $$('[data-note-resume]').forEach((button) => bindNoteControl(button, "click", async () => {
+      button.disabled = true;
+      try {
+        await fetchJson(`/api/v1/material-generations/${encodeURIComponent(button.dataset.noteResume)}/resume`, {method: "POST", body: JSON.stringify(commandPayload({}))});
+        await refreshMaterialJobs();
+      } catch (error) { $("[data-note-error]", button.closest(".notes-job")).textContent = error.message; button.disabled = false; }
+    }));
+    $$('[data-source-viewer]', $("#material-jobs")).forEach((button) => bindNoteControl(button, "click", () => openSourceViewer(button.dataset.sourceViewer, button.dataset.sourceViewerMode)));
+    if (jobs.some((job) => !["proposed", "stale", "failed_terminal", "retryable"].includes(job.stage))) {
+      materialPoll = setTimeout(() => refreshMaterialJobs().catch(() => {}), 2500);
     }
   }
 
@@ -2204,17 +2726,8 @@
         selectLesson(control).catch((error) => showCommandError(error));
       });
     });
-    $$('[data-lesson-ask]').forEach((form) => {
-      form.addEventListener("submit", (event) => {
-        event.preventDefault();
-        askPinnedLesson(form).catch((error) => showCommandError(error));
-      });
-    });
-    $$('[data-lesson-flashcards]').forEach((form) => {
-      form.addEventListener("submit", (event) => {
-        event.preventDefault();
-        createPinnedFlashcards(form).catch((error) => showCommandError(error));
-      });
+    $$('[data-lesson-unpin]').forEach((control) => {
+      control.addEventListener("click", () => unpinLesson());
     });
     $$('[data-artifact-bulk]').forEach((form) => {
       form.addEventListener("submit", (event) => {
@@ -2245,7 +2758,10 @@
       if (submit) submit.disabled = !text(control.value).trim();
     }));
     $$('[data-command]').forEach((control) => control.addEventListener("click", () => commandFromControl(control)));
+    $$('[data-generate-notes]').forEach((control) => control.addEventListener("click", () => prepareNotes(control)));
+    if (state.route === "fonti" && $("#material-jobs")) refreshMaterialJobs().catch(() => {});
     $$('[data-provenance]').forEach((control) => control.addEventListener("click", () => openProvenance(control.dataset.provenance)));
+    $$('[data-source-viewer]').forEach((control) => control.addEventListener("click", () => openSourceViewer(control.dataset.sourceViewer, control.dataset.sourceViewerMode)));
     $$('[data-retry-route]').forEach((control) => control.addEventListener("click", () => loadRoute(control.dataset.retryRoute)));
     $$('[data-open-turn-trace]').forEach((control) => control.addEventListener("click", () => {
       state.diagnosticTraceId = text(control.dataset.openTurnTrace, state.diagnosticTraceId);
@@ -2287,38 +2803,22 @@
       state.lesson = { ...lesson, pin: object(receipt.pin), answer: null };
       updateSequence(first(receipt, ["high_water_sequence"], state.highWaterSequence));
       renderOggi(state.viewData || state.bootstrap || {});
-      setStatus("selected", "Lezione fissata per il grounding");
+      setStatus("selected", "Lezione allegata alla chat");
     } finally {
       setBusy(false);
     }
   }
 
-  async function askPinnedLesson(form) {
-    const question = text(form.elements.namedItem("question")?.value).trim();
-    const pin = state.lesson && state.lesson.pin;
-    if (!question || !pin) return;
-    const request = requestId();
-    setBusy(true);
-    try {
-      const receipt = await fetchJson("/api/v1/lessons/ask", {
-        method: "POST",
-        body: JSON.stringify(commandPayload({ question, pin }, request)),
-      });
-      state.lesson = { ...state.lesson, answer: object(receipt.answer) };
-      updateSequence(first(receipt, ["high_water_sequence"], state.highWaterSequence));
-      renderOggi(state.viewData || state.bootstrap || {});
-      setStatus(text(receipt.status, "completed"), "Risposta ancorata completata");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function createPinnedFlashcards(form) {
-    const query = text(form.elements.namedItem("query")?.value).trim();
-    const pin = state.lesson && state.lesson.pin;
-    if (!query || !pin) return;
-    await executeCommand("/api/v1/lessons/flashcards", { query, pin }, form, "proposte");
-    setStatus("completed", "Flashcard della lezione create");
+  /* Detaching a source is a local choice: nothing was committed by pinning,
+     so the browser only drops what it was carrying into the next question. */
+  function unpinLesson() {
+    if (!state.lesson) return;
+    state.lesson = { ...state.lesson, pin: null, answer: null };
+    // The attachment is shown both on the home screen and above the chat
+    // composer, so the detach has to repaint whichever one is on screen.
+    if (state.route === "sessione") renderSessione(state.viewData || {});
+    else renderOggi(state.viewData || state.bootstrap || {});
+    setStatus("ready", "Fonte allegata rimossa");
   }
 
   async function submitArtifactBulk(form) {
@@ -2417,9 +2917,94 @@
     $("#provenance-drawer").showModal();
   }
 
+  async function openSourceViewer(serialized, mode = "sheet") {
+    let source = {};
+    try { source = object(JSON.parse(serialized)); } catch (_) { source = {}; }
+    const sourceId = text(source.source_id);
+    const revisionId = text(source.revision_id);
+    const viewer_kind = text(source.viewer_kind);
+    if (!sourceId || !revisionId || !["pdf", "markdown", "text"].includes(viewer_kind)) return;
+    const title = text(source.title, "Fonte del corso");
+    const page = Number.isInteger(source.page) && source.page > 0 ? source.page : null;
+    const endpoint = `/api/v1/materials/${encodeURIComponent(sourceId)}/revisions/${encodeURIComponent(revisionId)}/content`;
+    const inline = mode === "page" && $("#materials-viewer");
+    const dialog = inline ? null : $("#source-viewer");
+    const content = inline ? $("#materials-viewer-content") : $("#source-viewer-content");
+    const requestVersion = ++state.sourceViewerVersion;
+    const kindLabel = viewer_kind === "pdf" ? page ? `PDF · pagina ${page}` : "PDF" : viewer_kind === "markdown" ? "Markdown" : "testo";
+    $(inline ? "#materials-viewer-title" : "#source-viewer-title").textContent = title;
+    $(inline ? "#materials-viewer-kind" : "#source-viewer-kind").textContent = kindLabel;
+    patch(content, '<p class="source-viewer__loading">Apro la fonte…</p>');
+    if (inline) {
+      if (window.matchMedia("(max-width: 1080px)").matches) {
+        inline.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+      }
+    } else if (!dialog.open) {
+      dialog.showModal();
+    }
+    if (viewer_kind === "pdf") {
+      const target = `${endpoint}${page ? `#page=${page}` : ""}`;
+      patch(content, `<iframe class="source-viewer__frame" src="${esc(target)}" title="${esc(`Documento: ${title}`)}"></iframe>`);
+      return;
+    }
+    try {
+      const response = await fetch(endpoint, {
+        credentials: "same-origin",
+        headers: { Accept: viewer_kind === "markdown" ? "text/markdown" : "text/plain" },
+      });
+      if (!response.ok) throw new Error("source viewer request failed");
+      const documentText = await response.text();
+      if (requestVersion !== state.sourceViewerVersion) return;
+      const rendered = viewer_kind === "markdown" ? CardineAI.markdown(documentText) : `<pre>${esc(documentText)}</pre>`;
+      patch(content, `<article class="source-viewer__markdown ai-answer__markdown">${rendered}</article>`);
+    } catch (_) {
+      if (requestVersion !== state.sourceViewerVersion) return;
+      patch(content, '<p class="source-viewer__error">Non riesco ad aprire questa fonte. Riprova o verifica che la revisione sia ancora disponibile.</p>');
+    }
+  }
+
+  function bindSourceViewerResize() {
+    const dialog = $("#source-viewer");
+    const handle = $("[data-source-viewer-resize]", dialog);
+    if (!dialog || !handle) return;
+    const resize = (width, height) => {
+      const inset = 24;
+      const minWidth = Math.min(360, window.innerWidth - inset);
+      const minHeight = Math.min(320, window.innerHeight - inset);
+      dialog.style.width = `${Math.max(minWidth, Math.min(width, window.innerWidth - inset))}px`;
+      dialog.style.height = `${Math.max(minHeight, Math.min(height, window.innerHeight - inset))}px`;
+    };
+    handle.addEventListener("pointerdown", (event) => {
+      if (window.matchMedia("(max-width: 700px)").matches) return;
+      event.preventDefault();
+      const start = dialog.getBoundingClientRect();
+      const startX = event.clientX;
+      const startY = event.clientY;
+      handle.setPointerCapture(event.pointerId);
+      const move = (moveEvent) => resize(start.width + startX - moveEvent.clientX, start.height + moveEvent.clientY - startY);
+      const stop = () => {
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", stop);
+        handle.removeEventListener("pointercancel", stop);
+      };
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", stop);
+      handle.addEventListener("pointercancel", stop);
+    });
+    handle.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+      event.preventDefault();
+      const current = dialog.getBoundingClientRect();
+      const step = event.shiftKey ? 64 : 24;
+      const width = current.width + (event.key === "ArrowLeft" ? step : event.key === "ArrowRight" ? -step : 0);
+      const height = current.height + (event.key === "ArrowDown" ? step : event.key === "ArrowUp" ? -step : 0);
+      resize(width, height);
+    });
+  }
+
   function commandSearchEntries() {
     const routes = Object.entries(ROUTES)
-      .filter(([route, config]) => route !== "login" && (!config.private || state.auth.authenticated))
+      .filter(([route, config]) => route !== "login" && (!config.private || state.auth.authenticated || (route === "impostazioni" && state.auth.mode !== "private")))
       .map(([route, config]) => ({
         group: "Vai a",
         icon: config.icon,
@@ -2800,6 +3385,7 @@
   applyRailState();
   bindStaticControls();
   bindDynamicControls();
+  bindSourceViewerResize();
   window.addEventListener("resize", applyRailState);
   loadAuthSession().then((auth) => {
     if (auth.mode === "setup") {

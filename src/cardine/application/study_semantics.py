@@ -165,6 +165,8 @@ class FlashcardSemanticPreprocessor:
             projection = await self._indexes.process_async(revision)
             index = projection.document_index
             if index is None:
+                if self._features.document_index_mode is FeatureMode.SHADOW:
+                    return original
                 raise ValueError(f"document_index_unavailable:{projection.status.value}")
             validate_document_index(index, context)
             lesson_key = original.unit_key + ":" + str(record.source.revision_id)

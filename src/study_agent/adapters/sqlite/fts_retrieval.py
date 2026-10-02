@@ -23,7 +23,7 @@ from study_agent.ports.retrieval import (
     retrieval_read_set_fingerprint,
 )
 
-from .event_store import SQLiteConnectionGuard, _writable_nofollow_uri
+from .event_store import SQLiteConnectionGuard, _serialized_sqlite_open, _writable_nofollow_uri
 
 INDEX_VERSION = "sqlite-fts5-unicode61-v1"
 RETRIEVAL_STRATEGY_ID = "sqlite_fts5_bm25"
@@ -159,7 +159,7 @@ class SQLiteFtsRetrieval:
         def opener() -> sqlite3.Connection:
             return sqlite3.connect(database, timeout=30, uri=uri)
         connection = (
-            opener()
+            _serialized_sqlite_open(opener)
             if self._connection_identity_guard is None
             else self._connection_identity_guard.connect(opener)
         )

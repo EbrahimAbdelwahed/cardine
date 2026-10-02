@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from datetime import datetime
+from typing import cast
 
 from study_agent.domain import (
     CourseId,
@@ -89,8 +90,16 @@ def _decode_presentation(key: object, raw: JsonValue) -> TutorPresentationRecord
         "course_sequence",
         "occurred_at",
     }
-    if set(raw) != expected or raw.get("presentation_id") != key:
+    if (
+        set(raw) != expected | ({"source_refs"} if "source_refs" in raw else set())
+        or raw.get("presentation_id") != key
+    ):
         raise ValueError("tutor presentation projection fields are corrupt")
+    source_refs = raw.get("source_refs", ())
+    if not isinstance(source_refs, tuple) or any(
+        not isinstance(item, Mapping) for item in source_refs
+    ):
+        raise ValueError("tutor presentation source refs are corrupt")
     reply_raw = raw.get("in_reply_to_interaction_id")
     if reply_raw is not None and not isinstance(reply_raw, str):
         raise ValueError("presentation reply linkage is corrupt")
@@ -131,6 +140,7 @@ def _decode_presentation(key: object, raw: JsonValue) -> TutorPresentationRecord
         command_fingerprint=_text(raw, "command_fingerprint"),
         event_id=EventId(_text(raw, "event_id")),
         course_sequence=sequence,
+        source_refs=tuple(cast(Mapping[str, JsonValue], item) for item in source_refs),
     )
 
 

@@ -12,15 +12,15 @@ import cardine.documents.anydoc_runtime as anydoc_runtime
 from cardine.documents import AnyDocErrorCode, AnyDocWorkerError, convert_pdf_in_worker
 from cardine.documents.config import DocumentImportPolicy
 
-_VERIFIED_ANYDOC_WORKER = (
+_WORKER_SUPPORTED = (
     sys.platform == "darwin"
     and platform.machine() == "arm64"
     and sys.version_info[:2] in {(3, 12), (3, 13)}
     and shutil.which("sandbox-exec") == "/usr/bin/sandbox-exec"
 )
 _requires_verified_worker = pytest.mark.skipif(
-    not _VERIFIED_ANYDOC_WORKER,
-    reason="verified AnyDoc containment requires macOS arm64 with sandbox-exec",
+    not _WORKER_SUPPORTED,
+    reason="verified AnyDoc worker containment requires macOS arm64 with sandbox-exec",
 )
 
 
@@ -120,6 +120,26 @@ def test_page_map_binds_each_pdf_page_to_exact_markdown_offsets(tmp_path: Path) 
     assert receipt.page_spans[0].end_offset <= receipt.page_spans[1].start_offset
 
 
+@_requires_verified_worker
+def test_mixed_pdf_marks_page_without_extractable_text_and_keeps_page_map(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "mixed.pdf"
+    source.write_bytes(_text_pdf("First page", ""))
+
+    receipt = convert_pdf_in_worker(source)
+
+    text = receipt.markdown.decode("utf-8")
+    assert receipt.page_count == 2
+    assert "First page" in text[
+        receipt.page_spans[0].start_offset : receipt.page_spans[0].end_offset
+    ]
+    assert "Pagina 2 senza testo estraibile" in text[
+        receipt.page_spans[1].start_offset : receipt.page_spans[1].end_offset
+    ]
+    assert "OCR non disponibile" in text
+
+
 def test_missing_input_is_a_closed_worker_failure(tmp_path: Path) -> None:
     with pytest.raises(AnyDocWorkerError) as captured:
         convert_pdf_in_worker(tmp_path / "missing.pdf")
@@ -170,6 +190,7 @@ def _install_fake_anydoc(destination: Path, source: str) -> None:
     (package / "__init__.py").write_text(source, encoding="utf-8")
 
 
+@_requires_verified_worker
 @pytest.mark.parametrize(
     ("module_source", "expected"),
     (

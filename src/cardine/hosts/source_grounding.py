@@ -8,12 +8,20 @@ from collections.abc import Mapping
 from study_agent.ports.tutor_host import TutorDecisionPort, TutorInterruptionToken
 
 from .contracts import (
+    InvokeToolDecision,
     StartCapabilityDecision,
     TutorDecision,
     TutorHostContext,
 )
 
 _EXPLAIN_CAPABILITY_ID = "explain_concept"
+_STUDY_MEMORY_INTENT = re.compile(
+    r"\b(?:non\s+(?:capisco|ho\s+capito|ricordo|riesco)|"
+    r"difficolt[aà]|confus[oaie]|dimentic\w*|ricord\w*|"
+    r"(?:don['\u2019]t|do\s+not|can['\u2019]t|cannot)\s+(?:understand|remember)|"
+    r"confus\w*|struggl\w*|forget\w*|forgot\w*|remember)\b",
+    re.IGNORECASE,
+)
 _SOURCE_REFERENCE = re.compile(
     r"\b(?:source|sources|fonte|fonti|materiale|materiali|documento|documenti|"
     r"file|appunti|note|notes)\b",
@@ -21,8 +29,25 @@ _SOURCE_REFERENCE = re.compile(
 )
 _SOURCE_EXPLANATION_REQUEST = re.compile(
     r"\b(?:read|explain|summari[sz]e|describe|tell|leggi|leggere|spiega|"
-    r"spiegami|spiegare|spiegazione|avvia|avviare|inizia|iniziare|parliamo|"
+    r"spiegami|spiegare|spiegazione|parliamo|"
     r"riassumi|riassunto|descrivi|cosa\s+dice)\b",
+    re.IGNORECASE,
+)
+_LESSON_REFERENCE = re.compile(
+    r"(?:\blezione\s+(?:numero\s+)?\d+\b|"
+    r"\bl[\s_-]*0*\d+(?=$|[\s_./-]))",
+    re.IGNORECASE,
+)
+_LESSON_STUDY_REQUEST = re.compile(
+    r"\b(?:studiamo|studiare|riprendiamo|riprendere|"
+    r"di\s+cosa\s+parla|cosa\s+tratta|what\s+is\s+it\s+about|"
+    r"let(?:'s|\s+us)\s+study)\b",
+    re.IGNORECASE,
+)
+_DIRECT_LESSON_START = re.compile(
+    r"\b(?:facciamo|avvia|avviare|inizia|iniziare)\s+(?:la\s+)?"
+    r"(?:lezione\s+(?:numero\s+)?\d+|"
+    r"l[\s_-]*0*\d+(?=$|[\s_./-]))",
     re.IGNORECASE,
 )
 _ITALIAN_REQUEST = re.compile(
@@ -33,11 +58,60 @@ _ITALIAN_REQUEST = re.compile(
 )
 _RETRIEVAL_STOP_WORDS = frozenset(
     {
-        "a", "about", "and", "avvia", "avviare", "che", "cosa", "dalla", "dalle", "del", "della",
-        "delle", "di", "does", "e", "explain", "fonte", "from", "ha", "how", "i",
-        "il", "in", "inizia", "iniziare", "it", "la", "le", "leggi", "materiale", "me",
-        "many", "parliamo", "quante", "read", "say", "source", "spiega", "spiegami",
-        "spiegazione", "the", "this", "to", "una", "what", "with",
+        "a",
+        "about",
+        "and",
+        "avvia",
+        "avviare",
+        "che",
+        "cosa",
+        "dalla",
+        "dalle",
+        "del",
+        "della",
+        "delle",
+        "di",
+        "does",
+        "e",
+        "explain",
+        "fonte",
+        "from",
+        "ha",
+        "how",
+        "i",
+        "il",
+        "in",
+        "inizia",
+        "iniziare",
+        "it",
+        "la",
+        "le",
+        "leggi",
+        "materiale",
+        "me",
+        "many",
+        "parliamo",
+        "quante",
+        "read",
+        "say",
+        "source",
+        "spiega",
+        "spiegami",
+        "spiegazione",
+        "studiamo",
+        "studiare",
+        "facciamo",
+        "fare",
+        "riprendiamo",
+        "riprendere",
+        "parla",
+        "tratta",
+        "the",
+        "this",
+        "to",
+        "una",
+        "what",
+        "with",
     }
 )
 
@@ -53,29 +127,31 @@ class SourceGroundedTutorDecisionPort(TutorDecisionPort):
     async def decide(
         self, context: TutorHostContext, interruption: TutorInterruptionToken
     ) -> TutorDecision:
+        learner_text = _latest_learner_text(context) or ""
+        if context.pending_continuation is None and not requires_study_memory_routing(learner_text):
+            direct = _grounded_explanation_decision(context)
+            if direct is not None:
+                return direct
+        # Difficulty and memory requests need the delegate's memory tool step.
         decision = await self._delegate.decide(context, interruption)
         return _require_grounded_explanation(decision, context)
 
 
-def _require_grounded_explanation(
-    decision: TutorDecision, context: TutorHostContext
-) -> TutorDecision:
-    """Select the advertised evidence-bound capability for an explicit source request."""
+def requires_study_memory_routing(learner_text: str) -> bool:
+    """Keep explicit difficulty/recall signals on the memory-aware route."""
+    return _STUDY_MEMORY_INTENT.search(learner_text) is not None
 
-    if context.pending_continuation is not None:
-        return decision
+
+def _grounded_explanation_decision(
+    context: TutorHostContext,
+) -> StartCapabilityDecision | None:
     learner_text = _latest_learner_text(context)
     if learner_text is None or not _is_source_explanation_request(learner_text):
-        return decision
+        return None
     if not _has_materials(context) or not any(
         item.id == _EXPLAIN_CAPABILITY_ID for item in context.advertised_capabilities
     ):
-        return decision
-    if (
-        isinstance(decision, StartCapabilityDecision)
-        and decision.capability_id == _EXPLAIN_CAPABILITY_ID
-    ):
-        return decision
+        return None
     return StartCapabilityDecision(
         _EXPLAIN_CAPABILITY_ID,
         {
@@ -86,6 +162,29 @@ def _require_grounded_explanation(
             "continuation_summary_json": None,
         },
     )
+
+
+def _require_grounded_explanation(
+    decision: TutorDecision, context: TutorHostContext
+) -> TutorDecision:
+    """Compatibility helper for callers that already obtained a model decision."""
+
+    if context.pending_continuation is not None:
+        return decision
+    if isinstance(decision, InvokeToolDecision) and decision.tool_name in {
+        "study_memory.record",
+        "study_memory.search",
+    }:
+        return decision
+    direct = _grounded_explanation_decision(context)
+    if direct is None:
+        return decision
+    if (
+        isinstance(decision, StartCapabilityDecision)
+        and decision.capability_id == _EXPLAIN_CAPABILITY_ID
+    ):
+        return decision
+    return direct
 
 
 def _latest_learner_text(context: TutorHostContext) -> str | None:
@@ -111,7 +210,11 @@ def _is_source_explanation_request(text: str) -> bool:
     # (for example, "Leggi biochimica").  Requiring a literal word such as
     # "fonte" leaves the most natural requests to model guesswork and permits
     # a bare acknowledgement instead of the evidence-bound capability.
-    return bool(_SOURCE_EXPLANATION_REQUEST.search(text))
+    return bool(
+        _SOURCE_EXPLANATION_REQUEST.search(text)
+        or _DIRECT_LESSON_START.search(text)
+        or (_LESSON_REFERENCE.search(text) and _LESSON_STUDY_REQUEST.search(text))
+    )
 
 
 def _retrieval_query(learner_text: str) -> str:

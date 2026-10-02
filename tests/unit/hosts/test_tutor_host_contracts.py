@@ -160,6 +160,86 @@ def test_decision_schema_is_closed_and_context_advertised() -> None:
     )
 
 
+def test_start_capability_progress_message_is_closed_capability_template() -> None:
+    available = _context(
+        pending_continuation=None,
+        advertised_capabilities=(_capability("explain_concept"),),
+    )
+    schema = decision_schema(available)
+    properties = schema["properties"]
+    assert isinstance(properties, Mapping)
+    decision = properties["decision"]
+    assert isinstance(decision, Mapping)
+    branches = decision["anyOf"]
+    assert isinstance(branches, tuple)
+    branch = None
+    for item in branches:
+        assert isinstance(item, Mapping)
+        item_properties = item["properties"]
+        assert isinstance(item_properties, Mapping)
+        kind = item_properties["kind"]
+        assert isinstance(kind, Mapping)
+        if kind.get("enum") == ("start_capability",):
+            branch = item
+            break
+    assert branch is not None
+    branch_properties = branch["properties"]
+    assert isinstance(branch_properties, Mapping)
+    progress = branch_properties["progress_message"]
+    assert isinstance(progress, Mapping)
+    assert progress["type"] == "string"
+    assert progress["enum"] == ("Preparo la spiegazione",)
+    required = branch["required"]
+    assert isinstance(required, tuple)
+    assert "progress_message" not in required
+
+    trimmed = StartCapabilityDecision(
+        "grounding.ask",
+        {"topic": "valves"},
+        progress_message=None,
+    )
+    assert trimmed.progress_message is None
+    with pytest.raises(ValueError, match="exact capability template"):
+        StartCapabilityDecision(
+            "grounding.ask", {"topic": "valves"}, progress_message="Preparo la spiegazione"
+        )
+    with pytest.raises(ValueError):
+        StartCapabilityDecision(
+            "explain_concept", {"topic": "valves"}, progress_message="Preparo la spiegazione."
+        )
+
+
+def test_progress_round_trip_preserves_presentation_not_operational_fingerprint() -> None:
+    context = _context(
+        pending_continuation=None,
+        advertised_capabilities=(_capability("explain_concept"),),
+    )
+    without_progress = StartCapabilityDecision("explain_concept", {"topic": "valves"})
+    with_progress = StartCapabilityDecision(
+        "explain_concept",
+        {"topic": "valves"},
+        progress_message="Preparo la spiegazione",
+    )
+    recovered = decision_from_bytes(decision_to_bytes(with_progress), context)
+    assert recovered == with_progress
+    assert recovered.progress_message == "Preparo la spiegazione"
+    assert decision_fingerprint(with_progress) == decision_fingerprint(without_progress)
+
+    legacy = json.dumps(
+        {
+            "kind": "start_capability",
+            "capability_id": "explain_concept",
+            "inputs": {"topic": "valves"},
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    legacy_decision = decision_from_bytes(legacy, context)
+    assert isinstance(legacy_decision, StartCapabilityDecision)
+    assert legacy_decision.progress_message is None
+
+
 def test_legacy_needs_learner_input_stop_reason_is_rejected() -> None:
     with pytest.raises(ValueError):
         TutorStopReason("needs_learner_input")
@@ -371,7 +451,16 @@ def test_assembler_reads_snapshot_evidence_and_manifests_without_owning_state() 
         _Snapshots(), _Evidence(), _Capabilities()
     ).assemble(course_id, session_id)
 
-    assert assembled.tutor_snapshot == snapshot.to_json()
+    assert assembled.tutor_snapshot == {
+        **snapshot.to_json(),
+        "tutor_presentations": (),
+        "conversation_window": {
+            "through_sequence": 8,
+            "total_entries": 0,
+            "included_entries": 0,
+            "omitted_entries": 0,
+        },
+    }
     assert assembled.learner_evidence == {
         "course_id": "course-host",
         "through_sequence": 8,

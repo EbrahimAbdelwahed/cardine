@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "plan": "specs/source-study-notes/README.md",
+  "rows": [
+    {
+      "path": "src/cardine/adapters/audio/__init__.py",
+      "sha256": "36f7568e1f49c4385ded75573042131c29207b0d0b3139846266ada73c833207"
+    },
+    {
+      "path": "src/cardine/adapters/audio/groq.py",
+      "sha256": "9ae5006e9d324b877e9b5c887c201cca1da8cbe28e70896d5504f5b1c879a1e1"
+    },
+    {
+      "path": "src/cardine/cli/repository.py",
+      "sha256": "6e9e3fb6b2a171be26c0b376e18d3481726cd4337f74278e558ac80cdc4754ae"
+    },
+    {
+      "path": "src/cardine/demo/browser.css",
+      "sha256": "d9c3c03c047e506921005d575341fbfa234183e00e47de182d36ad82edb7ce97"
+    },
+    {
+      "path": "src/cardine/demo/browser.js",
+      "sha256": "83db1ace3b6419bc34f8a69a4d63fd115d9e1603d686f918b3a460800ddbb78a"
+    },
+    {
+      "path": "src/cardine/demo/browser.py",
+      "sha256": "6bfb73ddc0975d0097cb0d22df2aa60c288db45f8091ccd93a09e6d1b1c88ee1"
+    },
+    {
+      "path": "src/cardine/demo/ui_application.py",
+      "sha256": "d7874a0364e42220e36cd07d82ebac47f75b5385e3d9a666a1a8c266ff3d09cf"
+    },
+    {
+      "path": "src/cardine/materials/generation_contracts.py",
+      "sha256": "d19e33d25f2cd3a8793a26bde28a4c3d2a894ad6593e8cf9ebce8a8a0337d871"
+    },
+    {
+      "path": "src/cardine/materials/materializer.py",
+      "sha256": "cc39b62d3a1b770be33f0681f6cd64e3ea1bfc0c043b03e622858557791231c0"
+    },
+    {
+      "path": "src/cardine/materials/product.py",
+      "sha256": "2593d417c1652d31fe81b21166f776f9ff8c57a2708811dc8c5f40a4ce9f881b"
+    },
+    {
+      "path": "src/study_agent/domain/provenance.py",
+      "sha256": "2a6a3b6e2ce22fde505b55a5bc78c2fd08e94e331a23ec9f225bd7cb681c9108"
+    },
+    {
+      "path": "src/study_agent/domain/source.py",
+      "sha256": "ef1b79f562684d3c6fcd179b257f4b90bef4d349bf38749cc5bd0df576f7c0f3"
+    },
+    {
+      "path": "src/study_agent/ingestion/events.py",
+      "sha256": "e5e2499ece595ed12b9fa9e4e7e7fb30d801c42e7dd84c501bf6591fc5f8899b"
+    },
+    {
+      "path": "src/study_agent/ingestion/projection.py",
+      "sha256": "df71701b96054f0d64ea79ba93423f4be407575a5620c2c341a08d853efc999d"
+    },
+    {
+      "path": "src/study_agent/ingestion/service.py",
+      "sha256": "691c9daa40ea035d49b7b5c89c3846f8254365f225b46adccaf74f7a0abe7ff5"
+    }
+  ]
+}

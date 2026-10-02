@@ -10,6 +10,7 @@ from .lesson_selection import (
     LessonSource,
     SearchDisposition,
     SourcePin,
+    lesson_title_matches,
 )
 from .pageindex_projection import (
     CanonicalSpanCandidate,
@@ -31,5 +32,6 @@ __all__ = (
     "PageIndexStatus",
     "SearchDisposition",
     "SourcePin",
+    "lesson_title_matches",
     "map_structural_tree",
 )

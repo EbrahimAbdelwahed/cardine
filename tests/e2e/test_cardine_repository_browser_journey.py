@@ -348,6 +348,8 @@ def _real_browser(url: str) -> Iterator[_DevTools]:
         pytest.skip("Chrome/Chromium is not installed; real-browser evidence is unavailable")
     port = _free_port()
     with TemporaryDirectory(prefix="cardine-browser-") as profile:
+        stderr_path = Path(profile) / "chrome-stderr.log"
+        chrome_stderr = stderr_path.open("w+b")
         process = subprocess.Popen(
             [
                 binary,
@@ -364,26 +366,41 @@ def _real_browser(url: str) -> Iterator[_DevTools]:
                 url,
             ],
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=chrome_stderr,
             start_new_session=True,
         )
         try:
             endpoint = f"http://127.0.0.1:{port}/json/list"
-            deadline = time.monotonic() + 10
-            targets: list[dict[str, object]] = []
+            deadline = time.monotonic() + 30
+            last_response = "no DevTools response"
+            target: dict[str, object] | None = None
             while time.monotonic() < deadline:
-                if process.poll() is not None:
-                    pytest.fail("Chrome exited before exposing the DevTools endpoint")
+                exit_code = process.poll()
+                if exit_code is not None:
+                    last_response = f"Chrome exited with status {exit_code}"
+                    break
                 try:
                     with urlopen(endpoint, timeout=0.5) as response:
                         targets = cast(list[dict[str, object]], json.load(response))
-                    if targets:
+                    target = next(
+                        (item for item in targets if item.get("type") == "page"), None
+                    )
+                    if target is not None:
                         break
-                except OSError:
-                    time.sleep(0.05)
-            if not targets:
-                pytest.fail("Chrome did not expose a page target")
-            target = next(item for item in targets if item.get("type") == "page")
+                    last_response = f"no page target in {targets!r}"
+                except OSError as error:
+                    last_response = f"{type(error).__name__}: {error}"
+                time.sleep(0.05)
+            if target is None:
+                chrome_stderr.flush()
+                chrome_stderr.seek(0, os.SEEK_END)
+                size = chrome_stderr.tell()
+                chrome_stderr.seek(max(0, size - 8_192))
+                stderr_tail = chrome_stderr.read().decode("utf-8", errors="replace")
+                pytest.fail(
+                    f"Chrome did not expose a page target within 30s; {last_response}\n"
+                    f"Chrome stderr tail:\n{stderr_tail}"
+                )
             browser = _DevTools(cast(str, target["webSocketDebuggerUrl"]))
             browser.call("Page.enable")
             browser.call("Runtime.enable")
@@ -417,6 +434,7 @@ def _real_browser(url: str) -> Iterator[_DevTools]:
                 else:
                     process.kill()
                 process.wait(timeout=5)
+            chrome_stderr.close()
 
 
 def _press(browser: _DevTools, key: str, code: int) -> None:
@@ -490,7 +508,7 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
             " && document.querySelector('#global-alert-title').textContent"
             " === 'Messaggio salvato, risposta non completata'"
         )
-        assert len(model.requests) == 2
+        assert len(model.requests) == 1
         assert browser.evaluate(
             "document.querySelectorAll('.thread-message--learner').length"
         ) == 1
@@ -522,7 +540,7 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
             "!document.querySelector('[data-optimistic-turn]')"
             " && document.querySelectorAll('.thread-message--assistant').length === 1"
         )
-        assert len(model.requests) == 4
+        assert len(model.requests) == 2
         assert browser.evaluate(
             "document.querySelectorAll('.thread-message--learner').length"
         ) == 1
@@ -538,14 +556,17 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
                 "document.querySelector('[data-turn-trace][data-highlighted=true]').innerText"
             ),
         )
-        # Advanced diagnostics intentionally expose only the validated tutor
-        # decision, not the internal phase timeline or turn payload metadata.
-        assert "assistant_message" in trace_text
+        # Correlated retries retain both the failed attempt and the successful
+        # one. Safe execution phases are visible; turn/provider payloads are not.
+        assert "start_capability" in trace_text
+        assert "application_turn" in trace_text
+        assert "capability_start" in trace_text
+        assert "timeout" in trace_text
+        assert "completed" in trace_text
+        assert "tentativo 2" in trace_text
         for excluded in (
             "model.grounding",
-            "timeout",
             "ui.retry",
-            "completed",
             "persistito: sì",
         ):
             assert excluded not in trace_text
@@ -634,7 +655,7 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
         assert "three cusps" in cast(
             str, browser.evaluate("document.querySelector('#view-root').innerText")
         )
-        assert len(model.requests) == 4
+        assert len(model.requests) == 2
         _assert_no_browser_errors(browser)
 
 
@@ -687,9 +708,7 @@ def test_repository_browser_retry_binds_original_request_across_interleaved_turn
 
         browser.call("Input.insertText", text="first learner")
         _press(browser, "Enter", 13)
-        browser.wait_for(
-            "window.__terminalRequests.length===1"
-        )
+        browser.wait_for("window.__terminalRequests.length===1")
         browser.wait_for(
             "Array.from(document.querySelectorAll('#global-alert-actions button'))"
             ".some(button=>button.textContent==='Riprova')"
@@ -796,4 +815,4 @@ def test_browser_has_no_stateless_demo_routes(tmp_path: Path) -> None:
             "path,status:(await fetch(path,{method:'POST'})).status})))))()",
             await_promise=True,
         )
-        assert '"status":404' in cast(str, statuses)
+        assert '\"status\":404' in cast(str, statuses)

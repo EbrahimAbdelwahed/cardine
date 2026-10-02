@@ -79,6 +79,44 @@ def test_post_baseline_byte_commitments_reject_further_drift(tmp_path: Path) -> 
     assert "CA-02 transition sha256 mismatch" in result.stderr
 
 
+def test_recovery_custody_rejects_mutated_core_and_new_unclassified_file(
+    tmp_path: Path,
+) -> None:
+    clean_root = _clean_archive(tmp_path)
+    protected = (
+        "src/study_agent/domain/__init__.py",
+        "src/study_agent/tutor_snapshot/reader.py",
+        "src/study_agent/ingestion/preparation.py",
+        "src/cardine/demo/browser.js",
+    )
+    for relative in protected:
+        path = clean_root / relative
+        original = path.read_bytes()
+        path.write_bytes(original + b"\n# unexpected recovery drift\n")
+        result = subprocess.run(
+            [sys.executable, "scripts/audit_harness_ownership.py", "--check"],
+            cwd=clean_root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode != 0
+        assert f"recovery overlay sha256 mismatch for {relative}" in result.stderr
+        path.write_bytes(original)
+
+    new_path = clean_root / "src/study_agent/ingestion/unreviewed.py"
+    new_path.write_text("value = 1\n", encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, "scripts/audit_harness_ownership.py", "--check"],
+        cwd=clean_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "classification is missing current path" in result.stderr
+
+
 def test_new_derived_module_commitment_rejects_drift(tmp_path: Path) -> None:
     clean_root = _clean_archive(tmp_path)
     path = clean_root / "src/study_agent/flashcards/semantic.py"
