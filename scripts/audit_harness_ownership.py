@@ -25,6 +25,38 @@ LEDGER = ROOT / "specs/harness-adoption/assets/ownership-ledger.csv"
 CLASSIFICATION = ROOT / "tests/parity/ownership-classification.json"
 TRANSITION_OVERLAY = ROOT / "tests/parity/ca02-transition-overlay.json"
 RECOVERY_OVERLAY = ROOT / "tests/parity/wave-a-recovery-overlay.json"
+STUDENT_JOURNAL_OVERLAY = ROOT / "tests/parity/student-journal-overlay.json"
+STUDENT_JOURNAL_PATHS = {
+    "src/cardine/application/grounding_ask.py",
+    "src/cardine/application/legacy_student_state.py",
+    "src/cardine/application/student_state.py",
+    "src/cardine/application/study_readiness.py",
+    "src/cardine/application/tool_surface.py",
+    "src/cardine/cli/repository.py",
+    "src/cardine/demo/anatomy.py",
+    "src/cardine/demo/browser.css",
+    "src/cardine/demo/browser.html",
+    "src/cardine/demo/browser.js",
+    "src/cardine/demo/product_shell.py",
+    "src/cardine/demo/ui_application.py",
+    "src/cardine/diagnostics/turn_activity.py",
+    "src/cardine/hosts/context.py",
+    "src/cardine/hosts/contracts.py",
+    "src/cardine/hosts/runner.py",
+    "src/cardine/hosts/source_grounding.py",
+    "src/study_agent/adapters/filesystem/repository_target.py",
+    "src/study_agent/application/__init__.py",
+    "src/study_agent/assessments/__init__.py",
+    "src/study_agent/domain/tutor_snapshot.py",
+    "src/study_agent/ports/__init__.py",
+    "src/study_agent/ports/assessment.py",
+    "src/study_agent/prompts/tutor_decision_v1.py",
+    "src/study_agent/tutor_snapshot/reader.py",
+}
+STUDENT_JOURNAL_REMOVED = {
+    "src/cardine/application/study_memory.py",
+    "src/study_agent/assessments/evidence.py",
+}
 RECOVERY_NEW_CORE_PATHS = {
     "src/study_agent/ingestion/preparation.py",
     "src/study_agent/prompts/retrieval_query_recovery_v1.py",
@@ -321,6 +353,42 @@ def _load_recovery_overlay() -> dict[str, str]:
     return hashes
 
 
+def _load_student_journal_overlay() -> dict[str, str]:
+    """Bind the fixed journal scope to exact bytes without changing old approval records."""
+    raw = json.loads(STUDENT_JOURNAL_OVERLAY.read_text(encoding="utf-8"))
+    if (
+        not isinstance(raw, dict)
+        or set(raw) != {"schema_version", "decision", "rows", "removed"}
+        or raw["schema_version"] != 1
+        or raw["decision"] != "ADR-0023--minimal-append-only-student-journal"
+        or not isinstance(raw["rows"], list)
+        or not isinstance(raw["removed"], list)
+        or len(raw["removed"]) != len(STUDENT_JOURNAL_REMOVED)
+        or set(raw["removed"]) != STUDENT_JOURNAL_REMOVED
+    ):
+        raise ValueError("student journal overlay has invalid scope")
+    hashes: dict[str, str] = {}
+    for row in raw["rows"]:
+        if not isinstance(row, dict) or set(row) != {"path", "sha256"}:
+            raise ValueError("student journal overlay has invalid row")
+        path, digest = row["path"], row["sha256"]
+        if (
+            path not in STUDENT_JOURNAL_PATHS
+            or path in hashes
+            or not isinstance(digest, str)
+            or len(digest) != 64
+            or any(c not in "0123456789abcdef" for c in digest)
+        ):
+            raise ValueError("student journal overlay has invalid binding")
+        hashes[path] = digest
+    if set(hashes) != STUDENT_JOURNAL_PATHS:
+        raise ValueError("student journal overlay has incomplete scope")
+    for path in STUDENT_JOURNAL_REMOVED:
+        if (ROOT / path).exists():
+            raise ValueError(f"student journal retired source is present: {path}")
+    return hashes
+
+
 def _load_rows() -> list[dict[str, str]]:
     if not LEDGER.is_file():
         raise ValueError(f"missing ownership ledger: {LEDGER}")
@@ -562,6 +630,8 @@ def _validate_cardine_transition(
             errors.append(f"CA-02 transition consumer binding is invalid: {path}")
     for row in transition_rows:
         source_path = row["source_path"]
+        if source_path in STUDENT_JOURNAL_REMOVED:
+            continue
         try:
             if _digest(source_path, targets) != recovery_hashes.get(
                 source_path, POST_BASELINE_SHA256.get(source_path, row["transition_sha256"])
@@ -574,6 +644,7 @@ def _validate_cardine_transition(
                     row["disposition"] == "HARNESS_IMPORT"
                     and source_path not in REVIEWED_NON_IMPORT_AST_VARIANCE
                     and source_path not in RECOVERY_AST_VARIANCE
+                    and source_path not in STUDENT_JOURNAL_PATHS
                 ):
                     baseline_source = _baseline_source(source_path)
                     if _normalized_ast(current_source, source_path) != _normalized_ast(
@@ -611,6 +682,9 @@ def validate(*, live: bool = False) -> list[str]:
     errors: list[str] = []
     try:
         recovery_hashes = _load_recovery_overlay()
+        recovery_hashes.update(_load_student_journal_overlay())
+        for path in STUDENT_JOURNAL_REMOVED:
+            recovery_hashes.pop(path, None)
         reviewed = _load_classification()
         reviewed_current_paths = {_current_path(row) for row in reviewed}
         config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
@@ -642,8 +716,10 @@ def validate(*, live: bool = False) -> list[str]:
         errors.append(f"classification is missing current path: {path}")
     for path in sorted(set(reviewed_by_current_path) - current_paths):
         row = reviewed_by_current_path[path]
-        if row.get("baseline_state", "clean") == "clean" and not (
-            path.startswith("entrypoint:study-agent") and row["removal_slice"] == "CA-02"
+        if (
+            path not in STUDENT_JOURNAL_REMOVED
+            and row.get("baseline_state", "clean") == "clean"
+            and not (path.startswith("entrypoint:study-agent") and row["removal_slice"] == "CA-02")
         ):
             errors.append(f"classification has undeclared baseline-only path: {path}")
     transition_sources = {row["source_path"] for row in transition_rows}
