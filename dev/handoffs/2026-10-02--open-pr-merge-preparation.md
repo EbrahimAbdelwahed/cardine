@@ -43,3 +43,10 @@ pdf_timeout; it requires reassessment on the updated PR head.
 
 Both PRs are still open and unmerged. The exact custody proposals remain unapplied.
 The owner was asked for explicit approval for both scopes; no reply yet.
+
+## Explicit custody approval
+
+The owner approved both custody changes with "ok vai" on 2026-10-02.
+The PR #10 two-path patch is applied. repository.py is also bound by the newer
+source-study-notes overlay, so its duplicate effective commitment uses the same
+approved digest. No additional source path or permissive audit exemption is added.
