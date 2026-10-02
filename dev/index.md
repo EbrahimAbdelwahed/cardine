@@ -9,6 +9,8 @@ archive and must not be treated as Cardine's current state.
 
 ## Start here
 
+- [Selected PDF lesson notes](logs/2026-10-02--cardine--selected-lesson-notes--log.md) — boundary editing and explicit lesson selection, independent generation and retry identity.
+
 - [Scheduled recall by default](logs/2026-10-02--cardine--recall-default--log.md) — standard server FSRS composition integrated with main, including the merged student journal and source-note generation.
 
 - [Minimal student journal](logs/2026-10-01--cardine--student-journal--log.md) — owner-approved replacement

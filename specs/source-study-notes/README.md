@@ -112,3 +112,28 @@ that pending GitHub review is complete.
 Next agent: check the current branch/PR before changing files, inspect this
 handoff and `dev/index.md`, fix actionable CI/review findings in this same PR,
 then update verification evidence here. Do not merge or deploy without permission.
+
+## Selective lesson generation — owner-approved continuation, 2026-10-02
+
+The source-page PDF flow now separates editing the complete lesson partition
+from selecting lessons to generate. The editor still confirms ordered,
+non-overlapping full PDF coverage; the next screen starts with no lessons
+selected, offers select-all and returns to the preserved boundary editor.
+Only checked lessons enter extraction and generation. Each keeps its existing
+independent complete/study proposal pair, HUMAN review and publication gates.
+
+The generation command accepts `selected_lessons` as an alternative to the
+legacy `lessons` payload. Selected ranges may skip pages and arrive in any
+order; the server sorts them and validates exact current source/revision,
+integer page bounds, titles, disjointness, size, consent and capacity before
+admission. Empty, overlapping, duplicated, malformed or stale selections fail.
+The existing `lessons` contract continues to require full PDF coverage.
+Both payloads together, or explicit null payloads, are rejected.
+
+Selected request identity binds parent source/revision, title and page range
+rather than position in the submitted array. Reordering a retry reuses the
+same jobs; reusing a request ID with another selection fails. The browser
+retains its request ID across failed submissions while selection is unchanged.
+Existing batch reservations, extraction manifests, restart checkpoints and
+parent lifetime validation remain authoritative. Unselected lessons produce
+no extraction or model job. Chat-triggered note generation remains deferred.

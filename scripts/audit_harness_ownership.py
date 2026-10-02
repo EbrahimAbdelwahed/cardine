@@ -781,13 +781,25 @@ STUDY_NOTES_PATHS = {
 }
 
 
-def _load_study_notes_overlay() -> dict[str, str]:
+SELECTED_NOTES_PATHS = {
+    "src/cardine/materials/product.py",
+    "src/cardine/demo/ui_application.py",
+    "src/cardine/demo/browser.js",
+    "src/cardine/demo/browser.css",
+}
+
+
+def _load_study_notes_overlay(*, selected: bool = False) -> dict[str, str]:
     """Bind the owner-approved feature scope without rewriting recovery custody.
 
     This is implementation custody, not evidence that automatic review or
     installed-package parity has passed. Unknown paths and digest drift fail.
     """
-    path = ROOT / "tests/parity/source-study-notes-overlay.json"
+    filename = (
+        "selected-lesson-notes-overlay.json" if selected else "source-study-notes-overlay.json"
+    )
+    paths = SELECTED_NOTES_PATHS if selected else STUDY_NOTES_PATHS
+    path = ROOT / "tests/parity" / filename
     raw = json.loads(path.read_text(encoding="utf-8"))
     if (
         not isinstance(raw, dict)
@@ -797,14 +809,14 @@ def _load_study_notes_overlay() -> dict[str, str]:
     ):
         raise ValueError("study notes overlay fields are invalid")
     rows = raw["rows"]
-    if not isinstance(rows, list) or len(rows) != len(STUDY_NOTES_PATHS):
+    if not isinstance(rows, list) or len(rows) != len(paths):
         raise ValueError("study notes custody must bind the exact feature path set")
     hashes: dict[str, str] = {}
     for row in rows:
         if not isinstance(row, dict) or set(row) != {"path", "sha256"}:
             raise ValueError("study notes custody row is invalid")
         source, digest = row["path"], row["sha256"]
-        if source not in STUDY_NOTES_PATHS or source in hashes:
+        if source not in paths or source in hashes:
             raise ValueError("study notes custody path is invalid or duplicated")
         if (
             not isinstance(digest, str)
@@ -821,6 +833,7 @@ def validate(*, live: bool = False) -> list[str]:
     try:
         recovery_hashes = {**_load_recovery_overlay(), **_load_study_notes_overlay()}
         recovery_hashes.update(_load_student_journal_overlay())
+        recovery_hashes.update(_load_study_notes_overlay(selected=True))
         for path in STUDENT_JOURNAL_REMOVED:
             recovery_hashes.pop(path, None)
         reviewed = _load_classification()
