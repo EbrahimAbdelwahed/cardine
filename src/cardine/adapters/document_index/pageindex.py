@@ -58,7 +58,7 @@ class PageIndexDocumentIndexAdapter:
             json.dumps(
                 {
                     "implementation": QUALIFIED_UPSTREAM_COMMIT,
-                    "projection": "document-index-v1",
+                    "projection": "document-index-v1-nodes-1024",
                     "input_policy": "canonical-source-binding-v2",
                     "timeout_seconds": getattr(self._worker, "timeout_seconds", 3.0),
                     "max_input_bytes": getattr(self._worker, "max_input_bytes", 2 * 1024 * 1024),
@@ -210,7 +210,7 @@ def _normalize_tree(tree: list[object], text: str) -> tuple[DocumentNode, ...]:
             if type(title) is not str or not title.strip():
                 raise ValueError("title")
             seen.add(key)
-            if len(seen) > 257:
+            if len(seen) > 1025:
                 raise ValueError("node bound")
             starts.append(start)
             keys.append(key)

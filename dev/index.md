@@ -9,6 +9,8 @@ archive and must not be treated as Cardine's current state.
 
 ## Start here
 
+- [GPT-6 Luna and large-document PageIndex](logs/2026-10-02--cardine--gpt6-luna-pageindex--log.md) — owner-requested local upgrade, separate model identity and bounded indexing for 700 headings.
+
 - [Scheduled recall by default](logs/2026-10-02--cardine--recall-default--log.md) — standard server FSRS composition integrated with main, including the merged student journal and source-note generation.
 
 - [Minimal student journal](logs/2026-10-01--cardine--student-journal--log.md) — owner-approved replacement

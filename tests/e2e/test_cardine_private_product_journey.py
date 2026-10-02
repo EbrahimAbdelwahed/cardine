@@ -759,7 +759,7 @@ def test_settings_labels_write_only_empty_after_save_and_pending_continuation_ro
                 "document.querySelector('.settings-surface').innerText"
             ),
         )
-        for label in ("Account", "Modello", "Privacy", "Chiave API", "GPT-5.6 Luna"):
+        for label in ("Account", "Modello", "Privacy", "Chiave API", "Modello attivo: Tutor"):
             assert label.lower() in text.lower()
         browser.evaluate(
             "document.querySelector('#settings-model-form input, #credential-settings-form input')"

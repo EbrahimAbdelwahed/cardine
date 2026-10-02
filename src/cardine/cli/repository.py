@@ -86,6 +86,7 @@ from cardine.materials import (
     MaterialVerifiedBatchAdapter,
     PinnedTranscriptInput,
 )
+from cardine.materials.generation_contracts import GenerationPipelinePins
 from study_agent.adapters.filesystem import (
     FilesystemBlobStore,
     LocalRepositoryError,
@@ -1195,11 +1196,18 @@ class ModelAdapterRegistry:
 def default_model_adapters(*, allow_configurable_endpoints: bool = False) -> ModelAdapterRegistry:
     """Return safe built-ins; arbitrary endpoints require explicit host opt-in."""
 
+    from cardine.adapters.model.openai_luna import (
+        GPT_6_LUNA_ADAPTER_ID,
+        GPT_6_LUNA_ADAPTER_VERSION,
+    )
+
     builders: dict[str, ModelAdapterBuilder] = {
         GPT_5_6_LUNA_ADAPTER_ID: _openai_gpt56_luna_model,
+        GPT_6_LUNA_ADAPTER_ID: _openai_gpt6_luna_model,
     }
     versions = {
         GPT_5_6_LUNA_ADAPTER_ID: GPT_5_6_LUNA_ADAPTER_VERSION,
+        GPT_6_LUNA_ADAPTER_ID: GPT_6_LUNA_ADAPTER_VERSION,
     }
     if allow_configurable_endpoints:
         builders[OPENAI_COMPATIBLE_ADAPTER_ID] = _openai_compatible_model
@@ -1263,6 +1271,17 @@ def _openai_gpt56_luna_model(config: ModelAdapterConfig, credential: str | None)
         raise ModelAdapterConfigurationError(
             "GPT-5.6 Luna adapter configuration is invalid"
         ) from error
+
+
+def _openai_gpt6_luna_model(config: ModelAdapterConfig, credential: str | None) -> ModelPort:
+    from cardine.adapters.model.openai_luna import OpenAIGpt6LunaModel
+
+    # Reuse credential/timeout validation without changing the historical preset.
+    _openai_gpt56_luna_model(config, credential)
+    assert credential is not None
+    timeout = config.settings["timeout_seconds"]
+    assert isinstance(timeout, (int, float))
+    return OpenAIGpt6LunaModel(OpenAIGpt56LunaConfig(credential, float(timeout)))
 
 
 class _EngineFactory(GroundingEngineFactory):
@@ -1988,16 +2007,18 @@ class LocalRepository:
         before the atomic proposal command.
         """
 
+        from cardine.adapters.model.openai_luna import GPT_6_LUNA_ADAPTER_ID, GPT_6_LUNA_MODEL_ID
+
         self._material_generation_preflight(pin, context, "compose")
         configured = self.config.model
         if configured is None:
             raise ModelAdapterConfigurationError("no model adapter is configured")
         if (
-            configured.adapter_id != GPT_5_6_LUNA_ADAPTER_ID
+            configured.adapter_id not in {GPT_5_6_LUNA_ADAPTER_ID, GPT_6_LUNA_ADAPTER_ID}
             or configured.credential_env != "OPENAI_API_KEY"
         ):
             raise ModelAdapterConfigurationError(
-                "material generation requires openai-gpt-5.6-luna and OPENAI_API_KEY"
+                "material generation requires a supported Luna adapter and OPENAI_API_KEY"
             )
         model = ConsentModelPort(
             self._model_adapters.create(configured, self._environment),
@@ -2023,8 +2044,40 @@ class LocalRepository:
             self._source_catalog,
             _UnconfiguredArtifactDecisionPolicy(),
         )
+        selected_id = configured.adapter_id
+        selected_version = self._model_adapters.artifact(selected_id).version
+        model_ids = {
+            GPT_5_6_LUNA_ADAPTER_ID: "gpt-5.6-luna",
+            GPT_6_LUNA_ADAPTER_ID: GPT_6_LUNA_MODEL_ID,
+        }
+        pipeline_pins = GenerationPipelinePins(
+            model_adapter=f"{selected_id}@{selected_version}",
+            model_id=model_ids[selected_id],
+        )
+
+        pinned_models = {pipeline_pins.model_adapter: model}
+
+        def model_for_pins(pins: GenerationPipelinePins) -> ModelPort:
+            adapter_id, version = pins.model_adapter.split("@", 1)
+            if (
+                model_ids.get(adapter_id) != pins.model_id
+                or str(self._model_adapters.artifact(adapter_id).version) != version
+            ):
+                raise ModelAdapterConfigurationError("material model pin is unavailable")
+            if pins.model_adapter not in pinned_models:
+                pinned_models[pins.model_adapter] = ConsentModelPort(
+                    self._model_adapters.create(
+                        replace(configured, adapter_id=adapter_id), self._environment
+                    ),
+                    pin.course_id,
+                    self.provider_consent,
+                )
+            return pinned_models[pins.model_adapter]
+
         return MaterialGenerationService(
             model=model,
+            pipeline_pins=pipeline_pins,
+            model_for_pins=model_for_pins,
             blobs=self.blobs,
             store=store,
             preflight=self._material_generation_stage_preflight,

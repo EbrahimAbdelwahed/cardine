@@ -63,7 +63,19 @@ def _tutor_context() -> TutorHostContext:
     )
 
 
-def test_luna_adapter_pins_api_contract_and_records_exact_provenance() -> None:
+@pytest.mark.parametrize(
+    ("gpt6", "model_id", "adapter_id"),
+    [
+        (False, GPT_5_6_LUNA_MODEL_ID, GPT_5_6_LUNA_ADAPTER_ID),
+        (True, "gpt-6-luna", "openai-gpt-6-luna"),
+    ],
+)
+def test_luna_adapter_pins_api_contract_and_records_exact_provenance(
+    gpt6: bool, model_id: str, adapter_id: str
+) -> None:
+    from cardine.adapters.model.openai_luna import OpenAIGpt6LunaModel
+
+    adapter_type = OpenAIGpt6LunaModel if gpt6 else OpenAIGpt56LunaModel
     transport = FakeTransport(
         HttpResponse(
             200,
@@ -81,7 +93,7 @@ def test_luna_adapter_pins_api_contract_and_records_exact_provenance() -> None:
             ).encode(),
         )
     )
-    adapter = OpenAIGpt56LunaModel(
+    adapter = adapter_type(
         OpenAIGpt56LunaConfig(SECRET, timeout_seconds=42),
         transport=transport,
     )
@@ -113,7 +125,7 @@ def test_luna_adapter_pins_api_contract_and_records_exact_provenance() -> None:
         "messages": [
             {"content": "Return the closed decision.", "role": "user"}
         ],
-        "model": "gpt-5.6-luna",
+        "model": model_id,
         "reasoning_effort": "none",
         "response_format": {
             "json_schema": {
@@ -134,8 +146,8 @@ def test_luna_adapter_pins_api_contract_and_records_exact_provenance() -> None:
     assert SECRET not in body.decode()
     assert result.finish_reason is ModelFinishReason.STOP
     assert result.structured_output == {"decision": "supported"}
-    assert result.invocation.adapter_id == GPT_5_6_LUNA_ADAPTER_ID
-    assert result.invocation.model_id == GPT_5_6_LUNA_MODEL_ID
+    assert result.invocation.adapter_id == adapter_id
+    assert result.invocation.model_id == model_id
     assert result.invocation.response_id == "luna-response-1"
     assert SECRET not in repr(adapter)
 

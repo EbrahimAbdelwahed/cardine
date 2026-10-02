@@ -156,8 +156,12 @@ def test_settings_application_marks_only_bootstrap_and_session_as_private() -> N
     bootstrap = app.get("/api/v1/bootstrap")
     session = app.get("/api/v1/session")
     materials = app.get("/api/v1/materials")
-    assert bootstrap == {"schema_version": 1, "mode": "private"}
-    assert session == {"schema_version": 1, "mode": "private"}
+    assert bootstrap == {
+        "schema_version": 1, "mode": "private", "model": app.get("/api/v1/settings")["model"]
+    }
+    assert session == {
+        "schema_version": 1, "mode": "private", "model": app.get("/api/v1/settings")["model"]
+    }
     assert materials == delegate.payloads["/api/v1/materials"]
     assert delegate.get_calls == ["/api/v1/bootstrap", "/api/v1/session", "/api/v1/materials"]
 
@@ -175,10 +179,12 @@ def test_settings_application_preserves_local_repository_mode_and_shared_store()
     assert app.get("/api/v1/bootstrap") == {
         "schema_version": 1,
         "mode": "local_repository",
+        "model": app.get("/api/v1/settings")["model"],
     }
     assert app.get("/api/v1/session") == {
         "schema_version": 1,
         "mode": "local_repository",
+        "model": app.get("/api/v1/settings")["model"],
     }
     settings = app.get("/api/v1/settings")
     assert settings["mode"] == "local_repository"
@@ -269,3 +275,18 @@ def test_credential_remove_requires_an_empty_command_and_other_routes_delegate()
         "path": "/api/v1/session/turns",
     }
     assert delegate.post_calls == [("/api/v1/session/turns", command)]
+
+
+def test_settings_and_bootstrap_report_configured_gpt6_model() -> None:
+    class Gpt6Delegate(_LocalDelegate):
+        model_adapter_id = "openai-gpt-6-luna"
+
+    application = PrivateSettingsApplication(
+        Gpt6Delegate(), credentials=RuntimeCredentialStore({}), mode="local_repository"
+    )
+    for path in ("/api/v1/settings", "/api/v1/bootstrap", "/api/v1/session"):
+        model = application.get(path)["model"]
+        assert isinstance(model, Mapping)
+        assert model["model"] == "GPT-6 Luna"
+        assert model["adapter_id"] == "openai-gpt-6-luna"
+        assert model["credential_configured"] is False

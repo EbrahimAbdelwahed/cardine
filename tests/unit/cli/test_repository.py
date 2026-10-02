@@ -332,12 +332,12 @@ def test_default_registry_selects_fixed_luna_adapter_from_credential_reference()
     assert str(registry.artifact("openai-gpt-5.6-luna").version) == "1.0.0"
 
 
-def test_default_registry_exposes_only_the_fixed_luna_network_destination() -> None:
+def test_default_registry_exposes_the_two_fixed_luna_presets() -> None:
     registry = __import__(
         "cardine.cli", fromlist=["default_model_adapters"]
     ).default_model_adapters()
 
-    assert registry.adapter_ids == ("openai-gpt-5.6-luna",)
+    assert registry.adapter_ids == ("openai-gpt-5.6-luna", "openai-gpt-6-luna")
 
 
 def test_luna_registry_rejects_an_alternate_credential_environment() -> None:
