@@ -30,3 +30,27 @@ paths; it has NOT been applied or executed. Owner approval is required before
 applying it and validating the unchanged drift/mutation tests on the updated head.
 Delivery stays draft until this custody gate and applicable CI/review are resolved.
 No merge or deployment is authorized.
+
+## 2026-10-02 owner-approved merge preparation
+
+The owner explicitly approved the two custody proposals and the PR #12 conflict
+choices. The journal overlay binds exactly 25 paths and two removals. Its tests
+mutate every bound source, restore each removed file, omit a binding and attempt
+to add a path outside the scope; all are rejected. Historical manifests remain.
+Main is integrated through merged PR #10 at fe0f967. Both student-state and
+material-generation APIs remain; student_state.record/search replace retired
+memory tools; failed activity settlement remains truthful. Two tests newly
+inherited from main were aligned with the approved journal routes/tool names.
+
+Full offline integrated suite on 5397384: 2849 passed, 4 opt-in/optional skips,
+2 failures from the old test expectations above. After those test-only repairs,
+all 12 relevant product/fast-path tests pass. Ruff and strict mypy (662 files),
+wheel/sdist build and artifact verification pass. Final-head GitHub CI and the
+first automatic Codex review must complete before the requested merge.
+
+The owner explicitly instructed merging everything that has had one review,
+without further review/fix cycles. PR #10 was merged with all ten CI checks
+successful and two Codex rounds completed. Outstanding #10 findings retained:
+reconciliation after the first four sources; resolved-model pin in routing;
+lifecycle manifests for semantic config. That instruction applies to PR #12
+once its first review completes; it does not waive failed CI.

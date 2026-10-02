@@ -350,8 +350,7 @@ def test_public_child_context_preserves_parent_identity_and_narrows_authority() 
         session_id=SessionId("session-1"),
         model_run_id=None,
         idempotency_key=(
-            "worker-child-sha256:"
-            "fb4c6aa739cb5b7f849fd733496f125166ee4ed9ddf6ab4325ffb9280e5dd37f"
+            "worker-child-sha256:fb4c6aa739cb5b7f849fd733496f125166ee4ed9ddf6ab4325ffb9280e5dd37f"
         ),
     )
     assert generation_worker_child_context(task, parent) == child
@@ -368,9 +367,7 @@ def test_public_child_context_identity_changes_with_task_not_parent_retry_metada
 
     original = generation_worker_child_context(task, parent)
     parent_retry = generation_worker_child_context(task, changed_parent_retry)
-    other_task = generation_worker_child_context(
-        replace(task, task_id="lesson-2:hybrid"), parent
-    )
+    other_task = generation_worker_child_context(replace(task, task_id="lesson-2:hybrid"), parent)
 
     assert parent_retry == original
     assert other_task.correlation_id != original.correlation_id
@@ -432,9 +429,7 @@ def test_continuations_and_verified_runs_cannot_contaminate_task_inputs() -> Non
         _continuation(task, checkpoint=SHA_C, step=1),
         inputs={"query": "forged", "ambient": {"history": "stolen"}},
     )
-    suspended = _base_observation(
-        GenerationWorkerStatus.SUSPENDED, continuation=contaminated
-    )
+    suspended = _base_observation(GenerationWorkerStatus.SUSPENDED, continuation=contaminated)
     service, _, _ = _service([suspended])
     view = _run(service.start(task, _parent()))
     assert view.status is GenerationWorkerStatus.FAILED
@@ -550,9 +545,7 @@ def test_direct_pending_completion_failure_and_running_observation_are_sanitized
 
 
 def test_child_private_machine_failure_code_collapses_before_compact_view() -> None:
-    private = _base_observation(
-        GenerationWorkerStatus.FAILED, failure_code="openai_overloaded"
-    )
+    private = _base_observation(GenerationWorkerStatus.FAILED, failure_code="openai_overloaded")
     service, _, _ = _service([private])
     view = _run(service.start(_task(), _parent()))
     assert view.status is GenerationWorkerStatus.FAILED
@@ -644,9 +637,7 @@ def test_completion_rejects_terminating_validation_disposition() -> None:
         ("prompt_fingerprint", SHA_D),
     ),
 )
-def test_canonical_terminal_state_rejects_forged_receipt_bindings(
-    field: str, forged: str
-) -> None:
+def test_canonical_terminal_state_rejects_forged_receipt_bindings(field: str, forged: str) -> None:
     service, store, _ = _service([_completed()])
     task = _task()
     _run(service.start(task, _parent()))
@@ -682,3 +673,25 @@ def test_stale_resume_generation_is_rejected_after_next_suspension() -> None:
     with pytest.raises(GenerationWorkerConflictError, match="generation"):
         _run(service.resume(task.task_id, 0, {"answer": "generation-zero"}, _parent()))
     assert len(runs.resumes) == 1
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "gateway_authentication",
+        "gateway_authorization",
+        "gateway_model_unavailable",
+        "gateway_endpoint_incompatible",
+        "gateway_schema_incompatible",
+        "gateway_rate_limited",
+        "gateway_timeout",
+        "gateway_protocol_error",
+        "gateway_unavailable",
+    ],
+)
+def test_typed_gateway_failure_survives_compact_worker_sanitization(code: str) -> None:
+    observation = _base_observation(GenerationWorkerStatus.FAILED, failure_code=code)
+    service, _, _ = _service([observation])
+    view = _run(service.start(_task(), _parent()))
+    assert view.failure_code == code
+    assert not view.verified_detail_available

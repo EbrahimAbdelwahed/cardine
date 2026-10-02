@@ -25,6 +25,38 @@ LEDGER = ROOT / "specs/harness-adoption/assets/ownership-ledger.csv"
 CLASSIFICATION = ROOT / "tests/parity/ownership-classification.json"
 TRANSITION_OVERLAY = ROOT / "tests/parity/ca02-transition-overlay.json"
 RECOVERY_OVERLAY = ROOT / "tests/parity/wave-a-recovery-overlay.json"
+STUDENT_JOURNAL_OVERLAY = ROOT / "tests/parity/student-journal-overlay.json"
+STUDENT_JOURNAL_PATHS = {
+    "src/cardine/application/grounding_ask.py",
+    "src/cardine/application/legacy_student_state.py",
+    "src/cardine/application/student_state.py",
+    "src/cardine/application/study_readiness.py",
+    "src/cardine/application/tool_surface.py",
+    "src/cardine/cli/repository.py",
+    "src/cardine/demo/anatomy.py",
+    "src/cardine/demo/browser.css",
+    "src/cardine/demo/browser.html",
+    "src/cardine/demo/browser.js",
+    "src/cardine/demo/product_shell.py",
+    "src/cardine/demo/ui_application.py",
+    "src/cardine/diagnostics/turn_activity.py",
+    "src/cardine/hosts/context.py",
+    "src/cardine/hosts/contracts.py",
+    "src/cardine/hosts/runner.py",
+    "src/cardine/hosts/source_grounding.py",
+    "src/study_agent/adapters/filesystem/repository_target.py",
+    "src/study_agent/application/__init__.py",
+    "src/study_agent/assessments/__init__.py",
+    "src/study_agent/domain/tutor_snapshot.py",
+    "src/study_agent/ports/__init__.py",
+    "src/study_agent/ports/assessment.py",
+    "src/study_agent/prompts/tutor_decision_v1.py",
+    "src/study_agent/tutor_snapshot/reader.py",
+}
+STUDENT_JOURNAL_REMOVED = {
+    "src/cardine/application/study_memory.py",
+    "src/study_agent/assessments/evidence.py",
+}
 RECOVERY_NEW_CORE_PATHS = {
     "src/study_agent/ingestion/preparation.py",
     "src/study_agent/prompts/retrieval_query_recovery_v1.py",
@@ -32,6 +64,11 @@ RECOVERY_NEW_CORE_PATHS = {
 RECOVERY_AST_VARIANCE = {
     "src/study_agent/domain/__init__.py",
     "src/study_agent/tutor_snapshot/reader.py",
+}
+THIRD_PARTY_NOTICES = {
+    "src/cardine/demo/icons/LICENSE.beautifului.txt": (
+        "65362623b02cdad0e2d8e33a9a399d1d9b2a28412e075108f2f97a9e0cd099de"
+    ),
 }
 BASELINE_WHEEL = ROOT / "tests/parity/artifacts/cardine-0.2.0-py3-none-any.whl"
 SOURCE_ROOT = ROOT / "src"
@@ -61,6 +98,9 @@ TRANSITION_EXPORTS = {
     "require_text",
 }
 REVIEWED_NON_IMPORT_AST_VARIANCE = {
+    # Preserve closed typed gateway failures through the compact worker view.
+    # The exact post-baseline digest below binds this contract correction.
+    "src/study_agent/workers/contracts.py",
     # Current-head review repairs persist verified citation refs through the
     # copied session contract. Exact post-baseline digests bind both paths.
     "src/study_agent/sessions/events.py",
@@ -81,20 +121,50 @@ REVIEWED_NON_IMPORT_AST_VARIANCE = {
 # Exact bytes from committed Wave A product evolution after the historical
 # CA-01/CA-02 snapshots. Preserve the frozen ledgers and reject further drift.
 POST_BASELINE_SHA256 = {
+    "src/study_agent/workers/contracts.py": (
+        "80831c2c0c77e9c09bf20a9e109b503134a2bac39226ca68dcc3b671afca270c"
+    ),
+    "src/study_agent/ports/model.py": (
+        "b5bdee42438f04ea94cd3dfb71e7888ee72a00ac84080665c8fe6af06bfea856"
+    ),
+    "src/study_agent/playbooks/engine.py": (
+        "99b1099885c73a685bf3b8151fc7a1578e8151d074e9758123ebb74af43fe802"
+    ),
+    "src/study_agent/capabilities/worker_adapter.py": (
+        "d9034bd17dce27f8c693b54682ccefbcce699c64cf4dc79f861f7843f4b48c99"
+    ),
+    "src/study_agent/capabilities/gateway.py": (
+        "ddd84bfe31c927a971788cbb0931b761fe5fce4b82ca02461c1db9be6e0c6d87"
+    ),
+    "src/study_agent/capabilities/contracts.py": (
+        "ef5f57cc45726d36acd2f121e239bd0f2f95fc3275394a5ffdc1b97d40493786"
+    ),
     "src/study_agent/adapters/sqlite/run_store.py": (
         "331b2fb71c01a987d800465555e5a959c7f9b1692b4dbb8902987751944dfe58"
+    ),
+    "src/study_agent/adapters/model/openai_compatible.py": (
+        "513227a8d34fd1974aadb78957186688773b7e606224559c052947c595d943ca"
+    ),
+    "src/cardine/hosts/runner.py": (
+        "9f0b54647e5de69031a709ad85864c9312c5111b024deb1c173a8a77af28fcbd"
+    ),
+    "src/cardine/demo/browser.html": (
+        "1bd41e5a0785ffc38f06049f8db654241a29d5a1e28d929c1320aa46b63d6cb0"
+    ),
+    "src/cardine/application/flashcard_proposals.py": (
+        "a0c6a76345a7b61fe1f31ae48af37913062df5dbe0233564205a71cdab8b859d"
     ),
     "src/cardine/application/capability_completion.py": (
         "a8745bebd1384ecd3ddce6577841223628ab9423c86ffe8d0d8e2e9d1e7d0c4b"
     ),
     "src/cardine/application/conversation_turn.py": (
-        "f0f20859a832fe0eaea16fe06da8d05ca1b8b71155bf4ea4397068d0c9b3a7bc"
+        "f720cb0b159feeb0fa7242a07dd14f4a55e12be728a9c370ec7382d254bc3183"
     ),
     "src/cardine/cli/repository.py": (
-        "a291e142e6579f6af23dd0b0dad0c221f5574214ce46dcc6dc5392e74f3565cb"
+        "2a6db590171d021bca6b9fffceb5e08a790742c66c1e0651cc82138c0af6f1c6"
     ),
     "src/cardine/demo/ui_application.py": (
-        "dbc49571507081e120540add04ce6c7c7cb1af8be55e99350e8c20e3af1df118"
+        "a3099df6a060ea0c927de35ee07fd68a597b84f3c21400e1dfd45776f68c43d9"
     ),
     "src/cardine/hosts/contracts.py": (
         "df3e864ef0131f7c09dcc985529950269fbf6afef81b679c07f213b5ebdd3999"
@@ -138,7 +208,53 @@ POST_BASELINE_SHA256 = {
     "src/cardine/hosts/source_grounding.py": (
         "dce83af15586066e48306ddcfe755a469836e2eeb3fe381d3d32610d6f4ea1f0"
     ),
+    "src/cardine/cli/registry.py": (
+        "e8c6abdbf326efb92d49b10618741a5f452ac42556e27c2acfe1a5991460e377"
+    ),
+    "src/study_agent/ports/__init__.py": (
+        "11bb38aeeea33101d1d1fe0dd6cb29d1e8fe112fa38d4c9d49a8141a8e2175c5"
+    ),
+    "src/study_agent/repository_config.py": (
+        "3ad9cd11a75456ef163e37028e2c5e58444944879874add8553b818c99328e6e"
+    ),
 }
+
+# Explicit Cardine-owned evolution approved by the Jev/PageIndex specification.
+# Preserve the 322 historical CA-01 rows; new files have exact byte commitments,
+# not a prefix exception. No Harness installed-package migration is implied.
+POST_BASELINE_ADDITIONS = {
+    "src/study_agent/adapters/judgement/__init__.py": (
+        "b8abef779a6218b8eed200b15800217b374e6fef4ff384d34efcc665a801e0ec"
+    ),
+    "src/study_agent/adapters/judgement/jev.py": (
+        "a8905a56c38f4e7d060c0ba5cd25eb23a656833bb26be9e6e86966fcf8dd787b"
+    ),
+    "src/study_agent/domain/document_index.py": (
+        "004d895a70b26ab9e4a3a616079792874be60dd2ef584755efdf1f11b9207c99"
+    ),
+    "src/study_agent/domain/features.py": (
+        "b2941a0d1e5f40fc4b4ae9e6b072abd7337c99bf5b59255420e1c7b730a0c10a"
+    ),
+    "src/study_agent/flashcards/semantic.py": (
+        "6c328980a79df765dc81edb18128bd29e313b5b0b91e4dff94c65adcde88dc47"
+    ),
+    "src/study_agent/knowledge/__init__.py": (
+        "60b3770e79b5c172314488df96e09b006bf6af0c578736c804d3818f5ec19b1b"
+    ),
+    "src/study_agent/knowledge/document_index.py": (
+        "c793034bf0232d3e14cd895a6b69ab093475bd34257efcac6c8bf04a988dc0e2"
+    ),
+    "src/study_agent/ports/document_index.py": (
+        "5ca1262be14d93a3019814c0e742e93b60c7583bfed0964f1d85de452c27f210"
+    ),
+    "src/study_agent/ports/judgement.py": (
+        "b223ac82d1016a88f89440dd42092b520c7d097fa1323c8882967d5b43bb638a"
+    ),
+    "src/study_agent/knowledge/unitizer.py": (
+        "ab1b3a5a44c78cc7ec1b2f3ca731188c0f79184c951a12f8817d8141836faba8"
+    ),
+}
+
 
 COPIED_IMPORT_PATHS = {
     "src/study_agent/adapters/memory/host_file.py",
@@ -318,6 +434,42 @@ def _load_recovery_overlay() -> dict[str, str]:
         hashes[path] = digest
     if not hashes.keys() >= (RECOVERY_NEW_CORE_PATHS | RECOVERY_AST_VARIANCE):
         raise ValueError("recovery overlay is missing required core bindings")
+    return hashes
+
+
+def _load_student_journal_overlay() -> dict[str, str]:
+    """Bind the fixed journal scope to exact bytes without changing old approval records."""
+    raw = json.loads(STUDENT_JOURNAL_OVERLAY.read_text(encoding="utf-8"))
+    if (
+        not isinstance(raw, dict)
+        or set(raw) != {"schema_version", "decision", "rows", "removed"}
+        or raw["schema_version"] != 1
+        or raw["decision"] != "ADR-0023--minimal-append-only-student-journal"
+        or not isinstance(raw["rows"], list)
+        or not isinstance(raw["removed"], list)
+        or len(raw["removed"]) != len(STUDENT_JOURNAL_REMOVED)
+        or set(raw["removed"]) != STUDENT_JOURNAL_REMOVED
+    ):
+        raise ValueError("student journal overlay has invalid scope")
+    hashes: dict[str, str] = {}
+    for row in raw["rows"]:
+        if not isinstance(row, dict) or set(row) != {"path", "sha256"}:
+            raise ValueError("student journal overlay has invalid row")
+        path, digest = row["path"], row["sha256"]
+        if (
+            path not in STUDENT_JOURNAL_PATHS
+            or path in hashes
+            or not isinstance(digest, str)
+            or len(digest) != 64
+            or any(c not in "0123456789abcdef" for c in digest)
+        ):
+            raise ValueError("student journal overlay has invalid binding")
+        hashes[path] = digest
+    if set(hashes) != STUDENT_JOURNAL_PATHS:
+        raise ValueError("student journal overlay has incomplete scope")
+    for path in STUDENT_JOURNAL_REMOVED:
+        if (ROOT / path).exists():
+            raise ValueError(f"student journal retired source is present: {path}")
     return hashes
 
 
@@ -562,6 +714,8 @@ def _validate_cardine_transition(
             errors.append(f"CA-02 transition consumer binding is invalid: {path}")
     for row in transition_rows:
         source_path = row["source_path"]
+        if source_path in STUDENT_JOURNAL_REMOVED:
+            continue
         try:
             if _digest(source_path, targets) != recovery_hashes.get(
                 source_path, POST_BASELINE_SHA256.get(source_path, row["transition_sha256"])
@@ -574,6 +728,7 @@ def _validate_cardine_transition(
                     row["disposition"] == "HARNESS_IMPORT"
                     and source_path not in REVIEWED_NON_IMPORT_AST_VARIANCE
                     and source_path not in RECOVERY_AST_VARIANCE
+                    and source_path not in STUDENT_JOURNAL_PATHS
                 ):
                     baseline_source = _baseline_source(source_path)
                     if _normalized_ast(current_source, source_path) != _normalized_ast(
@@ -607,10 +762,67 @@ def _validate_cardine_transition(
                 errors.append(f"CA-02 transition entrypoint digest mismatch: {row['path']}")
 
 
+STUDY_NOTES_PATHS = {
+    "src/cardine/adapters/audio/__init__.py",
+    "src/cardine/adapters/audio/groq.py",
+    "src/cardine/materials/product.py",
+    "src/cardine/materials/materializer.py",
+    "src/cardine/materials/generation_contracts.py",
+    "src/cardine/cli/repository.py",
+    "src/cardine/demo/browser.css",
+    "src/cardine/demo/browser.js",
+    "src/cardine/demo/browser.py",
+    "src/cardine/demo/ui_application.py",
+    "src/study_agent/domain/provenance.py",
+    "src/study_agent/domain/source.py",
+    "src/study_agent/ingestion/events.py",
+    "src/study_agent/ingestion/projection.py",
+    "src/study_agent/ingestion/service.py",
+}
+
+
+def _load_study_notes_overlay() -> dict[str, str]:
+    """Bind the owner-approved feature scope without rewriting recovery custody.
+
+    This is implementation custody, not evidence that automatic review or
+    installed-package parity has passed. Unknown paths and digest drift fail.
+    """
+    path = ROOT / "tests/parity/source-study-notes-overlay.json"
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if (
+        not isinstance(raw, dict)
+        or set(raw) != {"schema_version", "plan", "rows"}
+        or raw["schema_version"] != 1
+        or raw["plan"] != "specs/source-study-notes/README.md"
+    ):
+        raise ValueError("study notes overlay fields are invalid")
+    rows = raw["rows"]
+    if not isinstance(rows, list) or len(rows) != len(STUDY_NOTES_PATHS):
+        raise ValueError("study notes custody must bind the exact feature path set")
+    hashes: dict[str, str] = {}
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != {"path", "sha256"}:
+            raise ValueError("study notes custody row is invalid")
+        source, digest = row["path"], row["sha256"]
+        if source not in STUDY_NOTES_PATHS or source in hashes:
+            raise ValueError("study notes custody path is invalid or duplicated")
+        if (
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(char not in "0123456789abcdef" for char in digest)
+        ):
+            raise ValueError("study notes custody digest is invalid")
+        hashes[source] = digest
+    return hashes
+
+
 def validate(*, live: bool = False) -> list[str]:
     errors: list[str] = []
     try:
-        recovery_hashes = _load_recovery_overlay()
+        recovery_hashes = {**_load_recovery_overlay(), **_load_study_notes_overlay()}
+        recovery_hashes.update(_load_student_journal_overlay())
+        for path in STUDENT_JOURNAL_REMOVED:
+            recovery_hashes.pop(path, None)
         reviewed = _load_classification()
         reviewed_current_paths = {_current_path(row) for row in reviewed}
         config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
@@ -632,18 +844,35 @@ def validate(*, live: bool = False) -> list[str]:
             and reviewed_by_current_path[path]["path"] == path
         )
     }
+    for path, expected_digest in POST_BASELINE_ADDITIONS.items():
+        try:
+            if _digest(path, targets) != expected_digest:
+                errors.append(f"post-baseline addition sha256 mismatch: {path}")
+        except OSError:
+            errors.append(f"post-baseline addition is absent: {path}")
     for path, expected_digest in recovery_hashes.items():
         try:
             if _digest(path, targets) != expected_digest:
                 errors.append(f"recovery overlay sha256 mismatch for {path}")
         except OSError as error:
             errors.append(f"recovery overlay missing source {path}: {error}")
-    for path in sorted(current_paths - set(reviewed_by_current_path) - RECOVERY_NEW_CORE_PATHS):
+    for path, expected_digest in THIRD_PARTY_NOTICES.items():
+        if path not in current_paths or _digest(path, targets) != expected_digest:
+            errors.append(f"third-party notice missing or altered: {path}")
+    for path in sorted(
+        current_paths
+        - set(reviewed_by_current_path)
+        - RECOVERY_NEW_CORE_PATHS
+        - set(POST_BASELINE_ADDITIONS)
+        - set(THIRD_PARTY_NOTICES)
+    ):
         errors.append(f"classification is missing current path: {path}")
     for path in sorted(set(reviewed_by_current_path) - current_paths):
         row = reviewed_by_current_path[path]
-        if row.get("baseline_state", "clean") == "clean" and not (
-            path.startswith("entrypoint:study-agent") and row["removal_slice"] == "CA-02"
+        if (
+            path not in STUDENT_JOURNAL_REMOVED
+            and row.get("baseline_state", "clean") == "clean"
+            and not (path.startswith("entrypoint:study-agent") and row["removal_slice"] == "CA-02")
         ):
             errors.append(f"classification has undeclared baseline-only path: {path}")
     transition_sources = {row["source_path"] for row in transition_rows}

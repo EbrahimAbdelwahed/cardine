@@ -103,12 +103,15 @@ def test_long_chat_can_search_memory_before_source_grounded_flashcards(tmp_path:
     assert len(decision_requests) == 15
     observed = json.loads(decision_requests[-1].messages[-1].content)
     observations = observed["tutor_snapshot"]["agent_observations"]
-    assert observations[0]["tool_name"] == "conversation.search"
-    assert observations[0]["status"] == "succeeded"
+    memory_search = next(
+        item for item in observations if item["tool_name"] == "conversation.search"
+    )
+    assert memory_search["status"] == "succeeded"
     trajectory = cast(
         tuple[dict[str, object], ...], app.turn_traces.snapshot()["turn_traces"]
     )[-1]
     assert trajectory["steps"] == (
+        {"kind": "invoke_tool", "tool_name": "conversation.read"},
         {"kind": "invoke_tool", "tool_name": "conversation.search"},
         {"kind": "start_capability", "capability_id": "propose_flashcards"},
     )
@@ -123,7 +126,4 @@ def test_long_chat_can_search_memory_before_source_grounded_flashcards(tmp_path:
         )
     assert durable_handoffs
     assert all(b"MEMORY-EXCERPT-ONLY" not in payload for payload in durable_handoffs)
-    assert all(
-        b"MEMORY-SHORT-SENTINEL" not in payload
-        for payload in durable_handoffs
-    )
+    assert all(b"MEMORY-SHORT-SENTINEL" not in payload for payload in durable_handoffs)

@@ -830,7 +830,7 @@ def agent_operations_manifest() -> JsonObject:
     return {
         "contract_version": "agent-operations@1",
         "harness_version": __version__,
-        "repository_schema_versions": (CONFIG_SCHEMA_VERSION,),
+        "repository_schema_versions": (1, CONFIG_SCHEMA_VERSION),
         "offline_default": True,
         "commands": commands,
         "study_tools": tools,

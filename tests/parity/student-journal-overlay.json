@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "decision": "ADR-0023--minimal-append-only-student-journal",
+  "rows": [
+    {
+      "path": "src/cardine/application/grounding_ask.py",
+      "sha256": "7b820afe2bb2286d9c5975a41abd64bfe9afabbfe4220028dfa338a0ced7c5ad"
+    },
+    {
+      "path": "src/cardine/application/legacy_student_state.py",
+      "sha256": "ad11bcc4306d365f6e5b547e92ae38983616b2dcb41f8dff4e371cc337e8e81b"
+    },
+    {
+      "path": "src/cardine/application/student_state.py",
+      "sha256": "c2f3bc5f5ef228777e799d6c36e95e8a1614cd0e2e93ec0bdedfc359e3fe4860"
+    },
+    {
+      "path": "src/cardine/application/study_readiness.py",
+      "sha256": "9d3ef4d2f2da4119c4bfad004759f01d3a129d310de6c7f17319d3eea609d5c3"
+    },
+    {
+      "path": "src/cardine/application/tool_surface.py",
+      "sha256": "1f6526bfb28cbcbdfb8313cd8402b5b1839309fa25310879dbda1c4d34fe77af"
+    },
+    {
+      "path": "src/cardine/cli/repository.py",
+      "sha256": "db80d7666d4d99ee547c3071f8bd2449033cc1f1617ab743257648de27d59ab1"
+    },
+    {
+      "path": "src/cardine/demo/anatomy.py",
+      "sha256": "73e84191d9648f3db8d4d3edcab08595c34ed68c57eac5b58c5e16aeae0bae67"
+    },
+    {
+      "path": "src/cardine/demo/browser.css",
+      "sha256": "387005ed23a0ca875e5706d2894fd4f9541b6815e47342c3d746886013edc740"
+    },
+    {
+      "path": "src/cardine/demo/browser.html",
+      "sha256": "1ec96112d898e72123159a187178bcaee177329efc24c811d054573cffb385b6"
+    },
+    {
+      "path": "src/cardine/demo/browser.js",
+      "sha256": "c37dc3fc25ff37d3708df6ba5ab61ec57f9014aa56b03feccfe30548f34da259"
+    },
+    {
+      "path": "src/cardine/demo/product_shell.py",
+      "sha256": "967b10e15b52215631a048fe02ec1d4a13e534e2b33955b609535b86cf73d42b"
+    },
+    {
+      "path": "src/cardine/demo/ui_application.py",
+      "sha256": "f1e9a40d6e0c5d2036cb9c4c9e3afa4b40fc1017d4ba5c85b841b1568893d8ff"
+    },
+    {
+      "path": "src/cardine/diagnostics/turn_activity.py",
+      "sha256": "ef7b4e36d71fa375c0cf184d4f05bcffa540e5ab5ce709162c2556f476e33d8d"
+    },
+    {
+      "path": "src/cardine/hosts/context.py",
+      "sha256": "afc9f202592de18e2f5392478d751d8816849a99e52da3dec8b7ac0d3c0783e4"
+    },
+    {
+      "path": "src/cardine/hosts/contracts.py",
+      "sha256": "e9a5b8cd21d7baf429e10276f57cf9f09e45f1aea687cd13a0a3be5dae1f4327"
+    },
+    {
+      "path": "src/cardine/hosts/runner.py",
+      "sha256": "8d46ce13ba51f899bd9d0e8e2eb46ee246d753a25df98727b300d9e74db3d293"
+    },
+    {
+      "path": "src/cardine/hosts/source_grounding.py",
+      "sha256": "823984be281f870ff5d35cda62c7aea5ce5c1fb0cf1050613f5b208e3a884d84"
+    },
+    {
+      "path": "src/study_agent/adapters/filesystem/repository_target.py",
+      "sha256": "aed3af0098ebfee830429a5c825f836be3c3dcea766ca48e398b28668d3d51dd"
+    },
+    {
+      "path": "src/study_agent/application/__init__.py",
+      "sha256": "3866a376b85c1f4675fc405577352cc0447eb2c853a0d4ef0c147e565448c12b"
+    },
+    {
+      "path": "src/study_agent/assessments/__init__.py",
+      "sha256": "b9f677a525c7fa794a217c8bc3eedd23827ebc7fe02a2305856497f280e42304"
+    },
+    {
+      "path": "src/study_agent/domain/tutor_snapshot.py",
+      "sha256": "a2511da927663f696f4dea9107bc5996fa6ae9a1bdb0524ee2fd91b71a408e16"
+    },
+    {
+      "path": "src/study_agent/ports/__init__.py",
+      "sha256": "b340ad91b66cc55251cf801d0f8e4db6a8ac2c5b888bfbf568755ca84bc4bbf2"
+    },
+    {
+      "path": "src/study_agent/ports/assessment.py",
+      "sha256": "56e23e336d9ab9bf711cd1d974c595cd5a7ae4d261d20a59e36daea60131ca59"
+    },
+    {
+      "path": "src/study_agent/prompts/tutor_decision_v1.py",
+      "sha256": "ad7997b7699cc98e89a676fdf365baf1a80c508647d7c781c7f9f206846639ef"
+    },
+    {
+      "path": "src/study_agent/tutor_snapshot/reader.py",
+      "sha256": "36d4abe9ccc16762c7c37a10f867b455c9252cdc0338453f437cda1ea65f07b3"
+    }
+  ],
+  "removed": [
+    "src/cardine/application/study_memory.py",
+    "src/study_agent/assessments/evidence.py"
+  ]
+}

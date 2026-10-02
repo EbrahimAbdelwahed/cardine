@@ -13,7 +13,9 @@ import pytest
 
 from cardine.demo.browser import BrowserSurface, create_server
 from cardine.demo.private_access import PrivateAccessController, hash_password
+from cardine.demo.ui_application import _turn_activity_status
 from cardine.diagnostics.turn_activity import TurnActivityStore
+from cardine.hosts import TutorHostRunStatus
 from study_agent.domain._validation import JsonObject
 
 
@@ -86,7 +88,7 @@ def test_activity_route_remains_behind_existing_api_authentication() -> None:
     session = access.login("correct horse battery staple", client_id="test")
     payload = surface.api_get("/api/v1/turns/request/activity", session_token=session.session_token)
     assert payload["state"] == "unknown"
-    assert cast(list[object], payload["records"]) == []
+    assert payload["records"] == ()
 
 
 def test_repository_activity_get_is_independent_of_mutation_lock(tmp_path: Path) -> None:
@@ -116,9 +118,28 @@ def test_repository_activity_get_is_independent_of_mutation_lock(tmp_path: Path)
     assert result[0] == {
         "schema_version": 2,
         "state": "unknown",
-        "records": [],
+        "records": (),
         "omitted": 0,
     }
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (TutorHostRunStatus.COMPLETED, "done"),
+        (TutorHostRunStatus.SUSPENDED, "done"),
+        (TutorHostRunStatus.NEEDS_LEARNER_INPUT, "done"),
+        (TutorHostRunStatus.ASSISTANT_MESSAGE, "done"),
+        (TutorHostRunStatus.FAILED, "failed"),
+        (TutorHostRunStatus.TERMINATED, "failed"),
+        (TutorHostRunStatus.CANCELLED, "failed"),
+        (TutorHostRunStatus.BUDGET_EXHAUSTED, "failed"),
+    ],
+)
+def test_turn_activity_settlement_follows_receipt_status(
+    status: TutorHostRunStatus, expected: str
+) -> None:
+    assert _turn_activity_status(status) == expected
 
 
 def test_repository_session_read_is_independent_of_long_tutor_mutation_lock(
@@ -171,22 +192,53 @@ def test_retry_poll_survives_previous_terminal_activity() -> None:
     script = r"""
 const fs = require('node:fs'); const vm = require('node:vm');
 const source = fs.readFileSync(process.argv[1], 'utf8');
+const sync = source.slice(source.indexOf('  function syncAttributes'),
+ source.indexOf('\n  function morphElement'));
 const poll = source.slice(source.indexOf('  async function pollTurnActivity'),
  source.indexOf('  function restoreFailedTurnDraft'));
 const snapshots = [
  {state:'failed',records:[{sequence:1}]},
  {state:'running',records:[{sequence:2}]},
+ {state:'running',records:[{sequence:2}]},
  {state:'failed',records:[{sequence:2}]}];
 let reads=0; const rendered=[];
-const state = {activityPollToken:0,navigationVersion:0,pendingTurn:{requestId:'retry'}};
+let openAfterFresh = null; let openAfterReaderCollapse = null;
+const state = {activityPollToken:0,navigationVersion:0,pendingTurn:{
+ requestId:'retry',awaitingRetryActivity:true}};
+const disclosure = {
+ tagName:'DETAILS', dataset:{state:'running'}, open:true,
+ classList:{contains:(name)=>name==='ai-tool-chips'}, attrs:{'data-state':'running',open:''},
+ get attributes(){return Object.entries(this.attrs).map(([name,value])=>({name,value}));},
+ hasAttribute(name){return name in this.attrs;}, getAttribute(name){return this.attrs[name]??null;},
+ removeAttribute(name){delete this.attrs[name];},
+ setAttribute(name,value){this.attrs[name]=String(value);},
+};
 const context = {state, root:{}, text:(value)=>value||'', $:()=>({}),
- fetchJson:async()=>snapshots[reads++], aiToolChips:(payload)=>payload.state,
- patch:(_node,value)=>rendered.push(value),
- window:{setTimeout:(resolve)=>{if(reads===3)state.pendingTurn=null; resolve();}}};
-vm.createContext(context); vm.runInContext(poll,context);
-context.pollTurnActivity('retry').then(()=>console.log(JSON.stringify({reads,rendered})));
+ captureScroll:()=>({}), restoreScroll:()=>{},
+ fetchJson:async()=>snapshots[reads++], aiToolChips:(payload)=>({state:payload.state}),
+ patch:(_node,value)=>{
+   const next={tagName:'DETAILS',dataset:{state:value.state},attrs:{'data-state':value.state},
+     get attributes(){return Object.entries(this.attrs).map(([name,value])=>({name,value}));},
+     hasAttribute(name){return name in this.attrs;},
+     getAttribute(name){return this.attrs[name]??null;}};
+   if(value.state==='running')next.attrs.open='';
+   context.syncAttributes(disclosure,next); disclosure.dataset.state=value.state;
+   rendered.push(value.state);
+   if(value.state==='running'&&openAfterFresh===null){openAfterFresh=disclosure.open;disclosure.open=false;disclosure.removeAttribute('open');}
+   else if(value.state==='running')openAfterReaderCollapse=disclosure.open;
+ },
+ window:{setTimeout:(resolve)=>{if(reads===4)state.pendingTurn=null; resolve();}}};
+vm.createContext(context);
+vm.runInContext(`${sync}; this.syncAttributes=syncAttributes; ${poll}`,context);
+context.pollTurnActivity('retry').then(()=>console.log(JSON.stringify({
+ reads,rendered,openAfterFresh,openAfterReaderCollapse})));
 """
     result = subprocess.run(
         ["node", "-e", script, str(browser)], check=True, capture_output=True, text=True
     )
-    assert json.loads(result.stdout) == {"reads": 3, "rendered": ["failed", "running", "failed"]}
+    assert json.loads(result.stdout) == {
+        "reads": 4,
+        "rendered": ["running", "running", "failed"],
+        "openAfterFresh": True,
+        "openAfterReaderCollapse": False,
+    }

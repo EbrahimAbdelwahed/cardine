@@ -16,7 +16,7 @@
     },
     {
       "path": "src/cardine/application/flashcard_proposals.py",
-      "sha256": "b6692cf2beccb21dbb26094ceefb3a632253efae80902a6c37e24592dccb77b8"
+      "sha256": "50b47356192c6ecdbe43cb25b2880807b6a8bc26bc02653cab35e19b0ef648d8"
     },
     {
       "path": "src/cardine/application/grounding_ask.py",
@@ -28,31 +28,31 @@
     },
     {
       "path": "src/cardine/cli/repository.py",
-      "sha256": "a291e142e6579f6af23dd0b0dad0c221f5574214ce46dcc6dc5392e74f3565cb"
+      "sha256": "d4b2073a71a4f8654495ad2ab8d72a0eb44b6a51266554b586bba6241b34ad26"
     },
     {
       "path": "src/cardine/demo/ai-primitives.css",
-      "sha256": "d44cef58e90496c79d49262759c25757b660bc07e9c76dba49bb45575beb22d3"
+      "sha256": "2eaf0d4c6c791042307fb6958acc3563ee8e5e1ea391fee947c7f78b51d55781"
     },
     {
       "path": "src/cardine/demo/ai-primitives.js",
-      "sha256": "34629bcd12cbc351209b6048ca484751a819bcdafc00b19fcd628ca20f460d83"
+      "sha256": "393658991ef2e8bb410b6e182dc792a6a70d2ff663b81c67acd074bdc92c543d"
     },
     {
       "path": "src/cardine/demo/browser.css",
-      "sha256": "2ffb5b445f0b5437c56fed57ac64bcb576a09411be44c8c4900a19e02c95a16b"
+      "sha256": "fbc24f237768b68b589baa145093648d7fc11c32fcefc126f03c63f4c6c8e646"
     },
     {
       "path": "src/cardine/demo/browser.html",
-      "sha256": "00cd7452c989a76194da33936f550fa74da5989d21aae0c0777c3b82874a294f"
+      "sha256": "1bd41e5a0785ffc38f06049f8db654241a29d5a1e28d929c1320aa46b63d6cb0"
     },
     {
       "path": "src/cardine/demo/browser.js",
-      "sha256": "a98cadd44362840c660ad63d208d5c49ab95d40295dd5946911674c13872a02d"
+      "sha256": "3f0fcc7bbd609d46df6192af4325251fac3fa60e02535d2469f532389f26c135"
     },
     {
       "path": "src/cardine/demo/browser.py",
-      "sha256": "f21cba1d1359a8a5da747cd80620ece4542053781014f14fe811d36a186bf75d"
+      "sha256": "c86b41928c2a17af7bd3ce2a813bdc93e0ff36ba66c1c9c49f11bade3412b48f"
     },
     {
       "path": "src/cardine/demo/product_settings.py",
@@ -60,7 +60,7 @@
     },
     {
       "path": "src/cardine/demo/ui_application.py",
-      "sha256": "dbc49571507081e120540add04ce6c7c7cb1af8be55e99350e8c20e3af1df118"
+      "sha256": "f65251eb6518e7bf95f16102de99f2bc374f44b976f20be54c17cf379cb8348c"
     },
     {
       "path": "src/cardine/diagnostics/__init__.py",
@@ -84,19 +84,19 @@
     },
     {
       "path": "src/cardine/hosts/flashcard_routing.py",
-      "sha256": "33a584b0a5d0b2ed0d873a26f70d85b8de0f3a1ec56a9ec0d98085c445b8fabd"
+      "sha256": "baa1ed36ee747f985809557b4406e960d9e61cf7783987ef4b7a838ee2395787"
     },
     {
       "path": "src/cardine/hosts/runner.py",
-      "sha256": "8446f1cabff5b3eb61da1baee93e2d9aacbec9642b9e1a0c3f16ae30a8df778a"
+      "sha256": "9f0b54647e5de69031a709ad85864c9312c5111b024deb1c173a8a77af28fcbd"
     },
     {
       "path": "src/cardine/hosts/source_grounding.py",
-      "sha256": "dcc9f71b1916692cf224915e43441f192ead1d6a8d6add18b6ec12d77ffa274e"
+      "sha256": "28d9b094d5216e59528c44f50872fc1eb800a0b509c9ea4eb7065a0eb0a4ef3b"
     },
     {
       "path": "src/study_agent/adapters/model/openai_compatible.py",
-      "sha256": "a06d03d126dbe5114c7c962d1a2b5f06f6ed6cccc2695112e5a3e5ae1074ec2d"
+      "sha256": "513227a8d34fd1974aadb78957186688773b7e606224559c052947c595d943ca"
     },
     {
       "path": "src/study_agent/application/export.py",

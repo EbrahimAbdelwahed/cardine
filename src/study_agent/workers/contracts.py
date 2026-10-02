@@ -426,9 +426,7 @@ class ChildCapabilityObservation:
         if self.failure_code is not None:
             _require_failure_code(self.failure_code)
         if self.execution_input_fingerprint is not None:
-            _require_sha256(
-                self.execution_input_fingerprint, "execution_input_fingerprint"
-            )
+            _require_sha256(self.execution_input_fingerprint, "execution_input_fingerprint")
 
         suspended = self.status is GenerationWorkerStatus.SUSPENDED
         completed = self.status is GenerationWorkerStatus.COMPLETED
@@ -735,6 +733,15 @@ _PUBLIC_FAILURE_CODES = frozenset(
         "malformed_output",
         "rate_limited",
         "safe_failure",
+        "gateway_authentication",
+        "gateway_authorization",
+        "gateway_model_unavailable",
+        "gateway_endpoint_incompatible",
+        "gateway_schema_incompatible",
+        "gateway_rate_limited",
+        "gateway_timeout",
+        "gateway_protocol_error",
+        "gateway_unavailable",
         "stale",
         "stale_generation",
         "terminated",
@@ -768,7 +775,10 @@ def _require_failure_code(value: str) -> None:
     _bounded_text(value, "failure_code", 64)
     if _FAILURE_CODE.fullmatch(value) is None:
         raise ValueError("failure_code must be a lowercase machine code")
-    if _FORBIDDEN_FAILURE_PARTS.intersection(value.split("_")):
+    if (
+        _FORBIDDEN_FAILURE_PARTS.intersection(value.split("_"))
+        and value not in _PUBLIC_FAILURE_CODES
+    ):
         raise ValueError("failure_code contains sensitive implementation metadata")
 
 

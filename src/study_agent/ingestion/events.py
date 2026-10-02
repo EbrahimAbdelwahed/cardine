@@ -16,6 +16,7 @@ from study_agent.domain.provenance import (
     DocumentConversionProvenance,
     DocumentPageSpan,
     StructureOrigin,
+    TextExtractionProvenance,
     generated_document_provenance_from_json,
 )
 from study_agent.domain.source import BlobRef, SourceChunk, SourceDocument, SourceKind
@@ -267,13 +268,45 @@ def _conversion(value: JsonValue | None) -> DocumentConversionProvenance:
     )
 
 
-def _source(
-    value: JsonValue | None, *, allow_generated: bool
-) -> SourceDocument:
+def _extraction(value: JsonValue | None) -> TextExtractionProvenance:
+    payload = _object(
+        value,
+        "extraction",
+        frozenset(
+            {
+                "input_sha256",
+                "text_sha256",
+                "manifest_sha256",
+                "adapter_id",
+                "media_type",
+                "limitations",
+                "manifest_byte_length",
+            }
+        ),
+    )
+    limitations = payload.get("limitations")
+    if not isinstance(limitations, tuple) or any(not isinstance(x, str) for x in limitations):
+        raise ValueError("extraction limitations must be text")
+    return TextExtractionProvenance(
+        _text(payload.get("input_sha256"), "input_sha256"),
+        _text(payload.get("text_sha256"), "text_sha256"),
+        _text(payload.get("manifest_sha256"), "manifest_sha256"),
+        _text(payload.get("adapter_id"), "adapter_id"),
+        _text(payload.get("media_type"), "media_type"),
+        cast(tuple[str, ...], limitations),
+        _integer(payload.get("manifest_byte_length"), "manifest_byte_length"),
+    )
+
+
+def _source(value: JsonValue | None, *, allow_generated: bool) -> SourceDocument:
     if not isinstance(value, Mapping):
         raise ValueError("source must be an object")
     actual = frozenset(value)
-    allowed = {_SOURCE_KEYS, _SOURCE_KEYS | {"conversion_provenance"}}
+    allowed = {
+        _SOURCE_KEYS,
+        _SOURCE_KEYS | {"conversion_provenance"},
+        _SOURCE_KEYS | {"extraction_provenance"},
+    }
     if allow_generated:
         allowed.add(_GENERATED_SOURCE_KEYS)
     if actual not in allowed:
@@ -315,6 +348,11 @@ def _source(
         conversion_provenance=(
             _conversion(payload.get("conversion_provenance"))
             if "conversion_provenance" in payload
+            else None
+        ),
+        extraction_provenance=(
+            _extraction(payload.get("extraction_provenance"))
+            if "extraction_provenance" in payload
             else None
         ),
         generated_provenance=(
@@ -476,13 +514,20 @@ def _decode_source_revision_event_v1(
         if normalized_bytes != expected_normalized:
             raise ValueError("normalized blob does not match canonical normalization of original")
     elif source.content_origin is ContentOrigin.EXTRACTED:
-        provenance = source.conversion_provenance
-        if provenance is None:
-            raise ValueError("extracted source lacks conversion provenance")
-        if provenance.pdf_sha256 != sha256(original).hexdigest():
-            raise ValueError("PDF provenance does not match original blob")
-        if provenance.markdown_sha256 != sha256(normalized_bytes).hexdigest():
-            raise ValueError("Markdown provenance does not match normalized blob")
+        extraction = source.extraction_provenance
+        if extraction is not None:
+            _verified_blob(load_blob, BlobRef(
+                BlobId("sha256:" + extraction.manifest_sha256),
+                extraction.manifest_sha256, extraction.manifest_byte_length,
+            ), "source.extraction_manifest")
+        else:
+            provenance = source.conversion_provenance
+            if provenance is None:
+                raise ValueError("extracted source lacks conversion provenance")
+            if provenance.pdf_sha256 != sha256(original).hexdigest():
+                raise ValueError("PDF provenance does not match original blob")
+            if provenance.markdown_sha256 != sha256(normalized_bytes).hexdigest():
+                raise ValueError("Markdown provenance does not match normalized blob")
     else:
         raise ValueError("ingested source content origin is unsupported")
     if decoded.normalized_character_length != len(normalized_text):

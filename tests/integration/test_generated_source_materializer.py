@@ -110,7 +110,7 @@ class MemoryBlobs:
     values: dict[BlobRef, bytes]
 
     def put(self, content: bytes) -> BlobRef:
-        raise AssertionError("materialization must not write source blobs")
+        raise AssertionError("materialization must not write fixture blobs")
 
     def get(self, ref: BlobRef) -> bytes:
         try:

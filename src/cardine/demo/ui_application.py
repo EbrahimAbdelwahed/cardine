@@ -7,6 +7,7 @@ owned by the canonical repository services or by their shared harness surface.
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import subprocess
 import sys
@@ -15,10 +16,11 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
-from threading import Lock, Thread
+from threading import BoundedSemaphore, Lock, Thread
 from time import sleep
 from typing import Protocol, cast
 
+from cardine.adapters.audio.groq import GroqAudioTranscriber
 from cardine.application.artifact_decisions import (
     artifact_bulk_receipt_payload,
     decide_artifacts,
@@ -40,7 +42,11 @@ from cardine.documents import (
     admit_pdf,
     document_import_policy,
 )
-from cardine.hosts import PendingContinuationDescriptor, TutorContinuationRecord
+from cardine.hosts import (
+    PendingContinuationDescriptor,
+    TutorContinuationRecord,
+    TutorHostRunStatus,
+)
 from cardine.integrations.study_agent import (
     CardineInternalError,
     CardineRuntimeConfig,
@@ -58,6 +64,7 @@ from cardine.integrations.study_agent.course_policy import (
     SourceLifetimeCommandError,
 )
 from cardine.knowledge import LessonCandidate, SourcePin
+from cardine.materials.product import MaterialProduct
 from study_agent.application import (
     ConversationTurnCommand,
     ConversationTurnError,
@@ -164,6 +171,19 @@ MAX_WORKSPACE_GOAL_CHARS = 240
 MAX_SOURCE_UPLOAD_BYTES = 196_608
 MAX_SOURCE_FILENAME_CHARS = 240
 MAX_SOURCE_TITLE_CHARS = 240
+
+_SUCCESSFUL_TURN_STATUSES = frozenset(
+    {
+        TutorHostRunStatus.COMPLETED,
+        TutorHostRunStatus.SUSPENDED,
+        TutorHostRunStatus.NEEDS_LEARNER_INPUT,
+        TutorHostRunStatus.ASSISTANT_MESSAGE,
+    }
+)
+
+
+def _turn_activity_status(status: TutorHostRunStatus) -> str:
+    return "done" if status in _SUCCESSFUL_TURN_STATUSES else "failed"
 
 _REPOSITORY_LOCKS_GUARD = Lock()
 _REPOSITORY_MUTATION_LOCKS: dict[Path, Lock] = {}
@@ -331,6 +351,11 @@ class RepositoryUiApplication(UiApplicationPort):
         )
         self._lock = _repository_mutation_lock(self._repository)
         self._indexing_worker_lock = Lock()
+        self._material_worker_lock = Lock()
+        self._material_slots = BoundedSemaphore(2)
+        self._material_workers: set[tuple[str, str, str]] = set()
+        self._material_worker_reruns: set[tuple[str, str, str]] = set()
+        self._audio_environment = environment if environment is not None else os.environ
         self._turn_traces = turn_traces if turn_traces is not None else TurnTraceStore()
         self._turn_activity = turn_activity if turn_activity is not None else TurnActivityStore()
         self._document_policy = document_policy or document_import_policy()
@@ -347,15 +372,16 @@ class RepositoryUiApplication(UiApplicationPort):
             "error_code": None,
         }
         try:
-            with self._lock, self._open() as opened_repository:
+            with self._lock, self._open() as local_repository:
                 self._indexing_view = self._indexing_record_payload(
-                    opened_repository, opened_repository.indexing_status()
+                    local_repository, local_repository.indexing_status()
                 )
         except CardineSourceContentUnavailableError:
             # A missing canonical blob is surfaced by the existing materials
             # readiness flow; it must not prevent the UI from starting.
             return
         self._start_indexing_worker_if_queued()
+        self._recover_material_jobs()
 
     @property
     def repository(self) -> Path:
@@ -425,6 +451,40 @@ class RepositoryUiApplication(UiApplicationPort):
                 raise UiRequestError(
                     "student journal cursor is invalid", status_code=400
                 ) from error
+        if path == "/api/v1/material-generations" or path.startswith(
+            "/api/v1/material-generations/"
+        ):
+            with self._open() as repository:
+                product = MaterialProduct(
+                    repository, self._context("material-read", "material-read")
+                )
+
+                def view(job_id: str, *, include_markdown: bool = True) -> JsonObject:
+                    return (
+                        product.audio_status(job_id, include_markdown=include_markdown)
+                        if job_id.startswith("audio-")
+                        else product.status(job_id, include_markdown=include_markdown)
+                    )
+
+                if path == "/api/v1/material-generations":
+                    jobs = tuple(
+                        view(str(item["job_id"]), include_markdown=False) for item in product.jobs()
+                    )
+                    audio_children = {
+                        str(item.get("material_job_id"))
+                        for item in jobs
+                        if item.get("kind") == "audio"
+                    }
+                    return {
+                        "schema_version": 1,
+                        "items": tuple(
+                            item for item in jobs if item["job_id"] not in audio_children
+                        ),
+                    }
+                try:
+                    return view(path.rsplit("/", 1)[-1])
+                except (KeyError, ValueError):
+                    raise UiRequestError("generation not found", status_code=404) from None
         prefix = "/api/v1/turns/"
         suffix = "/activity"
         if path.startswith(prefix) and path.endswith(suffix):
@@ -554,9 +614,7 @@ class RepositoryUiApplication(UiApplicationPort):
         except (LocalRepositoryError, OSError, ValueError, RuntimeError) as error:
             raise UiRequestError("repository runtime is unavailable", status_code=503) from error
 
-    def read_source_document(
-        self, source_id: str, revision_id: str
-    ) -> SourceDocumentView:
+    def read_source_document(self, source_id: str, revision_id: str) -> SourceDocumentView:
         """Resolve one course-owned immutable revision to verified display bytes."""
 
         try:
@@ -606,12 +664,14 @@ class RepositoryUiApplication(UiApplicationPort):
             raise
         except SourceContentError:
             raise UiRequestError(
-                "source content is unavailable", status_code=503,
+                "source content is unavailable",
+                status_code=503,
                 diagnostic_code="source_content_unavailable",
             ) from None
         except (LookupError, OSError, UnicodeError, ValueError):
             raise UiRequestError(
-                "source content is unavailable", status_code=503,
+                "source content is unavailable",
+                status_code=503,
                 diagnostic_code="source_content_unavailable",
             ) from None
         except (LocalRepositoryError, RuntimeError) as error:
@@ -620,6 +680,10 @@ class RepositoryUiApplication(UiApplicationPort):
     def post(self, path: str, command: Mapping[str, object]) -> JsonObject:
         if path in {"/api/v1/student-state", "/api/v1/student-state/import"}:
             return self._post_student_state(path, command)
+        if path == "/api/v1/material-generations" or path.startswith(
+            "/api/v1/material-generations/"
+        ):
+            return self._material_command(path, command)
         if path == "/api/v1/workspace/select":
             return self._select_workspace(command)
         if path == "/api/v1/workspace/sessions":
@@ -695,7 +759,7 @@ class RepositoryUiApplication(UiApplicationPort):
             if payload.get("lesson_pin") is not None
             else None
         )
-        activity_status = "done"
+        activity_status = "failed"
         with (
             self._turn_activity.capture(request_id),
             self._turn_traces.capture(request_id, expected_sequence) as trace_id,
@@ -729,6 +793,7 @@ class RepositoryUiApplication(UiApplicationPort):
                         if continuation_fingerprint is None
                         else application.resume_continuation(continuation_fingerprint, turn)
                     )
+                    activity_status = _turn_activity_status(result.status)
                     self._turn_traces.record_outcome(trace_id, result.status.value)
                     repository.settle_student_state(self._course_id, self._session_id)
                     projection, refreshed = self._captured_state(repository)
@@ -763,7 +828,9 @@ class RepositoryUiApplication(UiApplicationPort):
                         and item.status is ArtifactRevisionStatus.PROPOSED
                         and item.kind is StudyArtifactKind.FLASHCARD
                     )
-                    settled_activity = self._turn_activity.settle(request_id, status="done")
+                    settled_activity = self._turn_activity.settle(
+                        request_id, status=activity_status
+                    )
                     timeline = list(cast(Sequence[JsonObject], session.get("timeline", ())))
                     for index in range(len(timeline) - 1, -1, -1):
                         if timeline[index].get("role") in {"assistant", "tutor"}:
@@ -837,9 +904,7 @@ class RepositoryUiApplication(UiApplicationPort):
                 self._turn_activity.settle(request_id, status=activity_status)
 
     def _lesson_search(self, command: Mapping[str, object]) -> JsonObject:
-        request_id, _expected, payload = _workspace_command(
-            command, required_keys={"query"}
-        )
+        request_id, _expected, payload = _workspace_command(command, required_keys={"query"})
         query = _workspace_text(payload.get("query"), "query", MAX_LEARNER_ENTRY_CHARS)
         try:
             with self._lock, self._open() as repository:
@@ -889,9 +954,7 @@ class RepositoryUiApplication(UiApplicationPort):
         request_id, expected_sequence, payload = _workspace_command(
             command, required_keys={"question", "pin"}
         )
-        question = _workspace_text(
-            payload.get("question"), "question", MAX_LEARNER_ENTRY_CHARS
-        )
+        question = _workspace_text(payload.get("question"), "question", MAX_LEARNER_ENTRY_CHARS)
         pin = _lesson_pin_payload_from_json(payload.get("pin"))
         with self._lock:
             try:
@@ -989,9 +1052,7 @@ class RepositoryUiApplication(UiApplicationPort):
                 raise UiRequestError(str(error), status_code=400) from error
 
     def _post_artifact_decisions(self, command: Mapping[str, object]) -> JsonObject:
-        request_id, expected_sequence, payload = _command(
-            command, payload_key="decisions"
-        )
+        request_id, expected_sequence, payload = _command(command, payload_key="decisions")
         with self._lock:
             try:
                 with self._open() as repository:
@@ -1045,6 +1106,7 @@ class RepositoryUiApplication(UiApplicationPort):
         # untouched rather than combining the old course with a new session.
         self._course_id = course_id
         self._session_id = session_id
+        self._recover_material_jobs(course_id, session_id)
         return {
             "schema_version": 1,
             "request_id": request_id,
@@ -1065,6 +1127,7 @@ class RepositoryUiApplication(UiApplicationPort):
             self._course_id = course_id
             self._session_id = session_id
             sequence = repository.events.projection(course_id).sequence
+        self._recover_material_jobs(course_id, session_id)
         return {
             "schema_version": 1,
             "request_id": request_id,
@@ -1216,6 +1279,194 @@ class RepositoryUiApplication(UiApplicationPort):
             },
             "session": _workspace_session(session, selected=True),
         }
+
+    def _material_command(self, path: str, command: Mapping[str, object]) -> JsonObject:
+        prepare = path.endswith("/prepare")
+        resume = path.endswith("/resume")
+        decision = path.endswith("/decisions")
+        keys = (
+            {"revision_id", "decision"}
+            if decision
+            else set()
+            if resume
+            else {"source_id", "revision_id"}
+        )
+        request_id, sequence, payload = _workspace_command(
+            command,
+            required_keys=keys,
+            optional_keys={"lessons"} if not (prepare or resume or decision) else set(),
+        )
+        context = self._context(request_id, request_id)
+        try:
+            with self._lock, self._open() as repository:
+                product = MaterialProduct(repository, context)
+                if prepare:
+                    return product.lessons(str(payload["source_id"]), str(payload["revision_id"]))
+                if resume or decision:
+                    job_id = path.split("/")[-2]
+                    dispatch_job_id = job_id
+                    if decision:
+                        descriptor = product.descriptor(job_id)
+                        if descriptor["kind"] == "audio":
+                            job_id = str(product.audio_status(job_id).get("material_job_id"))
+                        result = product.decide(
+                            job_id,
+                            str(payload["revision_id"]),
+                            str(payload["decision"]),
+                            sequence,
+                            request_id,
+                        )
+                        if result.get("stage") == "publication_retryable":
+                            self._start_material_worker(
+                                dispatch_job_id,
+                                context.course_id,
+                                cast(SessionId, context.session_id),
+                            )
+                        self._start_indexing_worker()
+                        return result
+                    product.descriptor(job_id)
+                    self._start_material_worker(
+                        job_id, context.course_id, cast(SessionId, context.session_id)
+                    )
+                    return (
+                        product.audio_status(job_id, include_markdown=False)
+                        if job_id.startswith("audio-")
+                        else product.status(job_id, include_markdown=False)
+                    )
+                if path != "/api/v1/material-generations":
+                    raise UiRequestError("route not found", status_code=404)
+                lessons = payload.get("lessons")
+                if lessons is not None:
+                    if not isinstance(lessons, list) or any(
+                        not isinstance(item, dict) for item in lessons
+                    ):
+                        raise UiRequestError("lesson boundaries are invalid")
+                    jobs = product.start_lessons(
+                        str(payload["source_id"]), str(payload["revision_id"]), lessons, request_id
+                    )
+                else:
+                    jobs = (
+                        product.start(
+                            str(payload["source_id"]), str(payload["revision_id"]), request_id
+                        ),
+                    )
+                for job in jobs:
+                    self._start_material_worker(
+                        str(job["job_id"]), context.course_id, cast(SessionId, context.session_id)
+                    )
+                return {"schema_version": 1, "items": jobs}
+        except ProviderConsentRequiredError:
+            raise UiRequestError(
+                "Conferma il consenso al provider nelle impostazioni.", status_code=409
+            ) from None
+        except (
+            ValueError,
+            ModelAdapterConfigurationError,
+            ArtifactCommandError,
+            ArtifactConflictError,
+        ) as error:
+            raise UiRequestError(str(error), status_code=409) from None
+
+    def _recover_material_jobs(
+        self, course: CourseId | None = None, session: SessionId | None = None
+    ) -> None:
+        course = course if course is not None else self._course_id
+        session = session if session is not None else self._session_id
+        context = ExecutionContext(
+            PrincipalKind.SERVICE,
+            "cardine-material-recovery",
+            course,
+            CorrelationId("material-recovery"),
+            session_id=session,
+        )
+        with self._open() as repository:
+            product = MaterialProduct(repository, context)
+            jobs = product.jobs()
+        for item in jobs:
+            self._start_material_worker(str(item["job_id"]), course, session)
+
+    def _start_material_worker(self, job_id: str, course: CourseId, session: SessionId) -> None:
+        identity = (str(course), str(session), job_id)
+        with self._material_worker_lock:
+            if identity in self._material_workers:
+                self._material_worker_reruns.add(identity)
+                return
+            self._material_workers.add(identity)
+
+        def work() -> None:
+            self._material_slots.acquire()
+            try:
+                context = ExecutionContext(
+                    PrincipalKind.SERVICE,
+                    "cardine-material-worker",
+                    course,
+                    CorrelationId("cardine-material-worker"),
+                    session_id=session,
+                )
+                while True:
+                    with self._open() as repository:
+                        product = MaterialProduct(repository, context)
+                        product.clear_worker_error(job_id)
+                        try:
+                            if job_id.startswith("audio-"):
+                                product.advance_audio(
+                                    job_id,
+                                    GroqAudioTranscriber(
+                                        self._audio_environment.get("GROQ_API_KEY", "")
+                                    ),
+                                )
+                                view = product.audio_status(job_id, include_markdown=False)
+                                material_id = view.get("material_job_id")
+                                if material_id is not None:
+                                    product.publish(str(material_id))
+                            else:
+                                product.advance(job_id)
+                                product.publish(job_id)
+                                view = product.status(job_id, include_markdown=False)
+                        except (KeyError, ValueError, OSError, RuntimeError):
+                            product.worker_error(job_id)
+                            break
+                    if view.get("stage") in {"proposed", "retryable", "stale", "failed_terminal"}:
+                        break
+                    # Another process may own the checkpoint lease after a
+                    # restart. Wait for its result/lease expiry without holding
+                    # a repository connection or blocking browser requests.
+                    sleep(5)
+                self._start_indexing_worker()
+            except (KeyError, ValueError, OSError, RuntimeError):
+                pass
+            finally:
+                with self._material_worker_lock:
+                    self._material_workers.discard(identity)
+                    rerun = identity in self._material_worker_reruns
+                    self._material_worker_reruns.discard(identity)
+                self._material_slots.release()
+                if rerun:
+                    self._start_material_worker(job_id, course, session)
+
+        Thread(target=work, name="cardine-material-generation", daemon=True).start()
+
+    def import_audio(
+        self, *, input_path: Path, filename: str, title: str, request_id: str
+    ) -> JsonObject:
+        _workspace_text(request_id, "request_id", 200)
+        _workspace_text(title, "title", 240)
+        _workspace_text(filename, "filename", 240)
+        if not self._audio_environment.get("GROQ_API_KEY"):
+            raise UiRequestError(
+                "Configura GROQ_API_KEY sul server prima di caricare audio.", status_code=409
+            )
+        try:
+            with self._lock, self._open() as repository:
+                context = self._context(request_id, request_id)
+                product = MaterialProduct(repository, context)
+                view = product.start_audio(input_path.read_bytes(), filename, title, request_id)
+                self._start_material_worker(
+                    str(view["job_id"]), context.course_id, cast(SessionId, context.session_id)
+                )
+                return view
+        except (ValueError, ProviderConsentRequiredError) as error:
+            raise UiRequestError(str(error), status_code=409) from None
 
     def _upload_source(self, command: Mapping[str, object]) -> JsonObject:
         """Ingest a bounded UTF-8 text revision through the canonical service."""
@@ -1370,9 +1621,7 @@ class RepositoryUiApplication(UiApplicationPort):
                 ) from error
 
     def _reconcile_indexing(self, command: Mapping[str, object]) -> JsonObject:
-        request_id, _expected_sequence, _payload = _workspace_command(
-            command, required_keys=set()
-        )
+        request_id, _expected_sequence, _payload = _workspace_command(command, required_keys=set())
         try:
             with self._open() as repository:
                 record = repository.queue_indexing()
@@ -1462,9 +1711,7 @@ class RepositoryUiApplication(UiApplicationPort):
             "indexed_chunks": 0 if record is None else record.indexed_chunks,
             "pageindex": {
                 "status": str(pageindex.get("status", "empty")),
-                "ready_revisions": sum(
-                    1 for item in rows if item.get("status") == "ready"
-                ),
+                "ready_revisions": sum(1 for item in rows if item.get("status") == "ready"),
                 "total_revisions": len(rows),
             },
             "error_code": None if record is None else record.error_code,
@@ -2312,9 +2559,7 @@ class RepositoryUiApplication(UiApplicationPort):
     @staticmethod
     def _session(snapshot: TutorSnapshotV1, metadata: Mapping[str, object]) -> JsonObject:
         presentations = metadata.get("presentations", ())
-        source_records = cast(
-            tuple[SourceRevisionRecord, ...], metadata.get("source_records", ())
-        )
+        source_records = cast(tuple[SourceRevisionRecord, ...], metadata.get("source_records", ()))
         readiness = metadata.get("readiness")
         private_note_ids = frozenset(
             str(item) for item in cast(Sequence[object], metadata.get("study_memory_ids", ()))
@@ -2376,6 +2621,14 @@ class RepositoryUiApplication(UiApplicationPort):
                     "trust_level": item.trust_level,
                     "chunk_count": item.chunk_count,
                     "groundable": groundable,
+                    "can_generate_notes": (
+                        records.get((str(item.source_id), str(item.current_revision_id)))
+                        is not None
+                        and records[
+                            (str(item.source_id), str(item.current_revision_id))
+                        ].source.content_origin.value
+                        != "generated"
+                    ),
                     "viewer": _source_viewer_payload(
                         records.get((str(item.source_id), str(item.current_revision_id)))
                     ),
@@ -3245,6 +3498,8 @@ def _workspace_session(item: object, *, selected: bool) -> JsonObject:
 def _model_check_message(reason: str) -> str:
     return {
         "invalid_credential": "La chiave API non è accettata dal provider.",
+        "permission_denied": "La chiave API non ha i permessi richiesti dal provider.",
+        "schema_incompatible": "Il provider non supporta lo schema strutturato richiesto.",
         "rate_limited": "Il provider ha limitato le richieste. Riprova tra poco.",
         "timeout": "Il provider non ha risposto entro il tempo previsto.",
         "model_unavailable": "Il modello configurato non è disponibile per questa chiave.",
@@ -3261,6 +3516,8 @@ def _model_check_reason(failure_reason: object) -> str:
         return "provider_unavailable"
     return {
         ModelErrorCode.AUTHENTICATION.value: "invalid_credential",
+        ModelErrorCode.AUTHORIZATION.value: "permission_denied",
+        ModelErrorCode.SCHEMA_INCOMPATIBLE.value: "schema_incompatible",
         ModelErrorCode.RATE_LIMITED.value: "rate_limited",
         ModelErrorCode.TIMEOUT.value: "timeout",
         ModelErrorCode.MODEL_UNAVAILABLE.value: "model_unavailable",
@@ -3306,9 +3563,7 @@ def _presentation_timeline_item(
         "interaction_id": str(getattr(item, "id", "")),
         "occurred_at": None if occurred_at is None else occurred_at.isoformat(),
         "content": content,
-        "citations": _source_viewer_citations(
-            getattr(item, "source_refs", ()), source_records
-        ),
+        "citations": _source_viewer_citations(getattr(item, "source_refs", ()), source_records),
         "event_id": str(getattr(item, "event_id", "")),
         "course_sequence": getattr(item, "course_sequence", 0),
         "run_id": None,
@@ -3354,7 +3609,8 @@ def _source_viewer_citations(
         if identity in seen:
             continue
         matches = tuple(
-            record for record in source_records
+            record
+            for record in source_records
             if str(record.source.source_id) == source_id
             and str(record.source.revision_id) == revision_id
         )

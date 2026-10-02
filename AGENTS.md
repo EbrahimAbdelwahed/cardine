@@ -55,10 +55,22 @@
   correctness, security, migration, and data-loss rules in the automatic review
   instructions and cover them with executable CI. Keep human product decisions
   and existing acceptance criteria explicit.
+- Limit automatic review to at most two rounds per PR: the initial review and
+  one follow-up after fixes. Count rounds across commits, chats, and agents;
+  pushes, rebases, or a handoff do not reset the count. Do not request duplicate
+  reviews while one is pending or start a third round automatically.
+- After the second round, stop the review/fix cycle and report remaining findings,
+  CI status, and merge readiness to the owner. Do not keep fixing new findings
+  and requesting reviews without a new explicit owner instruction. Reaching
+  the limit does not itself authorize a merge or waive failing checks.
 - Before an authorized merge, require applicable CI and review evidence for the
   current submitted commit, resolve actionable findings, and check dependencies.
   A missing review, absent check, failed run, or old green commit is not approval.
-  After a fix, push to the same PR and reassess the updated commit.
+  After a fix, push to the same PR and reassess the updated commit within the
+  two-round limit. If a gate remains unmet when the limit is reached, stop and
+  report it instead of launching another round. An explicit owner instruction
+  to merge without further review overrides the review gate for that merge;
+  report any outstanding findings and checks in the handoff.
 - At handoff, report checkout, branch, commit, PR URL, verification, outstanding
   review/CI, and any remaining local work. Distinguish implemented, published,
   reviewed, and merged; do not call pending work complete.
@@ -97,3 +109,27 @@
 - Keep task memory beside the code in this repository's `dev/` tree. Commit
   necessary handoffs with the implementation rather than creating separate PRs
   for orchestration reports. Record durable decisions in their existing home.
+
+## Jev/PageIndex automatic review focus
+
+- Check bounded Choice distributions at every consumer, including exact option
+  coverage, finite normalized probabilities and unknown selected keys.
+- Verify source/revision/substrate hashes and exact locator bounds before any
+  generated evidence. Index summaries and node IDs never authorize citations.
+- Inspect lesson-scope clipping and conservative failure paths: provider errors,
+  weak exclusion and incomplete excerpts must preserve study content.
+- Verify only CORE/SUPPORTING spans reach planned slots and that existing worker
+  evidence validation rejects substituted or appended dropped spans.
+- Tutor payload generation must see only the selected schema, never independently
+  reroute or manufacture continuation/action authority. Validate all decisions
+  and check exactly-once emergency fallback plus cancellation propagation.
+- The owner explicitly excluded benchmarks and selected OpenRouter Decisions.
+  Inspect wire protocol, resolved-model identity, consent and credential references;
+  no paid smoke test or quality claim is implied by offline verification.
+- Canonical ChunkId creation remains in ingestion.identity. Structural drafts
+  reuse historical chunks; runtime cardability classifies complete chunks before
+  filtering. Verify recovery still resolves their original IDs and exact locators.
+- Inspect strict configuration v2 and explicit v1 migration to OFF. In ON,
+  PageIndex failure must be explicit and legacy semantic parsers/router wrappers
+  must not run as a second normal path. Test cache identity, tamper detection,
+  outages without persistent poisoning and disabled-state preservation.

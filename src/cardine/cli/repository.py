@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from collections.abc import Callable, Mapping, Sequence
@@ -13,7 +14,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Protocol, cast
 
 from cardine.adapters.model.retrieval_query_recovery import RetrievalQueryRecovery
-from cardine.adapters.pageindex import PageIndexCoordinator, PageIndexRevision
+from cardine.adapters.pageindex import PageIndexCoordinator, PageIndexRevision, PageIndexWorker
 from cardine.application.capability_completion import (
     MAX_COMPLETION_CONTENT_CHARS,
 )
@@ -26,6 +27,12 @@ from cardine.application.indexing import (
     IndexingStatus,
 )
 from cardine.application.student_state import StudentStateService
+from cardine.application.study_semantics import (
+    ConsentChoiceJudgementPort,
+    FlashcardSemanticPreprocessor,
+    RoutingReceiptStore,
+    document_revision,
+)
 from cardine.courses import (
     CourseService,
     ProjectionCourseCatalog,
@@ -47,6 +54,8 @@ from cardine.hosts import (
     decision_fingerprint,
 )
 from cardine.hosts.flashcard_routing import FlashcardProfileRoutingTutorDecisionPort
+from cardine.hosts.routing import RoutingThreshold, RoutingTutorDecisionPort, TutorRoutingPolicy
+from cardine.hosts.scope_resolution import recent_explicit_lesson_references
 from cardine.integrations.study_agent.course_policy import (
     ConsentModelPort,
     CourseConsentService,
@@ -78,16 +87,14 @@ from cardine.materials import (
     PinnedTranscriptInput,
 )
 from study_agent.adapters.filesystem import (
-    BlobIntegrityError,
-    BlobNotFoundError,
     FilesystemBlobStore,
     LocalRepositoryError,
     LocalRepositoryPaths,
-    UnsafeBlobPathError,
     initialize_local_repository,
     validate_local_repository_layout,
 )
 from study_agent.adapters.filesystem.repository_target import RepositoryObservationHandle
+from study_agent.adapters.judgement.jev import JevChoiceAdapter
 from study_agent.adapters.model import (
     ADAPTER_ID as OPENAI_COMPATIBLE_ADAPTER_ID,
 )
@@ -151,8 +158,6 @@ from study_agent.capabilities.fingerprints import (
     capability_retry_fingerprint,
 )
 from study_agent.domain import (
-    BlobId,
-    BlobRef,
     ChunkId,
     Citation,
     ContentOrigin,
@@ -169,7 +174,9 @@ from study_agent.domain import (
     SourceKind,
 )
 from study_agent.domain._validation import JsonObject, JsonValue
+from study_agent.domain.features import FeatureMode
 from study_agent.domain.session import MAX_TUTOR_SOURCE_LOCATOR_CHARS
+from study_agent.flashcards.semantic import FlashcardSemanticAnalyzer, SemanticPolicy
 from study_agent.grounding import (
     EvidenceSufficiencyValidator,
     GroundedAnswerIntegrityValidator,
@@ -192,6 +199,7 @@ from study_agent.playbooks import (
 )
 from study_agent.playbooks.builtin import GROUNDED_ANSWER_FLOW
 from study_agent.ports import IndexReceipt, ModelCapabilities, ModelPort
+from study_agent.ports.judgement import ChoiceJudgementPort
 from study_agent.ports.retrieval import (
     EvidenceStatus,
     RetrievalDocument,
@@ -203,6 +211,7 @@ from study_agent.ports.retrieval import (
     retrieval_read_set_fingerprint,
 )
 from study_agent.ports.scheduling import SchedulingPolicyPort
+from study_agent.ports.tutor_host import TutorDecisionPort
 from study_agent.ports.tutor_runner import (
     TutorCompletionHandoffStore,
     TutorContinuationStore,
@@ -218,7 +227,6 @@ from study_agent.repository_config import LocalRepositoryConfig, ModelAdapterCon
 from study_agent.retrieval import (
     CourseSourceContent,
     SourceContentError,
-    SourceContentErrorCode,
     SourceRevisionRecord,
 )
 from study_agent.sessions import (
@@ -260,6 +268,22 @@ _GENERIC_TUTOR_FAILURE_MESSAGE = (
     "Non sono riuscito a completare questa risposta. "
     "Riprova tra poco oppure riformula la richiesta."
 )
+_SCHEMA_INCOMPATIBLE_MESSAGE = (
+    "Il provider ha rifiutato il formato strutturato richiesto da Cardine. "
+    "La richiesta non dipende dalle evidenze del corso e non va ripetuta invariata."
+)
+_PROVIDER_CONFIGURATION_MESSAGE = (
+    "Il modello non è disponibile con la configurazione corrente. "
+    "Controlla chiave API, autorizzazioni e modello nelle Impostazioni."
+)
+_SCOPE_FAILURE_MESSAGE = (
+    "Non sono riuscito a mantenere il riferimento alla lezione o alla fonte selezionata. "
+    "Seleziona di nuovo la lezione e riprova."
+)
+_PUBLICATION_FAILURE_MESSAGE = (
+    "Il lavoro è stato completato, ma Cardine non è riuscito a pubblicarne il risultato. "
+    "Il contenuto non verrà rigenerato automaticamente."
+)
 
 _PAGEINDEX_RECONCILE_BUDGET = 32
 _PAGEINDEX_ADMISSION_BUDGET = 4
@@ -294,9 +318,7 @@ class _ObservedToolExecutor:
     async def invoke(self, arguments: JsonObject) -> JsonObject:
         token = None
         with suppress(TypeError, ValueError):
-            token = begin_activity(
-                kind="retrieval", ref=self._ref, target=self._target
-            )
+            token = begin_activity(kind="retrieval", ref=self._ref, target=self._target)
         try:
             output = await self._inner.invoke(arguments)
             items = output.get("items") if isinstance(output, Mapping) else None
@@ -432,9 +454,21 @@ class _StructuralRangeRetrieval:
 
 
 def _cardine_fallback_message(status: TutorHostRunStatus, failure_reason: str | None) -> str:
-    """Return localized learner-safe copy without exposing operational details."""
+    """Return localized learner-safe copy without collapsing failure classes."""
 
-    del failure_reason
+    if failure_reason == "schema_incompatible":
+        return _SCHEMA_INCOMPATIBLE_MESSAGE
+    if failure_reason in {
+        "authentication",
+        "authorization",
+        "model_unavailable",
+        "endpoint_incompatible",
+    }:
+        return _PROVIDER_CONFIGURATION_MESSAGE
+    if failure_reason in {"scope_missing", "scope_stale"}:
+        return _SCOPE_FAILURE_MESSAGE
+    if failure_reason == "publication_failed":
+        return _PUBLICATION_FAILURE_MESSAGE
     if status in {TutorHostRunStatus.TERMINATED, TutorHostRunStatus.STOPPED}:
         return _INSUFFICIENT_EVIDENCE_MESSAGE
     return _GENERIC_TUTOR_FAILURE_MESSAGE
@@ -487,9 +521,6 @@ class _RepositoryTutorGateway:
         query = inputs.get("query")
         if not isinstance(query, str) or not query.strip():
             return None
-        direct = self._repository.resolve_lesson_scope(self._course_id, query)
-        if direct is not None:
-            return direct
         human_interactions = tuple(
             interaction
             for interaction in self._repository.sessions.interactions(
@@ -497,21 +528,40 @@ class _RepositoryTutorGateway:
             )
             if interaction.kind.value == "human"
         )
-        if not human_interactions:
+        current_learner_text = (
+            human_interactions[-1].content if human_interactions else None
+        )
+        if current_learner_text is not None:
+            current_references = recent_explicit_lesson_references((current_learner_text,))
+            if current_references:
+                # The current learner turn is trusted scope authority even when
+                # the model distilled it to a topic-only capability query.
+                pin = self._repository.resolve_lesson_scope(
+                    self._course_id, current_references[0]
+                )
+                if pin is None:
+                    raise ValueError("explicit lesson scope is unavailable")
+                return pin
+        direct = self._repository.resolve_lesson_scope(self._course_id, query)
+        if direct is not None:
+            return direct
+        if recent_explicit_lesson_references((query,)):
+            raise ValueError("explicit lesson scope is unavailable")
+        if current_learner_text is None:
             return None
-        current_learner_text = human_interactions[-1].content
         if _DEICTIC_LESSON_SCOPE.search(current_learner_text) is None:
             return None
-        for interaction in reversed(human_interactions[-13:-1]):
-            if re.search(r"\blezione\b|\bl[\s_-]*0*\d+\b", interaction.content, re.I) is None:
-                continue
-            # The nearest explicit reference owns the deictic phrase.  An
-            # ambiguous nearest reference fails closed instead of selecting an
-            # older, unrelated lesson.
-            return self._repository.resolve_lesson_scope(
-                self._course_id, interaction.content
-            )
-        return None
+        references = recent_explicit_lesson_references(
+            tuple(interaction.content for interaction in human_interactions)
+        )
+        if references:
+            # The nearest explicit reference remains authoritative even when
+            # unavailable; falling back would silently change lesson scope.
+            pin = self._repository.resolve_lesson_scope(self._course_id, references[0])
+            if pin is None:
+                raise ValueError("explicit lesson scope is unavailable")
+            return pin
+        raise ValueError("explicit lesson scope is unavailable")
 
     def recover(
         self,
@@ -567,9 +617,7 @@ class _RepositoryTutorGateway:
             try:
                 lesson_pin = self._flashcard_lesson_pin(inputs)
                 if lesson_pin is not None:
-                    outcome = await self._flashcards.start_for_pin(
-                        inputs, lesson_pin, context
-                    )
+                    outcome = await self._flashcards.start_for_pin(inputs, lesson_pin, context)
                 else:
                     outcome = await self._flashcards.start(inputs, context)
             except Exception:
@@ -581,9 +629,7 @@ class _RepositoryTutorGateway:
                     "ref": "verification.answer",
                     "target": "",
                     "status": (
-                        "done"
-                        if isinstance(outcome, CompletedCapabilityOutcome)
-                        else "failed"
+                        "done" if isinstance(outcome, CompletedCapabilityOutcome) else "failed"
                     ),
                     "error_code": None
                     if isinstance(outcome, CompletedCapabilityOutcome)
@@ -606,9 +652,7 @@ class _RepositoryTutorGateway:
                 "kind": "verification",
                 "ref": "verification.answer",
                 "target": "",
-                "status": (
-                    "done" if isinstance(outcome, CompletedCapabilityOutcome) else "failed"
-                ),
+                "status": ("done" if isinstance(outcome, CompletedCapabilityOutcome) else "failed"),
                 "error_code": None
                 if isinstance(outcome, CompletedCapabilityOutcome)
                 else "capability_failed",
@@ -630,9 +674,7 @@ class _RepositoryTutorGateway:
         if not isinstance(inputs, Mapping):
             raise TypeError("continuation inputs are invalid")
         try:
-            outcome = await self._gateway(inputs, context).resume(
-                continuation, response, context
-            )
+            outcome = await self._gateway(inputs, context).resume(continuation, response, context)
         except Exception:
             _record_failed_verification()
             raise
@@ -641,9 +683,7 @@ class _RepositoryTutorGateway:
                 "kind": "verification",
                 "ref": "verification.answer",
                 "target": "",
-                "status": (
-                    "done" if isinstance(outcome, CompletedCapabilityOutcome) else "failed"
-                ),
+                "status": ("done" if isinstance(outcome, CompletedCapabilityOutcome) else "failed"),
                 "error_code": None
                 if isinstance(outcome, CompletedCapabilityOutcome)
                 else "capability_failed",
@@ -676,9 +716,7 @@ class _RepositoryTutorGateway:
         if receipt is None or not receipt.granted:
             raise ProviderConsentRequiredError("provider consent is required")
 
-    async def _recover_empty_retrieval_query(
-        self, inputs: JsonObject
-    ) -> str | None:
+    async def _recover_empty_retrieval_query(self, inputs: JsonObject) -> str | None:
         """Recover one unpinned empty FTS query through a bounded Luna call."""
 
         query = inputs.get("query")
@@ -1329,9 +1367,9 @@ class _RepositorySourceCatalog:
         documents = tuple(
             document
             for course_id in course_ids
-            for document in CourseSourceContent(
-                course_id, self._events, self._blobs
-            ).documents(include_superseded=include_superseded)
+            for document in CourseSourceContent(course_id, self._events, self._blobs).documents(
+                include_superseded=include_superseded
+            )
             if document.source_id not in retired_by_course[document.course_id]
         )
         if include_superseded:
@@ -1416,6 +1454,7 @@ class LocalRepository:
         recall_scheduler_factory: Callable[[], SchedulingPolicyPort] | None = None,
         tutor_host_runner: TutorHostRunner | None = None,
         tutor_continuation_store: TutorContinuationStore | None = None,
+        judgement: ChoiceJudgementPort | None = None,
     ) -> None:
         if recall_scheduler is not None and recall_scheduler_factory is not None:
             raise TypeError("recall_scheduler and recall_scheduler_factory are mutually exclusive")
@@ -1489,10 +1528,16 @@ class LocalRepository:
             events_database, registry, connection_identity_guard=events_guard
         )
         self.runs = SQLiteRunStore(runs_database, connection_identity_guard=runs_guard)
-        self.pageindex = PageIndexCoordinator(self.runs)
-        self.indexing = IndexingCoordinator(
-            NamespacedSQLiteRunStore(self.runs, "cardine-indexing")
+        self.pageindex = PageIndexCoordinator(
+            self.runs,
+            worker=PageIndexWorker(
+                timeout_seconds=config.document_index.timeout_seconds,
+                max_input_bytes=config.document_index.max_input_bytes,
+            ),
         )
+        self._judgement = judgement
+        self._routing_receipts = RoutingReceiptStore(self.runs)
+        self.indexing = IndexingCoordinator(NamespacedSQLiteRunStore(self.runs, "cardine-indexing"))
         self.provider_consent = ProjectionConsentView(self.events.projection)
         self.source_lifetime = ProjectionSourceLifetimeView(self.events.projection)
         self._source_catalog = _RepositorySourceCatalog(
@@ -1639,6 +1684,26 @@ class LocalRepository:
             fallback_message_policy=_cardine_fallback_message,
         )
 
+    def _course_judgement(self, course_id: CourseId) -> ChoiceJudgementPort:
+        if self._judgement is None:
+            config = self.config.judgement
+            if config is None:
+                raise ModelAdapterConfigurationError("no judgement adapter is configured")
+            environment = os.environ if self._environment is None else self._environment
+            credential = environment.get(config.credential_env)
+            if not isinstance(credential, str) or not credential.strip():
+                raise ModelAdapterConfigurationError(
+                    "configured judgement credential is unavailable"
+                )
+            self._judgement = JevChoiceAdapter(
+                api_key=credential,
+                model_id=config.model_id,
+                timeout_seconds=config.timeout_seconds,
+                max_retries=config.max_retries,
+                concurrency=config.concurrency,
+            )
+        return ConsentChoiceJudgementPort(self._judgement, course_id, self.provider_consent)
+
     def tutor_conversation(
         self,
         course_id: CourseId,
@@ -1672,6 +1737,29 @@ class LocalRepository:
             course_id,
             self.provider_consent,
         )
+        features = self.config.features
+        judgement: ChoiceJudgementPort | None = None
+        if features.tutor_routing_mode is not FeatureMode.OFF or (
+            features.flashcard_semantic_mode is not FeatureMode.OFF
+        ):
+            judgement = self._course_judgement(course_id)
+        analyzer: FlashcardSemanticAnalyzer | None = None
+        if features.flashcard_semantic_mode is not FeatureMode.OFF:
+            selected_judgement = self.config.judgement
+            if selected_judgement is None or judgement is None:
+                raise ModelAdapterConfigurationError("semantic judgement is not configured")
+            analyzer = FlashcardSemanticAnalyzer(
+                judgement,
+                SemanticPolicy(
+                    "flashcard-cardability",
+                    features.policy_version,
+                    features.anchor_probability,
+                    features.context_probability,
+                    features.exclusion_probability,
+                    features.semantic_margin,
+                ),
+                judgement_identity=f"openrouter-jev@openrouter-decisions-alpha@1/{selected_judgement.resolved_model_id}",
+            )
         selected_session_id = (
             session_id if session_id is not None else self.sessions.list_sessions(course_id)[0].id
         )
@@ -1690,6 +1778,14 @@ class LocalRepository:
                 source_commitments=self._source_catalog,
                 sessions=self.sessions,
                 retired_source_ids=lambda: self.source_lifetime.retired_source_ids(course_id),
+                semantic_preprocessor=FlashcardSemanticPreprocessor(
+                    content=self.for_course(course_id).content,
+                    blobs=self.blobs,
+                    indexes=self.pageindex,
+                    runs=self.runs,
+                    features=features,
+                    analyzer=analyzer,
+                ),
             )
             self.artifact_service = ArtifactService(
                 self.events,
@@ -1715,12 +1811,32 @@ class LocalRepository:
             flashcards,
             lesson_pin,
         )
+        legacy = FlashcardProfileRoutingTutorDecisionPort(
+            SourceGroundedTutorDecisionPort(
+                ClarificationRecoveryTutorDecisionPort(ModelTutorDecisionPort(model))
+            )
+        )
+        decision_port: TutorDecisionPort = legacy
+        if features.tutor_routing_mode is not FeatureMode.OFF:
+            if judgement is None:
+                raise ModelAdapterConfigurationError("semantic judgement is not configured")
+            decision_port = RoutingTutorDecisionPort(
+                judgement,
+                model,
+                TutorRoutingPolicy(
+                    features.policy_version,
+                    RoutingThreshold(features.route_probability, features.route_margin),
+                    RoutingThreshold(features.capability_probability, features.capability_margin),
+                    RoutingThreshold(features.boolean_probability, features.boolean_margin),
+                    RoutingThreshold(features.enum_probability, features.enum_margin),
+                    mode=features.tutor_routing_mode,
+                    emergency_fallback=features.emergency_fallback,
+                ),
+                legacy=legacy,
+                record_receipt=self._routing_receipts.record,
+            )
         runner = TutorHostRunner(
-            FlashcardProfileRoutingTutorDecisionPort(
-                SourceGroundedTutorDecisionPort(
-                    ClarificationRecoveryTutorDecisionPort(ModelTutorDecisionPort(model))
-                )
-            ),
+            decision_port,
             self.tutor_snapshots,
             self.student_state,
             gateway,
@@ -1774,6 +1890,7 @@ class LocalRepository:
         recall_scheduler_factory: Callable[[], SchedulingPolicyPort] | None = None,
         tutor_host_runner: TutorHostRunner | None = None,
         tutor_continuation_store: TutorContinuationStore | None = None,
+        judgement: ChoiceJudgementPort | None = None,
     ) -> LocalRepository:
         paths = LocalRepositoryPaths.at(root)
         config = LocalRepositoryConfig.load(paths.config)
@@ -1786,6 +1903,7 @@ class LocalRepository:
             recall_scheduler_factory=recall_scheduler_factory,
             tutor_host_runner=tutor_host_runner,
             tutor_continuation_store=tutor_continuation_store,
+            judgement=judgement,
         )
 
     @classmethod
@@ -1800,6 +1918,7 @@ class LocalRepository:
         recall_scheduler_factory: Callable[[], SchedulingPolicyPort] | None = None,
         tutor_host_runner: TutorHostRunner | None = None,
         tutor_continuation_store: TutorContinuationStore | None = None,
+        judgement: ChoiceJudgementPort | None = None,
     ) -> LocalRepository:
         """Compose mutable adapters while retaining an inspected repository owner."""
         if not isinstance(observation, RepositoryObservationHandle):
@@ -1816,6 +1935,7 @@ class LocalRepository:
             recall_scheduler_factory=recall_scheduler_factory,
             tutor_host_runner=tutor_host_runner,
             tutor_continuation_store=tutor_continuation_store,
+            judgement=judgement,
         )
 
     def for_course(self, course_id: CourseId) -> CourseRepository:
@@ -1847,9 +1967,7 @@ class LocalRepository:
         session = self.sessions.get_session(course_id, session_id)
         if session.status is not SessionStatus.ACTIVE:
             raise ValueError("material generation requires an active session")
-        record, source_sequence = self._material_source_record(
-            course_id, source_id, revision_id
-        )
+        record, source_sequence = self._material_source_record(course_id, source_id, revision_id)
         return PinnedTranscriptInput.from_source(
             record.source,
             course_id=course_id,
@@ -1966,8 +2084,7 @@ class LocalRepository:
         matches = tuple(
             record
             for record in CourseSourceContent(course_id, self.events, self.blobs).catalog()
-            if record.source.source_id == source_id
-            and record.source.revision_id == revision_id
+            if record.source.source_id == source_id and record.source.revision_id == revision_id
         )
         if len(matches) != 1:
             raise ValueError("material transcript revision was not found uniquely")
@@ -1983,14 +2100,47 @@ class LocalRepository:
             ContentOrigin.EXTRACTED,
         ):
             raise ValueError("material generation requires an original or extracted transcript")
+        extraction = record.source.extraction_provenance
+        if extraction is not None:
+            from study_agent.domain import BlobId, BlobRef
+
+            # The manifest is part of canonical extraction lineage, not a
+            # checkpoint or derived index. A parent PDF must still be current.
+            manifest = json.loads(
+                self.blobs.get(
+                    BlobRef(
+                        BlobId("sha256:" + extraction.manifest_sha256),
+                        extraction.manifest_sha256,
+                        extraction.manifest_byte_length,
+                    )
+                )
+            )
+            parent_id = manifest.get("parent_source_id")
+            if parent_id is not None:
+                parent = next(
+                    (
+                        item
+                        for item in CourseSourceContent(
+                            course_id, self.events, self.blobs
+                        ).catalog()
+                        if str(item.source.source_id) == parent_id
+                        and str(item.source.revision_id) == manifest.get("parent_revision_id")
+                    ),
+                    None,
+                )
+                if (
+                    parent is None
+                    or not parent.is_current_revision
+                    or parent.source.source_id
+                    in (self.source_lifetime.retired_source_ids(course_id))
+                ):
+                    raise ValueError("parent PDF was retired or superseded")
         source_sequences = tuple(
             event.course_sequence
             for event in self.events.read(course_id)
             if event.event_type == SOURCE_REVISION_INGESTED
             and event.schema_version == SOURCE_REVISION_SCHEMA_VERSION
-            and (
-                decoded := decode_source_revision_event(event, self.blobs.get)
-            ).source.source_id
+            and (decoded := decode_source_revision_event(event, self.blobs.get)).source.source_id
             == source_id
             and decoded.source.revision_id == revision_id
         )
@@ -2030,62 +2180,17 @@ class LocalRepository:
         course_ids = (course_id,) if course_id is not None else self.events.list_course_ids()
         for selected_course in course_ids:
             retired = self.source_lifetime.retired_source_ids(selected_course)
-            state = self.events.projection(selected_course).state
-            raw_sources = state.get("sources", {})
-            if not isinstance(raw_sources, Mapping):
-                raise LocalRepositoryError("source projection is incompatible")
-            for source_id, raw_source in sorted(raw_sources.items()):
-                if not isinstance(source_id, str) or not isinstance(raw_source, Mapping):
-                    raise LocalRepositoryError("source projection is incompatible")
-                if SourceId(source_id) in retired:
+            content = CourseSourceContent(selected_course, self.events, self.blobs)
+            for record in content.catalog():
+                if not record.is_current_revision or record.source.source_id in retired:
                     continue
-                revision_id = raw_source.get("current_revision_id")
-                raw_revisions = raw_source.get("revisions")
-                if not isinstance(revision_id, str) or not isinstance(raw_revisions, Mapping):
-                    raise LocalRepositoryError("source projection is incompatible")
-                raw_revision = raw_revisions.get(revision_id)
-                if not isinstance(raw_revision, Mapping):
-                    raise LocalRepositoryError("source projection is incompatible")
-                raw_manifest = raw_revision.get("source")
-                if not isinstance(raw_manifest, Mapping):
-                    raise LocalRepositoryError("source projection is incompatible")
-                if raw_manifest.get("kind") != "markdown":
-                    continue
-                raw_blob = raw_manifest.get("normalized_blob")
-                if not isinstance(raw_blob, Mapping):
-                    raise LocalRepositoryError("source projection is incompatible")
-                blob_id = raw_blob.get("id")
-                checksum = raw_blob.get("checksum_sha256")
-                byte_length = raw_blob.get("byte_length")
-                if (
-                    not isinstance(blob_id, str)
-                    or not isinstance(checksum, str)
-                    or type(byte_length) is not int
+                # Historical OFF navigation covered Markdown only. ON/shadow index
+                # every admitted text substrate through the shared structure owner.
+                if self.config.features.document_index_mode is FeatureMode.OFF and (
+                    record.source.kind is not SourceKind.MARKDOWN
                 ):
-                    raise LocalRepositoryError("source projection is incompatible")
-                try:
-                    reference = BlobRef(BlobId(blob_id), checksum, byte_length)
-                    content = self.blobs.get(reference).decode("utf-8", errors="strict")
-                except BlobNotFoundError as error:
-                    raise SourceContentError(
-                        SourceContentErrorCode.NOT_FOUND,
-                        "source projection content is unavailable",
-                    ) from error
-                except (BlobIntegrityError, UnsafeBlobPathError, UnicodeError, ValueError) as error:
-                    raise SourceContentError(
-                        SourceContentErrorCode.INTEGRITY_ERROR,
-                        "source projection content failed integrity validation",
-                    ) from error
-                digest = sha256(content.encode("utf-8")).hexdigest()
-                revisions.append(
-                    PageIndexRevision(
-                        str(selected_course),
-                        source_id,
-                        revision_id,
-                        content,
-                        digest,
-                    )
-                )
+                    continue
+                revisions.append(document_revision(record, self.blobs))
                 if limit is not None and len(revisions) >= limit:
                     return tuple(revisions)
         return tuple(
@@ -2093,9 +2198,7 @@ class LocalRepository:
         )
 
     def _queue_pageindex_backfill(self, course_id: CourseId | None = None) -> None:
-        for revision in self._pageindex_revisions(
-            course_id, limit=_PAGEINDEX_RECONCILE_BUDGET
-        ):
+        for revision in self._pageindex_revisions(course_id, limit=_PAGEINDEX_RECONCILE_BUDGET):
             self.pageindex.request(revision)
 
     def reconcile_pageindex(
@@ -2139,7 +2242,7 @@ class LocalRepository:
         for revision in self._pageindex_revisions(course_id):
             if revision.source_id == str(source_id) and revision.revision_id == str(revision_id):
                 return revision
-        raise LookupError("active Markdown revision was not found")
+        raise LookupError("active source revision was not found")
 
     def rebuild_pageindex(
         self, course_id: CourseId, source_id: SourceId, revision_id: RevisionId
@@ -2199,17 +2302,27 @@ class LocalRepository:
         sources = self._lesson_sources(course_id)
         retrieval = self.for_course(course_id).retrieval
         statuses = {
-            (item.source_id, item.revision_id): item
-            for item in self.pageindex_status(course_id)
+            (item.source_id, item.revision_id): item for item in self.pageindex_status(course_id)
         }
-        fallback_sources = tuple(
-            source
+        primary_index = self.config.features.document_index_mode is FeatureMode.ON
+        if primary_index and any(
+            statuses.get((source.source_id, source.revision_id)) is None
+            or statuses[(source.source_id, source.revision_id)].status is not PageIndexStatus.READY
             for source in sources
-            if not (
-                source.kind.casefold() == "markdown"
-                and statuses.get((source.source_id, source.revision_id)) is not None
-                and statuses[(source.source_id, source.revision_id)].status
-                is PageIndexStatus.READY
+        ):
+            raise LessonSelectionError("document index is unavailable; reconcile source indexing")
+        fallback_sources = (
+            ()
+            if primary_index
+            else tuple(
+                source
+                for source in sources
+                if not (
+                    source.kind.casefold() == "markdown"
+                    and statuses.get((source.source_id, source.revision_id)) is not None
+                    and statuses[(source.source_id, source.revision_id)].status
+                    is PageIndexStatus.READY
+                )
             )
         )
         lexical = LessonSelectionService(_RepositoryLessonEvidence(retrieval)).search(
@@ -2217,13 +2330,14 @@ class LocalRepository:
         )
         candidates = list(lexical.candidates)
         for source in sources:
-            if source.kind.casefold() != "markdown":
+            if not primary_index and source.kind.casefold() != "markdown":
                 continue
             projection = statuses.get((source.source_id, source.revision_id))
             if projection is None or projection.status is not PageIndexStatus.READY:
                 continue
             for item in projection.candidates:
-                if not lesson_title_matches(item.title, query):
+                title = source.title if item.node_id == "document-root" else item.title
+                if not lesson_title_matches(title, query):
                     continue
                 identity = "\0".join(
                     (
@@ -2232,7 +2346,7 @@ class LocalRepository:
                         source.revision_id,
                         str(item.start_offset),
                         str(item.end_offset),
-                        item.title,
+                        title,
                     )
                 ).encode()
                 candidates.append(
@@ -2241,7 +2355,7 @@ class LocalRepository:
                         source.course_id,
                         source.source_id,
                         source.revision_id,
-                        item.title,
+                        title,
                         item.start_offset,
                         item.end_offset,
                         source.content_sha256,
@@ -2258,9 +2372,7 @@ class LocalRepository:
         )
         return LessonSearchResult(disposition, ordered)
 
-    def select_lesson(
-        self, course_id: CourseId, query: str, candidate_id: str
-    ) -> SourcePin:
+    def select_lesson(self, course_id: CourseId, query: str, candidate_id: str) -> SourcePin:
         result = self.search_lessons(course_id, query)
         service = LessonSelectionService(
             _RepositoryLessonEvidence(self.for_course(course_id).retrieval)
@@ -2305,10 +2417,10 @@ class LocalRepository:
         source = LessonSelectionService(
             _RepositoryLessonEvidence(self.for_course(CourseId(pin.course_id)).retrieval)
         ).validate_pin(pin, sources)
-        if source.kind.casefold() == "markdown":
-            candidates = self.search_lessons(
-                CourseId(pin.course_id), pin.section_title
-            ).candidates
+        if source.kind.casefold() == "markdown" or (
+            self.config.features.document_index_mode is FeatureMode.ON
+        ):
+            candidates = self.search_lessons(CourseId(pin.course_id), pin.section_title).candidates
             if not any(
                 item.source_id == pin.source_id
                 and item.revision_id == pin.revision_id
@@ -2321,8 +2433,7 @@ class LocalRepository:
         elif not (
             pin.section_title == source.title
             and any(
-                chunk.start_offset == pin.start_offset
-                and chunk.end_offset == pin.end_offset
+                chunk.start_offset == pin.start_offset and chunk.end_offset == pin.end_offset
                 for chunk in source.chunks
             )
         ):
@@ -2592,9 +2703,7 @@ class LocalRepository:
             | frozenset({"course:read", "study:ask"}),
         )
         sequence = self.events.projection(course_id).sequence
-        learner = self.session_turn_service.record_learner_turn(
-            query.strip(), context, sequence
-        )
+        learner = self.session_turn_service.record_learner_turn(query.strip(), context, sequence)
         service_context = replace(
             context,
             principal_kind=PrincipalKind.SERVICE,
