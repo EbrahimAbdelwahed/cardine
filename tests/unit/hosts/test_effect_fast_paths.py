@@ -187,7 +187,7 @@ def test_history_scoped_model_promise_cannot_complete_the_effect() -> None:
     assert delegate.calls == 1
 
 
-def test_difficulty_explanation_preserves_study_memory_decisions() -> None:
+def test_difficulty_explanation_preserves_student_state_decisions() -> None:
     for prompt in (
         "I don't understand glycolysis; explain it",
         "Non capisco la glicolisi, spiegamela",
@@ -195,7 +195,7 @@ def test_difficulty_explanation_preserves_study_memory_decisions() -> None:
         "I am confused; explain glycolysis",
         "Ricordami le mie difficoltà e spiega la glicolisi",
     ):
-        for tool in ("study_memory.record", "study_memory.search"):
+        for tool in ("student_state.record", "student_state.search"):
             memory = InvokeToolDecision(tool, {})
             delegate = _CountingPort(memory)
             decision = asyncio.run(
@@ -206,7 +206,7 @@ def test_difficulty_explanation_preserves_study_memory_decisions() -> None:
 
 
 def test_flashcard_difficulty_preserves_memory_tool_before_generation() -> None:
-    for tool in ("study_memory.record", "study_memory.search"):
+    for tool in ("student_state.record", "student_state.search"):
         memory = InvokeToolDecision(tool, {})
         delegate = _CountingPort(memory)
         decision = asyncio.run(

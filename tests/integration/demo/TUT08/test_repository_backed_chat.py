@@ -190,9 +190,7 @@ class _FixtureModel:
                             "kind": "supported_claim",
                             "text": f"Punto didattico {index}: "
                             + ("contenuto verificato " * 9).strip(),
-                            "evidence_ids": tuple(
-                                dict.fromkeys((evidence_ids[0], evidence_id))
-                            ),
+                            "evidence_ids": tuple(dict.fromkeys((evidence_ids[0], evidence_id))),
                         }
                         for index, evidence_id in enumerate(evidence_ids[:10], start=1)
                     ),
@@ -449,7 +447,11 @@ def test_tutor_invokes_the_same_harness_source_adapter_and_records_timeline(tmp_
                 },
             },
             {"kind": "assistant_message", "message": "Fonte registrata."},
-            {"kind": "invoke_tool", "tool_name": "evidence.get", "arguments": {}},
+            {
+                "kind": "invoke_tool",
+                "tool_name": "student_state.search",
+                "arguments": {"query": None, "kind": "any", "signal": "any", "limit": 8},
+            },
             {
                 "kind": "assistant_message",
                 "message": "Connessione verificata.",
@@ -733,9 +735,10 @@ def test_repository_chat_is_durable_idempotent_and_stale_safe(tmp_path: Path) ->
     assert retry_trace["steps"] == before_trace["steps"]
     assert retry_trace["attempts"] == 2
     # A reconciled retry has an application span, but never another model call.
-    assert len(cast(tuple[JsonObject, ...], retry_trace["operations"])) == len(
-        cast(tuple[JsonObject, ...], before_trace["operations"])
-    ) + 1
+    assert (
+        len(cast(tuple[JsonObject, ...], retry_trace["operations"]))
+        == len(cast(tuple[JsonObject, ...], before_trace["operations"])) + 1
+    )
     assert len(model.requests) == 1
 
     fresh = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
@@ -879,10 +882,11 @@ def test_unrenderable_grounded_completion_still_returns_a_visible_chat_message(
 def test_attached_long_lesson_publishes_complete_answer_with_compact_sources(
     tmp_path: Path,
 ) -> None:
-    lesson = "# Lezione 1\n\n" + "\n\n".join(
-        f"Concetto canonico {index}. " * 30
-        for index in range(1, 13)
-    ) + "\n\n# Lezione 2\n\nContenuto estraneo.\n"
+    lesson = (
+        "# Lezione 1\n\n"
+        + "\n\n".join(f"Concetto canonico {index}. " * 30 for index in range(1, 13))
+        + "\n\n# Lezione 2\n\nContenuto estraneo.\n"
+    )
     root, adapters, _model = _repository(
         tmp_path,
         (
@@ -1031,9 +1035,10 @@ def test_full_length_source_title_keeps_verified_completion_citation(
     assert len(str(citations[0]["label"])) <= 2_000
     if heading_length:
         assert str(citations[0]["label"]).endswith("…")
-    assert cast(tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"])[-1][
-        "citations"
-    ] == citations
+    assert (
+        cast(tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"])[-1]["citations"]
+        == citations
+    )
 
 
 def test_read_request_with_course_materials_enters_the_grounded_flow(

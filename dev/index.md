@@ -10,6 +10,9 @@ archive and must not be treated as Cardine's current state.
 
 ## Start here
 
+- [Minimal student journal](logs/2026-10-01--cardine--student-journal--log.md) — owner-approved replacement
+  for learner-evidence estimates, session-note memory writes and product context conflicts.
+  Student history uses one append-only file/service; recall remains separate.
 - [Jev/PageIndex integration](../specs/done/jev-pageindex/README.md) — PR #10: OpenRouter Decisions, shared canonical indexing and semantic routing; merge validation in progress.
 
 - [Owner-authorized merges and review limit](handoffs/2026-10-01--review-limit-and-owner-merges.md) — PRs #5/#3/#7/#8/#9 merged; remaining automatic findings recorded; future review stops after two rounds per PR.

@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from datetime import date
 from typing import cast
 
 from cardine.courses import ProjectionCourseView
-from cardine.domain.study_context import StudyStatementValue
 from study_agent.domain import (
     AnswerId,
     AnswerRecord,
@@ -21,17 +19,13 @@ from study_agent.domain import (
     RevisionId,
     SessionId,
     SourceId,
-    StudyContextSnapshot,
     StudyStatementKind,
     TutorConfiguredHint,
     TutorConfiguredSourceField,
     TutorContextField,
-    TutorContextState,
-    TutorHintDivergence,
     TutorMaterialSummary,
     TutorNote,
     TutorSnapshotV1,
-    TutorStatementEvidence,
     TutorTimelineEntry,
     TutorTimelineKind,
     TutorTimelineStatus,
@@ -53,7 +47,6 @@ from study_agent.sessions import (
     decode_interaction_recorded,
 )
 from study_agent.state import EventRegistry, Projection, replay
-from study_agent.study_context import ProjectionStudyContextView
 
 
 class TutorSnapshotReader:
@@ -81,10 +74,9 @@ class TutorSnapshotReader:
             item.id: item
             for item in ProjectionAssistantTurnView(load).turns(course_id, session_id)
         }
-        context = ProjectionStudyContextView(load).get(course_id)
 
         configured = _configured_hints(course)
-        learner_context = _learner_context(context)
+        learner_context: tuple[TutorContextField, ...] = ()
         timeline = _timeline(
             captured,
             session_id,
@@ -100,7 +92,7 @@ class TutorSnapshotReader:
             continuation_summary=session.continuation_summary,
             configured_hints=configured,
             learner_context=learner_context,
-            divergences=_divergences(configured, learner_context),
+            divergences=(),
             timeline=timeline,
             notes=tuple(
                 TutorNote(
@@ -173,73 +165,6 @@ def _configured_hints(course: CourseProfile) -> tuple[TutorConfiguredHint, ...]:
             )
         )
     return tuple(result)
-
-
-def _learner_context(context: StudyContextSnapshot) -> tuple[TutorContextField, ...]:
-    conflict_kinds = {item.kind for item in context.conflicts}
-    result: list[TutorContextField] = []
-    for kind in StudyStatementKind:
-        active = context.active(kind)
-        evidence = tuple(
-            TutorStatementEvidence(
-                item.id,
-                item.session_id,
-                item.origin_interaction_id,
-                item.value,
-                item.recorded_at,
-            )
-            for item in active
-        )
-        state = (
-            TutorContextState.CONFLICTING
-            if kind in conflict_kinds
-            else TutorContextState.KNOWN
-            if evidence
-            else TutorContextState.MISSING
-        )
-        result.append(TutorContextField(kind, state, evidence))
-    return tuple(result)
-
-
-def _divergences(
-    configured: tuple[TutorConfiguredHint, ...],
-    learner: tuple[TutorContextField, ...],
-) -> tuple[TutorHintDivergence, ...]:
-    active_by_kind = {item.kind: item.active for item in learner}
-    result: list[TutorHintDivergence] = []
-    for item in configured:
-        evidence = active_by_kind[item.kind]
-        learner_values = _unique_values(tuple(entry.value for entry in evidence))
-        if not learner_values or _value_keys(item.values) == _value_keys(learner_values):
-            continue
-        result.append(
-            TutorHintDivergence(
-                item.kind,
-                item.values,
-                learner_values,
-                tuple(entry.statement_id for entry in evidence),
-            )
-        )
-    return tuple(result)
-
-
-def _unique_values(values: tuple[StudyStatementValue, ...]) -> tuple[StudyStatementValue, ...]:
-    seen: set[tuple[str, str]] = set()
-    result: list[StudyStatementValue] = []
-    for value in values:
-        key = _value_key(value)
-        if key not in seen:
-            seen.add(key)
-            result.append(value)
-    return tuple(result)
-
-
-def _value_keys(values: tuple[StudyStatementValue, ...]) -> frozenset[tuple[str, str]]:
-    return frozenset(_value_key(value) for value in values)
-
-
-def _value_key(value: StudyStatementValue) -> tuple[str, str]:
-    return type(value).__name__, value.isoformat() if isinstance(value, date) else str(value)
 
 
 def _timeline(

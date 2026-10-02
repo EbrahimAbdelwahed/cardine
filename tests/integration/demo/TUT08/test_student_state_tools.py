@@ -22,7 +22,7 @@ def test_agent_signal_and_completed_topic_are_canonical_but_prompt_private(
         (
             {
                 "kind": "invoke_tool",
-                "tool_name": "study_memory.record",
+                "tool_name": "student_state.record",
                 "arguments": {
                     "topic": "valvola aortica",
                     "summary": "Lo studente chiede una spiegazione di base.",
@@ -69,8 +69,8 @@ def test_agent_signal_and_completed_topic_are_canonical_but_prompt_private(
     )
 
     with LocalRepository.open(root, model_adapters=adapters) as repository:
-        entries = repository.study_memory.search(COURSE, query="aortic")
-        all_entries = repository.study_memory.search(COURSE)
+        entries = repository.student_state.search(COURSE, query="aortic")
+        all_entries = repository.student_state.search(COURSE)
 
     assert tuple(entry.kind for entry in entries) == (
         "topic_covered",
@@ -113,4 +113,34 @@ def test_failed_capability_does_not_record_a_covered_topic(tmp_path: Path) -> No
 
     assert receipt["status"] == "failed"
     with LocalRepository.open(root, model_adapters=adapters) as repository:
-        assert repository.study_memory.search(COURSE) == ()
+        assert repository.student_state.search(COURSE) == ()
+
+
+def test_ui_and_tutor_read_the_same_file_without_mutating_course_events(tmp_path: Path) -> None:
+    root, adapters, _ = _repository(tmp_path, ())
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+    assert app.get("/api/v1/student-state")["entries"] == ()
+    command = {
+        "schema_version": 1,
+        "request_id": "ui-difficulty",
+        "expected_sequence": sequence,
+        "payload": {
+            "kind": "learner_signal",
+            "topic": "valvola aortica",
+            "summary": "Non distinguo i lembi.",
+        },
+    }
+    receipt = app.post("/api/v1/student-state", command)
+    before = (root / "state" / "student-state.json").read_bytes()
+    assert app.post("/api/v1/student-state", command) == receipt
+    assert (root / "state" / "student-state.json").read_bytes() == before
+    assert app.get("/api/v1/bootstrap")["high_water_sequence"] == sequence
+    reloaded = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    assert reloaded.get("/api/v1/student-state") == receipt["result"]
+    with LocalRepository.open(root, model_adapters=adapters) as repository:
+        entries = repository.student_state.search(COURSE, query="valvola")
+        assert entries[0].recorded_by == "student"
+        assert entries[0].origin_sequence == 0
+        assert "evidence.get" not in {m.name for m in repository.harness_tools().manifests}
+        assert "context.get" not in {m.name for m in repository.harness_tools().manifests}

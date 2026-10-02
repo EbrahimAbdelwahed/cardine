@@ -53,9 +53,9 @@ def _context() -> TutorHostContext:
         course_id="course",
         session_id="session",
         tutor_snapshot_sequence=1,
-        learner_evidence_through_sequence=1,
+        student_state_sequence=1,
         tutor_snapshot={"status": "active"},
-        learner_evidence={"estimates": ()},
+        student_state={"estimates": ()},
         advertised_capabilities=(
             AdvertisedCapability(
                 "grounding.ask",

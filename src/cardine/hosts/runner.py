@@ -79,7 +79,7 @@ from .contracts import (
 )
 
 if TYPE_CHECKING:
-    from study_agent.ports.assessment import LearnerEvidenceViewPort
+    from cardine.hosts.context import StudentStateView
     from study_agent.ports.tutor_snapshot import TutorSnapshotPort
 
 
@@ -1027,7 +1027,7 @@ class TutorHostRunner:
         self,
         decision_port: TutorDecisionPort,
         snapshots: TutorSnapshotPort | None,
-        evidence: LearnerEvidenceViewPort | None,
+        student_state: StudentStateView | None,
         gateway: TutorCapabilityGatewayPort,
         authority: TutorHostAuthorityPort,
         action_identity: TutorHostActionIdentityPort,
@@ -1039,9 +1039,11 @@ class TutorHostRunner:
         tool_gateway: object | None = None,
     ) -> None:
         if context_assembler is None:
-            if snapshots is None or evidence is None:
-                raise TypeError("snapshots and evidence are required without a context assembler")
-            context_assembler = TutorHostContextAssembler(snapshots, evidence, gateway)
+            if snapshots is None or student_state is None:
+                raise TypeError(
+                    "snapshots and student state are required without a context assembler"
+                )
+            context_assembler = TutorHostContextAssembler(snapshots, student_state, gateway)
         self._decision_port = decision_port
         self._gateway = gateway
         self._authority = authority

@@ -63,10 +63,9 @@ ROUTES = (
     "fonti",
     "proposte",
     "verifiche",
-    "evidenze",
+    "percorso",
     "ripasso",
     "piano",
-    "conflitti",
 )
 API_PATHS = (
     "/api/v1/bootstrap",
@@ -74,10 +73,9 @@ API_PATHS = (
     "/api/v1/materials",
     "/api/v1/artifacts",
     "/api/v1/assessments",
-    "/api/v1/evidence",
+    "/api/v1/student-state",
     "/api/v1/recall/due",
     "/api/v1/plan",
-    "/api/v1/context/conflicts",
 )
 
 

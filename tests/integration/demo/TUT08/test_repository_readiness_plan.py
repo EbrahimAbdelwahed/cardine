@@ -7,6 +7,8 @@ from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+from study_agent.study_context import ProjectionStudyContextView, StudyContextService
+
 if TYPE_CHECKING:
     from tests.integration.demo.TUT08.test_repository_materials_artifacts_context import (
         COURSE,
@@ -81,13 +83,25 @@ def test_repository_plan_conflict_is_explicit_and_shell_warns(
     root, _revision_id = _repository(tmp_path / "repository")
     with LocalRepository.open(root) as repository:
         sequence = repository.events.read(COURSE)[-1].course_sequence
-        first = repository.study_context_service.record(
+        first = StudyContextService(
+            repository.events,
+            repository.clock,
+            ProjectionStudyContextView(repository.events.projection),
+            repository.courses,
+            repository.sessions,
+        ).record(
             StudyStatementInput(StudyStatementKind.DEADLINE, date(2026, 8, 15)),
             ORIGIN,
             _context("readiness-deadline-1", actor=PrincipalKind.HUMAN),
             sequence,
         )
-        repository.study_context_service.record(
+        StudyContextService(
+            repository.events,
+            repository.clock,
+            ProjectionStudyContextView(repository.events.projection),
+            repository.courses,
+            repository.sessions,
+        ).record(
             StudyStatementInput(StudyStatementKind.DEADLINE, date(2026, 8, 20)),
             ORIGIN,
             _context("readiness-deadline-2", actor=PrincipalKind.HUMAN),
@@ -100,17 +114,17 @@ def test_repository_plan_conflict_is_explicit_and_shell_warns(
     counts = cast(dict[str, object], bootstrap["counts"])
     readiness = cast(dict[str, object], plan["readiness"])
 
-    assert counts["context_conflicts"] == 1
-    assert bootstrap["shell_status"] == "needs_review"
-    assert plan["status"] == "conflicted"
+    assert "context_conflicts" not in counts
+    assert bootstrap["shell_status"] == "ready"
+    assert plan["status"] == "ready"
     assert readiness["days_remaining"] is None
-    assert readiness["deadline_status"] == "conflicted"
+    assert readiness["deadline_status"] == "missing"
 
 
 def test_browser_plan_uses_server_values_without_date_math() -> None:
-    javascript = (
-        Path(__file__).parents[4] / "src/cardine/demo/browser.js"
-    ).read_text(encoding="utf-8")
+    javascript = (Path(__file__).parents[4] / "src/cardine/demo/browser.js").read_text(
+        encoding="utf-8"
+    )
 
     assert 'endpoint: "/api/v1/plan"' in javascript
     assert "function renderPlan(payload)" in javascript
@@ -146,6 +160,4 @@ def test_session_read_uses_captured_presentations_not_live_view(tmp_path: Path) 
     )
     session = app.get("/api/v1/session")
 
-    assert session["high_water_sequence"] == app.get("/api/v1/bootstrap")[
-        "high_water_sequence"
-    ]
+    assert session["high_water_sequence"] == app.get("/api/v1/bootstrap")["high_water_sequence"]

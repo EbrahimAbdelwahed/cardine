@@ -51,8 +51,8 @@ REF_LABELS: Mapping[str, str] = MappingProxyType({
     "evidence.get": "Leggo le evidenze",
     "conversation.search": "Cerco nella conversazione",
     "conversation.read": "Leggo la conversazione",
-    "study_memory.record": "Aggiorno la memoria di studio",
-    "study_memory.search": "Cerco nella memoria di studio",
+    "student_state.record": "Aggiorno la memoria di studio",
+    "student_state.search": "Cerco nella memoria di studio",
 })
 ACTIVITY_KINDS = frozenset({"tool", "retrieval", "capability", "model", "verification"})
 ACTIVITY_STATES = frozenset({"running", "done", "failed"})

@@ -187,7 +187,7 @@ def test_broad_history_request_reads_before_the_oldest_included_turn() -> None:
         context.course_id,
         context.session_id,
         context.tutor_snapshot_sequence,
-        context.learner_evidence_through_sequence,
+        context.student_state_sequence,
         {
             **context.tutor_snapshot,
             "timeline": (
@@ -206,7 +206,7 @@ def test_broad_history_request_reads_before_the_oldest_included_turn() -> None:
             },
             "harness_tools": ({"name": "conversation.read", "input_schema": {}},),
         },
-        context.learner_evidence,
+        context.student_state,
         context.advertised_capabilities,
     )
 
@@ -226,7 +226,7 @@ def test_memory_scoped_flashcard_wrapper_preserves_progress_message() -> None:
         base.course_id,
         base.session_id,
         base.tutor_snapshot_sequence,
-        base.learner_evidence_through_sequence,
+        base.student_state_sequence,
         {
             **base.tutor_snapshot,
             "agent_observations": (
@@ -248,7 +248,7 @@ def test_memory_scoped_flashcard_wrapper_preserves_progress_message() -> None:
                 },
             ),
         },
-        base.learner_evidence,
+        base.student_state,
         base.advertised_capabilities,
     )
 
@@ -270,7 +270,7 @@ def test_memory_scoped_flashcards_fail_closed_on_unbound_history() -> None:
         base.course_id,
         base.session_id,
         base.tutor_snapshot_sequence,
-        base.learner_evidence_through_sequence,
+        base.student_state_sequence,
         {
             **base.tutor_snapshot,
             "agent_observations": (
@@ -290,7 +290,7 @@ def test_memory_scoped_flashcards_fail_closed_on_unbound_history() -> None:
                 },
             ),
         },
-        base.learner_evidence,
+        base.student_state,
         base.advertised_capabilities,
     )
 

@@ -91,10 +91,9 @@ def test_navigation_surfaces_remain_consistent_after_learning_activity(tmp_path:
         "/api/v1/materials",
         "/api/v1/artifacts",
         "/api/v1/assessments",
-        "/api/v1/evidence",
+        "/api/v1/student-state",
         "/api/v1/recall/due",
         "/api/v1/plan",
-        "/api/v1/context/conflicts",
     )
     payloads = tuple(app.get(route) for route in routes)
     assert all(payload["schema_version"] == 1 for payload in payloads)

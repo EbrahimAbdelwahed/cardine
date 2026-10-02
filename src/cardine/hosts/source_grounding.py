@@ -141,7 +141,6 @@ def requires_study_memory_routing(learner_text: str) -> bool:
     """Keep explicit difficulty/recall signals on the memory-aware route."""
     return _STUDY_MEMORY_INTENT.search(learner_text) is not None
 
-
 def _grounded_explanation_decision(
     context: TutorHostContext,
 ) -> StartCapabilityDecision | None:
@@ -172,8 +171,8 @@ def _require_grounded_explanation(
     if context.pending_continuation is not None:
         return decision
     if isinstance(decision, InvokeToolDecision) and decision.tool_name in {
-        "study_memory.record",
-        "study_memory.search",
+        "student_state.record",
+        "student_state.search",
     }:
         return decision
     direct = _grounded_explanation_decision(context)

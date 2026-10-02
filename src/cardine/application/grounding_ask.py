@@ -246,7 +246,7 @@ class GroundingAskService:
             if summary is None:
                 summary_json: JsonValue = None
             else:
-                from cardine.application.study_memory import (
+                from cardine.application.legacy_student_state import (
                     without_study_memory_summary,
                 )
 

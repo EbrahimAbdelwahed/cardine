@@ -152,8 +152,8 @@ def test_history_reads_bounded_learner_and_assistant_pages_in_sequence_order() -
 
 
 def test_context_exposes_omitted_older_conversation_entries() -> None:
+    from cardine.application.student_state import StudentStateSnapshot
     from cardine.hosts.context import TutorHostContextAssembler
-    from study_agent.assessments import LearnerEvidenceSnapshot
     from study_agent.domain import (
         SessionStatus,
         StudyStatementKind,
@@ -186,10 +186,10 @@ def test_context_exposes_omitted_older_conversation_entries() -> None:
         (),
         (),
     )
-    evidence = LearnerEvidenceSnapshot(COURSE, 32, ())
+    evidence = StudentStateSnapshot(COURSE, 32, ())
 
     class _Evidence:
-        def get(self, course_id: CourseId) -> LearnerEvidenceSnapshot:
+        def get(self, course_id: CourseId) -> StudentStateSnapshot:
             assert course_id == COURSE
             return evidence
 

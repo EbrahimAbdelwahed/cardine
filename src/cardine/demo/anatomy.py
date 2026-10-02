@@ -117,7 +117,7 @@ class _DemoAssembler:
     def __init__(self, descriptor: HostFileDescriptor) -> None:
         self.descriptor = descriptor
         self.learner_entry = "I have ten minutes and need help with valves."
-        self.evidence_sequence = 1
+        self.snapshot_sequence = 1
 
     def assemble(
         self,
@@ -140,11 +140,11 @@ class _DemoAssembler:
         return TutorHostContext(
             str(COURSE_ID),
             str(SESSION_ID),
-            self.evidence_sequence,
-            self.evidence_sequence,
+            self.snapshot_sequence,
+            self.snapshot_sequence,
             {
                 "learner_entry": self.learner_entry,
-                "evidence_revision": self.evidence_sequence,
+                "evidence_revision": self.snapshot_sequence,
                 "source_grounding": {
                     "title": _FIXTURE_TITLE,
                     "evidence": _FIXTURE_EVIDENCE,
@@ -386,7 +386,7 @@ def _run_trace(
     )
     assert result_suspended.status is TutorHostRunStatus.SUSPENDED
     assert result_suspended.pending_continuation is not None
-    assembler.evidence_sequence = 2
+    assembler.snapshot_sequence = 2
     result_resumed = asyncio.run(
         runner.run(
             COURSE_ID,
@@ -442,7 +442,7 @@ def run_reference_demo(
     )
     resume_context = _DemoAssembler(descriptor)
     resume_context.learner_entry = learner_entry
-    resume_context.evidence_sequence = 2
+    resume_context.snapshot_sequence = 2
     scripted = ScriptedTutorDecisionPort((*expected,
         ScriptedDecision(
             resume_context.assemble(
@@ -482,7 +482,7 @@ def run_reference_demo(
         "recorded_statuses": recorded_statuses,
         "parity": scripted_statuses == recorded_statuses
         and scripted_gateway.events == recorded_gateway.events,
-        "evidence_refresh_sequence": 2,
+        "snapshot_refresh_sequence": 2,
         "gateway_trace": tuple(scripted_gateway.events),
         "recorded_request_count": len(recorded_client.requests),
         "timeline": (

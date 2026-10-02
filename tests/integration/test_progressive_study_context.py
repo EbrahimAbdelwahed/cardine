@@ -45,9 +45,11 @@ from study_agent.sessions import (
 from study_agent.study_context import (
     STATEMENT_RECORDED,
     STUDY_CONTEXT_SCHEMA_VERSION,
+    ProjectionStudyContextView,
     RetryableStudyContextConflictError,
     StudyContextCommandError,
     StudyContextConflictError,
+    StudyContextService,
 )
 from study_agent.study_context.events import statement_recorded_payload
 
@@ -56,9 +58,7 @@ class _StaticEvents:
     def __init__(self, events: Sequence[DomainEvent]) -> None:
         self._events = tuple(events)
 
-    def read(
-        self, course_id: CourseId, after_sequence: int = 0
-    ) -> tuple[DomainEvent, ...]:
+    def read(self, course_id: CourseId, after_sequence: int = 0) -> tuple[DomainEvent, ...]:
         return tuple(
             event
             for event in self._events
@@ -147,33 +147,49 @@ def test_progressive_context_lifecycle_replay_export_and_observation(
         repository.session_service.start(_context(course_id, session_id=session_id))
         sequence = _append_human_origin(repository, course_id, session_id, origin_id)
 
-        empty = repository.study_context.get(course_id)
+        empty = ProjectionStudyContextView(repository.events.projection).get(course_id)
         assert empty.sequence == sequence
         assert empty.statements == ()
         assert empty.conflicts == ()
 
-        first = repository.study_context_service.record(
+        first = StudyContextService(
+            repository.events,
+            repository.clock,
+            ProjectionStudyContextView(repository.events.projection),
+            repository.courses,
+            repository.sessions,
+        ).record(
             StudyStatementInput(StudyStatementKind.OBJECTIVE, "  Pass anatomy  "),
             origin_id,
             _context(course_id, session_id=session_id, key="objective-1"),
             sequence,
         )
-        second = repository.study_context_service.record(
+        second = StudyContextService(
+            repository.events,
+            repository.clock,
+            ProjectionStudyContextView(repository.events.projection),
+            repository.courses,
+            repository.sessions,
+        ).record(
             StudyStatementInput(StudyStatementKind.OBJECTIVE, "Pass anatomy"),
             origin_id,
             _context(course_id, session_id=session_id, key="objective-2"),
             first.sequence,
         )
-        objective_ids = tuple(
-            item.id
-            for item in second.active(StudyStatementKind.OBJECTIVE)
-        )
+        objective_ids = tuple(item.id for item in second.active(StudyStatementKind.OBJECTIVE))
         assert len(objective_ids) == 2
-        assert tuple(
-            item.value for item in second.active(StudyStatementKind.OBJECTIVE)
-        ) == ("Pass anatomy", "Pass anatomy")
+        assert tuple(item.value for item in second.active(StudyStatementKind.OBJECTIVE)) == (
+            "Pass anatomy",
+            "Pass anatomy",
+        )
 
-        retry = repository.study_context_service.record(
+        retry = StudyContextService(
+            repository.events,
+            repository.clock,
+            ProjectionStudyContextView(repository.events.projection),
+            repository.courses,
+            repository.sessions,
+        ).record(
             StudyStatementInput(StudyStatementKind.OBJECTIVE, "Pass anatomy"),
             origin_id,
             _context(course_id, session_id=session_id, key="objective-1"),
@@ -184,14 +200,26 @@ def test_progressive_context_lifecycle_replay_export_and_observation(
             objective_ids
         )
         with pytest.raises(StudyContextConflictError, match="different command"):
-            repository.study_context_service.record(
+            StudyContextService(
+                repository.events,
+                repository.clock,
+                ProjectionStudyContextView(repository.events.projection),
+                repository.courses,
+                repository.sessions,
+            ).record(
                 StudyStatementInput(StudyStatementKind.OBJECTIVE, "Pass histology"),
                 origin_id,
                 _context(course_id, session_id=session_id, key="objective-1"),
                 second.sequence,
             )
         with pytest.raises(TypeError, match="expected_sequence"):
-            repository.study_context_service.record(
+            StudyContextService(
+                repository.events,
+                repository.clock,
+                ProjectionStudyContextView(repository.events.projection),
+                repository.courses,
+                repository.sessions,
+            ).record(
                 StudyStatementInput(StudyStatementKind.OBJECTIVE, "Pass anatomy"),
                 origin_id,
                 _context(course_id, session_id=session_id, key="objective-1"),
@@ -199,7 +227,13 @@ def test_progressive_context_lifecycle_replay_export_and_observation(
             )
         before_stale = repository.events.projection_bytes(course_id)
         with pytest.raises(RetryableStudyContextConflictError):
-            repository.study_context_service.record(
+            StudyContextService(
+                repository.events,
+                repository.clock,
+                ProjectionStudyContextView(repository.events.projection),
+                repository.courses,
+                repository.sessions,
+            ).record(
                 StudyStatementInput(StudyStatementKind.TESTING_PREFERENCE, "oral recall"),
                 origin_id,
                 _context(course_id, session_id=session_id, key="stale-new-command"),
@@ -207,13 +241,25 @@ def test_progressive_context_lifecycle_replay_export_and_observation(
             )
         assert repository.events.projection_bytes(course_id) == before_stale
 
-        deadline_a = repository.study_context_service.record(
+        deadline_a = StudyContextService(
+            repository.events,
+            repository.clock,
+            ProjectionStudyContextView(repository.events.projection),
+            repository.courses,
+            repository.sessions,
+        ).record(
             StudyStatementInput(StudyStatementKind.DEADLINE, date(2026, 9, 8)),
             origin_id,
             _context(course_id, session_id=session_id, key="deadline-a"),
             second.sequence,
         )
-        deadline_b = repository.study_context_service.record(
+        deadline_b = StudyContextService(
+            repository.events,
+            repository.clock,
+            ProjectionStudyContextView(repository.events.projection),
+            repository.courses,
+            repository.sessions,
+        ).record(
             StudyStatementInput(StudyStatementKind.DEADLINE, date(2026, 9, 15)),
             origin_id,
             _context(course_id, session_id=session_id, key="deadline-b"),
@@ -221,7 +267,13 @@ def test_progressive_context_lifecycle_replay_export_and_observation(
         )
         assert len(deadline_b.conflicts) == 1
         selected = deadline_b.active(StudyStatementKind.DEADLINE)[1]
-        resolved = repository.study_context_service.resolve(
+        resolved = StudyContextService(
+            repository.events,
+            repository.clock,
+            ProjectionStudyContextView(repository.events.projection),
+            repository.courses,
+            repository.sessions,
+        ).resolve(
             StudyStatementKind.DEADLINE,
             selected.id,
             _context(course_id, session_id=session_id, key="resolve-deadline"),
@@ -230,14 +282,26 @@ def test_progressive_context_lifecycle_replay_export_and_observation(
         assert resolved.active(StudyStatementKind.DEADLINE) == (selected,)
         assert resolved.conflicts == ()
 
-        later = repository.study_context_service.record(
+        later = StudyContextService(
+            repository.events,
+            repository.clock,
+            ProjectionStudyContextView(repository.events.projection),
+            repository.courses,
+            repository.sessions,
+        ).record(
             StudyStatementInput(StudyStatementKind.DEADLINE, date(2026, 9, 22)),
             origin_id,
             _context(course_id, session_id=session_id, key="deadline-c"),
             resolved.sequence,
         )
         assert len(later.conflicts) == 1
-        retracted = repository.study_context_service.retract(
+        retracted = StudyContextService(
+            repository.events,
+            repository.clock,
+            ProjectionStudyContextView(repository.events.projection),
+            repository.courses,
+            repository.sessions,
+        ).retract(
             selected.id,
             _context(course_id, session_id=session_id, key="retract-winner"),
             later.sequence,
@@ -251,7 +315,13 @@ def test_progressive_context_lifecycle_replay_export_and_observation(
         assert retracted.conflicts == ()
 
         with pytest.raises(StudyContextCommandError, match="human or service"):
-            repository.study_context_service.record(
+            StudyContextService(
+                repository.events,
+                repository.clock,
+                ProjectionStudyContextView(repository.events.projection),
+                repository.courses,
+                repository.sessions,
+            ).record(
                 StudyStatementInput(StudyStatementKind.OBJECTIVE, "Model-authored fact"),
                 origin_id,
                 _context(
@@ -295,9 +365,7 @@ def test_export_rejects_context_event_with_orphan_origin(tmp_path: Path) -> None
         repository.session_service.start(_context(course_id, session_id=session_id))
         stream = tuple(repository.events.read(course_id))
         sequence = stream[-1].course_sequence
-        event_id = study_context_event_id_for(
-            course_id, session_id, "orphan-origin", "record"
-        )
+        event_id = study_context_event_id_for(course_id, session_id, "orphan-origin", "record")
         statement = StudyStatementInput(StudyStatementKind.OBJECTIVE, "Learn anatomy")
         malformed = DomainEvent(
             event_id,

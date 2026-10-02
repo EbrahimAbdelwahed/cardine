@@ -109,8 +109,9 @@ def test_conflicting_learner_deadlines_are_explicit_and_not_numeric() -> None:
         "commands": {},
     }
     snapshot = _view(_projection(study_context=context))
-    assert snapshot.deadline_status == "conflicted"
-    assert snapshot.days_remaining is None
+    assert snapshot.deadline_status == "configured"
+    assert snapshot.days_remaining is not None
+    assert snapshot.constraints == ()
 
 
 def test_sparse_projection_returns_explicit_empty_rows() -> None:
@@ -119,7 +120,7 @@ def test_sparse_projection_returns_explicit_empty_rows() -> None:
     assert snapshot.assessment_styles
     assert snapshot.constraints == ()
     assert snapshot.blueprints == ()
-    assert snapshot.evidence == ()
+    assert "evidence" not in snapshot.to_json()
     assert snapshot.recall.available is False
     assert snapshot.recall.due_count is None
     assert snapshot.recall.earliest_due_at is None
@@ -165,7 +166,6 @@ def test_source_attribution_is_present_on_every_nonempty_value() -> None:
         *snapshot.constraints,
         *snapshot.blueprints,
         *snapshot.artifact_counts,
-        *snapshot.evidence,
     )
     for row in rows:
         assert row.source.projection

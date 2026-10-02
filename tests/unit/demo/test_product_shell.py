@@ -135,7 +135,7 @@ def test_optional_due_review_is_exposed_without_changing_snapshot() -> None:
 
     assert view.status is ProductShellStatus.NEEDS_REVIEW
     assert tuple(item.label for item in view.due_reviews) == ("Aortic valve",)
-    assert view.evidence_through_sequence == 1
+    assert view.snapshot_sequence == 1
 
 
 def test_provider_free_completion_refreshes_the_public_snapshot() -> None:

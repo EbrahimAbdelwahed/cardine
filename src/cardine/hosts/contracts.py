@@ -21,7 +21,7 @@ from study_agent.domain.session import (
 )
 from study_agent.portability import reject_provider_selectors
 
-HOST_CONTEXT_SCHEMA_VERSION = 1
+HOST_CONTEXT_SCHEMA_VERSION = 2
 MAX_HOST_FILES = 16
 MAX_HOST_TEXT = 4_000
 MAX_QUESTION_TEXT = 1_000
@@ -150,9 +150,9 @@ class TutorHostContext:
     course_id: str
     session_id: str
     tutor_snapshot_sequence: int
-    learner_evidence_through_sequence: int
+    student_state_sequence: int
     tutor_snapshot: JsonObject
-    learner_evidence: JsonObject
+    student_state: JsonObject
     advertised_capabilities: tuple[AdvertisedCapability, ...]
     pending_continuation: PendingContinuationDescriptor | None = None
     host_files: tuple[HostFileDescriptor, ...] = ()
@@ -165,18 +165,16 @@ class TutorHostContext:
             raise ValueError("unsupported tutor host context schema version")
         for value, name in (
             (self.tutor_snapshot_sequence, "tutor snapshot sequence"),
-            (self.learner_evidence_through_sequence, "learner evidence sequence"),
+            (self.student_state_sequence, "student state sequence"),
         ):
             if type(value) is not int or value < 0:
                 raise ValueError(f"{name} must be non-negative")
-        if self.tutor_snapshot_sequence != self.learner_evidence_through_sequence:
-            raise ValueError("tutor snapshot and learner evidence are not sequence-consistent")
         tutor = freeze_object(self.tutor_snapshot)
-        evidence = freeze_object(self.learner_evidence)
+        evidence = freeze_object(self.student_state)
         _reject_sensitive_structure(tutor, "tutor_snapshot")
-        _reject_sensitive_structure(evidence, "learner_evidence")
+        _reject_sensitive_structure(evidence, "student_state")
         object.__setattr__(self, "tutor_snapshot", tutor)
-        object.__setattr__(self, "learner_evidence", evidence)
+        object.__setattr__(self, "student_state", evidence)
         advertised = tuple(self.advertised_capabilities)
         keys = tuple((item.identity, item.manifest_fingerprint) for item in advertised)
         if keys != tuple(sorted(keys)) or len(set(keys)) != len(keys):
@@ -202,9 +200,9 @@ class TutorHostContext:
             "course_id": self.course_id,
             "session_id": self.session_id,
             "tutor_snapshot_sequence": self.tutor_snapshot_sequence,
-            "learner_evidence_through_sequence": self.learner_evidence_through_sequence,
+            "student_state_sequence": self.student_state_sequence,
             "tutor_snapshot": self.tutor_snapshot,
-            "learner_evidence": self.learner_evidence,
+            "student_state": self.student_state,
             "advertised_capabilities": tuple(
                 item.to_json() for item in self.advertised_capabilities
             ),
@@ -231,9 +229,9 @@ class TutorHostContext:
                 "course_id",
                 "session_id",
                 "tutor_snapshot_sequence",
-                "learner_evidence_through_sequence",
+                "student_state_sequence",
                 "tutor_snapshot",
-                "learner_evidence",
+                "student_state",
                 "advertised_capabilities",
                 "pending_continuation",
                 "host_files",
@@ -255,9 +253,9 @@ class TutorHostContext:
             _string(raw, "course_id"),
             _string(raw, "session_id"),
             _integer(raw, "tutor_snapshot_sequence"),
-            _integer(raw, "learner_evidence_through_sequence"),
+            _integer(raw, "student_state_sequence"),
             _object(raw["tutor_snapshot"], "tutor_snapshot"),
-            _object(raw["learner_evidence"], "learner_evidence"),
+            _object(raw["student_state"], "student_state"),
             advertised,
             pending,
             files,

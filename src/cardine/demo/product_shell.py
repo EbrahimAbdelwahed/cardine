@@ -50,7 +50,6 @@ class ProductShellStatus(StrEnum):
     WORKING = "working"
     NEEDS_LEARNER_INPUT = "needs_learner_input"
     SUSPENDED = "suspended"
-    CONFLICTED_CONTEXT = "conflicted_context"
     NEEDS_REVIEW = "needs_review"
     STALE = "stale"
     DEGRADED = "degraded"
@@ -108,7 +107,7 @@ class ProductShellView:
     learner_entry: str | None
     assistant_message: str | None
     snapshot: TutorSnapshotV1 | None
-    evidence_through_sequence: int | None
+    snapshot_sequence: int | None
     capabilities: tuple[str, ...] = ()
     due_reviews: tuple[DueReview, ...] = ()
     continuation_request: str | None = None
@@ -125,10 +124,10 @@ class ProductShellView:
         if self.continuation_request is not None and not self.continuation_request.strip():
             raise ValueError("continuation_request must be non-empty when provided")
         if self.snapshot is None:
-            if self.evidence_through_sequence is not None:
-                raise ValueError("evidence sequence requires a snapshot")
-        elif self.evidence_through_sequence != self.snapshot.high_water_sequence:
-            raise ValueError("evidence sequence must match the snapshot high-water sequence")
+            if self.snapshot_sequence is not None:
+                raise ValueError("snapshot sequence requires a snapshot")
+        elif self.snapshot_sequence != self.snapshot.high_water_sequence:
+            raise ValueError("snapshot sequence must match the snapshot high-water sequence")
         object.__setattr__(self, "capabilities", tuple(sorted(set(self.capabilities))))
         object.__setattr__(self, "due_reviews", tuple(self.due_reviews))
 
@@ -154,7 +153,7 @@ class ProductShellView:
             "learner_entry": self.learner_entry,
             "assistant_message": self.assistant_message,
             "snapshot": None if self.snapshot is None else self.snapshot.to_json(),
-            "evidence_through_sequence": self.evidence_through_sequence,
+            "snapshot_sequence": self.snapshot_sequence,
             "capabilities": self.capabilities,
             "due_reviews": tuple(item.to_json() for item in self.due_reviews),
             "continuation_request": self.continuation_request,
@@ -330,7 +329,7 @@ def render(view: ProductShellView) -> str:
                 "MATERIAL",
                 *(f"  - {item.title} ({item.chunk_count} chunks)" for item in view.materials),
                 "",
-                f"EVIDENCE THROUGH SEQUENCE {view.evidence_through_sequence}",
+                f"SNAPSHOT THROUGH SEQUENCE {view.snapshot_sequence}",
                 *(f"  - {field.kind.value}: {field.state.value}" for field in view.context),
             )
         )
@@ -381,7 +380,7 @@ def run_offline_shell_demo(
             "status": "recovered",
             "status_trace": result["timeline"],
             "material": result["source_state"],
-            "evidence_sequence": result["evidence_refresh_sequence"],
+            "snapshot_sequence": result["snapshot_refresh_sequence"],
             "context_state": result["context_state"],
             "capabilities": result["discovered_capabilities"],
             "due_review": {
@@ -428,7 +427,7 @@ def main() -> None:
                         for item in cast(Sequence[dict[str, object]], result["status_trace"])
                     ),
                     "",
-                    "Material, evidence refresh, capability discovery, and optional review "
+                    "Material, snapshot refresh, capability discovery, and optional review "
                     "are inspectable with --json.",
                     "Offline proof complete: no network, credentials, model SDK, or provider call.",
                 )
@@ -506,10 +505,6 @@ def _prioritize_status(
         ProductShellStatus.DEGRADED,
     }:
         return base
-    if snapshot.divergences or any(
-        item.state.value == "conflicting" for item in snapshot.learner_context
-    ):
-        return ProductShellStatus.CONFLICTED_CONTEXT
     if due:
         return ProductShellStatus.NEEDS_REVIEW
     return base

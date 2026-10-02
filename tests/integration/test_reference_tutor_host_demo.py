@@ -14,7 +14,7 @@ def test_reference_demo_runs_the_same_offline_host_trace_for_both_adapters() -> 
     assert result["recorded_statuses"] == result["scripted_statuses"]
     assert result["parity"] is True
     assert result["recorded_request_count"] == 3
-    assert result["evidence_refresh_sequence"] == 2
+    assert result["snapshot_refresh_sequence"] == 2
     assert result["gateway_trace"] == (
         "start:completed",
         "start:suspended",
