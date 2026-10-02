@@ -16,7 +16,7 @@
     },
     {
       "path": "src/cardine/application/flashcard_proposals.py",
-      "sha256": "a122cf65a900c43c09abe409689efddb143aa21492cc28495857824798f68f71"
+      "sha256": "50b47356192c6ecdbe43cb25b2880807b6a8bc26bc02653cab35e19b0ef648d8"
     },
     {
       "path": "src/cardine/application/grounding_ask.py",
@@ -28,7 +28,7 @@
     },
     {
       "path": "src/cardine/cli/repository.py",
-      "sha256": "b0e4e47c71faa650e0071f4fcd7791ff89d5b38a7166b9ca450766dc9c72bc4a"
+      "sha256": "d4b2073a71a4f8654495ad2ab8d72a0eb44b6a51266554b586bba6241b34ad26"
     },
     {
       "path": "src/cardine/demo/ai-primitives.css",
