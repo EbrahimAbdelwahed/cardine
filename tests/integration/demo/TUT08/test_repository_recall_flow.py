@@ -10,6 +10,7 @@ from typing import cast
 import pytest
 
 from cardine.cli.repository import LocalRepository
+from cardine.demo import browser
 from cardine.demo.ui_application import (
     RepositoryUiApplication,
     UiRequestError,
@@ -650,3 +651,42 @@ def test_browser_reveal_ratings_and_count_refresh_are_wired() -> None:
         assert f'["{rating.value}",' in javascript
     assert "/api/v1/recall/${encodeURIComponent" in javascript
     assert "await refreshBootstrapCounts()" in javascript
+
+
+def test_standard_browser_startup_configures_real_recall_and_restores_schedule(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "repository"
+    revision_id = _seed(root)
+    applications: list[RepositoryUiApplication] = []
+
+    def capture_server(host: str, port: int, **kwargs: object) -> None:
+        application = kwargs["ui_application"]
+        assert isinstance(application, RepositoryUiApplication)
+        applications.append(application)
+
+    monkeypatch.setattr(browser, "serve", capture_server)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["cardine-shell-web", "--repository", str(root),
+         "--course-id", str(COURSE), "--session-id", str(SESSION)],
+    )
+    browser.main()
+    application = applications[-1]
+    due = application.get("/api/v1/recall/due")
+    assert cast(Mapping[str, object], due["availability"])["available"] is True
+    accepted = _accept(application, revision_id, "default-accept")
+    application.post(
+        f"/api/v1/recall/{revision_id}/enrollments",
+        _command("default-enroll", cast(int, accepted["high_water_sequence"])),
+    )
+    due = application.get("/api/v1/recall/due")
+    assert len(_items(due)) == 1
+    receipt = application.post(
+        f"/api/v1/recall/{revision_id}/reviews",
+        _command("default-review", cast(int, due["high_water_sequence"]), {"rating": "good"}),
+    )
+    assert receipt["status"] == "committed"
+    scheduled = application.get("/api/v1/recall/due")
+    browser.main()
+    assert applications[-1].get("/api/v1/recall/due") == scheduled
