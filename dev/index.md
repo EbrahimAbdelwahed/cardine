@@ -9,6 +9,8 @@ archive and must not be treated as Cardine's current state.
 
 ## Start here
 
+- [Local latency and native provider drafts](logs/2026-10-02--cardine--local-latency-streaming--log.md) — owner-requested profiling, exact-byte read caches, route-specific work and actual provider SSE; offline turn reduced from 49.8 to 6.2 seconds, live rollout pending.
+
 - [Scheduled recall by default](logs/2026-10-02--cardine--recall-default--log.md) — standard server FSRS composition integrated with main, including the merged student journal and source-note generation.
 
 - [Minimal student journal](logs/2026-10-01--cardine--student-journal--log.md) — owner-approved replacement

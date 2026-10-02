@@ -215,7 +215,8 @@ const disclosure = {
 };
 const context = {state, root:{}, text:(value)=>value||'', $:()=>({}),
  captureScroll:()=>({}), restoreScroll:()=>{},
- fetchJson:async()=>snapshots[reads++], aiToolChips:(payload)=>({state:payload.state}),
+ fetchJson:async(path)=>path.endsWith('/output')?{state:'unavailable',text:''}:snapshots[reads++],
+ aiToolChips:(payload)=>({state:payload.state}),
  patch:(_node,value)=>{
    const next={tagName:'DETAILS',dataset:{state:value.state},attrs:{'data-state':value.state},
      get attributes(){return Object.entries(this.attrs).map(([name,value])=>({name,value}));},

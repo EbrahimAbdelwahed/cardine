@@ -123,10 +123,26 @@ async function run() {
   const poll = section(browser, '  async function pollTurnActivity', '\n  function restoreFailedTurnDraft');
   let resolveFetch, patches = 0;
   const state = { activityPollToken: 0, navigationVersion: 0, pendingTurn: { requestId: 'one' } };
-  const pollingContext = { state, fetchJson: () => new Promise((resolve) => { resolveFetch = resolve; }), text: (value) => value || '', $: () => ({}), patch: () => patches++, aiToolChips: () => '', root: {}, captureScroll: () => ({}), restoreScroll: () => {}, window: { setTimeout: global.setTimeout } };
+  const pollingContext = { state, fetchJson: (path) => path.endsWith('/output') ? Promise.resolve({state:'unavailable',text:''}) : new Promise((resolve) => { resolveFetch = resolve; }), text: (value) => value || '', $: () => ({}), patch: () => patches++, aiToolChips: () => '', root: {}, captureScroll: () => ({}), restoreScroll: () => {}, window: { setTimeout: global.setTimeout } };
   vm.createContext(pollingContext); vm.runInContext(poll, pollingContext);
   const polling = pollingContext.pollTurnActivity('one'); state.navigationVersion++; resolveFetch({ state: 'running', records: [{ sequence: 1 }] }); await polling;
   const stalePollIgnored = patches === 0 && timers.size === 0;
+
+  const liveDraft = { hidden: true }; const liveText = { textContent: '' };
+  const liveState = { activityPollToken: 0, navigationVersion: 0, pendingTurn: { requestId: 'live' } };
+  const liveContext = {
+    state: liveState,
+    fetchJson: async (path) => path.endsWith('/output')
+      ? { state: 'generating', text: '<img src=x onerror=alert(1)>token' }
+      : { state: 'running', records: [] },
+    text: (value) => value || '',
+    $: (selector) => selector === '[data-turn-draft]' ? liveDraft : selector === '[data-turn-draft-text]' ? liveText : null,
+    root: {}, captureScroll: () => ({}), restoreScroll: () => {},
+    window: { setTimeout: (resolve, delay) => { liveState.pendingTurn = null; resolve(); return delay; } },
+  };
+  vm.createContext(liveContext); vm.runInContext(poll, liveContext);
+  await liveContext.pollTurnActivity('live');
+  const liveDraftSafe = !liveDraft.hidden && liveText.textContent === '<img src=x onerror=alert(1)>token' && !('innerHTML' in liveText);
 
   const retrySource = section(browser, '  async function retryAnswer', '\n  function renderFonti');
   const retryCalls = []; const original = { endpoint: '/api/v1/session/turns', payload: { content: 'Original prompt', lesson_pin: { lesson_id: 'original' } } };
@@ -163,6 +179,6 @@ async function run() {
   }
   const offRouteAnswer = await commandAfterNavigation(true);
   const onRouteAnswer = await commandAfterNavigation(false);
-  console.log(JSON.stringify({ streaming, firstVisible, completed, announced, announcementRemoved, starts, cancelled, reducedInstant, copies, retry, feedback, exclusive, collapsed, preservedChoice, stalePollIgnored, retryCalls, offRouteAnswer, onRouteAnswer }));
+  console.log(JSON.stringify({ streaming, firstVisible, completed, announced, announcementRemoved, starts, cancelled, reducedInstant, copies, retry, feedback, exclusive, collapsed, preservedChoice, stalePollIgnored, liveDraftSafe, retryCalls, offRouteAnswer, onRouteAnswer }));
 }
 run().catch((error) => { console.error(error); process.exit(1); });

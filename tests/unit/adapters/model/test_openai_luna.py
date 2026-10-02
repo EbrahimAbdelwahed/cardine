@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Mapping
+from collections.abc import AsyncGenerator, Mapping
 from typing import Any, cast
 
 import pytest
 
+from cardine.demo.turn_output import TurnOutputStore
 from cardine.hosts import AssistantMessageDecision, TutorHostContext
 from study_agent.adapters.model import (
     GPT_5_6_LUNA_ADAPTER_ID,
@@ -28,6 +29,46 @@ from study_agent.ports import (
 from study_agent.skills.builtin.hybrid_flashcards import HYBRID_FLASHCARDS_MODEL_SCHEMA
 
 SECRET = "openai-secret-sentinel"
+
+
+@pytest.mark.parametrize("failure", ["truncated", "timeout", "cancelled"])
+def test_stream_failure_discards_draft_and_preserves_cancellation(failure: str) -> None:
+    pytest.importorskip("pydantic_core")
+    store = TurnOutputStore()
+
+    class Stream:
+        async def events(
+            self, url: str, headers: Mapping[str, str], body: bytes, timeout_seconds: float
+        ) -> AsyncGenerator[str, None]:
+            del url, headers, body, timeout_seconds
+            yield json.dumps({"choices": [{"index": 0, "delta": {
+                "content": '{"segments":[{"text":"Partial answer'
+            }}]})
+            assert store.snapshot("failure")["text"] == "Partial answer"
+            if failure == "timeout":
+                raise TimeoutError
+            if failure == "cancelled":
+                raise asyncio.CancelledError
+
+    adapter = OpenAIGpt56LunaModel(
+        OpenAIGpt56LunaConfig(SECRET), streaming_transport=Stream()
+    )
+    request = ModelRequest(
+        (ModelMessage(MessageRole.USER, "Explain."),),
+        StructuredOutputConstraint("explain_concept_draft", {"type": "object"}),
+        max_output_tokens=512, temperature=0,
+    )
+    if failure == "cancelled":
+        with pytest.raises(asyncio.CancelledError), store.capture("failure"):
+            asyncio.run(adapter.generate(request))
+    else:
+        with pytest.raises(ModelError) as caught, store.capture("failure"):
+            asyncio.run(adapter.generate(request))
+        assert caught.value.code is (
+            ModelErrorCode.TIMEOUT if failure == "timeout" else ModelErrorCode.PROTOCOL_ERROR
+        )
+    assert store.snapshot("failure")["state"] == "unavailable"
+    assert store.snapshot("failure")["text"] == ""
 
 
 class FakeTransport:

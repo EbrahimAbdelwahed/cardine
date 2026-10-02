@@ -26,6 +26,18 @@ CLASSIFICATION = ROOT / "tests/parity/ownership-classification.json"
 TRANSITION_OVERLAY = ROOT / "tests/parity/ca02-transition-overlay.json"
 RECOVERY_OVERLAY = ROOT / "tests/parity/wave-a-recovery-overlay.json"
 STUDENT_JOURNAL_OVERLAY = ROOT / "tests/parity/student-journal-overlay.json"
+LATENCY_PATHS = {
+    "src/cardine/adapters/model/openai_luna.py",
+    "src/cardine/adapters/model/streaming.py",
+    "src/cardine/cli/repository.py",
+    "src/cardine/demo/browser.js",
+    "src/cardine/demo/ui_application.py",
+    "src/cardine/demo/turn_output.py",
+    "src/study_agent/adapters/sqlite/event_store.py",
+    "src/study_agent/adapters/filesystem/blob_store.py",
+    "src/study_agent/domain/_validation.py",
+    "src/study_agent/retrieval/content.py",
+}
 STUDENT_JOURNAL_PATHS = {
     "src/cardine/application/grounding_ask.py",
     "src/cardine/application/legacy_student_state.py",
@@ -729,6 +741,7 @@ def _validate_cardine_transition(
                     and source_path not in REVIEWED_NON_IMPORT_AST_VARIANCE
                     and source_path not in RECOVERY_AST_VARIANCE
                     and source_path not in STUDENT_JOURNAL_PATHS
+                    and source_path not in LATENCY_PATHS
                 ):
                     baseline_source = _baseline_source(source_path)
                     if _normalized_ast(current_source, source_path) != _normalized_ast(
@@ -816,11 +829,43 @@ def _load_study_notes_overlay() -> dict[str, str]:
     return hashes
 
 
+def _load_latency_overlay() -> dict[str, str]:
+    """Bind the explicitly owner-requested latency and streaming continuation.
+
+    Historical approval records remain intact. This does not approve semantic
+    review, installed-package adoption, deployment or merging.
+    """
+    raw = json.loads((ROOT / "tests/parity/local-latency-overlay.json").read_text())
+    if (
+        not isinstance(raw, dict)
+        or set(raw) != {"schema_version", "decision", "rows"}
+        or raw["schema_version"] != 1
+        or raw["decision"] != "ADR-0024--local-read-budgets-and-live-drafts"
+        or not isinstance(raw["rows"], list)
+    ):
+        raise ValueError("latency overlay fields are invalid")
+    hashes: dict[str, str] = {}
+    for row in raw["rows"]:
+        if not isinstance(row, dict) or set(row) != {"path", "sha256"}:
+            raise ValueError("latency overlay row is invalid")
+        path, digest = row["path"], row["sha256"]
+        if (
+            path not in LATENCY_PATHS or path in hashes or not isinstance(digest, str)
+            or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest)
+        ):
+            raise ValueError("latency overlay binding is invalid")
+        hashes[path] = digest
+    if set(hashes) != LATENCY_PATHS:
+        raise ValueError("latency overlay must bind the exact authorized scope")
+    return hashes
+
+
 def validate(*, live: bool = False) -> list[str]:
     errors: list[str] = []
     try:
         recovery_hashes = {**_load_recovery_overlay(), **_load_study_notes_overlay()}
         recovery_hashes.update(_load_student_journal_overlay())
+        recovery_hashes.update(_load_latency_overlay())
         for path in STUDENT_JOURNAL_REMOVED:
             recovery_hashes.pop(path, None)
         reviewed = _load_classification()
