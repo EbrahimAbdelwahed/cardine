@@ -10,6 +10,7 @@ from cardine.diagnostics.turn_trace import trace_operation
 from study_agent.ports.model import ModelError, ModelErrorCode
 
 MAX_STREAM_BYTES = 2 * 1024 * 1024
+MAX_ERROR_BYTES = 64 * 1024
 
 
 class StreamingTransport(Protocol):
@@ -33,12 +34,19 @@ class HttpxStreamingTransport:
                 ):
                     operation.observe_http_status(response.status_code)
                     if not 200 <= response.status_code < 300:
-                        # Do not collect an unbounded provider error body.
                         from study_agent.adapters.model.openai_compatible import (
                             OpenAICompatibleModel,
                         )
 
-                        raise OpenAICompatibleModel._error_for_status(response.status_code, b"")
+                        error_body = bytearray()
+                        async for chunk in response.aiter_bytes():
+                            if len(error_body) + len(chunk) > MAX_ERROR_BYTES:
+                                error_body.clear()
+                                break
+                            error_body.extend(chunk)
+                        raise OpenAICompatibleModel._error_for_status(
+                            response.status_code, bytes(error_body)
+                        )
                     data: list[str] = []
                     received = 0
                     async for line in response.aiter_lines():

@@ -7,6 +7,7 @@ import json
 import re
 from dataclasses import replace
 from hashlib import sha256
+from itertools import pairwise
 from typing import cast
 from unicodedata import normalize
 from uuid import uuid4
@@ -245,9 +246,7 @@ class MaterialProduct:
                 "remaining": additional,
                 "owner_id": owner_id,
             }
-            replacement = canonical_json_bytes(
-                {"jobs": tuple(jobs), "reservations": reservations}
-            )
+            replacement = canonical_json_bytes({"jobs": tuple(jobs), "reservations": reservations})
             if self.registry.compare_and_set(self.key, raw, replacement):
                 return
         raise ValueError("Registro generazioni occupato; riprova.")
@@ -565,6 +564,23 @@ class MaterialProduct:
     def start_lessons(
         self, source_id: str, revision_id: str, lessons: list[dict[str, object]], request_id: str
     ) -> tuple[JsonObject, ...]:
+        return self._start_pdf_lessons(source_id, revision_id, lessons, request_id, selected=False)
+
+    def start_selected_lessons(
+        self, source_id: str, revision_id: str, lessons: list[dict[str, object]], request_id: str
+    ) -> tuple[JsonObject, ...]:
+        """Generate only explicitly selected, disjoint canonical page ranges."""
+        return self._start_pdf_lessons(source_id, revision_id, lessons, request_id, selected=True)
+
+    def _start_pdf_lessons(
+        self,
+        source_id: str,
+        revision_id: str,
+        lessons: list[dict[str, object]],
+        request_id: str,
+        *,
+        selected: bool,
+    ) -> tuple[JsonObject, ...]:
         record = self.source(source_id, revision_id)
         conversion = record.source.conversion_provenance
         if conversion is None or not conversion.page_spans or not 1 <= len(lessons) <= 64:
@@ -577,18 +593,26 @@ class MaterialProduct:
             if (
                 type(start) is not int
                 or type(end) is not int
-                or start != previous + 1
+                or start < 1
+                or (not selected and start != previous + 1)
                 or not start <= end <= len(conversion.page_spans)
                 or not isinstance(title, str)
                 or not title.strip()
                 or len(title) > 240
             ):
                 raise ValueError(
-                    "Le lezioni devono coprire tutte le pagine in ordine, "
+                    "Intervallo selezionato non valido."
+                    if selected
+                    else "Le lezioni devono coprire tutte le pagine in ordine, "
                     "senza vuoti o sovrapposizioni."
                 )
             previous = end
-        if previous != len(conversion.page_spans):
+        if selected:
+            lessons = sorted(lessons, key=lambda lesson: cast(int, lesson["start_page"]))
+            for left, right in pairwise(lessons):
+                if cast(int, right["start_page"]) <= cast(int, left["end_page"]):
+                    raise ValueError("Le lezioni selezionate non devono sovrapporsi.")
+        elif previous != len(conversion.page_spans):
             raise ValueError("Mancano pagine nella divisione per lezioni.")
         for lesson in lessons:
             start = int(cast(int, lesson["start_page"]))
@@ -600,10 +624,9 @@ class MaterialProduct:
         # Resolve consent before admitting any selected lesson.
         if not (consent := self.repo.provider_consent.get(self.course)) or not consent.granted:
             raise ProviderConsentRequiredError("provider consent is required")
-        batch_id = (
-            "pdf-lessons:"
-            + sha256(f"{self.course}\0{self.session}\0{request_id}".encode()).hexdigest()
-        )
+        batch_id = ("pdf-selected-lessons:" if selected else "pdf-lessons:") + sha256(
+            f"{self.course}\0{self.session}\0{request_id}".encode()
+        ).hexdigest()
         fingerprint = sha256(
             canonical_json_bytes(
                 {
@@ -620,11 +643,27 @@ class MaterialProduct:
                 }
             )
         ).hexdigest()
+        lesson_requests = tuple(
+            request_id
+            + "-selected-"
+            + sha256(
+                canonical_json_bytes(
+                    {
+                        "source_id": source_id,
+                        "revision_id": revision_id,
+                        "title": str(lesson["title"]),
+                        "start_page": cast(int, lesson["start_page"]),
+                        "end_page": cast(int, lesson["end_page"]),
+                    }
+                )
+            ).hexdigest()
+            if selected
+            else request_id + f"-lesson-{index}"
+            for index, lesson in enumerate(lessons)
+        )
         job_ids = tuple(
-            self._material_job_id(
-                str(self.course), str(self.session), request_id + f"-lesson-{index}"
-            )
-            for index in range(len(lessons))
+            self._material_job_id(str(self.course), str(self.session), lesson_request)
+            for lesson_request in lesson_requests
         )
         owner_id = uuid4().hex
         self._reserve_batch(batch_id, fingerprint, job_ids, owner_id)
@@ -668,7 +707,7 @@ class MaterialProduct:
                     self.start(
                         str(admitted.source.source_id),
                         str(admitted.source.revision_id),
-                        request_id + f"-lesson-{index}",
+                        lesson_requests[index],
                         batch=(batch_id, fingerprint, index),
                     )
                 )

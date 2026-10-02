@@ -805,13 +805,25 @@ STUDY_NOTES_PATHS = {
 }
 
 
-def _load_study_notes_overlay() -> dict[str, str]:
+SELECTED_NOTES_PATHS = {
+    "src/cardine/materials/product.py",
+    "src/cardine/demo/ui_application.py",
+    "src/cardine/demo/browser.js",
+    "src/cardine/demo/browser.css",
+}
+
+
+def _load_study_notes_overlay(*, selected: bool = False) -> dict[str, str]:
     """Bind the owner-approved feature scope without rewriting recovery custody.
 
     This is implementation custody, not evidence that automatic review or
     installed-package parity has passed. Unknown paths and digest drift fail.
     """
-    path = ROOT / "tests/parity/source-study-notes-overlay.json"
+    filename = (
+        "selected-lesson-notes-overlay.json" if selected else "source-study-notes-overlay.json"
+    )
+    paths = SELECTED_NOTES_PATHS if selected else STUDY_NOTES_PATHS
+    path = ROOT / "tests/parity" / filename
     raw = json.loads(path.read_text(encoding="utf-8"))
     if (
         not isinstance(raw, dict)
@@ -820,7 +832,7 @@ def _load_study_notes_overlay() -> dict[str, str]:
         or raw["plan"] != "specs/source-study-notes/README.md"
     ):
         raise ValueError("study notes overlay fields are invalid")
-    return _bound_hashes(raw["rows"], STUDY_NOTES_PATHS, "study notes overlay")
+    return _bound_hashes(raw["rows"], paths, "study notes overlay")
 
 
 def _load_latency_overlay() -> dict[str, str]:
@@ -846,6 +858,7 @@ def validate(*, live: bool = False) -> list[str]:
     try:
         recovery_hashes = {**_load_recovery_overlay(), **_load_study_notes_overlay()}
         recovery_hashes.update(_load_student_journal_overlay())
+        recovery_hashes.update(_load_study_notes_overlay(selected=True))
         recovery_hashes.update(_load_latency_overlay())
         for path in STUDENT_JOURNAL_REMOVED:
             recovery_hashes.pop(path, None)

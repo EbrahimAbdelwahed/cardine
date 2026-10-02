@@ -85,3 +85,69 @@ def test_partial_json_exposes_only_answer_text_and_decodes_escapes() -> None:
     assert draft_text('{"segments":[{"text":"cuore \\u00e8') == "cuore è"
     assert draft_text('{"evidence_ids":["private-id"],"tool_arguments":{"text":"private"}}') == ""
     assert draft_text("not-json") == ""
+
+
+@pytest.mark.parametrize(
+    "provider_code,expected",
+    [
+        ("invalid_json_schema", ModelErrorCode.SCHEMA_INCOMPATIBLE),
+        ("unsupported_parameter", ModelErrorCode.ENDPOINT_INCOMPATIBLE),
+        ("model_not_found", ModelErrorCode.MODEL_UNAVAILABLE),
+    ],
+)
+def test_streamed_provider_rejection_preserves_error_classification(
+    monkeypatch: pytest.MonkeyPatch,
+    provider_code: str,
+    expected: ModelErrorCode,
+) -> None:
+    http = pytest.importorskip("httpx")
+    client = http.AsyncClient
+
+    def factory(**kwargs: Any) -> Any:
+        return client(
+            transport=http.MockTransport(
+                lambda _request: http.Response(
+                    400,
+                    json={"error": {"code": provider_code, "message": "private-provider-payload"}},
+                )
+            ),
+            **kwargs,
+        )
+
+    monkeypatch.setattr(http, "AsyncClient", factory)
+
+    async def consume() -> None:
+        async for _ in HttpxStreamingTransport().events("https://offline.invalid/", {}, b"{}", 1):
+            pass
+
+    with pytest.raises(ModelError) as caught:
+        asyncio.run(consume())
+    assert caught.value.code is expected
+    assert "private-provider-payload" not in str(caught.value)
+
+
+def test_streamed_error_body_is_bounded_and_not_drained(monkeypatch: pytest.MonkeyPatch) -> None:
+    http = pytest.importorskip("httpx")
+    client = http.AsyncClient
+
+    class ErrorStream(http.AsyncByteStream):  # type: ignore[misc, name-defined]
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            yield b"private" * 10_000
+            raise AssertionError("oversized error was drained")
+
+    def factory(**kwargs: Any) -> Any:
+        return client(
+            transport=http.MockTransport(lambda _request: http.Response(400, stream=ErrorStream())),
+            **kwargs,
+        )
+
+    monkeypatch.setattr(http, "AsyncClient", factory)
+
+    async def consume() -> None:
+        async for _ in HttpxStreamingTransport().events("https://offline.invalid/", {}, b"{}", 1):
+            pass
+
+    with pytest.raises(ModelError) as caught:
+        asyncio.run(consume())
+    assert caught.value.code is ModelErrorCode.PROTOCOL_ERROR
+    assert "private" not in str(caught.value)

@@ -219,3 +219,42 @@ def test_new_unclassified_core_file_remains_rejected(tmp_path: Path) -> None:
         "classification is missing current path: src/study_agent/knowledge/unregistered.py"
         in result.stderr
     )
+
+
+def test_selected_notes_custody_rejects_drift_and_scope_changes(tmp_path: Path) -> None:
+    clean_root = _clean_archive(tmp_path)
+    overlay = clean_root / "tests/parity/selected-lesson-notes-overlay.json"
+    original = overlay.read_text(encoding="utf-8")
+    raw = json.loads(original)
+    for mutate in ("missing", "foreign", "drift"):
+        changed = json.loads(original)
+        if mutate == "missing":
+            changed["rows"].pop()
+        elif mutate == "foreign":
+            changed["rows"][0]["path"] = "src/study_agent/domain/provenance.py"
+        else:
+            changed["rows"][0]["sha256"] = "0" * 64
+        overlay.write_text(json.dumps(changed), encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, "scripts/audit_harness_ownership.py", "--check"],
+            cwd=clean_root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode != 0, mutate
+    overlay.write_text(original, encoding="utf-8")
+    for row in raw["rows"]:
+        path = clean_root / row["path"]
+        original_bytes = path.read_bytes()
+        path.write_bytes(original_bytes + b"\n/* unexpected drift */\n")
+        result = subprocess.run(
+            [sys.executable, "scripts/audit_harness_ownership.py", "--check"],
+            cwd=clean_root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode != 0, row["path"]
+        assert "sha256 mismatch" in result.stderr
+        path.write_bytes(original_bytes)

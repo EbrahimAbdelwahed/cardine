@@ -23,6 +23,7 @@ def test_stream_actions_disclosure_and_stale_poll_lifecycle() -> None:
         "feedback": ["like", "dislike", ""], "exclusive": True,
         "collapsed": True, "preservedChoice": True, "stalePollIgnored": True,
         "liveDraftSafe": True,
+        "longTurnStreamed": True,
         "retryCalls": [[
             "/api/v1/session/turns",
             {"content": "Original prompt", "lesson_pin": {"lesson_id": "original"}},

@@ -119,3 +119,14 @@ The running server needs a deliberate checkout update and
 restart to use the patch; its process-local credentials must be preserved or
 supplied again. No live source mutation, paid generation, merge or rollout was
 performed for these measurements.
+
+The initial automatic review of `fa0b2ec` reported two P2 issues: streamed
+provider rejections lost their specific error code, and polling stopped after
+144 seconds despite an active turn. The fixes read at most 64 KiB of error
+payload solely for sanitized classification, and poll until settlement or
+navigation/transport cancellation. Offline tests cover schema/endpoint/model
+errors, oversized-body early stop and drafts arriving beyond the old ceiling.
+Main advanced to `1f49efd` (selected lesson notes, PR #14); its changes are
+integrated without discarding selection/retry identity. The custody helper
+validates both old/selected scopes and applies the final latency bindings last.
+The next automatic review is round two and the final permitted round.

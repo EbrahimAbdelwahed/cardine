@@ -94,21 +94,23 @@ async function run() {
   const polling = pollingContext.pollTurnActivity('one'); state.navigationVersion++; resolveFetch({ state: 'running', records: [{ sequence: 1 }] }); await polling;
   const stalePollIgnored = patches === 0 && timers.size === 0;
 
-  const liveDraft = { hidden: true }; const liveText = { textContent: '' };
+  const liveDraft = { hidden: true }; const draftTexts = []; let liveReads = 0;
+  const liveText = { get textContent(){ return draftTexts.at(-1); }, set textContent(value){ draftTexts.push(value); } };
   const liveState = { activityPollToken: 0, navigationVersion: 0, pendingTurn: { requestId: 'live' } };
   const liveContext = {
     state: liveState,
     fetchJson: async (path) => path.endsWith('/output')
-      ? { state: 'generating', text: '<img src=x onerror=alert(1)>token' }
-      : { state: 'running', records: [] },
+      ? { state: 'generating', text: liveReads > 1500 ? 'late token' : '<img src=x onerror=alert(1)>token' }
+      : (liveReads++, { state: 'running', records: [] }),
     text: (value) => value || '',
     $: (selector) => selector === '[data-turn-draft]' ? liveDraft : selector === '[data-turn-draft-text]' ? liveText : null,
     root: {}, captureScroll: () => ({}), restoreScroll: () => {},
-    window: { setTimeout: (resolve, delay) => { liveState.pendingTurn = null; resolve(); return delay; } },
+    window: { setTimeout: (resolve, delay) => { if(liveReads === 1700)liveState.pendingTurn = null; resolve(); return delay; } },
   };
   vm.createContext(liveContext); vm.runInContext(poll, liveContext);
   await liveContext.pollTurnActivity('live');
-  const liveDraftSafe = !liveDraft.hidden && liveText.textContent === '<img src=x onerror=alert(1)>token' && !('innerHTML' in liveText);
+  const liveDraftSafe = !liveDraft.hidden && draftTexts.includes('<img src=x onerror=alert(1)>token') && !('innerHTML' in liveText);
+  const longTurnStreamed = liveReads === 1700 && liveText.textContent === 'late token';
 
   const retrySource = section(browser, '  async function retryAnswer', '\n  function renderFonti');
   const retryCalls = []; const original = { endpoint: '/api/v1/session/turns', payload: { content: 'Original prompt', lesson_pin: { lesson_id: 'original' } } };
@@ -146,6 +148,6 @@ async function run() {
   }
   const offRouteAnswer = await commandAfterNavigation(true);
   const onRouteAnswer = await commandAfterNavigation(false);
-  console.log(JSON.stringify({ immediate, copies, retry, feedback, exclusive, collapsed, preservedChoice, stalePollIgnored, liveDraftSafe, retryCalls, offRouteAnswer, onRouteAnswer }));
+  console.log(JSON.stringify({ immediate, copies, retry, feedback, exclusive, collapsed, preservedChoice, stalePollIgnored, liveDraftSafe, longTurnStreamed, retryCalls, offRouteAnswer, onRouteAnswer }));
 }
 run().catch((error) => { console.error(error); process.exit(1); });
