@@ -105,8 +105,17 @@ DOM tests cover safe draft text and stale navigation polling. A dedicated CI job
 installs the OpenAI extra and runs these tests on Python 3.12 and 3.13 without
 provider calls. Provider-free imports remain a separate CI gate.
 
-Full validation, submission commit/PR and automatic review status are recorded
-in the task handoff. The running server needs a deliberate checkout update and
+Delivery: [PR #15](https://github.com/EbrahimAbdelwahed/cardine/pull/15),
+implementation commits `9eb37f3` and `c949256`. The cleanup commit removes 226
+lines and adds 76 across code, tests, custody and this log. Full pytest on the
+cleaned code: 2,867 passed, four optional smoke tests skipped in 114.13 seconds.
+Ruff, mypy (667 files), wheel/sdist build, package verification, ownership audit
+and JavaScript syntax checks passed. The documentation-only handoff update
+follows these implementation checks; current CI and automatic review evidence
+are tracked on the PR. Only the initial automatic GitHub review is requested
+at ready transition; no third review round or merge is authorized.
+
+The running server needs a deliberate checkout update and
 restart to use the patch; its process-local credentials must be preserved or
 supplied again. No live source mutation, paid generation, merge or rollout was
 performed for these measurements.
