@@ -29,3 +29,20 @@ currently follows PR #12 plus this recall fix; combining current main
 with PR #12 is a separate requested clarification, not silently performed.
 GitHub CI/automatic review and inherited ownership gate remain pending;
 no merge or deployment performed.
+
+## Merge preparation after PR #12 delivery
+
+Owner requested merging PR #13. Its base is now main, including merged PRs
+#10 and #12. The sole merge conflict was the development-index update date;
+both feature records are retained. No production conflict required a behavior
+choice. The standard-server FSRS factory remains the PR's three-line change.
+The two effective browser.py custody commitments now bind its exact bytes,
+and the existing mutation test also protects browser.py from further drift.
+
+Verification on integrated runtime commit 7664b5f: 2852 offline tests passed,
+4 expected optional/opt-in skips in 142.38s. The 13 recall journeys pass,
+including default CLI startup, real FSRS and restart. Ruff, strict mypy
+(662 files), uv lock --check --offline, wheel/sdist build and package verification
+pass. Final-head GitHub CI and the first automatic Codex review are pending.
+The owner instructed merging after at least one review, without further cycles;
+CI must still pass. No live study-store mutations, provider calls or deployment.
