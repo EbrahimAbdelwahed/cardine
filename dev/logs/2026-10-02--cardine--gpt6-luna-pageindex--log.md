@@ -30,11 +30,11 @@ and must be re-entered by the owner after restarting the instance.
 
 Verification: Ruff and mypy pass (662 source files). Isolated wheel/sdist build
 and `verify_cardine_wheel.py` pass. Ownership audit passes all 322 rows. The
-offline suite outside the Codex sandbox passed 2,856 tests with four intentional
-provider/PDF-extra skips; one historical browser assertion expected the fixed
-5.6 label for a fixture model. It now checks the truthful generic Tutor label
-and its focused browser test passes. The final committed suite is rerun before
-making the PR ready. No paid model smoke test was performed.
+final offline suite outside the Codex sandbox passes 2,857 tests with four
+intentional provider/PDF-extra skips (160.02 seconds). This includes the
+clean-archive audits against implementation commit `0776688`, the truthful
+fixture-model browser label and historical material-job recovery.
+No paid model smoke test was performed.
 
 Local activation is complete: verified SQLite backups of events, runs and
 retrieval, the previous configuration and launcher are retained under the
@@ -54,7 +54,10 @@ restart. The old launcher and checkout remain available for rollback. Restoring
 the old configuration is sufficient to select 5.6/OFF; database backups must not
 overwrite new study activity blindly.
 
-Delivery is one PR to main; CI and automatic GitHub Codex review are checked
-after publishing. No merge is authorized. The clarification context defect
+Delivery is [PR #16](https://github.com/EbrahimAbdelwahed/cardine/pull/16) to main.
+The branch is pushed and the final suite passed before marking it ready.
+CI and automatic GitHub Codex review had not reported results at publication;
+no review round was manually requested and no merge is authorized.
+The clarification context defect
 remains separate: ordinary capability retrieval still uses FTS, while PageIndex
 provides source structure to the document-index consumers.
