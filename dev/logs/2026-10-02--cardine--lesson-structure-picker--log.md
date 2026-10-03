@@ -1,0 +1,84 @@
+# Source structure dropdown and scoped notes
+
+Owner-requested independent task, 2026-10-02. Checkout:
+`/Users/ebrahimabdelwahed/.codex/worktrees/lesson-structure-picker/cardine`;
+branch `codex/lesson-structure-picker`; fetched default base `1f49efd`.
+Origin is `EbrahimAbdelwahed/cardine`. The shared dirty checkout and other
+chat worktrees were preserved. No merge, deployment or paid provider call.
+
+## Diagnosis and implementation
+
+Main already included selective PDF notes (PR #14), but preparing notes exposed
+only a mechanically inferred full PDF page partition. Users had to confirm the
+manual boundary editor before selecting lessons. Ready PageIndex navigation
+was not exposed by this notes API; non-PDF input immediately generated the
+whole source.
+
+Preparation now returns exact ready structure spans and truthful availability
+status. The note action opens an initially unselected dropdown for Markdown,
+text and PDF with nested sections. The explicit selection confirms its exact
+boundaries. PDF spans never widen to pages, including two lessons on one page.
+The manual full-page editor and multiple-lesson selection remain accessible.
+Sources uploads stay on Sources; first-source study setup on Today is preserved.
+
+The new mutually exclusive `structure_lesson` command revalidates current
+source/revision, canonical digest, ready candidate equality, exact bounds,
+consent and capacity. A canonical extracted slice records parent revision,
+parent digest and Unicode offsets, then uses the existing complete/study
+pipeline, SourceChunk evidence checks, HUMAN decisions and publication gates.
+Index IDs/summaries are absent from the input, extraction manifest and citations.
+A selection-specific fingerprint prevents request ID reuse with different
+boundaries; unchanged retries preserve jobs. Parent retirement/replacement
+continues to block unfinished generation/publication.
+
+No CSS, source-grid or overall layout change. Parallel layout integration must
+preserve `[data-generate-notes]` source/revision JSON, `#material-jobs`, and
+`[data-notes-lessons]` polling guard. Focused runtime changes are in notes
+functions in browser.js, `_material_command`, and MaterialProduct.
+The independent `structure-lesson-notes-overlay.json` pins these three runtime
+paths without rewriting historic custody overlays; audit scope/drift tests
+cover the new overlay.
+
+## Verification and delivery
+
+Existing selective PDF/material/browser tests: 38 passed.
+New structure integration/browser cases cover precise nested spans, shared PDF
+pages, unknown/altered selections, missing/disabled/queued/degraded/failed
+structure, restart, lost responses, stable retry identity, API dispatch and
+mixed-mode rejection, no premature publication, parent retirement and consent.
+Full pytest/Ruff/mypy/build verification and current-head GitHub CI/automatic
+review are pending at this implementation checkpoint. No local reviewer was
+launched. Automatic review is limited to two rounds per PR.
+
+## Main integration
+
+Initial implementation commit `8440553`: full suite 2891 passed, four expected
+optional/live skips in 173.69 seconds. Ruff, mypy (665 files), ownership audit,
+wheel/sdist build and package verification passed. The normal isolated build
+was used because the shared development environment has no setuptools backend.
+
+While this task ran, main advanced to `0990dbf` via PR #15 (native streaming).
+Integrated that published main into this task branch. Browser/API changes merged
+without conflicts. Resolved dev/index by retaining both entries and custody
+audit by applying latency then this continuation's three runtime bindings.
+Historical latency and source-note overlays remain unchanged. Reverification
+on the combined commit is pending.
+
+## Publication handoff — 2026-10-03 CEST
+
+Integrated runtime commit `65c9e74`: 2910 tests passed, four expected skips in
+154.86 seconds. Ruff, strict mypy (670 files), 322-row ownership audit, JS syntax,
+wheel/sdist build and package verification passed. No provider requests made.
+
+PR: https://github.com/EbrahimAbdelwahed/cardine/pull/18, base main, branch
+`codex/lesson-structure-picker`. Opened draft only to finalize this handoff;
+mark ready after pushing this documentation. Initial automatic Codex review is
+triggered by readiness; do not send a duplicate request while it is pending.
+Current-head GitHub CI and review remain pending at publication. Maximum two
+automatic rounds; no local reviewer, merge or deployment. The checkout is clean
+after committing this handoff; no unpublished runtime changes remain.
+
+The parallel Sources layout integration contract is in the approved spec and
+PR description. Keep note controls, material panel and polling guard intact.
+Remaining work is external CI/review and any actionable first-round findings;
+fixes stay in this PR. The owner has not authorized merge or deployment here.
