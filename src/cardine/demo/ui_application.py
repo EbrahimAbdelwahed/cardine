@@ -1323,7 +1323,7 @@ class RepositoryUiApplication(UiApplicationPort):
         request_id, sequence, payload = _workspace_command(
             command,
             required_keys=keys,
-            optional_keys={"lessons", "selected_lessons"}
+            optional_keys={"lessons", "selected_lessons", "structure_lesson"}
             if not (prepare or resume or decision)
             else set(),
         )
@@ -1366,11 +1366,18 @@ class RepositoryUiApplication(UiApplicationPort):
                     )
                 if path != "/api/v1/material-generations":
                     raise UiRequestError("route not found", status_code=404)
-                if "lessons" in payload and "selected_lessons" in payload:
+                if len({"lessons", "selected_lessons", "structure_lesson"} & payload.keys()) > 1:
                     raise UiRequestError("Scegli una divisione completa o le lezioni selezionate.")
                 selected = "selected_lessons" in payload
                 lessons = payload.get("selected_lessons" if selected else "lessons")
-                if selected or "lessons" in payload:
+                if "structure_lesson" in payload:
+                    lesson = payload["structure_lesson"]
+                    if not isinstance(lesson, dict):
+                        raise UiRequestError("Selezione della struttura non valida.")
+                    jobs = product.start_structure_lesson(
+                        str(payload["source_id"]), str(payload["revision_id"]), lesson, request_id
+                    )
+                elif selected or "lessons" in payload:
                     if not isinstance(lessons, list) or any(
                         not isinstance(item, dict) for item in lessons
                     ):

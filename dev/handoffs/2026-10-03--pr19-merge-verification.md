@@ -9,3 +9,5 @@ The shared Chromium harness starts at about:blank before controlled navigation
 and tolerates only known transient CDP context failures while waiting.
 This addresses navigation races seen in failing Python CI browser journeys.
 No provider calls, study data or credentials are committed. CI required before merge.
+
+Integration dependency: PR #18 at 005a721 is included and must merge first.
