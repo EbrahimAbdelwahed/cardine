@@ -22,9 +22,10 @@ does not implement PageIndex inference, selection or request identity. The
 presentation binding announces preparation and brings an existing lesson editor
 into view when preparation succeeds.
 
-The owner instruction authorizes these two UI paths. Their current bindings in
-`selected-lesson-notes-overlay.json` are refreshed to exact final bytes; the two
-non-UI bindings and historic recovery/source-study/journal overlays are preserved.
+The owner instruction authorizes these two UI paths. The current CSS binding in
+`selected-lesson-notes-overlay.json` and JS binding in `local-latency-overlay.json`
+are refreshed to exact final bytes; all other bindings and historic
+recovery/source-study/journal overlays are preserved.
 Prior bindings remain in Git history. This records implementation custody, not
 review approval or installed-Harness parity.
 
@@ -45,3 +46,14 @@ full mypy (663 files), working-tree ownership audit (322 rows), and isolated
 sdist/wheel build pass. An earlier full run produced 2,870 passes and four
 optional/live skips; its only failure was the new test's non-serializable CDP
 wait, now corrected. Final committed-tree full validation remains pending.
+
+Published draft PR: https://github.com/EbrahimAbdelwahed/cardine/pull/17.
+The first committed-tree full run passed: **2,872 tests, four optional/live
+skips**; final wheel/sdist and package verification passed.
+
+While validation ran, main advanced to `0990dbf` by merging PR #15. Integrated
+that main into the same task branch; retained both development-index entries.
+Browser changes merged without conflicting code hunks. Custody now follows the
+latest authoritative JS binding in the latency overlay; CSS remains bound in
+the selected-notes overlay. All inherited backend and streaming changes remain
+unchanged from main. Revalidation of this merged commit is pending.

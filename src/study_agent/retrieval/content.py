@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from study_agent.domain.events import DomainEvent
 from study_agent.domain.identifiers import ChunkId, CourseId, RevisionId, SourceId
 from study_agent.domain.source import (
+    BlobRef,
     Citation,
     ResolvedCitation,
     SourceChunk,
@@ -73,6 +75,15 @@ class CourseSourceContent:
         self._course_id = course_id
         self._events = events
         self._blobs = blobs
+        self._decoded_stream: tuple[DomainEvent, ...] | None = None
+        self._decoded: tuple[
+            tuple[tuple[SourceRevisionIngested, str], ...], dict[SourceId, RevisionId]
+        ] | None = None
+        self._verified_blobs: dict[BlobRef, bytes] = {}
+        self._admission_prefix: tuple[DomainEvent, ...] = ()
+        self._document_reads: dict[
+            bool, tuple[tuple[SourceRevisionRecord, ...], tuple[RetrievalDocument, ...]]
+        ] = {}
 
     def _decode(
         self,
@@ -80,10 +91,60 @@ class CourseSourceContent:
         tuple[tuple[SourceRevisionIngested, str], ...],
         dict[SourceId, RevisionId],
     ]:
+        stream = tuple(self._events.read(self._course_id))
+        source_events = tuple(
+            event for event in stream
+            if event.event_type in (SOURCE_REVISION_INGESTED, SOURCE_REVISION_SELECTED)
+        )
+        if (
+            self._decoded is not None
+            and source_events == self._decoded_stream
+            and stream[:len(self._admission_prefix)] == self._admission_prefix
+        ):
+            if any(
+                event.schema_version == GENERATED_SOURCE_REVISION_SCHEMA_VERSION
+                and event.event_type == SOURCE_REVISION_INGESTED
+                for event in source_events
+            ):
+                load_current = getattr(self._events, "projection", None)
+                current_projection = (
+                    load_current(self._course_id) if callable(load_current) else None
+                )
+                if (
+                    not isinstance(current_projection, Projection)
+                    or current_projection.course_id != self._course_id
+                    or current_projection.sequence != (stream[-1].course_sequence if stream else 0)
+                ):
+                    raise SourceContentError(
+                        SourceContentErrorCode.INTEGRITY_ERROR,
+                        "generated source projection is missing or stale",
+                    )
+            # Blob bytes, not filenames, mtimes or a derived index, authorize
+            # reuse. This also rechecks the original and extraction manifest.
+            try:
+                for reference, expected in self._verified_blobs.items():
+                    if self._blobs.get(reference) != expected:
+                        raise ValueError("canonical blob bytes changed")
+            except LookupError as error:
+                raise SourceContentError(
+                    SourceContentErrorCode.NOT_FOUND, "source content blob is missing"
+                ) from error
+            except (OSError, ValueError) as error:
+                raise SourceContentError(
+                    SourceContentErrorCode.INTEGRITY_ERROR,
+                    "source content failed integrity validation",
+                ) from error
+            return self._decoded
+        verified_blobs: dict[BlobRef, bytes] = {}
+
+        def load_blob(reference: BlobRef) -> bytes:
+            payload = self._blobs.get(reference)
+            verified_blobs[reference] = payload
+            return payload
+
         decoded: list[tuple[SourceRevisionIngested, str]] = []
         seen: dict[tuple[SourceId, RevisionId], SourceRevisionIngested] = {}
         current: dict[SourceId, RevisionId] = {}
-        stream = tuple(self._events.read(self._course_id))
         has_generated = any(
             event.event_type == SOURCE_REVISION_INGESTED
             and event.schema_version == GENERATED_SOURCE_REVISION_SCHEMA_VERSION
@@ -153,7 +214,7 @@ class CourseSourceContent:
             ):
                 continue
             try:
-                revision = decode_source_revision_event(event, self._blobs.get)
+                revision = decode_source_revision_event(event, load_blob)
                 if event.schema_version == GENERATED_SOURCE_REVISION_SCHEMA_VERSION:
                     admitted_at = historical.get(event.course_sequence - 1)
                     if (
@@ -163,7 +224,7 @@ class CourseSourceContent:
                     ):
                         raise ValueError("generated source historical projection is invalid")
                     validate_generated_source_admission(admitted_at.state, event, revision)
-                normalized = self._blobs.get(revision.source.normalized_blob)
+                normalized = load_blob(revision.source.normalized_blob)
                 text = normalized.decode("utf-8", errors="strict")
             except LookupError as error:
                 raise SourceContentError(
@@ -187,7 +248,20 @@ class CourseSourceContent:
             seen[key] = revision
             decoded.append((revision, text))
             current[revision.source.source_id] = revision.source.revision_id
-        return tuple(decoded), current
+        result = (tuple(decoded), current)
+        self._decoded_stream = source_events
+        self._decoded = result
+        self._verified_blobs = verified_blobs
+        last_admission = max(
+            (event.course_sequence for event in source_events
+             if event.schema_version == GENERATED_SOURCE_REVISION_SCHEMA_VERSION
+             and event.event_type == SOURCE_REVISION_INGESTED),
+            default=0,
+        )
+        self._admission_prefix = tuple(
+            event for event in stream if event.course_sequence <= last_admission
+        )
+        return result
 
     def catalog(self) -> tuple[SourceRevisionRecord, ...]:
         decoded, current = self._decode()
@@ -203,8 +277,12 @@ class CourseSourceContent:
         )
 
     def documents(self, *, include_superseded: bool = False) -> tuple[RetrievalDocument, ...]:
+        records = self.catalog()
+        cached = self._document_reads.get(include_superseded)
+        if cached is not None and cached[0] == records:
+            return cached[1]
         documents: list[RetrievalDocument] = []
-        for record in self.catalog():
+        for record in records:
             if not include_superseded and not record.is_current_revision:
                 continue
             for chunk in record.chunks:
@@ -222,7 +300,9 @@ class CourseSourceContent:
                         record.is_current_revision,
                     )
                 )
-        return tuple(documents)
+        result = tuple(documents)
+        self._document_reads[include_superseded] = (records, result)
+        return result
 
     def _record(self, revision_id: RevisionId) -> SourceRevisionRecord:
         for record in self.catalog():
