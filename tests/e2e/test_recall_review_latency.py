@@ -82,8 +82,11 @@ def test_real_browser_queues_ratings_and_retries_lost_commit_once(
             browser.wait_for("!document.querySelector('[data-review-pending]')")
             assert len(commands) == 3
             assert commands[0]["request_id"] == commands[1]["request_id"]
-            assert commands[0]["payload"] == commands[1]["payload"] == {"rating": "good"}
-            assert commands[2]["payload"] == {"rating": "hard"}
+            scope = {"course_id": str(COURSE), "session_id": "cardine-recall-session"}
+            assert commands[0]["payload"] == commands[1]["payload"] == {
+                "rating": "good", "review_scope": scope,
+            }
+            assert commands[2]["payload"] == {"rating": "hard", "review_scope": scope}
             assert commands[2]["expected_sequence"] == cast(int, commands[1]["expected_sequence"])
     finally:
         release.set()

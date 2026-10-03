@@ -2113,7 +2113,8 @@
       || state.revealedReviews[revisionId] !== true
       || !["again", "hard", "good", "easy"].includes(rating)
       || review.pending.some((command) => command.revisionId === revisionId)) return;
-    review.pending.push(Object.freeze({ revisionId, rating, requestId: requestId(), card }));
+    const scope = Object.freeze({course_id: object(state.bootstrap?.course).id, session_id: object(state.bootstrap?.session).id});
+    review.pending.push(Object.freeze({ revisionId, rating, requestId: requestId(), card, scope }));
     delete state.revealedReviews[revisionId];
     // The due payload already contains the next card. Painting it does not
     // claim a commit, compute a schedule, or wait for any network round trip.
@@ -2131,7 +2132,7 @@
         if (review.scope !== reviewScope()) throw new Error("Il contesto di studio è cambiato. Torna al corso e alla sessione del ripasso.");
         const command = review.pending[0];
         const receipt = await fetchJson(`/api/v1/recall/${encodeURIComponent(command.revisionId)}/reviews`, {
-          method: "POST", body: JSON.stringify({ ...commandPayload({ rating: command.rating }, command.requestId), expected_sequence: Math.max(state.highWaterSequence, Number(review.snapshot?.high_water_sequence || 0)) }),
+          method: "POST", body: JSON.stringify({ ...commandPayload({ rating: command.rating, review_scope: command.scope }, command.requestId), expected_sequence: Math.max(state.highWaterSequence, Number(review.snapshot?.high_water_sequence || 0)) }),
         });
         if (receipt.status !== "committed" || !Array.isArray(receipt.result?.items)
           || !Number.isInteger(receipt.high_water_sequence)

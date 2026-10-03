@@ -35,6 +35,7 @@ function fixture() {
  const f=fixture();f.rate('r1');
  assert.match(f.html,/Question 2/);assert.match(f.html,/data-reveal-review="r2"/);
  assert.equal(f.calls.length,1);assert.equal(f.state.review.pending.length,1);
+ assert.deepEqual(JSON.parse(JSON.stringify(f.calls[0].command.payload.review_scope)),{course_id:'course',session_id:'session'});
  f.rate('r1','easy');assert.equal(f.calls.length,1);
  f.rate('r2','hard');f.rate('r3','easy');assert.equal(f.calls.length,1);
  assert.match(f.html,/Salvataggio in corso/);assert.doesNotMatch(f.html,/Nessun ripasso dovuto/);

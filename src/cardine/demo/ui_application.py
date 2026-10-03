@@ -1126,6 +1126,9 @@ class RepositoryUiApplication(UiApplicationPort):
             with self._lock, self._open() as repository:
                 repository.courses.get(course_id)
                 repository.sessions.get_session(course_id, session_id)
+                # Commit selection under the same lock used by scoped mutations.
+                self._course_id = course_id
+                self._session_id = session_id
         except (CourseNotFoundError, SessionNotFoundError) as error:
             raise UiRequestError(
                 "selected course or session was not found", status_code=404
@@ -1133,8 +1136,6 @@ class RepositoryUiApplication(UiApplicationPort):
         # Commit the coupled selection only after both canonical owners were
         # read successfully.  A failed switch must leave the visible pair
         # untouched rather than combining the old course with a new session.
-        self._course_id = course_id
-        self._session_id = session_id
         self._recover_material_jobs(course_id, session_id)
         return {
             "schema_version": 1,
@@ -2062,7 +2063,9 @@ class RepositoryUiApplication(UiApplicationPort):
                 ) from error
 
     def _post_recall_review(self, revision_id: str, command: Mapping[str, object]) -> JsonObject:
-        request_id, expected_sequence, payload = _command(command, payload_key="rating")
+        request_id, expected_sequence, payload = _command(
+            command, payload_key="rating", optional_payload_keys={"review_scope"}
+        )
         try:
             target = ArtifactRevisionId(revision_id)
             rating_raw = payload["rating"]
@@ -2073,6 +2076,11 @@ class RepositoryUiApplication(UiApplicationPort):
             raise UiRequestError("recall rating is invalid") from error
         committed = False
         with self._lock:
+            scope = payload.get("review_scope")
+            if "review_scope" in payload and scope != {
+                "course_id": str(self._course_id), "session_id": str(self._session_id)
+            }:
+                raise UiRequestError("recall review scope changed", status_code=409)
             try:
                 with self._open() as repository:
                     repository.sessions.get_session(self._course_id, self._session_id)
