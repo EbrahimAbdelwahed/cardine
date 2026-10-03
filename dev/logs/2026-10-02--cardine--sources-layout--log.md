@@ -57,3 +57,19 @@ Browser changes merged without conflicting code hunks. Custody now follows the
 latest authoritative JS binding in the latency overlay; CSS remains bound in
 the selected-notes overlay. All inherited backend and streaming changes remain
 unchanged from main. Revalidation of this merged commit is pending.
+
+## Completion — 2026-10-03 CEST
+
+Merge integration checkpoint `b99216e`: **2,891 tests passed, four skips**;
+Ruff, full mypy (668 files), JS syntax, ownership audit (322 rows), isolated
+wheel/sdist build and package verification passed. GitHub CI started for that
+checkpoint, and the PR is mergeable.
+
+Final presentation wording uses “Fonte del corso · sola lettura” so the reader
+also describes approved derived notes accurately. The exact JS digest is
+refreshed in the current latency overlay. Final focused UI/material/browser
+checks and clean-archive audit validate this wording and its custody binding.
+The same PR is made ready after those checks; only automatic Codex GitHub review
+is allowed, with at most two rounds. CI and automatic review on the final head
+must be read from PR #17; no approval, merge or deployment is inferred here.
+No local uncommitted implementation remains at handoff.
