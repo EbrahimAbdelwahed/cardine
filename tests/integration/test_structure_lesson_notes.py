@@ -281,3 +281,40 @@ def test_absent_and_wrong_digest_structure_cannot_admit_a_lesson(
         with pytest.raises(ValueError, match="non corrisponde"):
             product.lessons(str(result.source.source_id), str(result.source.revision_id))
         assert tuple(repo.events.read(COURSE)) == before
+
+
+@pytest.mark.parametrize("first_mode", ["structure", "selected", "partition"])
+@pytest.mark.parametrize("second_mode", ["structure", "selected", "partition"])
+def test_lesson_request_identity_rejects_mode_changes(
+    tmp_path: Path, first_mode: str, second_mode: str
+) -> None:
+    if first_mode == second_mode:
+        return
+    root = tmp_path / "repo"
+    initialize_local_repository(root, _config())
+    with LocalRepository.open(
+        root, model_adapters=_registry(), environment={"OPENAI_API_KEY": "fixture"}
+    ) as repo:
+        result = prepare_structure(repo, pdf=True)
+        product = MaterialProduct(repo, _service_context())
+        source, revision = str(result.source.source_id), str(result.source.revision_id)
+        lesson = first_lesson(product, result)
+        pages: list[dict[str, object]] = [
+            {"title": "Whole page", "start_page": 1, "end_page": 1}
+        ]
+
+        def submit(mode: str) -> None:
+            if mode == "structure":
+                product.start_structure_lesson(source, revision, lesson, "shared-request")
+            elif mode == "selected":
+                product.start_selected_lessons(source, revision, pages, "shared-request")
+            else:
+                product.start_lessons(source, revision, pages, "shared-request")
+
+        submit(first_mode)
+        before = tuple(repo.events.read(COURSE))
+        jobs = product.jobs()
+        with pytest.raises(ValueError, match="riutilizzata"):
+            submit(second_mode)
+        assert tuple(repo.events.read(COURSE)) == before
+        assert product.jobs() == jobs

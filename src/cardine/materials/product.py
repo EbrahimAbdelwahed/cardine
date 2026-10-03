@@ -638,10 +638,10 @@ class MaterialProduct:
             "end_offset": end,
             "title": str(lesson["title"]),
         }
-        fingerprint = sha256(canonical_json_bytes(manifest)).hexdigest()
+        fingerprint = sha256(canonical_json_bytes({"mode": "structure", **manifest})).hexdigest()
         # Bind the original request to its selection before any canonical admission.
         batch_id = (
-            "structure-lesson:"
+            "lesson-request:"
             + sha256(f"{self.course}\0{self.session}\0{request_id}".encode()).hexdigest()
         )
         job_id = self._material_job_id(str(self.course), str(self.session), request_id)
@@ -742,12 +742,13 @@ class MaterialProduct:
         # Resolve consent before admitting any selected lesson.
         if not (consent := self.repo.provider_consent.get(self.course)) or not consent.granted:
             raise ProviderConsentRequiredError("provider consent is required")
-        batch_id = ("pdf-selected-lessons:" if selected else "pdf-lessons:") + sha256(
+        batch_id = "lesson-request:" + sha256(
             f"{self.course}\0{self.session}\0{request_id}".encode()
         ).hexdigest()
         fingerprint = sha256(
             canonical_json_bytes(
                 {
+                    "mode": "selected" if selected else "partition",
                     "source_id": source_id,
                     "revision_id": revision_id,
                     "lessons": tuple(

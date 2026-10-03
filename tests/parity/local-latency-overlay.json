@@ -24,7 +24,7 @@
     },
     {
       "path": "src/cardine/demo/browser.js",
-      "sha256": "4adb435cf8bfd8798ff9855c01cb93782e41bb7ac3c7718cac705e05b8ab8cab"
+      "sha256": "10530135827feb1a9fab1f93c67b37e3855e9777c5e6fd5ef5392be4813bea9f"
     },
     {
       "path": "src/cardine/demo/turn_output.py",
