@@ -96,3 +96,19 @@ due.
 ## Notes / Handoff
 
 - Artifact acceptance remains committed if enrollment later fails.
+
+## Owner-requested latency continuation (2026-10-03)
+
+Rating a revealed card advances locally using the existing canonical due queue,
+without waiting for persistence. Ratings save in order through `RecallService`;
+the browser computes no schedules. The next card remains usable while a visible
+pending count distinguishes presentation from confirmed persistence. Failures
+pause queued writes, restore the unresolved card, and retry its exact identity
+and rating; post-commit response errors preserve the committed marker. Exhausted
+pending queues show saving in progress until confirmed. Double clicks and stale
+controls cannot create duplicate intents. Scope changes and page closure guard
+pending work; unsent browser intents remain memory-only.
+
+See the [implementation and measurement log](../../../dev/logs/2026-10-03--cardine--flashcard-review-latency--log.md).
+Verification additionally covers held HTTP responses, lost replies after commit,
+ordered queued ratings, canonical replay and local desktop/mobile latency.

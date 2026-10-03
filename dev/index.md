@@ -1,6 +1,6 @@
 # Cardine development memory
 
-Updated: 2026-10-02 CEST
+Updated: 2026-10-03 CEST
 
 This file is the authoritative entrypoint for Cardine development memory.
 Cardine-specific plans, logs, notes, and handoffs belong in this repository's
@@ -8,6 +8,8 @@ Cardine-specific plans, logs, notes, and handoffs belong in this repository's
 archive and must not be treated as Cardine's current state.
 
 ## Start here
+
+- [Immediate flashcard review](logs/2026-10-03--cardine--flashcard-review-latency--log.md) — next card advances locally while canonical ratings save in order; exact retries, pending/error states and measured local HTTP/browser latency.
 
 - [Selected PDF lesson notes](logs/2026-10-02--cardine--selected-lesson-notes--log.md) — boundary editing and explicit lesson selection, independent generation and retry identity.
 

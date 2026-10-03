@@ -2035,6 +2035,7 @@ class RepositoryUiApplication(UiApplicationPort):
             rating = RecallRating(rating_raw)
         except (KeyError, TypeError, ValueError) as error:
             raise UiRequestError("recall rating is invalid") from error
+        committed = False
         with self._lock:
             try:
                 with self._open() as repository:
@@ -2075,6 +2076,7 @@ class RepositoryUiApplication(UiApplicationPort):
                         ),
                         expected_sequence,
                     )
+                    committed = True
                     projection, refreshed = self._captured_state(repository)
 
                     def captured(_course_id: CourseId) -> Projection:
@@ -2102,7 +2104,10 @@ class RepositoryUiApplication(UiApplicationPort):
                         "next_schedule": next_schedule,
                         "result": result_payload,
                     }
-            except UiRequestError:
+            except UiRequestError as error:
+                if committed:
+                    error.command_committed = True
+                    error.request_id = request_id
                 raise
             except RetryableRecallConflictError as error:
                 raise UiRequestError("expected sequence is stale", status_code=409) from error
@@ -2117,10 +2122,16 @@ class RepositoryUiApplication(UiApplicationPort):
                     "selected course or session was not found", status_code=404
                 ) from error
             except (LookupError, ValueError, TypeError) as error:
-                raise UiRequestError("recall review target or rating is invalid") from error
+                raise UiRequestError(
+                    "recall review target or rating is invalid",
+                    command_committed=committed,
+                    request_id=request_id if committed else None,
+                ) from error
             except (LocalRepositoryError, OSError, RuntimeError) as error:
                 raise UiRequestError(
-                    "repository runtime is unavailable", status_code=503
+                    "repository runtime is unavailable", status_code=503,
+                    command_committed=committed,
+                    request_id=request_id if committed else None,
                 ) from error
 
     def _post_student_state(self, path: str, command: Mapping[str, object]) -> JsonObject:
