@@ -144,8 +144,6 @@
     turnActivities: Object.create(null),
     turnCommands: Object.create(null),
     answerFeedback: Object.create(null),
-    revealedAnswers: new Set(),
-    streamAnswerId: "",
     authProbeUnavailable: false,
     indexingPollToken: 0,
     activityPollToken: 0,
@@ -1387,7 +1385,6 @@
     conversationScroller = null;
     patch(root, html);
     bindDynamicControls();
-    let streamScroll = null;
     destroyPrimitiveEnhancements = typeof CardineAI.enhance === "function"
       ? CardineAI.enhance(root, {
         populateComposer: false,
@@ -1397,17 +1394,6 @@
         onFeedback: (feedback, control) => {
           const id = control.closest("[data-message-id]")?.dataset.messageId;
           if (id) state.answerFeedback[id] = feedback;
-        },
-        onStreamProgress: (_article, phase) => {
-          if (phase === "before") streamScroll = captureScroll();
-          else {
-            if (streamScroll) restoreScroll(streamScroll, false);
-            conversationScroller?.refresh();
-          }
-        },
-        onStreamStart: (article) => {
-          const id = article.closest("[data-message-id]")?.dataset.messageId;
-          if (id) state.revealedAnswers.add(id);
         },
       })
       : () => {};
@@ -1840,7 +1826,6 @@
     const answer = aiAnswer({
       answer: text(content, "Messaggio senza testo visualizzabile."), citations, followUps: suggested,
       status: first(item, ["status", "state"], "ready"), chat: true,
-      stream: Boolean(id && id === state.streamAnswerId && !state.revealedAnswers.has(id)),
       canRetry: Boolean(state.turnCommands[id]), feedback: state.answerFeedback[id],
     });
     const toolsView = tools.length ? `<div class="thread-message__activity">${aiToolChips({ records: tools, state: text(first(item, ["activity_state"], "settled"), "settled") })}</div>` : "";
@@ -1859,7 +1844,7 @@
 
   function renderFonti(payload) {
     const materials = array(payload);
-    const rows = materials.length ? materials.map((item) => renderSource(item)).join("") : emptyState("Nessuna fonte collegata", "Il catalogo del corso non ha restituito materiali disponibili.");
+    const rows = materials.map((item) => renderSource(item)).join("");
     const contextCards = materials.slice(0, 6).map((item) => {
       const source = object(item);
       const chunks = first(source, ["chunk_count", "chunks", "fragment_count"], null);
@@ -1892,8 +1877,12 @@
       records: recordRows,
     });
     const searchView = aiSidebarSearch({ placeholder: "Cerca in Cardine", shortcut: "/" });
-    const upload = ["local_repository", "private"].includes(text(first(state.bootstrap, ["mode"], "local_repository"))) ? `<details class="notes-upload"><summary>Aggiungi una fonte o trascrivi una registrazione</summary><form data-source-upload class="source-upload-form"><label for="notes-source-file">PDF, testo o audio</label><input id="notes-source-file" name="file" type="file" accept=".pdf,.txt,.md,.mp3,.wav,.m4a,.mp4,.ogg,.webm,.flac,.aac"><label for="notes-source-title">Titolo</label><input id="notes-source-title" name="title" maxlength="240"><label for="notes-source-text">Oppure incolla la sbobina</label><textarea id="notes-source-text" name="content" rows="4" maxlength="196608"></textarea><p class="field-note">Gli audio vengono trascritti con Groq e poi rielaborati in note. Richiede consenso al provider e configurazione del server.</p><button class="button" type="submit">Aggiungi fonte / trascrivi e genera note</button><p data-source-upload-status role="status"></p></form></details>` : "";
-    setView("fonti", `<section class="section-grid section-grid--materials"><section class="section-grid__main" aria-labelledby="material-heading"><p class="section-kicker">libreria del corso</p><h1 class="section-title" id="material-heading">Fonti del corso</h1><p class="section-copy">Apri una fonte per leggerla nel pannello laterale.</p>${upload}<div class="ai-fonts-search">${searchView}</div><ul class="source-list">${rows}</ul><div class="ai-fonts-context">${contextView}</div><details class="ai-fonts-records"><summary>Registro delle revisioni</summary>${registerView}</details></section><aside class="section-grid__side materials-pane"><section class="materials-viewer" id="materials-viewer" aria-labelledby="materials-viewer-title"><header class="materials-viewer__header"><div><p class="eyebrow" id="materials-viewer-kind">fonte del corso</p><h2 id="materials-viewer-title">Documento</h2></div></header><div class="source-viewer__content" id="materials-viewer-content"><p class="empty-state">Scegli una fonte dall’elenco per aprirla qui.</p></div></section><div class="side-card"><p class="section-kicker">da sapere</p><h2 class="side-card__title">Le fonti arrivano dal repository</h2><p class="side-card__copy">Il viewer è in sola lettura e apre soltanto revisioni canoniche appartenenti a questo corso.</p></div></aside><section id="material-jobs" aria-label="Note di studio" aria-live="polite"></section></section>`);
+    const upload = ["local_repository", "private"].includes(text(first(state.bootstrap, ["mode"], "local_repository"))) ? `<details class="notes-upload sources-disclosure"><summary><span class="icon icon--plus" aria-hidden="true"></span>Aggiungi fonte</summary><form data-source-upload class="source-upload-form"><div class="source-upload-form__field"><label for="notes-source-file">PDF, testo o audio</label><input id="notes-source-file" name="file" type="file" accept=".pdf,.txt,.md,.mp3,.wav,.m4a,.mp4,.ogg,.webm,.flac,.aac"></div><div class="source-upload-form__field"><label for="notes-source-title">Titolo</label><input id="notes-source-title" name="title" maxlength="240" placeholder="Un titolo per riconoscere la fonte"></div><div class="source-upload-form__field"><label for="notes-source-text">Oppure incolla la sbobina</label><textarea id="notes-source-text" name="content" rows="4" maxlength="196608"></textarea></div><p class="field-note">Gli audio vengono trascritti con Groq e poi rielaborati in note. Richiede consenso al provider e configurazione del server.</p><button class="button" type="submit">Aggiungi fonte / trascrivi e genera note</button><p data-source-upload-status role="status"></p></form></details>` : "";
+    const catalogue = materials.length
+      ? `<ul class="source-list" aria-label="Fonti disponibili">${rows}</ul>`
+      : emptyState("La tua libreria è vuota", "Aggiungi un PDF, una sbobina o una registrazione per iniziare a studiare dalle tue fonti.");
+    const details = materials.length ? `<section class="sources-details" aria-label="Dettagli delle fonti"><details class="ai-fonts-records"><summary>Estratti delle fonti</summary><div class="ai-fonts-context">${contextView}</div></details><details class="ai-fonts-records"><summary>Registro delle revisioni</summary>${registerView}</details></section>` : "";
+    setView("fonti", `<section class="sources-page" aria-labelledby="material-heading"><header class="sources-page__header"><div><p class="section-kicker">libreria del corso</p><h1 class="section-title" id="material-heading">Fonti del corso</h1><p class="section-copy">I tuoi materiali, un documento alla volta.</p></div><div class="ai-fonts-search">${searchView}</div></header><div class="section-grid section-grid--materials sources-workspace"><section class="sources-library" aria-labelledby="sources-library-heading"><header class="sources-library__header"><h2 id="sources-library-heading" tabindex="-1">Libreria</h2><span class="sources-library__count">${materials.length} ${materials.length === 1 ? "fonte" : "fonti"}</span></header>${upload}${catalogue}${details}</section><aside class="section-grid__side materials-pane"><section class="materials-viewer" id="materials-viewer" aria-labelledby="materials-viewer-title"><header class="materials-viewer__header"><div><p class="eyebrow" id="materials-viewer-kind">lettura</p><h2 id="materials-viewer-title" tabindex="-1">Il tuo documento</h2></div></header><div class="source-viewer__content" id="materials-viewer-content"><div class="sources-reader-empty"><span class="icon icon--book-open" aria-hidden="true"></span><h3>Apri una fonte</h3><p>Scegli «Apri fonte» nella libreria per leggere il documento qui.</p></div></div><footer class="materials-viewer__footer">Fonte del corso · sola lettura</footer></section></aside></div><section class="sources-notes" aria-labelledby="sources-notes-heading"><header><h2 id="sources-notes-heading">Note di studio</h2><p class="section-copy">Genera note da una fonte e rivedile qui. Diventano materiali di studio dopo la tua approvazione.</p><details class="ai-fonts-records"><summary>Come funziona la generazione</summary><p class="section-copy">Segmenta la lezione, rielabora i passaggi e li unisce in una sbobina completa. Le note diventano fonti di studio dopo la tua approvazione.</p></details></header><div id="material-jobs" aria-label="Note di studio" aria-live="polite"><p class="field-note" data-material-jobs-status role="status">Caricamento delle generazioni…</p></div></section></section>`);
   }
 
   function renderSource(item) {
@@ -1916,13 +1905,19 @@
     // Opaque identifiers belong in the provenance sheet, not as the loudest
     // thing in the row: 64 monospaced characters wrapping mid-token used to
     // outrank the title of the source itself.
+    const provenance = esc(JSON.stringify({
+      title, revision, checksum, type,
+      source_role: first(source, ["source_role", "role"], "non dichiarato"),
+      trust_level: first(source, ["trust_level", "trust"], "non dichiarato"),
+      excerpt: first(source, ["excerpt", "quote"], ""),
+    }));
     let sourceAction = viewerReference
-      ? `<button class="button button--quiet" type="button" data-source-viewer-mode="page" data-source-viewer='${esc(JSON.stringify({ ...viewerReference, title }))}'>Apri fonte</button>`
-      : `<button class="button button--quiet" type="button" data-provenance='${esc(JSON.stringify({ title, revision, checksum, type, excerpt: first(source, ["excerpt", "quote"], "") }))}'>Provenienza</button>`;
+      ? `<button class="button button--quiet" type="button" aria-pressed="false" data-source-viewer-mode="page" data-source-viewer='${esc(JSON.stringify({ ...viewerReference, title }))}'>Apri fonte</button>`
+      : `<button class="button button--quiet" type="button" data-provenance='${provenance}'>Provenienza</button>`;
     if (source.can_generate_notes && ["local_repository", "private"].includes(text(first(state.bootstrap, ["mode"], "local_repository")))) {
-      sourceAction += `<button class="button button--quiet" type="button" data-generate-notes='${esc(JSON.stringify({source_id: source.source_id, revision_id: source.revision_id}))}'>Genera note di studio</button><details class="notes-info"><summary aria-label="Informazioni sulla generazione di note">ⓘ</summary><p>Segmenta la lezione, rielabora i passaggi e li unisce in una sbobina completa. Le note diventano fonti di studio dopo la tua approvazione.</p></details>`;
+      sourceAction += `<button class="button button--quiet" type="button" data-generate-notes='${esc(JSON.stringify({source_id: source.source_id, revision_id: source.revision_id}))}'>Genera note di studio</button>`;
     }
-    return `<li class="source-row"><div><h3 class="source-row__title">${esc(title)}</h3><p class="source-row__meta"><span>Revisione <span class="checksum">${esc(shortId(revision))}</span></span><span>Checksum <span class="checksum">${esc(shortId(checksum))}</span></span></p></div><div class="source-row__value source-row__type">Tipo <b>${esc(type)}</b></div><div class="source-row__value">Frammenti <b>${esc(chunks)}</b></div><div class="source-row__button">${sourceAction}</div></li>`;
+    return `<li class="source-row" data-source-id="${esc(text(source.source_id))}" data-revision-id="${esc(text(source.revision_id))}"><div class="source-row__document"><span class="source-row__icon icon icon--book-open" aria-hidden="true"></span><div><h3 class="source-row__title">${esc(title)}</h3><p class="source-row__meta"><span>${esc(type)}</span><span>${esc(chunks)} ${Number(chunks) === 1 ? "frammento" : "frammenti"}</span></p></div></div><div class="source-row__button">${sourceAction}${viewerReference ? `<button class="source-row__provenance" type="button" data-provenance='${provenance}'>Provenienza</button>` : ""}</div></li>`;
   }
 
   function renderProposte(payload) {
@@ -2196,11 +2191,6 @@
       const settledRecords = array(receipt.activity_records);
       const presentationId = text(receipt.presentation_id, "");
       if (isTutorTurn && presentationId) {
-        if (commandNavigationVersion === state.navigationVersion && state.route === "sessione") {
-          state.streamAnswerId = presentationId;
-        } else {
-          state.revealedAnswers.add(presentationId);
-        }
         if (endpoint === "/api/v1/session/turns") state.turnCommands[presentationId] = command;
       }
       if (isTutorTurn && presentationId && settledRecords.length) {
@@ -2314,7 +2304,7 @@
     const pendingCopy = flashcards
       ? "Sto generando e verificando le proposte flashcard…"
       : "Sto preparando una risposta basata sulle fonti del corso…";
-    const pending = `<article class="thread-message thread-message--assistant thread-message--pending" data-optimistic-turn><p class="thread-message__role">tutor</p><div class="thread-message__activity" data-turn-activity aria-live="polite">${aiToolChips({state: "running", records: [], progress_message: pendingCopy})}</div></article>`;
+    const pending = `<article class="thread-message thread-message--assistant thread-message--pending" data-optimistic-turn><p class="thread-message__role">tutor</p><div class="thread-message__activity" data-turn-activity aria-live="polite">${aiToolChips({state: "running", records: [], progress_message: pendingCopy})}</div><div data-turn-draft hidden><p class="field-note">Risposta in generazione · da verificare</p><p class="thread-message__text" data-turn-draft-text></p></div></article>`;
     const thread = $(".session-thread", root);
     if (thread) {
       const empty = $(".empty-state", thread);
@@ -2345,9 +2335,12 @@
     const navigationVersion = state.navigationVersion;
     let awaitingRetryActivity = state.pendingTurn?.awaitingRetryActivity === true;
     let failures = 0;
-    for (let attempt = 0; attempt < 240 && token === state.activityPollToken && navigationVersion === state.navigationVersion && state.pendingTurn?.requestId === requestId && failures < 3; attempt += 1) {
+    while (token === state.activityPollToken && navigationVersion === state.navigationVersion && state.pendingTurn?.requestId === requestId && failures < 3) {
       try {
-        const payload = await fetchJson(`/api/v1/turns/${encodeURIComponent(requestId)}/activity`);
+        const [payload, output] = await Promise.all([
+          fetchJson(`/api/v1/turns/${encodeURIComponent(requestId)}/activity`),
+          fetchJson(`/api/v1/turns/${encodeURIComponent(requestId)}/output`),
+        ]);
         if (token !== state.activityPollToken || navigationVersion !== state.navigationVersion || state.pendingTurn?.requestId !== requestId) return;
         if (awaitingRetryActivity && payload.state !== "running") {
           await new Promise((resolve) => window.setTimeout(resolve, 600));
@@ -2364,7 +2357,16 @@
           if (progressNode && progressMessage) progressNode.textContent = progressMessage;
           restoreScroll(scroll, false);
         }
-        await new Promise((resolve) => window.setTimeout(resolve, 600));
+        const draft = $("[data-turn-draft]", root);
+        const draftText = $("[data-turn-draft-text]", root);
+        if (draft && draftText) {
+          const scroll = captureScroll();
+          const content = output.state === "generating" ? text(output.text, "") : "";
+          draftText.textContent = content;
+          draft.hidden = !content;
+          restoreScroll(scroll, false);
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 100));
       } catch (_) {
         failures += 1;
         await new Promise((resolve) => window.setTimeout(resolve, 2000));
@@ -2479,22 +2481,29 @@
       if (scope !== state.bootstrap || !control.isConnected) return;
       if (array(prepared.lessons).length) {
         const pane = $("#material-jobs");
-        patch(pane, `<section class="notes-job"><h2>Dividi il PDF per lezioni</h2><p>Verifica titoli e intervalli. Ogni riga: titolo | pagina iniziale | pagina finale. Tutte le pagine devono essere coperte una volta.</p><form data-notes-lessons><label for="notes-lesson-ranges">Lezioni del PDF</label><textarea id="notes-lesson-ranges" rows="8">${esc(array(prepared.lessons).map((item) => `${item.title} | ${item.start_page} | ${item.end_page}`).join("\n"))}</textarea><button class="button" type="submit">Conferma lezioni e genera note</button><p data-notes-error role="status"></p></form></section>`);
-        $("[data-notes-lessons]", pane).addEventListener("submit", async (event) => {
+        patch(pane, `<section class="notes-job"><h2>Verifica le lezioni del PDF</h2><p>Correggi titoli e intervalli. Ogni riga: titolo | pagina iniziale | pagina finale. La divisione deve coprire tutte le pagine una volta. Nel passaggio successivo scegli quali lezioni generare.</p><form data-notes-lessons><label for="notes-lesson-ranges">Lezioni del PDF</label><textarea id="notes-lesson-ranges" rows="8">${esc(array(prepared.lessons).map((item) => `${item.title} | ${item.start_page} | ${item.end_page}`).join("\n"))}</textarea><button class="button" type="submit">Conferma confini e scegli lezioni</button><p data-notes-error role="status"></p></form></section>`);
+        $("[data-notes-lessons]", pane).addEventListener("submit", (event) => {
           event.preventDefault();
           const form = event.currentTarget;
-          const button = $("button", form);
-          button.disabled = true;
           try {
             const lessons = $("textarea", form).value.split("\n").filter((line) => line.trim()).map((line) => {
-              const [title, start, end] = line.split("|").map((item) => item.trim());
+              const parts = line.split("|").map((item) => item.trim());
+              if (parts.length !== 3) throw new Error("Ogni riga deve contenere titolo | pagina iniziale | pagina finale.");
+              const [title, start, end] = parts;
               return {title, start_page: Number(start), end_page: Number(end)};
             });
-            await fetchJson("/api/v1/material-generations", {method: "POST", body: JSON.stringify(commandPayload({...pin, lessons}))});
-            form.remove();
-            await refreshMaterialJobs();
+            let previous = 0;
+            if (!lessons.length || lessons.length > 64) throw new Error("Inserisci da 1 a 64 lezioni.");
+            for (const lesson of lessons) {
+              if (!lesson.title || lesson.title.length > 240 || !Number.isInteger(lesson.start_page) || !Number.isInteger(lesson.end_page) || lesson.start_page !== previous + 1 || lesson.end_page < lesson.start_page || lesson.end_page > prepared.page_count) {
+                throw new Error("La divisione deve coprire tutte le pagine in ordine, senza vuoti o sovrapposizioni.");
+              }
+              previous = lesson.end_page;
+            }
+            if (previous !== prepared.page_count) throw new Error("Mancano pagine nella divisione per lezioni.");
+            const boundaryEditor = pane.firstElementChild;
+            showNoteLessonSelection(pane, pin, lessons, scope, () => pane.replaceChildren(boundaryEditor));
           } catch (error) { $("[data-notes-error]", form).textContent = error.message; }
-          finally { button.disabled = false; }
         });
       } else {
         await fetchJson("/api/v1/material-generations", {method: "POST", body: JSON.stringify(commandPayload(pin))});
@@ -2502,6 +2511,47 @@
       }
     } catch (error) { setStatus("unavailable", error.message); }
     finally { control.disabled = false; }
+  }
+
+  function showNoteLessonSelection(pane, pin, lessons, scope, editBoundaries) {
+    pane.replaceChildren();
+    patch(pane, `<section class="notes-job"><h2>Scegli le lezioni da generare</h2><p>Verranno elaborate solo le lezioni selezionate. Le altre pagine del PDF restano escluse.</p><form data-notes-lessons><fieldset class="notes-lesson-selection"><legend>Lezioni del PDF</legend>${lessons.map((lesson, index) => `<label><input type="checkbox" name="lesson" value="${index}"><span>${esc(lesson.title)} · pagine ${lesson.start_page}–${lesson.end_page}</span></label>`).join("")}</fieldset><div class="state-actions"><button class="button button--quiet" type="button" data-notes-select-all>Seleziona tutte</button><button class="button button--quiet" type="button" data-notes-edit>Modifica confini</button><button class="button" type="submit" disabled>Seleziona almeno una lezione</button></div><p data-notes-error role="status"></p></form></section>`);
+    const form = $("[data-notes-lessons]", pane);
+    const submit = $('[type="submit"]', form);
+    let submission = null;
+    let selectionKey = "[]";
+    const selectedLessons = () => $$('input[name="lesson"]:checked', form).map((input) => lessons[Number(input.value)]);
+    const update = () => {
+      const selected = selectedLessons();
+      const nextSelectionKey = JSON.stringify(selected);
+      if (nextSelectionKey !== selectionKey) submission = null;
+      selectionKey = nextSelectionKey;
+      const count = selected.length;
+      submit.disabled = !count;
+      submit.textContent = count ? `Genera note per ${count} ${count === 1 ? "lezione" : "lezioni"}` : "Seleziona almeno una lezione";
+    };
+    form.addEventListener("change", update);
+    $('[data-notes-select-all]', form).addEventListener("click", () => {
+      $$('input[name="lesson"]', form).forEach((input) => { input.checked = true; });
+      update();
+    });
+    $('[data-notes-edit]', form).addEventListener("click", editBoundaries);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (scope !== state.bootstrap || !form.isConnected) return;
+      const selected_lessons = selectedLessons();
+      if (!selected_lessons.length) return;
+      submission ||= commandPayload({...pin, selected_lessons});
+      const controls = $$('input, button', form);
+      controls.forEach((control) => { control.disabled = true; });
+      try {
+        await fetchJson("/api/v1/material-generations", {method: "POST", body: JSON.stringify(submission)});
+        if (scope !== state.bootstrap || !form.isConnected) return;
+        form.remove();
+        await refreshMaterialJobs();
+      } catch (error) { $("[data-notes-error]", form).textContent = error.message; }
+      finally { controls.forEach((control) => { control.disabled = false; }); }
+    });
   }
 
   async function refreshMaterialJobs() {
@@ -2518,7 +2568,7 @@
       proposal: "Preparazione anteprima", proposed: "Note pronte da revisionare", retryable: "Interrotto: puoi riprendere",
       stale: "Fonte aggiornata: rigenera", failed_terminal: "Generazione non riuscita"};
     const jobs = array(payload.items);
-    patch($("#material-jobs"), jobs.map((job) => `<section class="notes-job" data-key="${esc(job.job_id)}"><h2>Note di studio · ${esc(job.title)}</h2><p>${esc(labels[job.stage] || job.stage)}${job.transcribed_chunks ? ` · ${esc(job.transcribed_chunks)} ${job.transcribed_chunks === 1 ? "blocco trascritto" : "blocchi trascritti"}` : ""}${job.segment_count ? ` · ${esc(job.segment_count)} ${job.segment_count === 1 ? "segmento elaborato" : "segmenti elaborati"}` : ""}</p>${job.error ? `<p role="status">${esc(job.error)}</p>` : ""}${array(job.outputs).map((output) => `<details class="notes-output" data-key="${esc(output.revision_id)}" data-note-preview-job="${esc(job.job_id)}" data-note-preview-revision="${esc(output.revision_id)}"><summary>${output.variant === "complete" ? "Sbobina completa" : "Materiale studio"} · ${esc(statusLabel(output.status))}</summary><div class="notes-markdown">${materialPreviews.get(output.revision_id) || "Apri per leggere le note."}</div>${array(output.limitations).map((item) => `<p class="field-note">${esc(item)}</p>`).join("")}${output.status === "proposed" ? `<div class="state-actions"><button class="button" data-note-decision="accept" data-note-revision="${esc(output.revision_id)}" data-note-job="${esc(job.job_id)}">Approva</button><button class="button button--quiet" data-note-decision="reject" data-note-revision="${esc(output.revision_id)}" data-note-job="${esc(job.job_id)}">Rifiuta</button></div>` : output.publication === "published" ? `<p>Salvato come fonte di studio.</p><button class="button button--quiet" data-source-viewer-mode="page" data-source-viewer='${esc(JSON.stringify({source_id: output.published_source_id, revision_id: output.published_revision_id, viewer_kind: "markdown", title: output.title}))}'>Apri note</button>` : output.status === "accepted" ? `<p>Approvato. La pubblicazione richiede il materiale completo approvato e una fonte ancora valida.</p>` : ""}</details>`).join("")}${!["proposed", "stale", "failed_terminal"].includes(job.stage) ? `<button class="button button--quiet" data-note-resume="${esc(job.job_id)}">${job.stage === "publication_retryable" ? "Riprova salvataggio" : "Riprendi generazione"}</button>` : ""}<p data-note-error role="status"></p></section>`).join(""));
+    patch($("#material-jobs"), jobs.length ? jobs.map((job) => `<section class="notes-job" data-key="${esc(job.job_id)}"><h2>Note di studio · ${esc(job.title)}</h2><p>${esc(labels[job.stage] || job.stage)}${job.transcribed_chunks ? ` · ${esc(job.transcribed_chunks)} ${job.transcribed_chunks === 1 ? "blocco trascritto" : "blocchi trascritti"}` : ""}${job.segment_count ? ` · ${esc(job.segment_count)} ${job.segment_count === 1 ? "segmento elaborato" : "segmenti elaborati"}` : ""}</p>${job.error ? `<p role="status">${esc(job.error)}</p>` : ""}${array(job.outputs).map((output) => `<details class="notes-output" data-key="${esc(output.revision_id)}" data-note-preview-job="${esc(job.job_id)}" data-note-preview-revision="${esc(output.revision_id)}"><summary>${output.variant === "complete" ? "Sbobina completa" : "Materiale studio"} · ${esc(statusLabel(output.status))}</summary><div class="notes-markdown">${materialPreviews.get(output.revision_id) || "Apri per leggere le note."}</div>${array(output.limitations).map((item) => `<p class="field-note">${esc(item)}</p>`).join("")}${output.status === "proposed" ? `<div class="state-actions"><button class="button" data-note-decision="accept" data-note-revision="${esc(output.revision_id)}" data-note-job="${esc(job.job_id)}">Approva</button><button class="button button--quiet" data-note-decision="reject" data-note-revision="${esc(output.revision_id)}" data-note-job="${esc(job.job_id)}">Rifiuta</button></div>` : output.publication === "published" ? `<p>Salvato come fonte di studio.</p><button class="button button--quiet" data-source-viewer-mode="page" data-source-viewer='${esc(JSON.stringify({source_id: output.published_source_id, revision_id: output.published_revision_id, viewer_kind: "markdown", title: output.title}))}'>Apri note</button>` : output.status === "accepted" ? `<p>Approvato. La pubblicazione richiede il materiale completo approvato e una fonte ancora valida.</p>` : ""}</details>`).join("")}${!["proposed", "stale", "failed_terminal"].includes(job.stage) ? `<button class="button button--quiet" data-note-resume="${esc(job.job_id)}">${job.stage === "publication_retryable" ? "Riprova salvataggio" : "Riprendi generazione"}</button>` : ""}<p data-note-error role="status"></p></section>`).join("") : '<p class="field-note">Nessuna generazione in corso. Scegli «Genera note di studio» su una fonte per iniziare.</p>');
     $$('[data-note-preview-job]').forEach((details) => bindNoteControl(details, "toggle", async () => {
       if (!details.open || materialPreviews.has(details.dataset.notePreviewRevision)) return;
       try {
@@ -2723,8 +2773,27 @@
       if (submit) submit.disabled = !text(control.value).trim();
     }));
     $$('[data-command]').forEach((control) => control.addEventListener("click", () => commandFromControl(control)));
-    $$('[data-generate-notes]').forEach((control) => control.addEventListener("click", () => prepareNotes(control)));
-    if (state.route === "fonti" && $("#material-jobs")) refreshMaterialJobs().catch(() => {});
+    $$('[data-generate-notes]').forEach((control) => control.addEventListener("click", async () => {
+      const label = control.textContent;
+      control.textContent = "Preparazione…";
+      try {
+        await prepareNotes(control);
+        const pane = $("#material-jobs");
+        if (!control.isConnected || !pane || state.route !== "fonti") return;
+        if ($('[data-notes-lessons]', pane)) {
+          $('textarea, input, button', pane)?.focus({ preventScroll: true });
+          pane.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+        }
+      } finally { control.textContent = label; }
+    }));
+    if (state.route === "fonti" && $("#material-jobs")) {
+      const pane = $("#material-jobs");
+      refreshMaterialJobs().catch(() => {
+        if (pane !== $("#material-jobs")) return;
+        const status = $('[data-material-jobs-status]', pane);
+        if (status) status.textContent = "Non riesco a caricare le generazioni. Riapri Fonti per riprovare.";
+      });
+    }
     $$('[data-provenance]').forEach((control) => control.addEventListener("click", () => openProvenance(control.dataset.provenance)));
     $$('[data-source-viewer]').forEach((control) => control.addEventListener("click", () => openSourceViewer(control.dataset.sourceViewer, control.dataset.sourceViewerMode)));
     $$('[data-retry-route]').forEach((control) => control.addEventListener("click", () => loadRoute(control.dataset.retryRoute)));
@@ -2872,7 +2941,13 @@
     try { source = object(JSON.parse(serialized)); } catch (_) { source = {}; }
     const title = first(source, ["title", "name"], "Fonte");
     const quote = first(source, ["excerpt", "quote"], "");
-    const fields = [["revisione", first(source, ["revision", "revision_id", "version"], "non dichiarata")], ["checksum", first(source, ["checksum_sha256", "checksum", "sha256"], "non dichiarato")], ["locatore", first(source, ["locator", "location"], "non dichiarato")], ["ruolo", first(source, ["role", "trust"], "non dichiarato")]];
+    const fields = [
+      ["revisione", first(source, ["revision", "revision_id", "version"], "non dichiarata")],
+      ["checksum", first(source, ["checksum_sha256", "checksum", "sha256"], "non dichiarato")],
+      ["locatore", first(source, ["locator", "location"], "non dichiarato")],
+      ["ruolo", first(source, ["source_role", "role"], "non dichiarato")],
+      ["fiducia", first(source, ["trust_level", "trust"], "non dichiarato")],
+    ];
     const quoteText = text(quote, "");
     const multilineOrCode = quoteText.includes("\n") || ["code", "source", "snippet"].includes(text(first(source, ["kind", "type", "role"], "")).toLowerCase());
     const excerpt = quoteText
@@ -2899,9 +2974,16 @@
     const kindLabel = viewer_kind === "pdf" ? page ? `PDF · pagina ${page}` : "PDF" : viewer_kind === "markdown" ? "Markdown" : "testo";
     $(inline ? "#materials-viewer-title" : "#source-viewer-title").textContent = title;
     $(inline ? "#materials-viewer-kind" : "#source-viewer-kind").textContent = kindLabel;
-    patch(content, '<p class="source-viewer__loading">Apro la fonte…</p>');
+    patch(content, '<p class="source-viewer__loading" role="status">Apro la fonte…</p>');
     if (inline) {
+      inline.dataset.active = "true";
+      $$('.source-row', root).forEach((row) => {
+        const selected = row.dataset.sourceId === sourceId && row.dataset.revisionId === revisionId;
+        row.classList.toggle("is-selected", selected);
+        $('[data-source-viewer]', row)?.setAttribute("aria-pressed", String(selected));
+      });
       if (window.matchMedia("(max-width: 1080px)").matches) {
+        $("#materials-viewer-title").focus({ preventScroll: true });
         inline.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
       }
     } else if (!dialog.open) {
@@ -2924,7 +3006,8 @@
       patch(content, `<article class="source-viewer__markdown ai-answer__markdown">${rendered}</article>`);
     } catch (_) {
       if (requestVersion !== state.sourceViewerVersion) return;
-      patch(content, '<p class="source-viewer__error">Non riesco ad aprire questa fonte. Riprova o verifica che la revisione sia ancora disponibile.</p>');
+      patch(content, `<div class="source-viewer__error" role="status"><p>Non riesco ad aprire questa fonte. Riprova o verifica che la revisione sia ancora disponibile.</p><button class="button button--quiet" type="button" data-source-viewer-retry>Riprova apertura</button></div>`);
+      $('[data-source-viewer-retry]', content).addEventListener("click", () => openSourceViewer(serialized, mode));
     }
   }
 

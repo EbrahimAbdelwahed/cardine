@@ -33,7 +33,8 @@ from cardine.cli.repository import (
     ModelAdapterRegistry,
 )
 from cardine.courses import ProjectionCourseView
-from cardine.diagnostics import TurnActivityStore, TurnTraceStore
+from cardine.demo.turn_output import TurnOutputStore
+from cardine.diagnostics import TurnActivityStore, TurnTraceStore, publish_progress_message
 from cardine.documents import (
     AnyDocErrorCode,
     AnyDocWorkerError,
@@ -339,6 +340,7 @@ class RepositoryUiApplication(UiApplicationPort):
             kwargs: dict[str, object] = {
                 "model_adapters": model_adapters,
                 "environment": environment,
+                "defer_index_backfill": True,
             }
             if recall_scheduler is not None:
                 kwargs["recall_scheduler"] = recall_scheduler
@@ -357,6 +359,7 @@ class RepositoryUiApplication(UiApplicationPort):
         self._material_worker_reruns: set[tuple[str, str, str]] = set()
         self._audio_environment = environment if environment is not None else os.environ
         self._turn_traces = turn_traces if turn_traces is not None else TurnTraceStore()
+        self._turn_output = TurnOutputStore()
         self._turn_activity = turn_activity if turn_activity is not None else TurnActivityStore()
         self._document_policy = document_policy or document_import_policy()
         self._indexing_view: JsonObject = {
@@ -376,7 +379,7 @@ class RepositoryUiApplication(UiApplicationPort):
                 self._indexing_view = self._indexing_record_payload(
                     local_repository, local_repository.indexing_status()
                 )
-        except CardineSourceContentUnavailableError:
+        except (CardineSourceContentUnavailableError, SourceContentError):
             # A missing canonical blob is surfaced by the existing materials
             # readiness flow; it must not prevent the UI from starting.
             return
@@ -493,6 +496,10 @@ class RepositoryUiApplication(UiApplicationPort):
                 except (KeyError, ValueError):
                     raise UiRequestError("generation not found", status_code=404) from None
         prefix = "/api/v1/turns/"
+        if path.startswith(prefix) and path.endswith("/output"):
+            request_id = path[len(prefix) : -len("/output")]
+            if request_id and "/" not in request_id:
+                return self._turn_output.snapshot(request_id)
         suffix = "/activity"
         if path.startswith(prefix) and path.endswith(suffix):
             request_id = path[len(prefix) : -len(suffix)]
@@ -519,7 +526,12 @@ class RepositoryUiApplication(UiApplicationPort):
         try:
             with self._open() as repository:
                 readiness_projection, snapshot = self._captured_state(repository)
-                source_records = repository.for_course(self._course_id).content.catalog()
+                source_routes = {"/api/v1/bootstrap", "/api/v1/session", "/api/v1/materials"}
+                source_records = (
+                    repository.for_course(self._course_id).content.catalog()
+                    if path in source_routes
+                    else ()
+                )
 
                 def captured(_course_id: CourseId) -> Projection:
                     return readiness_projection
@@ -551,9 +563,12 @@ class RepositoryUiApplication(UiApplicationPort):
                             artifacts,
                             projection=recall_projection,
                             clock=repository.clock,
-                        ),
+                        ) if path == "/api/v1/recall/due" else {},
                         "assessment": assessment,
-                        "student_state": repository.student_state.get(self._course_id).to_json(),
+                        "student_state": (
+                            repository.student_state.get(self._course_id).to_json()
+                            if path == "/api/v1/student-state" else {}
+                        ),
                         "assessments": _assessment_payload(
                             assessment,
                             artifacts,
@@ -562,23 +577,26 @@ class RepositoryUiApplication(UiApplicationPort):
                         "presentations": presentations,
                         "source_grounding": _source_grounding_status(
                             repository, self._course_id, snapshot, source_records
-                        ),
+                        ) if path in source_routes else {},
                         "source_records": (
                             source_records
                             if path in {"/api/v1/materials", "/api/v1/session"}
                             else ()
                         ),
-                        "pageindex": repository.pageindex_summary(self._course_id),
+                        "pageindex": (
+                            repository.pageindex_summary(self._course_id)
+                            if path == "/api/v1/bootstrap" else {}
+                        ),
                         "indexing": self._indexing_record_payload(
                             repository, repository.indexing_status()
-                        ),
+                        ) if path == "/api/v1/bootstrap" else {},
                         "provider_consent": repository.provider_consent.get(self._course_id),
                         "retired_source_ids": repository.source_lifetime.retired_source_ids(
                             self._course_id
                         ),
                         "flashcards_available": _flashcard_capability_available(
                             repository, self._course_id, self._session_id
-                        ),
+                        ) if path in {"/api/v1/bootstrap", "/api/v1/session"} else False,
                         "continuation": _active_continuation(
                             repository,
                             self._course_id,
@@ -771,8 +789,10 @@ class RepositoryUiApplication(UiApplicationPort):
             self._turn_activity.capture(request_id),
             self._turn_traces.capture(request_id, expected_sequence) as trace_id,
             self._lock,
+            self._turn_output.capture(request_id),
         ):
             try:
+                publish_progress_message("Preparo il contesto del corso…")
                 with self._open() as repository:
                     before_artifacts = repository.artifacts.get(self._course_id)
                     before_revision_ids = {str(item.id) for item in before_artifacts.revisions}
@@ -795,12 +815,14 @@ class RepositoryUiApplication(UiApplicationPort):
                         self._context(request_id, request_id),
                         expected_sequence,
                     )
+                    publish_progress_message("Scelgo come rispondere…")
                     result = asyncio.run(
                         application.turn(turn)
                         if continuation_fingerprint is None
                         else application.resume_continuation(continuation_fingerprint, turn)
                     )
                     activity_status = _turn_activity_status(result.status)
+                    publish_progress_message("Preparo la risposta verificata…")
                     self._turn_traces.record_outcome(trace_id, result.status.value)
                     repository.settle_student_state(self._course_id, self._session_id)
                     projection, refreshed = self._captured_state(repository)
@@ -1301,7 +1323,9 @@ class RepositoryUiApplication(UiApplicationPort):
         request_id, sequence, payload = _workspace_command(
             command,
             required_keys=keys,
-            optional_keys={"lessons"} if not (prepare or resume or decision) else set(),
+            optional_keys={"lessons", "selected_lessons"}
+            if not (prepare or resume or decision)
+            else set(),
         )
         context = self._context(request_id, request_id)
         try:
@@ -1342,13 +1366,19 @@ class RepositoryUiApplication(UiApplicationPort):
                     )
                 if path != "/api/v1/material-generations":
                     raise UiRequestError("route not found", status_code=404)
-                lessons = payload.get("lessons")
-                if lessons is not None:
+                if "lessons" in payload and "selected_lessons" in payload:
+                    raise UiRequestError("Scegli una divisione completa o le lezioni selezionate.")
+                selected = "selected_lessons" in payload
+                lessons = payload.get("selected_lessons" if selected else "lessons")
+                if selected or "lessons" in payload:
                     if not isinstance(lessons, list) or any(
                         not isinstance(item, dict) for item in lessons
                     ):
                         raise UiRequestError("lesson boundaries are invalid")
-                    jobs = product.start_lessons(
+                    start_lessons = (
+                        product.start_selected_lessons if selected else product.start_lessons
+                    )
+                    jobs = start_lessons(
                         str(payload["source_id"]), str(payload["revision_id"]), lessons, request_id
                     )
                 else:

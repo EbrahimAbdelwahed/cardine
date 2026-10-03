@@ -814,3 +814,139 @@ def test_browser_has_no_stateless_demo_routes(tmp_path: Path) -> None:
             await_promise=True,
         )
         assert '\"status\":404' in cast(str, statuses)
+
+
+def test_sources_remain_readable_and_keep_canonical_actions_across_viewports(
+    tmp_path: Path,
+) -> None:
+    root, adapters, _model = _repository(tmp_path)
+    title = "Anatomia cardiovascolare: strutture, funzione e circolazione sistemica"
+    with LocalRepository.open(root, model_adapters=adapters) as repository:
+        repository.for_course(COURSE).ingestion.ingest(
+            filename="long-title.md",
+            content=b"# Cardiovascular anatomy\n\nThe aortic valve has three cusps.",
+            source_id=SourceId("long-title-source"),
+            title=title,
+            trust_level=0,
+            source_role="primary",
+            context=ExecutionContext(
+                PrincipalKind.SERVICE,
+                "sources-layout",
+                COURSE,
+                CorrelationId("sources-layout-ingest"),
+            ),
+        )
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    with _serve(application=app) as url, _real_browser(url) as browser:
+        browser.wait_for("Boolean(document.querySelector('#home-heading'))")
+        browser.evaluate("document.querySelector('[data-route=fonti]').click()")
+        browser.wait_for("document.querySelectorAll('.source-row').length === 2")
+        browser.wait_for(
+            "document.querySelector('#material-jobs').textContent.includes('Nessuna generazione')"
+        )
+        assert browser.evaluate("document.querySelector('.notes-upload').open") is False
+        assert browser.evaluate(
+            "[...document.querySelectorAll('.sources-details details')].every(e => !e.open)"
+        ) is True
+        for width in (320, 390, 800, 1100, 1440):
+            browser.call(
+                "Emulation.setDeviceMetricsOverride",
+                width=width,
+                height=900,
+                deviceScaleFactor=1,
+                mobile=False,
+            )
+            # Both rail sizes must leave enough room for long source titles.
+            for collapsed in (False, True):
+                browser.evaluate(
+                    "document.querySelector('#rail').classList.toggle('is-collapsed', "
+                    f"{str(collapsed).lower()})"
+                )
+                assert browser.evaluate(
+                    """(() => {
+                      const root = document.querySelector('.view-root');
+                      return root.scrollWidth <= root.clientWidth + 1 &&
+                        [...document.querySelectorAll('.source-row')].every(row => {
+                          const title = row.querySelector('h3').getBoundingClientRect();
+                          const actions = row.querySelector('.source-row__button')
+                            .getBoundingClientRect();
+                          return title.width >= 140 && actions.top >= title.bottom &&
+                            row.scrollWidth <= row.clientWidth + 1;
+                        });
+                    })()"""
+                ) is True, f"clipped source at {width}px, collapsed={collapsed}"
+            browser.evaluate("document.querySelector('.notes-upload > summary').click()")
+            assert browser.evaluate(
+                "document.querySelector('.view-root').scrollWidth <= "
+                "document.querySelector('.view-root').clientWidth + 1"
+            ) is True, f"upload overflow at {width}px"
+            browser.evaluate("document.querySelector('.notes-upload > summary').click()")
+
+        browser.call(
+            "Emulation.setDeviceMetricsOverride",
+            width=390, height=844, deviceScaleFactor=1, mobile=False,
+        )
+        browser.evaluate("document.querySelectorAll('.source-row [data-source-viewer]')[1].click()")
+        browser.wait_for("Boolean(document.querySelector('#materials-viewer-content article'))")
+        assert browser.evaluate("document.activeElement.id") == "materials-viewer-title"
+        assert browser.evaluate(
+            "document.querySelector('#materials-viewer-title').textContent"
+        ) == title
+        assert browser.evaluate("document.querySelectorAll('.source-row.is-selected').length") == 1
+        for index, expected_trust in ((0, "90"), (1, "0")):
+            browser.evaluate(
+                f"document.querySelectorAll('.source-row [data-provenance]')[{index}].click()"
+            )
+            browser.wait_for("document.querySelector('#provenance-drawer').open")
+            fields = json.loads(cast(str, browser.evaluate(
+                "JSON.stringify(Object.fromEntries("
+                "[...document.querySelectorAll('#drawer-content .provenance-meta__row')]"
+                ".map(row => [row.querySelector('.provenance-meta__key').textContent,"
+                "row.querySelector('.provenance-meta__value').textContent])))"
+            )))
+            assert fields["ruolo"] == "primary"
+            assert fields["fiducia"] == expected_trust
+            assert len(fields["checksum"]) == 64
+            _press(browser, "Escape", 27)
+
+        browser.call("Network.setBlockedURLs", urls=["*/revisions/*/content"])
+        browser.evaluate("document.querySelectorAll('.source-row [data-source-viewer]')[1].click()")
+        browser.wait_for("Boolean(document.querySelector('[data-source-viewer-retry]'))")
+        browser.call("Network.setBlockedURLs", urls=[])
+        browser.evaluate("document.querySelector('[data-source-viewer-retry]').click()")
+        browser.wait_for("Boolean(document.querySelector('#materials-viewer-content article'))")
+        assert browser.evaluate(
+            "document.querySelector('#materials-viewer-title').textContent"
+        ) == title
+        _assert_no_browser_errors(browser, allowed_error_suffixes=("/content",))
+
+
+def test_sources_empty_library_is_distinct_from_unavailable_state(tmp_path: Path) -> None:
+    root, adapters, _model = _repository(tmp_path, with_source=False)
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    with _serve(application=app) as url, _real_browser(url) as browser:
+        browser.wait_for("Boolean(document.querySelector('[data-source-upload]'))")
+        browser.evaluate("document.querySelector('[data-route=fonti]').click()")
+        browser.wait_for("Boolean(document.querySelector('.sources-page .empty-state'))")
+        assert browser.evaluate("document.querySelectorAll('.source-list').length") == 0
+        browser.wait_for(
+            "document.querySelector('#material-jobs').textContent.includes('Nessuna generazione')"
+        )
+        browser.call("Network.setBlockedURLs", urls=[f"{url}/api/v1/material-generations"])
+        browser.evaluate("document.querySelector('[data-route=fonti]').click()")
+        browser.wait_for(
+            "document.querySelector('#material-jobs').textContent.includes('Non riesco a caricare')"
+        )
+        assert browser.evaluate(
+            "document.querySelectorAll('.sources-page .empty-state').length"
+        ) == 1
+        browser.call("Network.setBlockedURLs", urls=[f"{url}/api/v1/materials"])
+        browser.evaluate("document.querySelector('[data-route=fonti]').click()")
+        browser.wait_for("Boolean(document.querySelector('[data-retry-route=fonti]'))")
+        assert browser.evaluate("document.querySelectorAll('.sources-page').length") == 0
+        browser.call("Network.setBlockedURLs", urls=[])
+        browser.evaluate("document.querySelector('[data-retry-route=fonti]').click()")
+        browser.wait_for("Boolean(document.querySelector('.sources-page .empty-state'))")
+        _assert_no_browser_errors(
+            browser, allowed_error_suffixes=("/material-generations", "/materials")
+        )

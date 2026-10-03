@@ -640,8 +640,16 @@ class _RepositoryTutorGateway:
             self._record_completed_topic(inputs, outcome)
             return outcome
         try:
-            gateway = self._gateway(inputs, context)
-            recovered_query = await self._recover_empty_retrieval_query(inputs)
+            query = inputs.get("query")
+            lesson_pin = self._lesson_pin
+            if lesson_pin is None and isinstance(query, str) and query.strip():
+                lesson_pin = self._repository.resolve_lesson_scope(self._course_id, query)
+            gateway = self._gateway(inputs, context, lesson_pin=lesson_pin)
+            recovered_query = (
+                await self._recover_empty_retrieval_query(inputs)
+                if lesson_pin is None
+                else None
+            )
             if recovered_query is not None:
                 gateway = self._gateway(inputs, context, recovered_query=recovered_query)
             outcome = await gateway.start(capability_id, inputs, context)
@@ -790,6 +798,7 @@ class _RepositoryTutorGateway:
         context: ExecutionContext,
         *,
         recovered_query: str | None = None,
+        lesson_pin: SourcePin | None = None,
     ) -> StudyCapabilityGateway:
         query = inputs.get("query")
         if not isinstance(query, str) or not query.strip():
@@ -811,7 +820,7 @@ class _RepositoryTutorGateway:
         course_receipt = repository.course_index_receipt(self._course_id, receipt)
         # A lesson the learner attached to the chat is an explicit decision and
         # outranks any lesson reference inferred from the wording of the turn.
-        lesson_pin = self._lesson_pin
+        lesson_pin = lesson_pin or self._lesson_pin
         if lesson_pin is None:
             lesson_pin = repository.resolve_lesson_scope(self._course_id, query)
         if context.session_id is None:
@@ -1361,19 +1370,17 @@ class _RepositorySourceCatalog:
     def __init__(
         self,
         course_ids: Callable[[], tuple[CourseId, ...]],
-        events: SQLiteEventStore,
-        blobs: FilesystemBlobStore,
+        content_for_course: Callable[[CourseId], CourseSourceContent],
         source_lifetime: ProjectionSourceLifetimeView,
     ) -> None:
         self._course_ids = course_ids
-        self._events = events
-        self._blobs = blobs
+        self._content_for_course = content_for_course
         self._source_lifetime = source_lifetime
         self._verified_documents_by_chunk: dict[ChunkId, RetrievalDocument] = {}
 
     def _contents(self) -> tuple[CourseSourceContent, ...]:
         return tuple(
-            CourseSourceContent(course_id, self._events, self._blobs)
+            self._content_for_course(course_id)
             for course_id in self._course_ids()
         )
 
@@ -1386,7 +1393,7 @@ class _RepositorySourceCatalog:
         documents = tuple(
             document
             for course_id in course_ids
-            for document in CourseSourceContent(course_id, self._events, self._blobs).documents(
+            for document in self._content_for_course(course_id).documents(
                 include_superseded=include_superseded
             )
             if document.source_id not in retired_by_course[document.course_id]
@@ -1424,7 +1431,7 @@ class _RepositorySourceCatalog:
 
     def resolve(self, citation: Citation) -> ResolvedCitation:
         document = self.canonical_document(citation.chunk_id)
-        return CourseSourceContent(document.course_id, self._events, self._blobs).resolve(citation)
+        return self._content_for_course(document.course_id).resolve(citation)
 
     def contains(self, course_id: CourseId, commitment: SourceCommitment) -> bool:
         """Check a source commitment against the canonical current catalog."""
@@ -1474,6 +1481,7 @@ class LocalRepository:
         tutor_host_runner: TutorHostRunner | None = None,
         tutor_continuation_store: TutorContinuationStore | None = None,
         judgement: ChoiceJudgementPort | None = None,
+        defer_index_backfill: bool = False,
     ) -> None:
         if recall_scheduler is not None and recall_scheduler_factory is not None:
             raise TypeError("recall_scheduler and recall_scheduler_factory are mutually exclusive")
@@ -1559,8 +1567,13 @@ class LocalRepository:
         self.indexing = IndexingCoordinator(NamespacedSQLiteRunStore(self.runs, "cardine-indexing"))
         self.provider_consent = ProjectionConsentView(self.events.projection)
         self.source_lifetime = ProjectionSourceLifetimeView(self.events.projection)
+        self._content_by_course: dict[CourseId, CourseSourceContent] = {}
+        self._lesson_source_reads: dict[
+            CourseId,
+            tuple[tuple[SourceRevisionRecord, ...], frozenset[SourceId], tuple[LessonSource, ...]],
+        ] = {}
         self._source_catalog = _RepositorySourceCatalog(
-            self.events.list_course_ids, self.events, self.blobs, self.source_lifetime
+            self.events.list_course_ids, self._course_content, self.source_lifetime
         )
         self.artifacts = ProjectionArtifactView(self.events.projection)
         self.courses = ProjectionCourseView(self.events.projection)
@@ -1568,7 +1581,8 @@ class LocalRepository:
         # Startup only reconciles the bounded operational queue.  It never
         # invokes the worker, so read-only status/bootstrap inspection remains
         # load-only and restart stays playable through lexical fallback.
-        self._queue_pageindex_backfill()
+        if not defer_index_backfill:
+            self._queue_pageindex_backfill()
         self.course_service = CourseService(self.events, self.clock, self.courses)
         self.provider_consent_service = CourseConsentService(
             self.events, self.clock, self.provider_consent, self.courses
@@ -1578,7 +1592,7 @@ class LocalRepository:
             self.clock,
             self.source_lifetime,
             self.courses,
-            lambda course_id: CourseSourceContent(course_id, self.events, self.blobs),
+            self._course_content,
         )
         self.sessions = ProjectionSessionView(self.events.projection)
         self.session_service = SessionService(self.events, self.clock, self.sessions, self.courses)
@@ -1910,6 +1924,7 @@ class LocalRepository:
         tutor_host_runner: TutorHostRunner | None = None,
         tutor_continuation_store: TutorContinuationStore | None = None,
         judgement: ChoiceJudgementPort | None = None,
+        defer_index_backfill: bool = False,
     ) -> LocalRepository:
         paths = LocalRepositoryPaths.at(root)
         config = LocalRepositoryConfig.load(paths.config)
@@ -1923,6 +1938,7 @@ class LocalRepository:
             tutor_host_runner=tutor_host_runner,
             tutor_continuation_store=tutor_continuation_store,
             judgement=judgement,
+            defer_index_backfill=defer_index_backfill,
         )
 
     @classmethod
@@ -1957,8 +1973,15 @@ class LocalRepository:
             judgement=judgement,
         )
 
+    def _course_content(self, course_id: CourseId) -> CourseSourceContent:
+        content = self._content_by_course.get(course_id)
+        if content is None:
+            content = CourseSourceContent(course_id, self.events, self.blobs)
+            self._content_by_course[course_id] = content
+        return content
+
     def for_course(self, course_id: CourseId) -> CourseRepository:
-        content = CourseSourceContent(course_id, self.events, self.blobs)
+        content = self._course_content(course_id)
         return CourseRepository(
             content,
             SQLiteFtsRetrieval(
@@ -2136,7 +2159,7 @@ class LocalRepository:
     ) -> tuple[SourceRevisionRecord, int]:
         matches = tuple(
             record
-            for record in CourseSourceContent(course_id, self.events, self.blobs).catalog()
+            for record in self._course_content(course_id).catalog()
             if record.source.source_id == source_id and record.source.revision_id == revision_id
         )
         if len(matches) != 1:
@@ -2173,9 +2196,7 @@ class LocalRepository:
                 parent = next(
                     (
                         item
-                        for item in CourseSourceContent(
-                            course_id, self.events, self.blobs
-                        ).catalog()
+                        for item in self._course_content(course_id).catalog()
                         if str(item.source.source_id) == parent_id
                         and str(item.source.revision_id) == manifest.get("parent_revision_id")
                     ),
@@ -2232,8 +2253,18 @@ class LocalRepository:
         revisions: list[PageIndexRevision] = []
         course_ids = (course_id,) if course_id is not None else self.events.list_course_ids()
         for selected_course in course_ids:
+            # OFF only navigates Markdown. Do not decode and revalidate a
+            # whole PDF textbook merely to discover it has no OFF index.
+            if self.config.features.document_index_mode is FeatureMode.OFF and not any(
+                event.event_type == "source.revision_ingested"
+                and isinstance(event.payload.get("source"), Mapping)
+                and cast(Mapping[str, JsonValue], event.payload["source"]).get("kind")
+                == SourceKind.MARKDOWN.value
+                for event in self.events.read(selected_course)
+            ):
+                continue
             retired = self.source_lifetime.retired_source_ids(selected_course)
-            content = CourseSourceContent(selected_course, self.events, self.blobs)
+            content = self._course_content(selected_course)
             for record in content.catalog():
                 if not record.is_current_revision or record.source.source_id in retired:
                     continue
@@ -2319,16 +2350,39 @@ class LocalRepository:
     def _lesson_sources(self, course_id: CourseId) -> tuple[LessonSource, ...]:
         retired = self.source_lifetime.retired_source_ids(course_id)
         content = self.for_course(course_id).content
+        all_records = content.catalog()
+        cached = self._lesson_source_reads.get(course_id)
+        if cached is not None and cached[0] == all_records and cached[1] == retired:
+            return cached[2]
         records = tuple(
             record
-            for record in content.catalog()
+            for record in all_records
             if record.is_current_revision and record.source.source_id not in retired
         )
         if len(records) > _LESSON_SEARCH_SOURCE_BUDGET:
             raise ValueError("lesson search exceeds the bounded source budget")
-        documents = tuple(content.documents())
+        # These records already came from the validated canonical adapter.
+        # Construct the fingerprint input once instead of reading every blob
+        # again through documents() for the same navigation operation.
+        documents = tuple(
+            RetrievalDocument(
+                record.course_id,
+                record.source.source_id,
+                record.source.revision_id,
+                chunk,
+                record.text[chunk.start_offset:chunk.end_offset],
+                record.source.title,
+                record.source.kind,
+                record.source.source_role,
+                record.source.trust_level,
+                record.is_current_revision,
+            )
+            for record in all_records
+            if record.is_current_revision
+            for chunk in record.chunks
+        )
         catalog_fingerprint = retrieval_catalog_fingerprint(documents)
-        return tuple(
+        sources = tuple(
             LessonSource(
                 str(course_id),
                 str(record.source.source_id),
@@ -2350,6 +2404,8 @@ class LocalRepository:
             )
             for record in records
         )
+        self._lesson_source_reads[course_id] = (all_records, retired, sources)
+        return sources
 
     def search_lessons(self, course_id: CourseId, query: str) -> LessonSearchResult:
         sources = self._lesson_sources(course_id)
@@ -2461,7 +2517,12 @@ class LocalRepository:
         if len(unique) != 1:
             raise LessonSelectionError("lesson scope is ambiguous")
         candidate = next(iter(unique.values()))
-        pin = self.select_lesson(course_id, candidate.section_title, candidate.candidate_id)
+        pin = LessonSelectionService(
+            _RepositoryLessonEvidence(self.for_course(course_id).retrieval)
+        ).select(
+            candidate.candidate_id,
+            LessonSearchResult(SearchDisposition.UNIQUE, (candidate,)),
+        )
         self.validate_lesson_pin(pin)
         return pin
 

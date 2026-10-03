@@ -26,6 +26,20 @@ CLASSIFICATION = ROOT / "tests/parity/ownership-classification.json"
 TRANSITION_OVERLAY = ROOT / "tests/parity/ca02-transition-overlay.json"
 RECOVERY_OVERLAY = ROOT / "tests/parity/wave-a-recovery-overlay.json"
 STUDENT_JOURNAL_OVERLAY = ROOT / "tests/parity/student-journal-overlay.json"
+LATENCY_PATHS = {
+    "src/cardine/adapters/model/openai_luna.py",
+    "src/cardine/adapters/model/streaming.py",
+    "src/cardine/cli/repository.py",
+    "src/cardine/demo/browser.js",
+    "src/cardine/demo/ai-primitives.js",
+    "src/cardine/demo/ai-primitives.css",
+    "src/cardine/demo/ui_application.py",
+    "src/cardine/demo/turn_output.py",
+    "src/study_agent/adapters/sqlite/event_store.py",
+    "src/study_agent/adapters/filesystem/blob_store.py",
+    "src/study_agent/domain/_validation.py",
+    "src/study_agent/retrieval/content.py",
+}
 STUDENT_JOURNAL_PATHS = {
     "src/cardine/application/grounding_ask.py",
     "src/cardine/application/legacy_student_state.py",
@@ -437,6 +451,30 @@ def _load_recovery_overlay() -> dict[str, str]:
     return hashes
 
 
+def _bound_hashes(rows: object, allowed: set[str], label: str) -> dict[str, str]:
+    """Validate an exact custody scope with no duplicate or unchecked digests."""
+    if not isinstance(rows, list):
+        raise ValueError(f"{label} has invalid rows")
+    hashes: dict[str, str] = {}
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != {"path", "sha256"}:
+            raise ValueError(f"{label} has invalid row")
+        path, digest = row["path"], row["sha256"]
+        if (
+            not isinstance(path, str)
+            or path not in allowed
+            or path in hashes
+            or not isinstance(digest, str)
+            or len(digest) != 64
+            or any(c not in "0123456789abcdef" for c in digest)
+        ):
+            raise ValueError(f"{label} has invalid binding")
+        hashes[path] = digest
+    if set(hashes) != allowed:
+        raise ValueError(f"{label} has incomplete scope")
+    return hashes
+
+
 def _load_student_journal_overlay() -> dict[str, str]:
     """Bind the fixed journal scope to exact bytes without changing old approval records."""
     raw = json.loads(STUDENT_JOURNAL_OVERLAY.read_text(encoding="utf-8"))
@@ -451,22 +489,7 @@ def _load_student_journal_overlay() -> dict[str, str]:
         or set(raw["removed"]) != STUDENT_JOURNAL_REMOVED
     ):
         raise ValueError("student journal overlay has invalid scope")
-    hashes: dict[str, str] = {}
-    for row in raw["rows"]:
-        if not isinstance(row, dict) or set(row) != {"path", "sha256"}:
-            raise ValueError("student journal overlay has invalid row")
-        path, digest = row["path"], row["sha256"]
-        if (
-            path not in STUDENT_JOURNAL_PATHS
-            or path in hashes
-            or not isinstance(digest, str)
-            or len(digest) != 64
-            or any(c not in "0123456789abcdef" for c in digest)
-        ):
-            raise ValueError("student journal overlay has invalid binding")
-        hashes[path] = digest
-    if set(hashes) != STUDENT_JOURNAL_PATHS:
-        raise ValueError("student journal overlay has incomplete scope")
+    hashes = _bound_hashes(raw["rows"], STUDENT_JOURNAL_PATHS, "student journal overlay")
     for path in STUDENT_JOURNAL_REMOVED:
         if (ROOT / path).exists():
             raise ValueError(f"student journal retired source is present: {path}")
@@ -729,6 +752,7 @@ def _validate_cardine_transition(
                     and source_path not in REVIEWED_NON_IMPORT_AST_VARIANCE
                     and source_path not in RECOVERY_AST_VARIANCE
                     and source_path not in STUDENT_JOURNAL_PATHS
+                    and source_path not in LATENCY_PATHS
                 ):
                     baseline_source = _baseline_source(source_path)
                     if _normalized_ast(current_source, source_path) != _normalized_ast(
@@ -781,13 +805,25 @@ STUDY_NOTES_PATHS = {
 }
 
 
-def _load_study_notes_overlay() -> dict[str, str]:
+SELECTED_NOTES_PATHS = {
+    "src/cardine/materials/product.py",
+    "src/cardine/demo/ui_application.py",
+    "src/cardine/demo/browser.js",
+    "src/cardine/demo/browser.css",
+}
+
+
+def _load_study_notes_overlay(*, selected: bool = False) -> dict[str, str]:
     """Bind the owner-approved feature scope without rewriting recovery custody.
 
     This is implementation custody, not evidence that automatic review or
     installed-package parity has passed. Unknown paths and digest drift fail.
     """
-    path = ROOT / "tests/parity/source-study-notes-overlay.json"
+    filename = (
+        "selected-lesson-notes-overlay.json" if selected else "source-study-notes-overlay.json"
+    )
+    paths = SELECTED_NOTES_PATHS if selected else STUDY_NOTES_PATHS
+    path = ROOT / "tests/parity" / filename
     raw = json.loads(path.read_text(encoding="utf-8"))
     if (
         not isinstance(raw, dict)
@@ -796,24 +832,25 @@ def _load_study_notes_overlay() -> dict[str, str]:
         or raw["plan"] != "specs/source-study-notes/README.md"
     ):
         raise ValueError("study notes overlay fields are invalid")
-    rows = raw["rows"]
-    if not isinstance(rows, list) or len(rows) != len(STUDY_NOTES_PATHS):
-        raise ValueError("study notes custody must bind the exact feature path set")
-    hashes: dict[str, str] = {}
-    for row in rows:
-        if not isinstance(row, dict) or set(row) != {"path", "sha256"}:
-            raise ValueError("study notes custody row is invalid")
-        source, digest = row["path"], row["sha256"]
-        if source not in STUDY_NOTES_PATHS or source in hashes:
-            raise ValueError("study notes custody path is invalid or duplicated")
-        if (
-            not isinstance(digest, str)
-            or len(digest) != 64
-            or any(char not in "0123456789abcdef" for char in digest)
-        ):
-            raise ValueError("study notes custody digest is invalid")
-        hashes[source] = digest
-    return hashes
+    return _bound_hashes(raw["rows"], paths, "study notes overlay")
+
+
+def _load_latency_overlay() -> dict[str, str]:
+    """Bind the explicitly owner-requested latency and streaming continuation.
+
+    Historical approval records remain intact. This does not approve semantic
+    review, installed-package adoption, deployment or merging.
+    """
+    raw = json.loads((ROOT / "tests/parity/local-latency-overlay.json").read_text())
+    if (
+        not isinstance(raw, dict)
+        or set(raw) != {"schema_version", "decision", "rows"}
+        or raw["schema_version"] != 1
+        or raw["decision"] != "ADR-0024--local-read-budgets-and-live-drafts"
+        or not isinstance(raw["rows"], list)
+    ):
+        raise ValueError("latency overlay fields are invalid")
+    return _bound_hashes(raw["rows"], LATENCY_PATHS, "latency overlay")
 
 
 def validate(*, live: bool = False) -> list[str]:
@@ -821,6 +858,8 @@ def validate(*, live: bool = False) -> list[str]:
     try:
         recovery_hashes = {**_load_recovery_overlay(), **_load_study_notes_overlay()}
         recovery_hashes.update(_load_student_journal_overlay())
+        recovery_hashes.update(_load_study_notes_overlay(selected=True))
+        recovery_hashes.update(_load_latency_overlay())
         for path in STUDENT_JOURNAL_REMOVED:
             recovery_hashes.pop(path, None)
         reviewed = _load_classification()

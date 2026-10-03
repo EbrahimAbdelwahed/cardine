@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import asyncio
+import json
+from collections.abc import Callable, Mapping
+from contextlib import aclosing
 from dataclasses import dataclass, field
 
 from cardine.adapters.model.diagnostic_transport import DiagnosticHttpTransport
+from cardine.adapters.model.streaming import (
+    MAX_STREAM_BYTES,
+    HttpxStreamingTransport,
+    StreamingTransport,
+    draft_text,
+)
+from cardine.demo.turn_output import output_observer
 from cardine.diagnostics.turn_trace import trace_operation
 from study_agent.adapters.model.openai_compatible import (
     HttpTransport,
@@ -86,9 +96,17 @@ class OpenAIGpt56LunaModel(OpenAICompatibleModel):
         config: OpenAIGpt56LunaConfig,
         *,
         transport: HttpTransport | None = None,
+        streaming_transport: StreamingTransport | None = None,
     ) -> None:
         if not isinstance(config, OpenAIGpt56LunaConfig):
             raise TypeError("config must be OpenAIGpt56LunaConfig")
+        self._streaming_transport = (
+            streaming_transport
+            if streaming_transport is not None
+            else HttpxStreamingTransport()
+            if transport is None
+            else None
+        )
         super().__init__(
             OpenAICompatibleConfig(
                 GPT_5_6_LUNA_ENDPOINT,
@@ -115,7 +133,80 @@ class OpenAIGpt56LunaModel(OpenAICompatibleModel):
                     ModelErrorCode.PROTOCOL_ERROR,
                     f"{self._model_id} structured output must be strict",
                 )
+            observer = output_observer()
+            if (
+                observer is not None
+                and self._streaming_transport is not None
+                and request.structured_output is not None
+                and request.structured_output.name == "explain_concept_draft"
+            ):
+                return await self._generate_streaming(request, observer)
             return await super().generate(request)
+
+    async def _generate_streaming(
+        self, request: ModelRequest, observer: Callable[[str], None]
+    ) -> ModelResponse:
+        assert self._streaming_transport is not None
+        payload = json.loads(self._body(request))
+        payload["stream"] = True
+        payload["stream_options"] = {"include_usage": True}
+        body = json.dumps(payload, ensure_ascii=False).encode()
+        content = ""
+        finish_reason: str | None = None
+        response_id: str | None = None
+        usage: object = None
+        observer("")
+        try:
+            async with asyncio.timeout(self._config.timeout_seconds), aclosing(
+                self._streaming_transport.events(
+                    self._config.endpoint_url, self._headers(), body, self._config.timeout_seconds
+                )
+            ) as events:
+                async for raw in events:
+                    if raw == "[DONE]":
+                        if finish_reason is None:
+                            raise ValueError("stream is incomplete")
+                        response = {
+                            "id": response_id,
+                            "choices": [
+                                {
+                                    "message": {"role": "assistant", "content": content},
+                                    "finish_reason": finish_reason,
+                                }
+                            ],
+                            "usage": usage,
+                        }
+                        return self._parse(json.dumps(response).encode(), request)
+                    frame = json.loads(raw)
+                    if not isinstance(frame, dict):
+                        raise ValueError("invalid stream frame")
+                    if isinstance(frame.get("id"), str):
+                        response_id = frame["id"]
+                    if frame.get("usage") is not None:
+                        usage = frame["usage"]
+                    for choice in frame.get("choices", []):
+                        if choice.get("index") != 0:
+                            raise ValueError("unexpected stream choice")
+                        delta = choice.get("delta", {})
+                        if delta.get("tool_calls") or delta.get("refusal"):
+                            raise ValueError("stream does not contain a grounded answer")
+                        text = delta.get("content")
+                        if text is not None:
+                            if not isinstance(text, str):
+                                raise ValueError("invalid stream content")
+                            content += text
+                            if len(content.encode()) > MAX_STREAM_BYTES:
+                                raise ValueError("stream exceeded limit")
+                            observer(draft_text(content))
+                        if choice.get("finish_reason") is not None:
+                            finish_reason = choice["finish_reason"]
+            raise ValueError("stream ended before completion")
+        except TimeoutError:
+            raise ModelError(
+                ModelErrorCode.TIMEOUT, "model stream timed out", retryable=True
+            ) from None
+        except (ValueError, TypeError, KeyError, AttributeError):
+            raise ModelError(ModelErrorCode.PROTOCOL_ERROR, "model stream is invalid") from None
 
 
 class OpenAIGpt6LunaModel(OpenAIGpt56LunaModel):

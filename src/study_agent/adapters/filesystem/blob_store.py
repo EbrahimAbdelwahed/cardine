@@ -8,8 +8,10 @@ import os
 import secrets
 import stat
 import weakref
+from collections import OrderedDict
 from contextlib import suppress
 from pathlib import Path
+from threading import Lock
 
 from study_agent.domain.identifiers import BlobId
 from study_agent.domain.source import BlobRef
@@ -29,6 +31,7 @@ class UnsafeBlobPathError(ValueError):
 
 _DIRECTORY_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
 _FILE_READ_FLAGS = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+_MAX_VERIFIED_READ_BYTES = 256 * 1024 * 1024
 
 
 def _require_descriptor_platform() -> None:
@@ -97,6 +100,9 @@ class FilesystemBlobStore:
         self._read_only = read_only
         self._root_fd = root_fd
         self._objects_fd = objects_fd
+        self._verified_reads: OrderedDict[BlobRef, bytes] = OrderedDict()
+        self._verified_read_bytes = 0
+        self._verified_read_lock = Lock()
         self._root_finalizer = weakref.finalize(self, os.close, root_fd)
         self._objects_finalizer = (
             weakref.finalize(self, os.close, objects_fd) if objects_fd is not None else None
@@ -117,6 +123,9 @@ class FilesystemBlobStore:
 
     def close(self) -> None:
         """Release retained directory descriptors; subsequent operations are invalid."""
+        with self._verified_read_lock:
+            self._verified_reads.clear()
+            self._verified_read_bytes = 0
         if self._objects_finalizer is not None:
             self._objects_finalizer()
         self._root_finalizer()
@@ -175,18 +184,37 @@ class FilesystemBlobStore:
         finally:
             os.close(descriptor)
 
-    @classmethod
-    def _verified_content(cls, shard_fd: int, name: str, ref: BlobRef) -> bytes:
-        content = cls._read_file(shard_fd, name)
+    def _verified_content(self, shard_fd: int, name: str, ref: BlobRef) -> bytes:
+        content = self._read_file(shard_fd, name)
         if len(content) != ref.byte_length:
             raise BlobIntegrityError(
                 f"blob length mismatch: expected {ref.byte_length}, got {len(content)}"
             )
-        actual_digest = cls._digest(content)
-        if actual_digest != ref.checksum_sha256:
-            raise BlobIntegrityError(
-                f"blob checksum mismatch: expected {ref.checksum_sha256}, got {actual_digest}"
-            )
+        with self._verified_read_lock:
+            previous = self._verified_reads.get(ref)
+            # Every access still opens a guarded regular file and reads all
+            # bytes. Exact equality with previously hashed bytes is sufficient;
+            # inode, mtime and length alone never authorize reuse.
+            if previous is not None and content == previous:
+                self._verified_reads.move_to_end(ref)
+                return previous
+            actual_digest = self._digest(content)
+            if actual_digest != ref.checksum_sha256:
+                raise BlobIntegrityError(
+                    f"blob checksum mismatch: expected {ref.checksum_sha256}, got {actual_digest}"
+                )
+            if len(content) <= _MAX_VERIFIED_READ_BYTES:
+                if previous is not None:
+                    self._verified_read_bytes -= len(previous)
+                self._verified_reads[ref] = content
+                self._verified_reads.move_to_end(ref)
+                self._verified_read_bytes += len(content)
+                while (
+                    len(self._verified_reads) > 32
+                    or self._verified_read_bytes > _MAX_VERIFIED_READ_BYTES
+                ):
+                    _, evicted = self._verified_reads.popitem(last=False)
+                    self._verified_read_bytes -= len(evicted)
         return content
 
     @staticmethod
