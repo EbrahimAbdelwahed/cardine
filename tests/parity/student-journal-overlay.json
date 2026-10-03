@@ -24,7 +24,7 @@
     },
     {
       "path": "src/cardine/cli/repository.py",
-      "sha256": "db80d7666d4d99ee547c3071f8bd2449033cc1f1617ab743257648de27d59ab1"
+      "sha256": "172deb624f8a3ca5dfeb172fc6c603ad5f0544fd10832e7fe92fa9a62a178b0c"
     },
     {
       "path": "src/cardine/demo/anatomy.py",
@@ -36,11 +36,11 @@
     },
     {
       "path": "src/cardine/demo/browser.html",
-      "sha256": "1ec96112d898e72123159a187178bcaee177329efc24c811d054573cffb385b6"
+      "sha256": "ee6b9c06fe26c37e5afb3070ebf5c4a54b7683d87d9a770e108cad1849dbe45f"
     },
     {
       "path": "src/cardine/demo/browser.js",
-      "sha256": "c37dc3fc25ff37d3708df6ba5ab61ec57f9014aa56b03feccfe30548f34da259"
+      "sha256": "5961f81375db83775bbf33c711a5801f780b86d3e9ae39d7dfbd7d8f2764158d"
     },
     {
       "path": "src/cardine/demo/product_shell.py",
@@ -48,7 +48,7 @@
     },
     {
       "path": "src/cardine/demo/ui_application.py",
-      "sha256": "f1e9a40d6e0c5d2036cb9c4c9e3afa4b40fc1017d4ba5c85b841b1568893d8ff"
+      "sha256": "0cb3c9d4114156bf18daef2d6b95636ae1c5a39c79c69622ecdea6d91a785da8"
     },
     {
       "path": "src/cardine/diagnostics/turn_activity.py",

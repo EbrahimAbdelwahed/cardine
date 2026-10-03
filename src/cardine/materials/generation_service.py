@@ -35,6 +35,7 @@ from study_agent.ports.model import ModelRequest, ModelResponse
 from study_agent.state import canonical_json_bytes
 
 from .generation_contracts import (
+    GenerationPipelinePins,
     MaterialGenerationErrorCode,
     MaterialGenerationRequest,
     MaterialGenerationStage,
@@ -115,8 +116,12 @@ class MaterialGenerationService:
         artifact_command: ArtifactCommandPort,
         events: EventStore,
         clock: ClockPort | None = None,
+        pipeline_pins: GenerationPipelinePins | None = None,
+        model_for_pins: Callable[[GenerationPipelinePins], ModelPort] | None = None,
     ) -> None:
         self._model = model
+        self._pipeline_pins = pipeline_pins or GenerationPipelinePins()
+        self._model_for_pins = model_for_pins
         self._blobs = blobs
         self._store = store
         if not callable(preflight):
@@ -127,6 +132,9 @@ class MaterialGenerationService:
         self._artifact_command = artifact_command
         self._events = events
 
+    def _generation_model(self, pins: GenerationPipelinePins) -> ModelPort:
+        return self._model if self._model_for_pins is None else self._model_for_pins(pins)
+
     def request_pair(
         self,
         course_id: CourseId,
@@ -136,7 +144,7 @@ class MaterialGenerationService:
     ) -> MaterialGenerationView:
         if exact_source_pin.course_id != course_id or exact_source_pin.session_id != session_id:
             raise MaterialGenerationConflict("source pin belongs to another course or session")
-        request = MaterialGenerationRequest(exact_source_pin, request_id)
+        request = MaterialGenerationRequest(exact_source_pin, request_id, self._pipeline_pins)
         self._assert_pin_readable(request.pin)
         run_id = RunId(request.job_id)
         state = MaterialGenerationState(request=request, run_id=run_id)
@@ -253,7 +261,7 @@ class MaterialGenerationService:
             self._preflight(state.request.pin, context, MaterialGenerationStage.BOUNDARIES.value)
             model_request = boundary_request(manifest, state.request.pins)
             self._assert_model_request_bounded(claimed, model_request)
-            response = await self._model.generate(model_request)
+            response = await self._generation_model(state.request.pins).generate(model_request)
             validate_provider_response(response, pins=state.request.pins, structured=True)
             structured = response.structured_output
             if structured is None:
@@ -321,7 +329,7 @@ class MaterialGenerationService:
             )
             model_request = complete_segment_request(manifest, boundary, pins=state.request.pins)
             self._assert_model_request_bounded(claimed, model_request)
-            response = await self._model.generate(model_request)
+            response = await self._generation_model(state.request.pins).generate(model_request)
             validate_provider_response(response, pins=state.request.pins, structured=True)
             markdown, limitations = parse_material_output(response, stage="complete segment")
             validated = validate_markdown(
@@ -393,7 +401,7 @@ class MaterialGenerationService:
                 segments, title=claimed.request.pin.title, pins=claimed.request.pins
             )
             self._assert_model_request_bounded(claimed, model_request)
-            response = await self._model.generate(model_request)
+            response = await self._generation_model(state.request.pins).generate(model_request)
             validate_provider_response(response, pins=claimed.request.pins, structured=True)
             markdown, limitations = parse_material_output(response, stage="complete merge")
             validated = validate_complete_markdown(
@@ -466,7 +474,7 @@ class MaterialGenerationService:
                 complete, title=claimed.request.pin.title, pins=claimed.request.pins
             )
             self._assert_model_request_bounded(claimed, model_request)
-            response = await self._model.generate(model_request)
+            response = await self._generation_model(state.request.pins).generate(model_request)
             validate_provider_response(response, pins=claimed.request.pins, structured=True)
             markdown, limitations = parse_material_output(response, stage="study material")
             validated = validate_study_markdown(

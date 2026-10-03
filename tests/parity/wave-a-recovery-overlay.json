@@ -8,7 +8,7 @@
     },
     {
       "path": "src/cardine/adapters/model/openai_luna.py",
-      "sha256": "ae1b4b93ee4a7058c5bb2f9f101de2fb81e37fb86d6fb8e3f6958ab200efa386"
+      "sha256": "b90b46188d1ed56cad9db8200c63a6eb62e5e2690de36eee866ad510ae564fa7"
     },
     {
       "path": "src/cardine/adapters/model/tutor_decision.py",
@@ -28,7 +28,7 @@
     },
     {
       "path": "src/cardine/cli/repository.py",
-      "sha256": "d4b2073a71a4f8654495ad2ab8d72a0eb44b6a51266554b586bba6241b34ad26"
+      "sha256": "172deb624f8a3ca5dfeb172fc6c603ad5f0544fd10832e7fe92fa9a62a178b0c"
     },
     {
       "path": "src/cardine/demo/ai-primitives.css",
@@ -44,11 +44,11 @@
     },
     {
       "path": "src/cardine/demo/browser.html",
-      "sha256": "1bd41e5a0785ffc38f06049f8db654241a29d5a1e28d929c1320aa46b63d6cb0"
+      "sha256": "ee6b9c06fe26c37e5afb3070ebf5c4a54b7683d87d9a770e108cad1849dbe45f"
     },
     {
       "path": "src/cardine/demo/browser.js",
-      "sha256": "3f0fcc7bbd609d46df6192af4325251fac3fa60e02535d2469f532389f26c135"
+      "sha256": "5961f81375db83775bbf33c711a5801f780b86d3e9ae39d7dfbd7d8f2764158d"
     },
     {
       "path": "src/cardine/demo/browser.py",
@@ -56,11 +56,11 @@
     },
     {
       "path": "src/cardine/demo/product_settings.py",
-      "sha256": "33e858edfd91c28b1f8ccc2dcc58eb81620ed109ead01291ee6816dc7df83434"
+      "sha256": "2058969cc589edb662d29dc18894c8c2b91d512626e9ba625f2928752f3a2477"
     },
     {
       "path": "src/cardine/demo/ui_application.py",
-      "sha256": "f65251eb6518e7bf95f16102de99f2bc374f44b976f20be54c17cf379cb8348c"
+      "sha256": "0cb3c9d4114156bf18daef2d6b95636ae1c5a39c79c69622ecdea6d91a785da8"
     },
     {
       "path": "src/cardine/diagnostics/__init__.py",

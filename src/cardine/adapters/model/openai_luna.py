@@ -1,4 +1,4 @@
-"""Fixed GPT-5.6 Luna preset over the bounded Chat Completions transport."""
+"""Versioned Luna presets over the bounded Chat Completions transport."""
 
 from __future__ import annotations
 
@@ -37,6 +37,9 @@ GPT_5_6_LUNA_ADAPTER_VERSION = "1.0.0"
 GPT_5_6_LUNA_MODEL_ID = "gpt-5.6-luna"
 GPT_5_6_LUNA_ENDPOINT = "https://api.openai.com/v1/chat/completions"
 GPT_5_6_LUNA_REASONING_EFFORT = "none"
+GPT_6_LUNA_ADAPTER_ID = "openai-gpt-6-luna"
+GPT_6_LUNA_ADAPTER_VERSION = "1.0.0"
+GPT_6_LUNA_MODEL_ID = "gpt-6-luna"
 _UNSUPPORTED_STRICT_SCHEMA_KEYWORDS = frozenset({"uniqueItems"})
 
 
@@ -86,6 +89,7 @@ class OpenAIGpt56LunaModel(OpenAICompatibleModel):
 
     _adapter_id = GPT_5_6_LUNA_ADAPTER_ID
     _adapter_version = GPT_5_6_LUNA_ADAPTER_VERSION
+    _model_id = GPT_5_6_LUNA_MODEL_ID
 
     def __init__(
         self,
@@ -106,7 +110,7 @@ class OpenAIGpt56LunaModel(OpenAICompatibleModel):
         super().__init__(
             OpenAICompatibleConfig(
                 GPT_5_6_LUNA_ENDPOINT,
-                GPT_5_6_LUNA_MODEL_ID,
+                self._model_id,
                 config.api_key,
                 config.timeout_seconds,
                 ModelCapabilities(structured_output=True),
@@ -127,7 +131,7 @@ class OpenAIGpt56LunaModel(OpenAICompatibleModel):
             ):
                 raise ModelError(
                     ModelErrorCode.PROTOCOL_ERROR,
-                    "GPT-5.6 Luna structured output must be strict",
+                    f"{self._model_id} structured output must be strict",
                 )
             observer = output_observer()
             if (
@@ -205,12 +209,24 @@ class OpenAIGpt56LunaModel(OpenAICompatibleModel):
             raise ModelError(ModelErrorCode.PROTOCOL_ERROR, "model stream is invalid") from None
 
 
+class OpenAIGpt6LunaModel(OpenAIGpt56LunaModel):
+    """GPT-6 Luna with its own invocation identity and the same strict contract."""
+
+    _adapter_id = GPT_6_LUNA_ADAPTER_ID
+    _adapter_version = GPT_6_LUNA_ADAPTER_VERSION
+    _model_id = GPT_6_LUNA_MODEL_ID
+
+
 __all__ = [
     "GPT_5_6_LUNA_ADAPTER_ID",
     "GPT_5_6_LUNA_ADAPTER_VERSION",
     "GPT_5_6_LUNA_ENDPOINT",
     "GPT_5_6_LUNA_MODEL_ID",
     "GPT_5_6_LUNA_REASONING_EFFORT",
+    "GPT_6_LUNA_ADAPTER_ID",
+    "GPT_6_LUNA_ADAPTER_VERSION",
+    "GPT_6_LUNA_MODEL_ID",
+    "OpenAIGpt6LunaModel",
     "OpenAIGpt56LunaConfig",
     "OpenAIGpt56LunaModel",
 ]

@@ -128,6 +128,7 @@ class SettingsApplication(UiApplicationPort):
         if path in {"/api/v1/bootstrap", "/api/v1/session"}:
             payload = dict(payload)
             payload["mode"] = self.mode
+            payload["model"] = self._model_metadata()
         return payload
 
     def post(self, path: str, command: Mapping[str, object]) -> JsonObject:
@@ -167,12 +168,7 @@ class SettingsApplication(UiApplicationPort):
                 "persistence": "local_repository",
                 "restart_behavior": "sessions and runtime credentials clear on restart",
             },
-            "model": {
-                "provider": "openai",
-                "model": LUNA_MODEL_LABEL,
-                "adapter_id": LUNA_ADAPTER_ID,
-                "credential_configured": self.credentials.configured,
-            },
+            "model": self._model_metadata(),
             "privacy": {
                 "credential_storage": "runtime_only",
                 "browser_storage": "none",
@@ -188,12 +184,22 @@ class SettingsApplication(UiApplicationPort):
             settings["mode"] = "local_repository"
         return settings
 
+    def _model_metadata(self) -> JsonObject:
+        adapter_id = getattr(self._delegate, "model_adapter_id", LUNA_ADAPTER_ID)
+        labels = {LUNA_ADAPTER_ID: LUNA_MODEL_LABEL, "openai-gpt-6-luna": "GPT-6 Luna"}
+        return {
+            "provider": "openai",
+            "model": labels.get(adapter_id, "Tutor"),
+            "adapter_id": adapter_id,
+            "credential_configured": self.credentials.configured,
+        }
+
     def _credential_result(self, status: str) -> JsonObject:
         return {
             "schema_version": 1,
             "status": status,
             "provider": "openai",
-            "model": LUNA_MODEL_LABEL,
+            "model": self._model_metadata()["model"],
             "credential_configured": self.credentials.configured,
         }
 

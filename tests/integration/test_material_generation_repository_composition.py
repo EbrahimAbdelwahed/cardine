@@ -52,15 +52,16 @@ SOURCE = SourceId("source-material-repository")
 class ScriptedLuna:
     capabilities = ModelCapabilities(structured_output=True)
 
-    def __init__(self) -> None:
+    def __init__(self, adapter_id: str = GPT_5_6_LUNA_ADAPTER_ID) -> None:
         self.calls = 0
+        self.adapter_id = adapter_id
 
     async def generate(self, request: ModelRequest) -> ModelResponse:
         self.calls += 1
         invocation = ModelInvocation(
-            GPT_5_6_LUNA_ADAPTER_ID,
+            self.adapter_id,
             "1.0.0",
-            "gpt-5.6-luna",
+            self.adapter_id.removeprefix("openai-"),
             f"material-response-{self.calls}",
         )
         if request.structured_output is not None and request.structured_output.name == (
@@ -97,10 +98,10 @@ class ScriptedLuna:
         raise AssertionError(token)
 
 
-def _config() -> LocalRepositoryConfig:
+def _config(adapter_id: str = GPT_5_6_LUNA_ADAPTER_ID) -> LocalRepositoryConfig:
     return LocalRepositoryConfig(
         ModelAdapterConfig(
-            GPT_5_6_LUNA_ADAPTER_ID,
+            adapter_id,
             {"timeout_seconds": 10},
             "OPENAI_API_KEY",
         )
@@ -181,20 +182,21 @@ def test_repository_rejects_missing_consent_before_constructing_luna(
     assert builds == []
 
 
+@pytest.mark.parametrize("adapter_id", [GPT_5_6_LUNA_ADAPTER_ID, "openai-gpt-6-luna"])
 def test_repository_generation_commits_one_atomic_pair_and_recovers(
-    tmp_path: Path,
+    tmp_path: Path, adapter_id: str,
 ) -> None:
     root = tmp_path / "repository"
-    initialize_local_repository(root, _config())
+    initialize_local_repository(root, _config(adapter_id))
     models: list[ScriptedLuna] = []
 
     def build(_config: ModelAdapterConfig, _credential: str | None) -> ModelPort:
-        model = ScriptedLuna()
+        model = ScriptedLuna(adapter_id)
         models.append(model)
         return model
 
     registry = ModelAdapterRegistry(
-        {GPT_5_6_LUNA_ADAPTER_ID: cast(ModelAdapterBuilder, build)}
+        {adapter_id: cast(ModelAdapterBuilder, build)}
     )
     environment = {"OPENAI_API_KEY": "fixture"}
     with LocalRepository.open(
@@ -299,3 +301,31 @@ def test_revoked_consent_after_checkpoint_preserves_failure_reason(tmp_path: Pat
             service.get(requested.job_id, _service_context()).error_code
             is MaterialGenerationErrorCode.CONSENT_REQUIRED
         )
+
+
+def test_model_upgrade_resumes_existing_material_job_with_original_model(tmp_path: Path) -> None:
+    root = tmp_path / "repository"
+    initialize_local_repository(root, _config())
+    environment = {"OPENAI_API_KEY": "fixture"}
+    old_model = ScriptedLuna()
+    new_model = ScriptedLuna("openai-gpt-6-luna")
+    registry = ModelAdapterRegistry({
+        GPT_5_6_LUNA_ADAPTER_ID: lambda _config, _credential: old_model,
+        "openai-gpt-6-luna": lambda _config, _credential: new_model,
+    })
+    with LocalRepository.open(root, model_adapters=registry, environment=environment) as repository:
+        admitted = _prepare(repository, consent=True)
+        pin = repository.material_transcript_pin(
+            COURSE, SESSION, SOURCE, admitted.source.revision_id
+        )
+        service = repository.material_generation(pin, _service_context())
+        pending = service.request_pair(COURSE, SESSION, pin, "before-upgrade")
+    (root / "study-agent.json").write_bytes(_config("openai-gpt-6-luna").to_bytes())
+    with LocalRepository.open(root, model_adapters=registry, environment=environment) as repository:
+        service = repository.material_generation(pin, _service_context())
+        recovered = asyncio.run(service.reconcile(
+            pending.job_id, bounded_budget=8, context=_service_context()
+        ))
+        assert recovered.stage is MaterialGenerationStage.PROPOSED
+        assert old_model.calls == 4
+        assert new_model.calls == 0
