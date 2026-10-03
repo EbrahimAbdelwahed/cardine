@@ -55,6 +55,14 @@ Start from `study_agent.repository_config`, `cardine.cli.repository.LocalReposit
 `cardine.hosts.routing`, and `cardine.adapters.pageindex.coordinator`.
 The planner, worker and canonical evidence resolver remain their existing owners.
 
+## Large admitted documents
+
+The qualified local structural worker admits up to 1,024 headings/nodes,
+plus the adapter-owned synthetic document root. The 2 MiB input/output,
+16,384-line, depth and killable timeout bounds remain enforced. The adapter
+configuration identity includes this capacity so an old limited index is rebuilt.
+Enabling document indexing requires reconciliation to READY before lesson selection.
+
 ## Verification and delivery
 
 Runtime commit `92388de`: 2563 offline tests passed; four expected optional/live

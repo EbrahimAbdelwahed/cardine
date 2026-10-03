@@ -391,6 +391,13 @@ class RepositoryUiApplication(UiApplicationPort):
         return self._repository
 
     @property
+    def model_adapter_id(self) -> str | None:
+        from study_agent.repository_config import CONFIG_FILENAME, LocalRepositoryConfig
+
+        configured = LocalRepositoryConfig.load(self._repository / CONFIG_FILENAME).model
+        return None if configured is None else configured.adapter_id
+
+    @property
     def course_id(self) -> CourseId:
         return self._course_id
 

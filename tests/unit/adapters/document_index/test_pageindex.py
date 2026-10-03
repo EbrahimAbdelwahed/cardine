@@ -196,3 +196,13 @@ def test_final_newline_indexes_reconcile_to_complete_canonical_source(text: str)
     derived = asyncio.run(PageIndexDocumentIndexAdapter().build(material))
     candidates = candidate_nodes(derived, binding)
     assert "".join(text[c.span.start_offset : c.span.end_offset] for c in candidates) == text
+
+
+def test_large_course_index_keeps_all_700_headings_and_exact_line_ranges() -> None:
+    text = "\n".join(f"# Lesson {i}\nContent {i}" for i in range(700))
+    index = PageIndexDocumentIndexAdapter().build_sync(request(text))
+    assert len(index.nodes) == 701
+    assert len(index.nodes[0].children) == 700
+    assert index.nodes[-1].title == "Lesson 699"
+    assert index.nodes[-1].locator.start_line == 1399
+    assert index.nodes[-1].locator.end_line == 1400
