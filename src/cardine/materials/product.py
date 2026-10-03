@@ -204,6 +204,17 @@ class MaterialProduct:
             registry = cast(dict[str, object], json.loads(raw))
             jobs = cast(list[JsonObject], registry["jobs"])
             reservations = cast(dict[str, JsonObject], registry.get("reservations", {}))
+            # All lesson modes share the original request suffix. Preserve old
+            # batch IDs and fingerprints so existing same-mode retries work.
+            request_key = reservation_id.rsplit(":", 1)[-1]
+            claimed_batches = set(reservations) | {
+                str(item["batch_id"]) for item in jobs if item.get("batch_id")
+            }
+            if any(
+                claim != reservation_id and claim.rsplit(":", 1)[-1] == request_key
+                for claim in claimed_batches
+            ):
+                raise ValueError("Richiesta lezioni riutilizzata con una modalità diversa.")
             existing_ids = {str(item["job_id"]) for item in jobs}
             for item in jobs:
                 if (
@@ -638,10 +649,10 @@ class MaterialProduct:
             "end_offset": end,
             "title": str(lesson["title"]),
         }
-        fingerprint = sha256(canonical_json_bytes({"mode": "structure", **manifest})).hexdigest()
+        fingerprint = sha256(canonical_json_bytes(manifest)).hexdigest()
         # Bind the original request to its selection before any canonical admission.
         batch_id = (
-            "lesson-request:"
+            "structure-lesson:"
             + sha256(f"{self.course}\0{self.session}\0{request_id}".encode()).hexdigest()
         )
         job_id = self._material_job_id(str(self.course), str(self.session), request_id)
@@ -742,13 +753,12 @@ class MaterialProduct:
         # Resolve consent before admitting any selected lesson.
         if not (consent := self.repo.provider_consent.get(self.course)) or not consent.granted:
             raise ProviderConsentRequiredError("provider consent is required")
-        batch_id = "lesson-request:" + sha256(
+        batch_id = ("pdf-selected-lessons:" if selected else "pdf-lessons:") + sha256(
             f"{self.course}\0{self.session}\0{request_id}".encode()
         ).hexdigest()
         fingerprint = sha256(
             canonical_json_bytes(
                 {
-                    "mode": "selected" if selected else "partition",
                     "source_id": source_id,
                     "revision_id": revision_id,
                     "lessons": tuple(
