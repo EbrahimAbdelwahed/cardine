@@ -1,6 +1,6 @@
 # Cardine development memory
 
-Updated: 2026-10-02 CEST
+Updated: 2026-10-03 CEST
 
 This file is the authoritative entrypoint for Cardine development memory.
 Cardine-specific plans, logs, notes, and handoffs belong in this repository's
@@ -9,7 +9,7 @@ archive and must not be treated as Cardine's current state.
 
 ## Start here
 
-- [Source structure dropdown and scoped notes](logs/2026-10-02--cardine--lesson-structure-picker--log.md) — ready PageIndex spans feed a direct lesson dropdown, exact scoped extraction and restart-safe note proposals; full delivery verification pending.
+- [Source structure dropdown and scoped notes](logs/2026-10-02--cardine--lesson-structure-picker--log.md) — ready PageIndex spans feed a direct lesson dropdown, exact scoped extraction and restart-safe note proposals; 2,910 offline tests and package/static gates pass; PR #18 published, CI and automatic review pending.
 
 - [Local latency and native provider drafts](logs/2026-10-02--cardine--local-latency-streaming--log.md) — owner-requested profiling, exact-byte read caches, route-specific work and actual provider SSE; offline turn reduced from 49.8 to 6.2 seconds, live rollout pending.
 - [Selected PDF lesson notes](logs/2026-10-02--cardine--selected-lesson-notes--log.md) — boundary editing and explicit lesson selection, independent generation and retry identity.

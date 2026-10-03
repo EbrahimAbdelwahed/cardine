@@ -181,3 +181,10 @@ Offline coverage: `test_structure_lesson_notes.py`,
 `test_structure_lesson_notes_journey.py`, existing PDF selection and material
 journeys, plus exact custody drift checks. Run pytest, Ruff, mypy, ownership
 audit and package build before delivery. No paid provider tests are authorized.
+
+Delivery verification (2026-10-03 CEST): PR #18 includes published main `0990dbf`;
+2,910 offline tests passed with four expected optional/live skips. Ruff, strict
+mypy (670 files), ownership audit, JS syntax, wheel/sdist and package verification
+passed. GitHub CI and automatic Codex review remain pending at publication.
+See [the focused handoff](../../dev/logs/2026-10-02--cardine--lesson-structure-picker--log.md).
+No merge or deployment was performed.

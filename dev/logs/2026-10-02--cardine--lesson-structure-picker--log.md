@@ -63,3 +63,22 @@ without conflicts. Resolved dev/index by retaining both entries and custody
 audit by applying latency then this continuation's three runtime bindings.
 Historical latency and source-note overlays remain unchanged. Reverification
 on the combined commit is pending.
+
+## Publication handoff — 2026-10-03 CEST
+
+Integrated runtime commit `65c9e74`: 2910 tests passed, four expected skips in
+154.86 seconds. Ruff, strict mypy (670 files), 322-row ownership audit, JS syntax,
+wheel/sdist build and package verification passed. No provider requests made.
+
+PR: https://github.com/EbrahimAbdelwahed/cardine/pull/18, base main, branch
+`codex/lesson-structure-picker`. Opened draft only to finalize this handoff;
+mark ready after pushing this documentation. Initial automatic Codex review is
+triggered by readiness; do not send a duplicate request while it is pending.
+Current-head GitHub CI and review remain pending at publication. Maximum two
+automatic rounds; no local reviewer, merge or deployment. The checkout is clean
+after committing this handoff; no unpublished runtime changes remain.
+
+The parallel Sources layout integration contract is in the approved spec and
+PR description. Keep note controls, material panel and polling guard intact.
+Remaining work is external CI/review and any actionable first-round findings;
+fixes stay in this PR. The owner has not authorized merge or deployment here.
