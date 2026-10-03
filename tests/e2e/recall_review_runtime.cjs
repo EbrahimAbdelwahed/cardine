@@ -65,6 +65,21 @@ function fixture() {
   f.context.renderRipasso({status:'ready',high_water_sequence:10,items:f.items});
   assert.match(f.html,/Question 3/);assert.doesNotMatch(f.html,/Question 1/);
  }
+ for (const status of ['unavailable', 'not_configured']) {
+  const f=fixture(); f.rate('r1'); const original=f.calls[0].command;
+  f.calls[0].reject(Object.assign(new Error('save failed'), {status:503})); await tick();
+  f.context.recoverReviews();
+  f.calls[1].resolve({status, high_water_sequence:20, items:[]}); await tick();
+  f.calls[2].reject(Object.assign(new Error('still unavailable'), {status:503})); await tick();
+  assert.match(f.html,/Ripasso non disponibile/);
+  assert.match(f.html,/data-review-pending/); assert.match(f.html,/data-review-retry/);
+  assert.equal(f.state.review.pending.length,1);
+  f.context.recoverReviews();
+  f.calls[3].resolve({status:'ready',high_water_sequence:22,items:f.items}); await tick();
+  assert.equal(f.calls[4].command.request_id, original.request_id);
+  f.calls[4].resolve(f.receipt(24,f.items.slice(1))); await tick();
+  assert.equal(f.state.review.pending.length,0);
+ }
  const rejected=fixture();rejected.rate('r1');rejected.calls[0].reject(Object.assign(new Error(),{status:409}));await tick();
  rejected.context.recoverReviews(true);rejected.calls[1].resolve({status:'ready',high_water_sequence:20,items:rejected.items.slice(1)});await tick();
  assert.equal(rejected.calls.length,2);assert.equal(rejected.state.review.pending.length,0);assert.match(rejected.html,/Question 2/);

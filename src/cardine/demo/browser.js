@@ -2166,15 +2166,15 @@
   function renderRipasso(payload) {
     payload = reviewSnapshot(payload);
     const availabilityStatus = text(first(payload, ["status"], "empty"), "empty");
-    if (availabilityStatus === "not_configured" || availabilityStatus === "unavailable") {
-      setView("ripasso", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="review-heading"><p class="section-kicker">ripasso · coda del giorno</p><h1 class="section-title" id="review-heading">Ripasso</h1>${emptyState("Ripasso non disponibile", first(payload, ["message"], "Il ripasso programmato non è configurato."), "unavailable")}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">stato</p><h2 class="side-card__title">Configurazione esplicita</h2><p class="side-card__copy">Nessuna data viene calcolata nel browser; configura un adapter scheduler e riprova.</p></div></aside></section>`);
-      return;
-    }
     const due = visibleReviewItems(payload);
     const review = state.review;
     const pendingCopy = review.pending.length ? `<p role="status" data-review-pending>${review.pending.length} ${review.pending.length === 1 ? "valutazione in attesa di salvataggio" : "valutazioni in attesa di salvataggio"}.</p>` : "";
     const rejected = review.error && [400, 404, 409, 422].includes(review.error.status) && !review.error.payload?.commandCommitted;
     const recovery = review.error ? `<div role="alert" data-review-error><p>Il salvataggio non è confermato. Le valutazioni successive sono in pausa.</p><div class="state-actions"><button class="button" type="button" data-review-retry>Riprova lo stesso salvataggio</button>${rejected ? `<button class="button button--quiet" type="button" data-review-discard>Annulla la valutazione rifiutata e continua</button>` : ""}</div></div>` : "";
+    if (availabilityStatus === "not_configured" || availabilityStatus === "unavailable") {
+      setView("ripasso", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="review-heading"><p class="section-kicker">ripasso · coda del giorno</p><h1 class="section-title" id="review-heading">Ripasso</h1>${emptyState("Ripasso non disponibile", first(payload, ["message"], "Il ripasso programmato non è configurato."), "unavailable")}${pendingCopy}${recovery}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">stato</p><h2 class="side-card__title">Configurazione esplicita</h2><p class="side-card__copy">Nessuna data viene calcolata nel browser; configura un adapter scheduler e riprova.</p></div></aside></section>`);
+      return;
+    }
     if (!due.length) {
       setView("ripasso", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="review-heading"><p class="section-kicker">ripasso · coda del giorno</p><h1 class="section-title" id="review-heading">Ripasso</h1>${review.pending.length ? emptyState("Salvataggio in corso", "La coda è terminata; attendo la conferma delle valutazioni.") : emptyState("Nessun ripasso dovuto", "Non ci sono card da ripassare oggi.")}${pendingCopy}${recovery}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">recall</p><h2 class="side-card__title">Stato vuoto</h2><p class="side-card__copy">Un'assenza di card non viene sostituita da una coda inventata.</p></div></aside></section>`);
       return;
