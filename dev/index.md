@@ -9,6 +9,8 @@ archive and must not be treated as Cardine's current state.
 
 ## Start here
 
+- [Sources layout](logs/2026-10-02--cardine--sources-layout--log.md) — ordered library/reader composition, responsive actions, canonical provenance and PageIndex integration seam.
+
 - [Local latency and native provider drafts](logs/2026-10-02--cardine--local-latency-streaming--log.md) — owner-requested profiling, exact-byte read caches, route-specific work and actual provider SSE; offline turn reduced from 49.8 to 6.2 seconds, live rollout pending.
 - [Selected PDF lesson notes](logs/2026-10-02--cardine--selected-lesson-notes--log.md) — boundary editing and explicit lesson selection, independent generation and retry identity.
 

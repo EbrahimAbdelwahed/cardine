@@ -1,0 +1,89 @@
+# Sources layout — 2026-10-02
+
+Owner requested redesign of the disordered Sources screen. Dedicated managed
+checkout: `sources-layout/cardine`; branch: `codex/sources-layout`; fetched
+GitHub default base: `origin/main` at `1f49efd` (merged PR #14). The shared
+`codex/notes-generation` checkout and its dirty files were left untouched.
+
+The real screen compressed source titles and revision text letter by letter:
+four row columns competed inside the narrow library column. The new page has a
+shared header, a library/reader workspace, grouped source titles and format/count
+metadata, wrapping actions, a compact empty reader, and a separate notes section.
+Import, excerpts and revision records use native disclosures. Canonical revision
+and checksum remain available through each source's provenance drawer. Read-only
+canonical endpoints, escaping, server-owned authority, human decisions and API
+contracts are preserved. Selected source controls expose their state, mobile
+opening moves focus to the reader, and failed Markdown/text reads retry the same
+canonical document. PDF continues through the native authenticated viewer.
+
+`#material-jobs`, generation attributes and lesson form selectors remain the
+integration seam for the parallel PageIndex lesson-picker activity. This branch
+does not implement PageIndex inference, selection or request identity. The
+presentation binding announces preparation and brings an existing lesson editor
+into view when preparation succeeds.
+
+The owner instruction authorizes these two UI paths. The current CSS binding in
+`selected-lesson-notes-overlay.json` and JS binding in `local-latency-overlay.json`
+are refreshed to exact final bytes; all other bindings and historic
+recovery/source-study/journal overlays are preserved.
+Prior bindings remain in Git history. This records implementation custody, not
+review approval or installed-Harness parity.
+
+Visual inspection used the real dependency-free app served from a disposable
+synthetic repository with offline model fixtures. Direct inspection at desktop
+1280×720 and mobile 390×844 covered library, reader, import and provenance; the
+browser regression additionally measures 320, 390, 800, 1100 and 1440 px with
+both rail widths, long titles, open import, selected state, focus and failed-read
+retry. The 320 px native file-input overflow was reproduced and fixed.
+Screenshots live outside Git at `/private/tmp/cardine-sources-*.jpg`. No local
+reviewer was launched, following the owner's GitHub-only review instruction.
+No live provider calls, deployment, or merge. Verification and publication
+results follow below.
+
+Initial validation: 142 focused UI/material/browser tests pass, and the two
+additional responsive/empty/error regressions pass. Ruff, JS syntax, diff check,
+full mypy (663 files), working-tree ownership audit (322 rows), and isolated
+sdist/wheel build pass. An earlier full run produced 2,870 passes and four
+optional/live skips; its only failure was the new test's non-serializable CDP
+wait, now corrected. Final committed-tree full validation remains pending.
+
+Published draft PR: https://github.com/EbrahimAbdelwahed/cardine/pull/17.
+The first committed-tree full run passed: **2,872 tests, four optional/live
+skips**; final wheel/sdist and package verification passed.
+
+While validation ran, main advanced to `0990dbf` by merging PR #15. Integrated
+that main into the same task branch; retained both development-index entries.
+Browser changes merged without conflicting code hunks. Custody now follows the
+latest authoritative JS binding in the latency overlay; CSS remains bound in
+the selected-notes overlay. All inherited backend and streaming changes remain
+unchanged from main. Revalidation of this merged commit is pending.
+
+## Completion — 2026-10-03 CEST
+
+Merge integration checkpoint `b99216e`: **2,891 tests passed, four skips**;
+Ruff, full mypy (668 files), JS syntax, ownership audit (322 rows), isolated
+wheel/sdist build and package verification passed. GitHub CI started for that
+checkpoint, and the PR is mergeable.
+
+Final presentation wording uses “Fonte del corso · sola lettura” so the reader
+also describes approved derived notes accurately. The exact JS digest is
+refreshed in the current latency overlay. Final focused UI/material/browser
+checks and clean-archive audit validate this wording and its custody binding.
+The same PR is made ready after those checks; only automatic Codex GitHub review
+is allowed, with at most two rounds. CI and automatic review on the final head
+must be read from PR #17; no approval, merge or deployment is inferred here.
+No local uncommitted implementation remains at handoff.
+
+
+## Automatic review follow-up — round 1 of 2
+
+Codex reviewed `e224145` and found that the new source provenance action dropped
+API `source_role` and `trust_level` values (PR #17, discussion r4171076263).
+The drawer now carries and displays role and trust separately. The real-browser
+regression checks canonical role, checksum, and both trust 90 and trust 0 so a
+valid zero cannot be replaced by the missing-value label. The current JS
+custody digest follows this correction. Follow-up validation passes: 2,891
+tests, four optional/live skips; Ruff, full mypy (668 files), JS syntax, diff
+check, ownership audit (322 rows), isolated wheel/sdist build and package
+verification. The second, final automatic review and current-head CI are
+tracked in PR #17; no further review round, merge, or deployment is authorized.
