@@ -4,7 +4,7 @@
   "rows": [
     {
       "path": "src/cardine/demo/browser.js",
-      "sha256": "724bd3201000c948f6119b2e6a930df9a4f2fc30c29863a21d07ccf590ad400f"
+      "sha256": "c4326bcecb611d41d242b0ff90485d0a843cb416bfea74cacd80001c4a368a09"
     },
     {
       "path": "src/cardine/demo/ui_application.py",
