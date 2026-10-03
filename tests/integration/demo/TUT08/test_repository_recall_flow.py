@@ -690,3 +690,37 @@ def test_standard_browser_startup_configures_real_recall_and_restores_schedule(
     scheduled = application.get("/api/v1/recall/due")
     browser.main()
     assert applications[-1].get("/api/v1/recall/due") == scheduled
+
+
+def test_delayed_scoped_review_cannot_follow_another_tab_session_switch(tmp_path: Path) -> None:
+    root = tmp_path / "repository"
+    revision_id = _seed(root)
+    scheduler = _Scheduler()
+    app = RepositoryUiApplication(root, COURSE, SESSION, repository_opener=_opener(scheduler))
+    accepted = _accept(app, revision_id, "accept-scoped")
+    app.post(
+        f"/api/v1/recall/{revision_id}/enrollments",
+        _command("enroll-scoped", cast(int, accepted["high_water_sequence"])),
+    )
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+    delayed = _command("queued-review", sequence, {
+        "rating": "good", "review_scope": {"course_id": str(COURSE), "session_id": str(SESSION)},
+    })
+    app.post("/api/v1/workspace/select", _command("other-tab", sequence, {
+        "course_id": str(COURSE), "session_id": str(SECOND_SESSION),
+    }))
+    with LocalRepository.open(root) as repo:
+        before = tuple(repo.events.read(COURSE))
+    with pytest.raises(UiRequestError, match="scope changed") as raised:
+        app.post(f"/api/v1/recall/{revision_id}/reviews", delayed)
+    assert raised.value.status_code == 409
+    with LocalRepository.open(root) as repo:
+        assert tuple(repo.events.read(COURSE)) == before
+    app.post("/api/v1/workspace/select", _command("restore-tab", sequence, {
+        "course_id": str(COURSE), "session_id": str(SESSION),
+    }))
+    assert app.post(f"/api/v1/recall/{revision_id}/reviews", delayed)["status"] == "committed"
+    assert app.post(f"/api/v1/recall/{revision_id}/reviews", delayed)["status"] == "committed"
+    with LocalRepository.open(root) as repo:
+        reviews = [e for e in repo.events.read(COURSE) if e.event_type == "recall.review_recorded"]
+        assert len(reviews) == 1 and reviews[0].session_id == SESSION

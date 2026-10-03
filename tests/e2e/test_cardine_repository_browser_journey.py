@@ -328,7 +328,17 @@ class _DevTools:
     def wait_for(self, expression: str, *, timeout: float = 10) -> object:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            value = self.evaluate(expression)
+            try:
+                value = self.evaluate(expression)
+            except AssertionError as error:
+                if not any(message in str(error) for message in (
+                    "Inspected target navigated or closed",
+                    "Execution context was destroyed",
+                    "Cannot find context with specified id",
+                )):
+                    raise
+                time.sleep(0.05)
+                continue
             if value:
                 return value
             time.sleep(0.05)
@@ -336,7 +346,10 @@ class _DevTools:
 
     def navigate(self, url: str) -> None:
         self.call("Page.navigate", url=url)
-        self.wait_for("document.readyState === 'complete'")
+        self.wait_for(
+            "document.readyState === 'complete' && "
+            f"location.href === new URL({json.dumps(url)}).href"
+        )
 
 
 @contextmanager
@@ -361,7 +374,7 @@ def _real_browser(url: str) -> Iterator[_DevTools]:
                 "--disable-extensions",
                 "--disable-sync",
                 "--window-size=1440,1000",
-                url,
+                "about:blank",
             ],
             stdout=subprocess.DEVNULL,
             stderr=chrome_stderr,
@@ -413,8 +426,7 @@ def _real_browser(url: str) -> Iterator[_DevTools]:
                     "e=>__cardineErrors.push(String(e.reason)));"
                 ),
             )
-            browser.call("Page.reload", ignoreCache=True)
-            browser.wait_for("document.readyState === 'complete'")
+            browser.navigate(url)
             yield browser
             browser.close()
         finally:
