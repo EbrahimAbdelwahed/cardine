@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -17,6 +18,25 @@ from study_agent.domain import BlobId, BlobRef
 
 def object_path(root: Path, digest: str) -> Path:
     return root / "objects" / digest[:2] / digest[2:4] / digest
+
+
+def test_identical_canonical_reads_have_bounded_hash_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    content = b"canonical source bytes" * 32_000
+    store = FilesystemBlobStore(tmp_path / "blobs")
+    ref = store.put(content)
+    digest = hashlib.sha256
+    hashed_bytes: list[int] = []
+
+    def observed_digest(payload: bytes) -> Any:
+        hashed_bytes.append(len(payload))
+        return digest(payload)
+
+    monkeypatch.setattr(hashlib, "sha256", observed_digest)
+    for _ in range(16):
+        assert store.get(ref) == content
+    assert sum(hashed_bytes) <= len(content), "identical reads repeatedly hashed the whole source"
 
 
 def test_duplicate_put_creates_one_sharded_immutable_object(tmp_path: Path) -> None:
@@ -39,6 +59,7 @@ def test_missing_and_corrupt_objects_fail_explicitly(tmp_path: Path) -> None:
     store = FilesystemBlobStore(root)
     ref = store.put(b"canonical")
     target = object_path(root, ref.checksum_sha256)
+    assert store.get(ref) == b"canonical"  # Warm the parsed/verified read path.
 
     wrong_length = BlobRef(ref.id, ref.checksum_sha256, ref.byte_length + 1)
     with pytest.raises(BlobIntegrityError, match="length mismatch"):
@@ -49,6 +70,9 @@ def test_missing_and_corrupt_objects_fail_explicitly(tmp_path: Path) -> None:
 
     with pytest.raises(BlobIntegrityError, match="checksum mismatch"):
         store.get(ref)
+
+    target.write_bytes(b"canonical")
+    assert store.get(ref) == b"canonical"  # Failure must not poison recovery.
 
     target.unlink()
     with pytest.raises(BlobNotFoundError, match="does not exist"):

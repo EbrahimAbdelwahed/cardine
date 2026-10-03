@@ -23,6 +23,8 @@ function fixture() {
  // Drive the actual rating dispatch as well as the rendering and save path.
  const dispatcher=source.slice(source.indexOf('  function commandFromControl('),source.indexOf('\n  function ',source.indexOf('  function commandFromControl(')+10));
  vm.runInContext(dispatcher,context);
+ const createCourse=source.slice(source.indexOf('  async function createChatCourse('),source.indexOf('\n  function ',source.indexOf('  async function createChatCourse(')+10));
+ vm.runInContext(createCourse,context);
  const data={status:'ready',high_water_sequence:10,items};state.viewData=data;context.renderRipasso(data);
  const rate=(id,rating='good')=>{state.revealedReviews[id]=true;context.commandFromControl({dataset:{command:'review',revisionId:id,rating}});};
  const receipt=(seq,remaining)=>({status:'committed',high_water_sequence:seq,result:{status:remaining.length?'ready':'empty',high_water_sequence:seq,items:remaining}});
@@ -77,6 +79,8 @@ function fixture() {
  n.state.route='ripasso';n.context.renderRipasso(n.state.viewData);assert.match(n.html,/Question 2/);
  const scope=fixture();scope.rate('r1');assert.equal(scope.context.canLeaveReviewScope(),false);
  scope.state.bootstrap.session.id='different';scope.rate('r2');assert.equal(scope.state.review.pending.length,1);
+ await scope.context.createChatCourse({elements:{namedItem:()=>{throw Error('must guard before reading the form');}}});
+ assert.equal(scope.calls.length,1);
  assert.equal(scope.context.canLeaveReviewScope(scope.state.review.scope),true);
  assert.equal(scope.context.canLeaveReviewScope(JSON.stringify(['course','unrelated'])),false);
  console.log('Immediate transition, serialized ratings, duplicate suppression, conflict/lost-response retries, explicit rejection discard, stale reads, navigation and scope guards: passed');

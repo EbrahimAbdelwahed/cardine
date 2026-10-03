@@ -94,8 +94,8 @@ def seed_application(root: Path) -> _MeasuredApplication:
     return application
 
 def measure(delay_ms: int, read_delay_ms: int, baseline: bytes, mobile: bool) -> dict[str, object]:
-    with TemporaryDirectory(prefix="cardine-recall-measure-", dir="/private/tmp") as directory:
-        application = seed_application(Path(directory) / "repository")
+    with TemporaryDirectory(prefix="cardine-recall-measure-") as directory:
+        application = seed_application(Path(directory).resolve() / "repository")
         application.delay_ms = delay_ms
         application.read_delay_ms = read_delay_ms
         server = create_server("127.0.0.1", 0, ui_application=application)

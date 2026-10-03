@@ -4,7 +4,9 @@ Date: 2026-10-03 (Europe/Rome). Owner-requested flashcard review latency repair.
 
 Checkout: `/Users/ebrahimabdelwahed/.codex/worktrees/flashcard-review-latency/cardine`.
 Branch: `codex/flashcard-review-latency`. Independent base: `origin/main` at
-`1f49efd82022238344a3a6b69620204bb020ff84`. No dependency on unmerged tutor,
+`1f49efd82022238344a3a6b69620204bb020ff84`. Subsequently integrated merged
+main at `0990dbf80a4bc600c5b4e5ff9503569682a55929` (PR #15) to resolve the
+development-index insertion conflict, preserving both entries. No dependency on unmerged tutor,
 source-layout, or lesson-selector work.
 
 ## Diagnosis and implementation
@@ -95,6 +97,33 @@ build and wheel/sdist verification passed. Initial unrelated notes-journey
 timeouts did not recur on the full reruns; no source or lesson-selector
 product/test files were changed.
 
-Delivery is one scoped PR against main. Only automatic Codex GitHub review,
+Published [PR #19](https://github.com/EbrahimAbdelwahed/cardine/pull/19) against
+main; initial implementation commit `9654053c53e6a0759d942cc8f15f2d8feea44546`.
+Only automatic Codex GitHub review,
 maximum two rounds. CI/review must be assessed for the submitted head; no merge
 or deployment is authorized by this task.
+
+
+## Automatic review, round 1
+
+Codex reviewed `9654053` and identified two actionable findings: guard the
+chat-based course-creation path before changing review scope, and use the
+platform temporary directory in the measurement runner. Both are corrected
+with a regression that refuses even to read the creation form while a review
+is pending, and a resolved temporary path that works across platform aliases.
+The next request is the second and final allowed review round.
+
+
+## Integration verification
+
+The current-main custody gate binds exact product bytes as well as copied-core
+bytes. The owner's requested review UI/save changes update only the two
+`browser.js`/`ui_application.py` digests in the existing latency overlay; all
+copied-core bindings remain unchanged and mutation rejection stays enforced.
+The base still has an unrelated notes browser timeout in its Python 3.12 CI
+run; local integration also encountered intermittent CDP/startup timeouts.
+These are tracked separately from the recall regressions.
+
+After integrating main, the desktop fixture measurement (10 samples) was
+10.9 ms median / 15.5 ms maximum; the original table above records the earlier
+isolated-base measurements rather than asserting production latency.

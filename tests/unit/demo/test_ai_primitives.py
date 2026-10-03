@@ -355,14 +355,9 @@ def test_command_palette_mapping_and_keyboard_markers_remain_explicit() -> None:
         assert marker in source
 
 
-def test_staged_reveal_and_sidebar_search_remain_motion_and_keyboard_safe() -> None:
+def test_sidebar_search_remains_keyboard_safe() -> None:
     source = PRIMITIVES.read_text(encoding="utf-8")
 
-    assert 'data-ai-reveal="true"' in source
-    assert 'matchMedia("(prefers-reduced-motion: reduce)")' in source
-    assert "clearTimeout(timer)" in source
-    assert 'copy.classList.add("is-revealing")' in source
-    assert 'announcement.setAttribute("aria-atomic", "true")' in source
     assert 'callbacks.populateComposer === false' in source
     assert 'event.isComposing || event.keyCode === 229' in source
     assert '<button class="ai-sidebar-search"' in source

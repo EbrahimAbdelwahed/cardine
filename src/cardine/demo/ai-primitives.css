@@ -241,8 +241,6 @@
   .ai-answer__markdown pre { max-width: 100%; padding: var(--space-3); overflow-x: auto; background: var(--paper-deep); border-radius: var(--radius-sm); }
   .ai-answer__markdown pre code { padding: 0; background: transparent; border-radius: 0; }
   .ai-answer__markdown hr { height: 1px; background: var(--line); border: 0; }
-  /* A fade, not a wipe: text should not be revealed by a moving edge. */
-  .ai-answer__markdown.is-revealing { animation: ai-reveal var(--duration-slow) var(--ease-out) both; }
   .ai-answer__source-disclosure { width: 100%; max-width: 100%; justify-self: start; }
   .ai-answer__source-disclosure > summary {
     display: inline-flex;
@@ -491,12 +489,6 @@
   .ai-answer--chat .ai-follow-up:hover { background: var(--surface-hover); }
   .ai-answer--chat .ai-follow-up > svg { color: var(--muted); flex-shrink: 0; }
   .ai-answer--chat .ai-answer__footer, .ai-answer--chat .ai-answer__follow-ups { animation: ai-activity-append var(--duration-slow) var(--ease-out); }
-  .ai-answer--chat[data-ai-stream] .ai-answer__footer, .ai-answer--chat[data-ai-stream] .ai-answer__follow-ups { visibility: hidden; animation: none; }
-  .ai-stream-word { display: none; }
-  .ai-stream-word.is-visible { display: inline; animation: ai-stream-word var(--duration-slow) var(--ease-out) both; }
-  .ai-answer--chat[data-ai-stream] .ai-answer__markdown > :not(:has(.is-visible)),
-  .ai-answer--chat[data-ai-stream] .ai-answer__markdown li:not(:has(.is-visible)) { display: none; }
-  @keyframes ai-stream-word { from { opacity: 0; filter: blur(2px); } to { opacity: 1; filter: blur(0); } }
 
   /* ---- Chat panel ------------------------------------------------------- */
   .ai-chat-panel { gap: 0; padding: 0; overflow: hidden; }
@@ -728,4 +720,3 @@
 }
 
 @keyframes ai-bar { 0%, 100% { opacity: .4; transform: scaleY(.65); } 50% { opacity: 1; transform: scaleY(1); } }
-@keyframes ai-reveal { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }

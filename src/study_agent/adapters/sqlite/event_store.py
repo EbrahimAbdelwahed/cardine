@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import stat
+from collections import OrderedDict
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import closing, contextmanager
 from pathlib import Path
@@ -180,6 +181,12 @@ class SQLiteEventStore:
         self._read_only = read_only
         self._connection_identity_guard = connection_identity_guard
         self._registry = registry
+        # Cache only parsed immutable values. Every lookup still reads the
+        # current canonical bytes through the guarded SQLite connection.
+        self._projection_reads: OrderedDict[CourseId, tuple[bytes, Projection]] = OrderedDict()
+        self._event_reads: OrderedDict[
+            tuple[CourseId, int], tuple[tuple[bytes, ...], tuple[DomainEvent, ...]]
+        ] = OrderedDict()
         if not read_only:
             with closing(self._connect()) as connection:
                 connection.executescript(_SCHEMA)
@@ -252,14 +259,24 @@ class SQLiteEventStore:
                 f"projection for course {course_id} is at {sequence}, "
                 f"stream is at {stream_sequence}"
             )
-        raw_state = canonical_json_object(bytes(row[1]))
+        state_bytes = bytes(row[1])
+        cached = self._projection_reads.get(course_id)
+        if cached is not None and cached[0] == state_bytes and cached[1].sequence == sequence:
+            self._projection_reads.move_to_end(course_id)
+            return cached[1]
+        raw_state = canonical_json_object(state_bytes)
         state = self._registry.migrate_projection(raw_state)
         if state != raw_state and not self._read_only:
             connection.execute(
                 "UPDATE projections SET state = ? WHERE course_id = ?",
                 (canonical_json_bytes(state), str(course_id)),
             )
-        return Projection(course_id, sequence, state)
+        projection = Projection(course_id, sequence, state)
+        self._projection_reads[course_id] = (state_bytes, projection)
+        self._projection_reads.move_to_end(course_id)
+        if len(self._projection_reads) > 8:
+            self._projection_reads.popitem(last=False)
+        return projection
 
     def append(
         self, course_id: CourseId, expected_sequence: int, events: Sequence[DomainEvent]
@@ -334,7 +351,18 @@ class SQLiteEventStore:
                 """,
                 (str(course_id), after_sequence),
             ).fetchall()
-        return tuple(event_from_bytes(bytes(row[0])) for row in rows)
+        envelopes = tuple(bytes(row[0]) for row in rows)
+        key = (course_id, after_sequence)
+        cached = self._event_reads.get(key)
+        if cached is not None and cached[0] == envelopes:
+            self._event_reads.move_to_end(key)
+            return cached[1]
+        events = tuple(event_from_bytes(envelope) for envelope in envelopes)
+        self._event_reads[key] = (envelopes, events)
+        self._event_reads.move_to_end(key)
+        if len(self._event_reads) > 8:
+            self._event_reads.popitem(last=False)
+        return events
 
     def list_course_ids(self) -> tuple[CourseId, ...]:
         """List canonical stream owners without introducing mutable catalog state."""

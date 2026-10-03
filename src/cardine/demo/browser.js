@@ -145,8 +145,6 @@
     turnActivities: Object.create(null),
     turnCommands: Object.create(null),
     answerFeedback: Object.create(null),
-    revealedAnswers: new Set(),
-    streamAnswerId: "",
     authProbeUnavailable: false,
     indexingPollToken: 0,
     activityPollToken: 0,
@@ -683,6 +681,7 @@
   }
 
   async function createChatCourse(form) {
+    if (!canLeaveReviewScope()) return;
     const field = (name) => {
       const item = form.elements.namedItem(name);
       return item instanceof HTMLInputElement || item instanceof HTMLSelectElement
@@ -1388,7 +1387,6 @@
     conversationScroller = null;
     patch(root, html);
     bindDynamicControls();
-    let streamScroll = null;
     destroyPrimitiveEnhancements = typeof CardineAI.enhance === "function"
       ? CardineAI.enhance(root, {
         populateComposer: false,
@@ -1398,17 +1396,6 @@
         onFeedback: (feedback, control) => {
           const id = control.closest("[data-message-id]")?.dataset.messageId;
           if (id) state.answerFeedback[id] = feedback;
-        },
-        onStreamProgress: (_article, phase) => {
-          if (phase === "before") streamScroll = captureScroll();
-          else {
-            if (streamScroll) restoreScroll(streamScroll, false);
-            conversationScroller?.refresh();
-          }
-        },
-        onStreamStart: (article) => {
-          const id = article.closest("[data-message-id]")?.dataset.messageId;
-          if (id) state.revealedAnswers.add(id);
         },
       })
       : () => {};
@@ -1841,7 +1828,6 @@
     const answer = aiAnswer({
       answer: text(content, "Messaggio senza testo visualizzabile."), citations, followUps: suggested,
       status: first(item, ["status", "state"], "ready"), chat: true,
-      stream: Boolean(id && id === state.streamAnswerId && !state.revealedAnswers.has(id)),
       canRetry: Boolean(state.turnCommands[id]), feedback: state.answerFeedback[id],
     });
     const toolsView = tools.length ? `<div class="thread-message__activity">${aiToolChips({ records: tools, state: text(first(item, ["activity_state"], "settled"), "settled") })}</div>` : "";
@@ -2318,11 +2304,6 @@
       const settledRecords = array(receipt.activity_records);
       const presentationId = text(receipt.presentation_id, "");
       if (isTutorTurn && presentationId) {
-        if (commandNavigationVersion === state.navigationVersion && state.route === "sessione") {
-          state.streamAnswerId = presentationId;
-        } else {
-          state.revealedAnswers.add(presentationId);
-        }
         if (endpoint === "/api/v1/session/turns") state.turnCommands[presentationId] = command;
       }
       if (isTutorTurn && presentationId && settledRecords.length) {
@@ -2436,7 +2417,7 @@
     const pendingCopy = flashcards
       ? "Sto generando e verificando le proposte flashcard…"
       : "Sto preparando una risposta basata sulle fonti del corso…";
-    const pending = `<article class="thread-message thread-message--assistant thread-message--pending" data-optimistic-turn><p class="thread-message__role">tutor</p><div class="thread-message__activity" data-turn-activity aria-live="polite">${aiToolChips({state: "running", records: [], progress_message: pendingCopy})}</div></article>`;
+    const pending = `<article class="thread-message thread-message--assistant thread-message--pending" data-optimistic-turn><p class="thread-message__role">tutor</p><div class="thread-message__activity" data-turn-activity aria-live="polite">${aiToolChips({state: "running", records: [], progress_message: pendingCopy})}</div><div data-turn-draft hidden><p class="field-note">Risposta in generazione · da verificare</p><p class="thread-message__text" data-turn-draft-text></p></div></article>`;
     const thread = $(".session-thread", root);
     if (thread) {
       const empty = $(".empty-state", thread);
@@ -2467,9 +2448,12 @@
     const navigationVersion = state.navigationVersion;
     let awaitingRetryActivity = state.pendingTurn?.awaitingRetryActivity === true;
     let failures = 0;
-    for (let attempt = 0; attempt < 240 && token === state.activityPollToken && navigationVersion === state.navigationVersion && state.pendingTurn?.requestId === requestId && failures < 3; attempt += 1) {
+    while (token === state.activityPollToken && navigationVersion === state.navigationVersion && state.pendingTurn?.requestId === requestId && failures < 3) {
       try {
-        const payload = await fetchJson(`/api/v1/turns/${encodeURIComponent(requestId)}/activity`);
+        const [payload, output] = await Promise.all([
+          fetchJson(`/api/v1/turns/${encodeURIComponent(requestId)}/activity`),
+          fetchJson(`/api/v1/turns/${encodeURIComponent(requestId)}/output`),
+        ]);
         if (token !== state.activityPollToken || navigationVersion !== state.navigationVersion || state.pendingTurn?.requestId !== requestId) return;
         if (awaitingRetryActivity && payload.state !== "running") {
           await new Promise((resolve) => window.setTimeout(resolve, 600));
@@ -2486,7 +2470,16 @@
           if (progressNode && progressMessage) progressNode.textContent = progressMessage;
           restoreScroll(scroll, false);
         }
-        await new Promise((resolve) => window.setTimeout(resolve, 600));
+        const draft = $("[data-turn-draft]", root);
+        const draftText = $("[data-turn-draft-text]", root);
+        if (draft && draftText) {
+          const scroll = captureScroll();
+          const content = output.state === "generating" ? text(output.text, "") : "";
+          draftText.textContent = content;
+          draft.hidden = !content;
+          restoreScroll(scroll, false);
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 100));
       } catch (_) {
         failures += 1;
         await new Promise((resolve) => window.setTimeout(resolve, 2000));
