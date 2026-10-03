@@ -12,14 +12,15 @@ function fixture() {
  const state = {bootstrap:{course:{id:'course'},session:{id:'session'}},route:'ripasso',viewData:null,highWaterSequence:10,revealedReviews:{r1:true}, review:{snapshot:null,pending:[],saving:false,error:null,scope:''}};
  const calls=[];let html='',renders=0,identities=0,refreshes=0;
  const context={SCHEMA_VERSION:1,state,root:{},Set,Object,Number,Boolean,JSON,encodeURIComponent,
-  ROUTES:{ripasso:{endpoint:'/api/v1/recall/due'}},requestId:()=>`key-${++identities}`,
+  ROUTES:{ripasso:{endpoint:'/api/v1/recall/due',heading:'Ripasso'},oggi:{endpoint:'/api/v1/bootstrap'}},requestId:()=>`key-${++identities}`,
   $:()=>({focus:()=>{}}),setView:(_route,value)=>{html=value;renders++;},
+  renderUnavailable:()=>{html='generic unavailable';},renderLoading:()=>{},renderCourse:()=>{},updateCounts:()=>{},updateContinuation:()=>{},renderOggi:()=>{state.route='oggi';},statusLabel:s=>s,
   emptyState:(title,detail)=>`<h2>${title}</h2><p>${detail}</p>`,
   setStatus:()=>{},showAlert:()=>{},refreshBootstrapCounts:()=>{refreshes++;return Promise.resolve();},
   updateSequence:(n)=>{state.highWaterSequence=n;},
   fetchJson:(path,options={})=>new Promise((resolve,reject)=>calls.push({path,command:options.body&&JSON.parse(options.body),resolve,reject})),
  };
- vm.createContext(context);vm.runInContext(helpers+payload+review,context);
+ vm.createContext(context);vm.runInContext(helpers+payload+review+extract('  async function loadRoute(', '\n  function '),context);
  // Drive the actual rating dispatch as well as the rendering and save path.
  const dispatcher=source.slice(source.indexOf('  function commandFromControl('),source.indexOf('\n  function ',source.indexOf('  function commandFromControl(')+10));
  vm.runInContext(dispatcher,context);
@@ -80,6 +81,19 @@ function fixture() {
   f.calls[4].resolve(f.receipt(24,f.items.slice(1))); await tick();
   assert.equal(f.state.review.pending.length,0);
  }
+ const gated=fixture();gated.rate('r1');const originalGated=gated.calls[0].command;
+ gated.calls[0].reject(Object.assign(new Error('scheduler unavailable'),{status:503}));await tick();
+ await gated.context.loadRoute('oggi',{features:{recall:false},course:{id:'course'},session:{id:'session'}});
+ await gated.context.loadRoute('ripasso');
+ assert.match(gated.html,/Ripasso non disponibile/);
+ assert.match(gated.html,/data-review-pending/);assert.match(gated.html,/data-review-retry/);
+ assert.equal(gated.calls.length,1);
+ gated.state.route='ripasso';gated.context.recoverReviews();
+ gated.calls[1].resolve({status:'ready',high_water_sequence:20,items:gated.items});await tick();
+ assert.equal(gated.calls[2].command.request_id,originalGated.request_id);
+ gated.calls[2].resolve(gated.receipt(22,gated.items.slice(1)));await tick();
+ assert.equal(gated.state.review.pending.length,0);
+ await gated.context.loadRoute('ripasso');assert.equal(gated.html,'generic unavailable');
  const rejected=fixture();rejected.rate('r1');rejected.calls[0].reject(Object.assign(new Error(),{status:409}));await tick();
  rejected.context.recoverReviews(true);rejected.calls[1].resolve({status:'ready',high_water_sequence:20,items:rejected.items.slice(1)});await tick();
  assert.equal(rejected.calls.length,2);assert.equal(rejected.state.review.pending.length,0);assert.match(rejected.html,/Question 2/);

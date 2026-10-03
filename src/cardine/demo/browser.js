@@ -1484,7 +1484,11 @@
     const featureByRoute = { proposte: "artifacts", verifiche: "assessments", percorso: "student_state", ripasso: "recall" };
     if (state.bootstrap && object(state.bootstrap.features)[featureByRoute[route]] === false) {
       setStatus(text(state.bootstrap?.shell_status, "ready"), `${ROUTES[route].heading} · sezione non attiva`);
-      renderUnavailable(route);
+      if (route === "ripasso" && state.review.pending.length) {
+        renderRipasso({status: "unavailable", high_water_sequence: state.highWaterSequence, items: []});
+      } else {
+        renderUnavailable(route);
+      }
       return;
     }
     renderLoading(route);
