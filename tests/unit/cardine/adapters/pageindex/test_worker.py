@@ -31,7 +31,7 @@ def test_worker_rejects_oversized_input_before_process() -> None:
 
 
 def test_worker_rejects_heading_bomb_before_upstream_tree_build() -> None:
-    markdown = "\n".join(f"# Heading {index}" for index in range(257))
+    markdown = "\n".join(f"# Heading {index}" for index in range(1025))
 
     with pytest.raises(PageIndexWorkerError, match="pageindex_limit"):
         PageIndexWorker().run(markdown)

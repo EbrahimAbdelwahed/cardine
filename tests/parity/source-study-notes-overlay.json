@@ -12,7 +12,7 @@
     },
     {
       "path": "src/cardine/cli/repository.py",
-      "sha256": "d4b2073a71a4f8654495ad2ab8d72a0eb44b6a51266554b586bba6241b34ad26"
+      "sha256": "172deb624f8a3ca5dfeb172fc6c603ad5f0544fd10832e7fe92fa9a62a178b0c"
     },
     {
       "path": "src/cardine/demo/browser.css",
@@ -20,7 +20,7 @@
     },
     {
       "path": "src/cardine/demo/browser.js",
-      "sha256": "83db1ace3b6419bc34f8a69a4d63fd115d9e1603d686f918b3a460800ddbb78a"
+      "sha256": "5961f81375db83775bbf33c711a5801f780b86d3e9ae39d7dfbd7d8f2764158d"
     },
     {
       "path": "src/cardine/demo/browser.py",
@@ -28,7 +28,7 @@
     },
     {
       "path": "src/cardine/demo/ui_application.py",
-      "sha256": "d7874a0364e42220e36cd07d82ebac47f75b5385e3d9a666a1a8c266ff3d09cf"
+      "sha256": "0cb3c9d4114156bf18daef2d6b95636ae1c5a39c79c69622ecdea6d91a785da8"
     },
     {
       "path": "src/cardine/materials/generation_contracts.py",

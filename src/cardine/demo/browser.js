@@ -166,6 +166,10 @@
     return fallback;
   }
 
+  function activeModelLabel() {
+    return text(state.bootstrap?.model?.model, "Tutor");
+  }
+
   function first(value, keys, fallback = "") {
     if (!value || typeof value !== "object") return fallback;
     for (const key of keys) {
@@ -981,7 +985,7 @@
     const mode = MODE_LABELS[text(first(bootstrap, ["mode"], "local_repository"))] || "repository locale";
     const consent = object(bootstrap.provider_consent);
     const granted = consent.granted === true;
-    patch($("#trust-copy"), `<p>Corso <strong>${esc(text(course.title, "non dichiarato"))}</strong>, sessione <code>${esc(trustSessionId)}</code>. Modalità: <strong>${esc(mode)}</strong>. Il browser riceve dal servizio locale solo i dati consentiti e non apre SQLite, file di corso, runtime del provider o credenziali.</p><section aria-labelledby="provider-consent-heading"><h3 id="provider-consent-heading">Uso di GPT-5.6 Luna</h3><p>Consenso: <strong>${granted ? "concesso" : "non concesso"}</strong>. Nessuna richiesta al provider parte senza consenso.</p><button class="button button--quiet" type="button" data-provider-consent="${granted ? "revoke" : "grant"}">${granted ? "Revoca consenso" : "Concedi consenso"}</button><span class="settings-card__status" data-provider-consent-status role="status"></span></section><ul><li>Le mutazioni usano un identificativo di richiesta e la sequenza osservata (attuale: ${esc(state.highWaterSequence || "—")}).</li><li>Il Piano mostra solo fatti attribuiti e non calcola un punteggio.</li></ul>`);
+    patch($("#trust-copy"), `<p>Corso <strong>${esc(text(course.title, "non dichiarato"))}</strong>, sessione <code>${esc(trustSessionId)}</code>. Modalità: <strong>${esc(mode)}</strong>. Il browser riceve dal servizio locale solo i dati consentiti e non apre SQLite, file di corso, runtime del provider o credenziali.</p><section aria-labelledby="provider-consent-heading"><h3 id="provider-consent-heading">Uso di ${esc(activeModelLabel())}</h3><p>Consenso: <strong>${granted ? "concesso" : "non concesso"}</strong>. Nessuna richiesta al provider parte senza consenso.</p><button class="button button--quiet" type="button" data-provider-consent="${granted ? "revoke" : "grant"}">${granted ? "Revoca consenso" : "Concedi consenso"}</button><span class="settings-card__status" data-provider-consent-status role="status"></span></section><ul><li>Le mutazioni usano un identificativo di richiesta e la sequenza osservata (attuale: ${esc(state.highWaterSequence || "—")}).</li><li>Il Piano mostra solo fatti attribuiti e non calcola un punteggio.</li></ul>`);
     const runtime = $("#runtime-label");
     if (runtime) runtime.textContent = `ambiente locale · ${mode}`;
   }
@@ -1639,7 +1643,7 @@
     const modeClass = id === "hero-entry" ? "composer--hero" : "composer--session";
     // The model chip carries no chevron: it opens an information sheet, not
     // a picker, and an affordance has to describe what actually happens.
-    return `<form id="${esc(id)}" class="composer ${modeClass}" data-entry-form ${attributes}><label class="visually-hidden" for="${esc(textareaId)}">${esc(label)}</label><div class="composer__surface"><textarea id="${esc(textareaId)}" name="learner_entry" maxlength="${MAX_ENTRY_CHARS}" rows="1" required placeholder="${esc(placeholder)}" aria-describedby="${esc(textareaId)}-hint"></textarea><div class="composer__toolbar"><button class="composer__add" type="button" data-route="fonti" aria-label="Apri fonti" data-tooltip="Apri fonti"><span class="icon icon--plus" aria-hidden="true"></span></button><span class="composer__spacer"></span><span class="char-counter" aria-live="polite" hidden></span><button class="composer__mode" type="button" data-open-tutor-info aria-label="Stato del tutor e provenienza">GPT-5.6 Luna</button><span class="visually-hidden composer__hint" id="${esc(textareaId)}-hint">Invio invia · Maiusc + Invio va a capo</span><button class="composer__send ${buttonClass}" type="submit" aria-label="Invia messaggio" data-tooltip="Invia messaggio" disabled><span class="icon icon--arrow-up" aria-hidden="true"></span></button></div></div></form>`;
+    return `<form id="${esc(id)}" class="composer ${modeClass}" data-entry-form ${attributes}><label class="visually-hidden" for="${esc(textareaId)}">${esc(label)}</label><div class="composer__surface"><textarea id="${esc(textareaId)}" name="learner_entry" maxlength="${MAX_ENTRY_CHARS}" rows="1" required placeholder="${esc(placeholder)}" aria-describedby="${esc(textareaId)}-hint"></textarea><div class="composer__toolbar"><button class="composer__add" type="button" data-route="fonti" aria-label="Apri fonti" data-tooltip="Apri fonti"><span class="icon icon--plus" aria-hidden="true"></span></button><span class="composer__spacer"></span><span class="char-counter" aria-live="polite" hidden></span><button class="composer__mode" type="button" data-open-tutor-info aria-label="Stato del tutor e provenienza">${esc(activeModelLabel())}</button><span class="visually-hidden composer__hint" id="${esc(textareaId)}-hint">Invio invia · Maiusc + Invio va a capo</span><button class="composer__send ${buttonClass}" type="submit" aria-label="Invia messaggio" data-tooltip="Invia messaggio" disabled><span class="icon icon--arrow-up" aria-hidden="true"></span></button></div></div></form>`;
   }
 
   function courseCreationIntentTitle(value) {
