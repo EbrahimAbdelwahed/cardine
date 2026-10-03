@@ -278,8 +278,8 @@ def test_absent_and_wrong_digest_structure_cannot_admit_a_lesson(
             )
         corrupt = replace(projection, content_sha256="0" * 64, candidates=(), document_index=None)
         monkeypatch.setattr(repo, "pageindex_status", lambda _: (corrupt,))
-        with pytest.raises(ValueError, match="non corrisponde"):
-            product.lessons(str(result.source.source_id), str(result.source.revision_id))
+        prepared = product.lessons(str(result.source.source_id), str(result.source.revision_id))
+        assert prepared["structure_status"] == "unavailable" and prepared["structure"] == ()
         assert tuple(repo.events.read(COURSE)) == before
 
 
@@ -406,3 +406,80 @@ def test_structure_reservation_recovers_after_crash_before_job_registration(
         assert len(jobs) == len(product.jobs()) == 1
         assert tuple(repo.events.read(COURSE)) == before
         assert not json.loads(product.registry.load(product.key)).get("reservations")
+
+
+@pytest.mark.parametrize("pdf", [False, True])
+@pytest.mark.parametrize("corruption", ["digest", "bounds"])
+def test_corrupt_navigation_preserves_only_canonical_generation_options(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pdf: bool, corruption: str,
+) -> None:
+    root = tmp_path / "repo"
+    initialize_local_repository(root, _config())
+    with LocalRepository.open(
+        root, model_adapters=_registry(), environment={"OPENAI_API_KEY": "fixture"}
+    ) as repo:
+        result = prepare_structure(repo, pdf=pdf)
+        product = MaterialProduct(repo, _service_context())
+        selected = first_lesson(product, result)
+        source, revision = str(result.source.source_id), str(result.source.revision_id)
+        projection = next(p for p in repo.pageindex_status(COURSE) if p.source_id == source)
+        if corruption == "digest":
+            corrupted = replace(
+                projection, content_sha256="0" * 64, candidates=(), document_index=None
+            )
+        else:
+            corrupted = replace(
+                projection, candidates=(replace(
+                    projection.candidates[0], end_offset=len(CONTENT) + 1,
+                ),)
+            )
+        monkeypatch.setattr(repo, "pageindex_status", lambda _: (corrupted,))
+        before = tuple(repo.events.read(COURSE))
+        prepared = product.lessons(source, revision)
+        assert prepared["structure_status"] == "unavailable" and prepared["structure"] == ()
+        with pytest.raises(ValueError):
+            product.start_structure_lesson(source, revision, selected, "invalid-navigation")
+        assert tuple(repo.events.read(COURSE)) == before
+        if pdf:
+            assert prepared["page_count"] == 1 and prepared["lessons"]
+            jobs = product.start_lessons(source, revision, [
+                {"title": "Whole page", "start_page": 1, "end_page": 1}
+            ], "manual-fallback")
+            assert len(jobs) == 1
+        else:
+            assert prepared["page_count"] is None
+            assert product.start(source, revision, "whole-fallback")["source_id"] == source
+
+
+def test_failed_job_start_retains_admitted_request_selection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import json
+
+    root = tmp_path / "repo"
+    initialize_local_repository(root, _config())
+    with LocalRepository.open(
+        root, model_adapters=_registry(), environment={"OPENAI_API_KEY": "fixture"}
+    ) as repo:
+        result = prepare_structure(repo)
+        product = MaterialProduct(repo, _service_context())
+        source, revision = str(result.source.source_id), str(result.source.revision_id)
+        lesson = first_lesson(product, result)
+        other: dict[str, object] = dict(next(
+            p for p in cast(tuple[JsonObject, ...], product.lessons(source, revision)["structure"])
+            if p["title"] == "Seconda lezione"
+        ))
+        with monkeypatch.context() as patch:
+            def failed_start(*args: object, **kwargs: object) -> JsonObject:
+                raise RuntimeError("model configuration unavailable")
+            patch.setattr(product, "start", failed_start)
+            with pytest.raises(RuntimeError):
+                product.start_structure_lesson(source, revision, lesson, "failed-after-admission")
+        before = tuple(repo.events.read(COURSE))
+        assert json.loads(product.registry.load(product.key))["reservations"]
+        with pytest.raises(ValueError, match="riutilizzata"):
+            product.start_structure_lesson(source, revision, other, "failed-after-admission")
+        assert tuple(repo.events.read(COURSE)) == before
+        jobs = product.start_structure_lesson(source, revision, lesson, "failed-after-admission")
+        assert len(jobs) == len(product.jobs()) == 1
+        assert tuple(repo.events.read(COURSE)) == before
