@@ -73,3 +73,17 @@ The same PR is made ready after those checks; only automatic Codex GitHub review
 is allowed, with at most two rounds. CI and automatic review on the final head
 must be read from PR #17; no approval, merge or deployment is inferred here.
 No local uncommitted implementation remains at handoff.
+
+
+## Automatic review follow-up — round 1 of 2
+
+Codex reviewed `e224145` and found that the new source provenance action dropped
+API `source_role` and `trust_level` values (PR #17, discussion r4171076263).
+The drawer now carries and displays role and trust separately. The real-browser
+regression checks canonical role, checksum, and both trust 90 and trust 0 so a
+valid zero cannot be replaced by the missing-value label. The current JS
+custody digest follows this correction. Follow-up validation passes: 2,891
+tests, four optional/live skips; Ruff, full mypy (668 files), JS syntax, diff
+check, ownership audit (322 rows), isolated wheel/sdist build and package
+verification. The second, final automatic review and current-head CI are
+tracked in PR #17; no further review round, merge, or deployment is authorized.

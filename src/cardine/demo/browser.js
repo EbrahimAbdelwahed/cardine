@@ -1901,7 +1901,12 @@
     // Opaque identifiers belong in the provenance sheet, not as the loudest
     // thing in the row: 64 monospaced characters wrapping mid-token used to
     // outrank the title of the source itself.
-    const provenance = esc(JSON.stringify({ title, revision, checksum, type, excerpt: first(source, ["excerpt", "quote"], "") }));
+    const provenance = esc(JSON.stringify({
+      title, revision, checksum, type,
+      source_role: first(source, ["source_role", "role"], "non dichiarato"),
+      trust_level: first(source, ["trust_level", "trust"], "non dichiarato"),
+      excerpt: first(source, ["excerpt", "quote"], ""),
+    }));
     let sourceAction = viewerReference
       ? `<button class="button button--quiet" type="button" aria-pressed="false" data-source-viewer-mode="page" data-source-viewer='${esc(JSON.stringify({ ...viewerReference, title }))}'>Apri fonte</button>`
       : `<button class="button button--quiet" type="button" data-provenance='${provenance}'>Provenienza</button>`;
@@ -2932,7 +2937,13 @@
     try { source = object(JSON.parse(serialized)); } catch (_) { source = {}; }
     const title = first(source, ["title", "name"], "Fonte");
     const quote = first(source, ["excerpt", "quote"], "");
-    const fields = [["revisione", first(source, ["revision", "revision_id", "version"], "non dichiarata")], ["checksum", first(source, ["checksum_sha256", "checksum", "sha256"], "non dichiarato")], ["locatore", first(source, ["locator", "location"], "non dichiarato")], ["ruolo", first(source, ["role", "trust"], "non dichiarato")]];
+    const fields = [
+      ["revisione", first(source, ["revision", "revision_id", "version"], "non dichiarata")],
+      ["checksum", first(source, ["checksum_sha256", "checksum", "sha256"], "non dichiarato")],
+      ["locatore", first(source, ["locator", "location"], "non dichiarato")],
+      ["ruolo", first(source, ["source_role", "role"], "non dichiarato")],
+      ["fiducia", first(source, ["trust_level", "trust"], "non dichiarato")],
+    ];
     const quoteText = text(quote, "");
     const multilineOrCode = quoteText.includes("\n") || ["code", "source", "snippet"].includes(text(first(source, ["kind", "type", "role"], "")).toLowerCase());
     const excerpt = quoteText

@@ -827,7 +827,7 @@ def test_sources_remain_readable_and_keep_canonical_actions_across_viewports(
             content=b"# Cardiovascular anatomy\n\nThe aortic valve has three cusps.",
             source_id=SourceId("long-title-source"),
             title=title,
-            trust_level=90,
+            trust_level=0,
             source_role="primary",
             context=ExecutionContext(
                 PrincipalKind.SERVICE,
@@ -893,12 +893,21 @@ def test_sources_remain_readable_and_keep_canonical_actions_across_viewports(
             "document.querySelector('#materials-viewer-title').textContent"
         ) == title
         assert browser.evaluate("document.querySelectorAll('.source-row.is-selected').length") == 1
-        browser.evaluate("document.querySelectorAll('.source-row [data-provenance]')[1].click()")
-        browser.wait_for("document.querySelector('#provenance-drawer').open")
-        assert browser.evaluate(
-            "document.querySelector('#drawer-content').textContent.includes('checksum')"
-        ) is True
-        _press(browser, "Escape", 27)
+        for index, expected_trust in ((0, "90"), (1, "0")):
+            browser.evaluate(
+                f"document.querySelectorAll('.source-row [data-provenance]')[{index}].click()"
+            )
+            browser.wait_for("document.querySelector('#provenance-drawer').open")
+            fields = json.loads(cast(str, browser.evaluate(
+                "JSON.stringify(Object.fromEntries("
+                "[...document.querySelectorAll('#drawer-content .provenance-meta__row')]"
+                ".map(row => [row.querySelector('.provenance-meta__key').textContent,"
+                "row.querySelector('.provenance-meta__value').textContent])))"
+            )))
+            assert fields["ruolo"] == "primary"
+            assert fields["fiducia"] == expected_trust
+            assert len(fields["checksum"]) == 64
+            _press(browser, "Escape", 27)
 
         browser.call("Network.setBlockedURLs", urls=["*/revisions/*/content"])
         browser.evaluate("document.querySelectorAll('.source-row [data-source-viewer]')[1].click()")
