@@ -155,6 +155,7 @@ def test_structure_error_loading_refresh_and_retry_identity(tmp_path: Path) -> N
 def test_picker_survives_same_scope_background_bootstrap_refreshes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    import json
     from threading import Event
 
     root = tmp_path / "repo"
@@ -164,6 +165,7 @@ def test_picker_survives_same_scope_background_bootstrap_refreshes(
     app = RepositoryUiApplication(
         root, COURSE, SESSION, model_adapters=_registry(), environment={"OPENAI_API_KEY": "fixture"}
     )
+    initial_title = cast(JsonObject, app.get("/api/v1/bootstrap")["course"])["title"]
     original_get, original_post = app.get, app.post
     release_index = [Event(), Event()]
     release_prepare = Event()
@@ -196,6 +198,10 @@ def test_picker_survives_same_scope_background_bootstrap_refreshes(
     try:
         with _serve(application=app) as url, _real_browser(url) as browser:
             browser.wait_for("Boolean(document.querySelector('[data-route=fonti]'))")
+            browser.wait_for(
+                "document.querySelector('#rail-course').textContent.includes("
+                + json.dumps(initial_title) + ")"
+            )
             counts["enabled"] = 1
             browser.navigate(url + "/?scope-refresh-regression")
             browser.wait_for(

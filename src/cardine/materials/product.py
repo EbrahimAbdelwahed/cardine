@@ -602,9 +602,7 @@ class MaterialProduct:
             or not 0 <= item.start_offset < item.end_offset <= len(record.text)
             for item in projection.candidates
         ):
-            raise ValueError(
-                "La struttura non corrisponde alla fonte corrente; reindicizza la fonte."
-            )
+            return {"structure_status": "unavailable", "structure": ()}
         return {
             "structure_status": status,
             "structure": tuple(
@@ -679,6 +677,8 @@ class MaterialProduct:
         ):
             raise ValueError("Richiesta riutilizzata con una selezione diversa.")
         self._reserve_batch(batch_id, fingerprint, (job_id,), owner_id)
+        admitted_effects = False
+        registered = False
         try:
             sequence = self.repo.events.projection(self.course).sequence
             self.source(source_id, revision_id)
@@ -696,16 +696,18 @@ class MaterialProduct:
                 ),
                 expected_sequence=sequence,
             )
-            return (
-                self.start(
-                    str(admitted.source.source_id),
-                    str(admitted.source.revision_id),
-                    request_id,
-                    batch=(batch_id, fingerprint, 0),
-                ),
+            admitted_effects = True
+            result = self.start(
+                str(admitted.source.source_id),
+                str(admitted.source.revision_id),
+                request_id,
+                batch=(batch_id, fingerprint, 0),
             )
+            registered = True
+            return (result,)
         finally:
-            self._release_batch(batch_id, owner_id)
+            if not admitted_effects or registered:
+                self._release_batch(batch_id, owner_id)
 
     def start_lessons(
         self, source_id: str, revision_id: str, lessons: list[dict[str, object]], request_id: str

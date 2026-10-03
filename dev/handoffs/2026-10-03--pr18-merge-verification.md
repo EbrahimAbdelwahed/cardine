@@ -17,3 +17,12 @@ bootstrap objects. A real-browser test refreshes bootstrap during preparation
 and again before submission; both preparation and submission remain usable.
 The inherited undefined-route guard in count refresh is removed, matching PR 19.
 65 material integration tests and 31 structure/browser tests pass; static checks pass.
+
+Invalid READY derived projections report unavailable structure while canonical
+PDF page/manual and non-PDF whole-source options remain available; invalid
+structural selections cannot append events. A failed job start after extraction
+retains its request fingerprint/reservation for exact recovery, while successful
+registration or failure before admission cleans up its reservation. Five added
+regressions pass within the 35-test structure suite. The browser regression now
+waits for initial bootstrap before its controlled refresh; shared CDP navigation
+synchronization matches the already-reviewed PR 19 harness repair.
