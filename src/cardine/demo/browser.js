@@ -939,7 +939,7 @@
       if (["queued", "indexing"].includes(text(indexing.status))) {
         pollIndexing(null).catch(() => {});
       }
-      if (route !== "percorso") updateSequence(first(payload, ["high_water_sequence", "sequence"], state.highWaterSequence));
+      updateSequence(first(payload, ["high_water_sequence", "sequence"], state.highWaterSequence));
       renderCourse(payload);
       updateCounts(payload);
       updateContinuation(payload);
@@ -2468,11 +2468,15 @@
     control.addEventListener(event, handler);
   }
 
+  function notesScope() {
+    return JSON.stringify([object(state.bootstrap?.course).id, object(state.bootstrap?.session).id]);
+  }
+
   async function prepareNotes(control) {
     const pane = $("#material-jobs");
     if (!pane || control.disabled) return;
     control.disabled = true;
-    const scope = state.bootstrap;
+    const scope = notesScope();
     const pin = JSON.parse(control.dataset.generateNotes);
     // This marker keeps job polling from replacing loading, selection or errors.
     patch(pane, `<section class="notes-job" data-notes-lessons aria-busy="true"><h2>Scegli una lezione</h2><p role="status">Carico la struttura della fonte…</p></section>`);
@@ -2481,10 +2485,10 @@
       const prepared = await fetchJson("/api/v1/material-generations/prepare", {
         method: "POST", body: JSON.stringify(commandPayload(pin)),
       });
-      if (scope !== state.bootstrap || !control.isConnected || pane.firstElementChild !== loading) return;
+      if (scope !== notesScope() || !control.isConnected || pane.firstElementChild !== loading) return;
       showNoteStructureSelection(pane, pin, prepared, scope);
     } catch (error) {
-      if (scope !== state.bootstrap || pane.firstElementChild !== loading) return;
+      if (scope !== notesScope() || pane.firstElementChild !== loading) return;
       patch(pane, `<section class="notes-job" data-notes-lessons><h2>Struttura non disponibile</h2><p role="status">${esc(error.message)}</p><button class="button" type="button" data-notes-reload>Riprova</button></section>`);
       $('[data-notes-reload]', pane).addEventListener("click", () => prepareNotes(control));
     } finally { control.disabled = false; }
@@ -2529,13 +2533,13 @@
     if (pdf) $('[data-notes-boundaries]', form).addEventListener("click", () => showNoteBoundaryEditor(pane, pin, prepared, scope));
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      if (scope !== state.bootstrap || !form.isConnected || !select.value || submit.disabled) return;
+      if (scope !== notesScope() || !form.isConnected || !select.value || submit.disabled) return;
       submission ||= commandPayload({...pin, ...(select.value === "whole" ? {} : {structure_lesson: structure[Number(select.value)]})});
       const controls = $$('select, button', form);
       controls.forEach((item) => { item.disabled = true; });
       try {
         await fetchJson("/api/v1/material-generations", {method: "POST", body: JSON.stringify(submission)});
-        if (scope !== state.bootstrap || !form.isConnected) return;
+        if (scope !== notesScope() || !form.isConnected) return;
         form.remove();
         await refreshMaterialJobs();
       } catch (error) {
@@ -2599,7 +2603,7 @@
     $('[data-notes-edit]', form).addEventListener("click", editBoundaries);
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      if (scope !== state.bootstrap || !form.isConnected) return;
+      if (scope !== notesScope() || !form.isConnected) return;
       const selected_lessons = selectedLessons();
       if (!selected_lessons.length) return;
       submission ||= commandPayload({...pin, selected_lessons});
@@ -2607,7 +2611,7 @@
       controls.forEach((control) => { control.disabled = true; });
       try {
         await fetchJson("/api/v1/material-generations", {method: "POST", body: JSON.stringify(submission)});
-        if (scope !== state.bootstrap || !form.isConnected) return;
+        if (scope !== notesScope() || !form.isConnected) return;
         form.remove();
         await refreshMaterialJobs();
       } catch (error) { $("[data-notes-error]", form).textContent = error.message; }
@@ -2618,10 +2622,10 @@
   async function refreshMaterialJobs() {
     clearTimeout(materialPoll);
     if (state.route !== "fonti" || !$("#material-jobs") || $("[data-notes-lessons]")) return;
-    const scope = state.bootstrap;
+    const scope = notesScope();
     const pane = $("#material-jobs");
     const payload = await fetchJson("/api/v1/material-generations");
-    if (scope !== state.bootstrap || pane !== $("#material-jobs")) return;
+    if (scope !== notesScope() || pane !== $("#material-jobs")) return;
     if (state.route !== "fonti" || !$("#material-jobs") || $("[data-notes-lessons]")) return;
     const labels = {queued: "In coda", transcribing: "Trascrizione audio", boundaries: "Segmentazione",
       complete_segment: "Rielaborazione", complete_merge: "Unione dei segmenti", study: "Versione studio",
@@ -2643,12 +2647,12 @@
       } catch (error) { $(".notes-markdown", details).textContent = error.message; }
     }));
     $$('[data-note-decision]').forEach((button) => bindNoteControl(button, "click", async () => {
-      const decisionScope = state.bootstrap;
+      const decisionScope = notesScope();
       button.disabled = true;
       try {
         // Refresh the canonical sequence immediately before the HUMAN command.
         const job = await fetchJson(`/api/v1/material-generations/${encodeURIComponent(button.dataset.noteJob)}`);
-        if (!button.isConnected || decisionScope !== state.bootstrap) return;
+        if (!button.isConnected || decisionScope !== notesScope()) return;
         updateSequence(job.high_water_sequence);
         const receipt = await fetchJson(`/api/v1/material-generations/${encodeURIComponent(button.dataset.noteJob)}/decisions`, {
           method: "POST", body: JSON.stringify(commandPayload({revision_id: button.dataset.noteRevision, decision: button.dataset.noteDecision})),

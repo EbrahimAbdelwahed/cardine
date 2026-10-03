@@ -4,7 +4,7 @@
   "rows": [
     {
       "path": "src/cardine/demo/browser.js",
-      "sha256": "9fb58ec7258e91071c15185ecf0aa2fb58573e17a3d4607ac0349c870ddfe7d6"
+      "sha256": "d8ed39ad0cbd32f6ed72f3aed083862e3df85ece0b2c023cbba5715f8ae3af7a"
     },
     {
       "path": "src/cardine/demo/ui_application.py",
@@ -12,7 +12,7 @@
     },
     {
       "path": "src/cardine/materials/product.py",
-      "sha256": "b10e42d210aeaeb3cdb1454f4285b872977b06286326fe107c90da8c469994f2"
+      "sha256": "aa91bbe663c9b46b07bfc93b43d25ab5be43c5c9983078b4d615d2e3ab98d9e8"
     }
   ]
 }

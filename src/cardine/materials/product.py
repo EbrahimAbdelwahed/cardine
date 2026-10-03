@@ -231,7 +231,13 @@ class MaterialProduct:
                 ):
                     raise ValueError("Richiesta lezioni riutilizzata con confini diversi.")
                 current_owner = current.get("owner_id")
-                if current_owner != owner_id:
+                # Structural retries have a stable request owner. Exact identity
+                # checks above also permit recovery of old random-owner records.
+                structural_retry = (
+                    reservation_id.startswith("structure-lesson:")
+                    and owner_id == f"request:{reservation_id}:{fingerprint}"
+                )
+                if current_owner != owner_id and not structural_retry:
                     raise ValueError("Questa richiesta di lezioni è già in lavorazione; riprova.")
                 reservations[reservation_id] = {
                     **current,
@@ -621,6 +627,17 @@ class MaterialProduct:
     ) -> tuple[JsonObject, ...]:
         """HUMAN-selected exact span becomes an extracted transcript with canonical lineage."""
         record = self.source(source_id, revision_id)
+        extraction = record.source.extraction_provenance
+        if extraction is not None:
+            ancestry = json.loads(self.repo.blobs.get(BlobRef(
+                BlobId("sha256:" + extraction.manifest_sha256),
+                extraction.manifest_sha256,
+                extraction.manifest_byte_length,
+            )))
+            if ancestry.get("parent_source_id") is not None:
+                raise ValueError(
+                    "Scegli la fonte originale; un estratto non può essere estratto di nuovo."
+                )
         if (
             set(lesson) != {"title", "start_offset", "end_offset", "content_sha256"}
             or type(lesson["start_offset"]) is not int
@@ -656,7 +673,7 @@ class MaterialProduct:
             + sha256(f"{self.course}\0{self.session}\0{request_id}".encode()).hexdigest()
         )
         job_id = self._material_job_id(str(self.course), str(self.session), request_id)
-        owner_id = uuid4().hex
+        owner_id = f"request:{batch_id}:{fingerprint}"
         if any(
             item["job_id"] == job_id and item.get("batch_id") != batch_id for item in self.jobs()
         ):

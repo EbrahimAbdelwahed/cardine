@@ -150,3 +150,83 @@ def test_structure_error_loading_refresh_and_retry_identity(tmp_path: Path) -> N
         )
         browser.evaluate("document.querySelector('[data-notes-cancel]').click()")
         browser.wait_for("!document.querySelector('[data-notes-lessons]')")
+
+
+def test_picker_survives_same_scope_background_bootstrap_refreshes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from threading import Event
+
+    root = tmp_path / "repo"
+    initialize_local_repository(root, _config())
+    with LocalRepository.open(root) as repo:
+        prepare_structure(repo)
+    app = RepositoryUiApplication(
+        root, COURSE, SESSION, model_adapters=_registry(), environment={"OPENAI_API_KEY": "fixture"}
+    )
+    original_get, original_post = app.get, app.post
+    release_index = [Event(), Event()]
+    release_prepare = Event()
+    counts = {"bootstrap": 0, "index": 0, "enabled": 0}
+
+    def get(path: str) -> JsonObject:
+        if path == "/api/v1/indexing/status" and counts["enabled"]:
+            index = counts["index"]
+            counts["index"] += 1
+            assert release_index[index].wait(10)
+        payload = original_get(path)
+        if path == "/api/v1/bootstrap" and counts["enabled"]:
+            counts["bootstrap"] += 1
+            return {
+                **payload,
+                "course": {**cast(JsonObject, payload["course"]),
+                           "title": f"Refresh {counts['bootstrap']}"},
+                "indexing": {"status": "queued" if counts["bootstrap"] < 3 else "ready"},
+            }
+        return payload
+
+    def post(path: str, command: dict[str, object]) -> JsonObject:
+        response = original_post(path, command)
+        if path == "/api/v1/material-generations/prepare":
+            assert release_prepare.wait(10)
+        return response
+
+    monkeypatch.setattr(app, "get", get)
+    monkeypatch.setattr(app, "post", post)
+    try:
+        with _serve(application=app) as url, _real_browser(url) as browser:
+            browser.wait_for("Boolean(document.querySelector('[data-route=fonti]'))")
+            counts["enabled"] = 1
+            browser.navigate(url + "/?scope-refresh-regression")
+            browser.wait_for(
+                "document.querySelector('#rail-course').textContent.includes('Refresh 1')"
+            )
+            browser.evaluate("document.querySelector('[data-route=fonti]').click()")
+            browser.wait_for("document.querySelectorAll('[data-generate-notes]').length === 2")
+            browser.evaluate(
+                "Array.from(document.querySelectorAll('[data-generate-notes]')).find("
+                "b=>JSON.parse(b.dataset.generateNotes).source_id==='structured-lessons').click()"
+            )
+            browser.wait_for("Boolean(document.querySelector('[data-notes-lessons][aria-busy=true]'))")
+            release_index[0].set()
+            browser.wait_for(
+                "document.querySelector('#rail-course').textContent.includes('Refresh 2')"
+            )
+            release_prepare.set()
+            browser.wait_for("Boolean(document.querySelector('#notes-structure-lesson'))")
+            release_index[1].set()
+            browser.wait_for(
+                "document.querySelector('#rail-course').textContent.includes('Refresh 3')"
+            )
+            browser.evaluate(
+                "const select=document.querySelector('#notes-structure-lesson');"
+                "select.value=Array.from(select.options).find("
+                "o=>o.textContent.endsWith('Prima lezione')).value;"
+                "select.dispatchEvent(new Event('change',{bubbles:true}));"
+                "document.querySelector('[data-notes-lessons] [type=submit]').click();"
+            )
+            browser.wait_for("document.querySelectorAll('[data-note-decision=accept]').length===2")
+    finally:
+        release_prepare.set()
+        for event in release_index:
+            event.set()
