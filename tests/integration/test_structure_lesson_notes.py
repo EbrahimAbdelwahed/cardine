@@ -318,3 +318,91 @@ def test_lesson_request_identity_rejects_mode_changes(
             submit(second_mode)
         assert tuple(repo.events.read(COURSE)) == before
         assert product.jobs() == jobs
+
+
+@pytest.mark.parametrize("retire_root", [False, True])
+def test_parented_extraction_cannot_be_sliced_again(
+    tmp_path: Path, retire_root: bool,
+) -> None:
+    root = tmp_path / "repo"
+    initialize_local_repository(root, _config())
+    with LocalRepository.open(
+        root, model_adapters=_registry(), environment={"OPENAI_API_KEY": "fixture"}
+    ) as repo:
+        result = prepare_structure(repo, pdf=True)
+        product = MaterialProduct(repo, _service_context())
+        jobs = product.start_structure_lesson(
+            str(result.source.source_id), str(result.source.revision_id),
+            first_lesson(product, result), "parent-slice",
+        )
+        repo.reconcile_pageindex(COURSE, budget=8)
+        child = jobs[0]
+        choices = product.lessons(str(child["source_id"]), str(child["revision_id"]))
+        selected: dict[str, object] = dict(
+            cast(tuple[JsonObject, ...], choices["structure"])[0]
+        )
+        if retire_root:
+            repo.source_lifetime_service.retire(
+                replace(_service_context(), session_id=None, principal_kind=PrincipalKind.HUMAN),
+                result.source.source_id, "retire-root",
+                expected_sequence=repo.events.projection(COURSE).sequence,
+            )
+        before = tuple(repo.events.read(COURSE))
+        with pytest.raises(ValueError, match="fonte originale"):
+            product.start_structure_lesson(
+                str(child["source_id"]), str(child["revision_id"]), selected, "nested-slice",
+            )
+        assert tuple(repo.events.read(COURSE)) == before
+        assert len(product.jobs()) == 1
+
+
+@pytest.mark.parametrize("legacy_owner", [False, True])
+def test_structure_reservation_recovers_after_crash_before_job_registration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, legacy_owner: bool,
+) -> None:
+    import json
+
+    from study_agent.state import canonical_json_bytes
+
+    root = tmp_path / "repo"
+    initialize_local_repository(root, _config())
+    with LocalRepository.open(
+        root, model_adapters=_registry(), environment={"OPENAI_API_KEY": "fixture"}
+    ) as repo:
+        result = prepare_structure(repo)
+        product = MaterialProduct(repo, _service_context())
+        lesson = first_lesson(product, result)
+        with monkeypatch.context() as patch:
+            def crash(*args: object, **kwargs: object) -> JsonObject:
+                raise SystemExit("simulated process crash")
+            patch.setattr(product, "start", crash)
+            patch.setattr(product, "_release_batch", lambda *args: None)
+            with pytest.raises(SystemExit):
+                product.start_structure_lesson(
+                    str(result.source.source_id), str(result.source.revision_id), lesson, "crash",
+                )
+        raw = product.registry.load(product.key)
+        registry = json.loads(raw)
+        assert registry["reservations"] and not product.jobs()
+        if legacy_owner:
+            for reservation in registry["reservations"].values():
+                reservation["owner_id"] = "old-random-owner"
+            assert product.registry.compare_and_set(
+                product.key, raw, canonical_json_bytes(registry)
+            )
+        before = tuple(repo.events.read(COURSE))
+    with LocalRepository.open(
+        root, model_adapters=_registry(), environment={"OPENAI_API_KEY": "fixture"}
+    ) as repo:
+        product = MaterialProduct(repo, _service_context())
+        changed = {**lesson, "title": "Dettaglio"}
+        with pytest.raises(ValueError):
+            product.start_structure_lesson(
+                str(result.source.source_id), str(result.source.revision_id), changed, "crash",
+            )
+        jobs = product.start_structure_lesson(
+            str(result.source.source_id), str(result.source.revision_id), lesson, "crash",
+        )
+        assert len(jobs) == len(product.jobs()) == 1
+        assert tuple(repo.events.read(COURSE)) == before
+        assert not json.loads(product.registry.load(product.key)).get("reservations")
