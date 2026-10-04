@@ -322,6 +322,23 @@ def test_selected_payload_context_is_bounded_and_excludes_future_or_private_data
     assert "recent result" in rendered
 
 
+
+def test_tool_observations_include_omission_markers_inside_the_byte_budget() -> None:
+    result = {f"field_{i:02}": "x" * 500 for i in range(15)}
+    ctx = replace(
+        context(capabilities=(capability(schema=TOPIC),)),
+        tutor_snapshot={"agent_observations": tuple({
+            "tool_name": "conversation.read", "status": "succeeded", "result": result,
+        } for _ in range(4))},
+    )
+    judge, model = Judge("start_capability"), Model({"topic": "valves"})
+    decide(router(judge, model), ctx)
+    payload = json.loads(model.requests[0].messages[1].content)
+    observations = payload["tool_observations"]
+    assert len(json.dumps({"tool_observations": observations}, separators=(",", ":"))
+               .encode()) <= 8_000
+    assert any(item.get("result_omitted") for item in observations)
+
 def test_capability_options_only_advertised_and_empty_inputs_skip_model() -> None:
     judge, model = Judge("start_capability", "b.capability"), Model()
     result = decide(

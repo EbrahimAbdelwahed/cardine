@@ -338,6 +338,7 @@ def flashcard_topic_query(text: str) -> str:
         }
     )
     text = re.sub(r"\b\d+\s+(?=flash\s*cards?|schede|carte)", "", text, flags=re.I)
+    text = re.sub(r"\b(?:a|an|the|one|some)\s+(?=flash\s*cards?\b)", "", text, flags=re.I)
     return " ".join(
         word for word in re.findall(r"[^\W_]+", text.casefold()) if word not in stopwords
     )[:4_000]

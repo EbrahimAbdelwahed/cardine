@@ -25,6 +25,27 @@ progress is a separate continuation, not part of this reliability patch.
 Validation: full offline suite 2,907 passed, four optional skips; Ruff and strict
 mypy (670 files) passed; isolated wheel/sdist build and 322-row custody audit
 passed. Additional context-boundary coverage was checked after the full suite. Exact product bytes use the new
-six-path context overlay, preserving historical core approval.
+eight-path context overlay, preserving historical core approval.
 Automatic GitHub review and current-head CI are required delivery evidence;
 this request does not authorize merging or deployment.
+
+
+First automatic review on `d2de6b9`: two actionable P2 findings (English deictic
+article and truncated display locator). Both were reproduced offline and repaired
+in this same branch. Full explanation evidence now recovers through its verified
+completion handoff and is freshly re-resolved against current canonical chunks.
+The regression revealed a second 2,000-character locator ceiling in the planner
+and prepared scope. Both share a bounded 16,000-character limit; topic presentation
+titles are clipped to their existing limit without modifying source metadata or
+canonical evidence. The two copied-core paths are explicitly bound in the new
+continuation overlay, leaving historical manifests intact.
+
+Tool observation byte limits now include omission markers and JSON overhead.
+Italian/English and short/long-title requests complete at the real application
+seam. First round fixes are followed by only one final automatic review; no third
+round is authorized. PR #21 separately publishes note progress on PR #18.
+
+Post-review full suite: 2,913 passed, four optional/live skips; Ruff, strict mypy,
+isolated wheel/sdist build and 322-row custody audit passed. Completion recovery
+also matches the canonical presentation context/action fingerprints and permits
+its fresh settlement sequence without widening the original execution authority.

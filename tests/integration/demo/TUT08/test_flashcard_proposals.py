@@ -9,6 +9,8 @@ from pathlib import Path
 from types import MethodType
 from typing import TYPE_CHECKING, Protocol, cast
 
+import pytest
+
 if TYPE_CHECKING:
     from tests.integration.demo.TUT08.test_repository_backed_chat import _command, _repository
 else:
@@ -248,11 +250,20 @@ def test_topic_flashcard_does_not_plan_the_entire_large_course(tmp_path: Path) -
     assert "aortic valve has three cusps" in prompt
 
 
-def test_flashcard_about_this_uses_latest_explanation_sources(tmp_path: Path) -> None:
+@pytest.mark.parametrize("request_text,long_heading", (
+    ("genera una flashcard su questo", False),
+    ("Create a flashcard about this", False),
+    ("genera una flashcard su questo", True),
+    ("Create a flashcard about this", True),
+))
+def test_flashcard_about_this_uses_latest_explanation_sources(
+    tmp_path: Path, request_text: str, long_heading: bool,
+) -> None:
+    heading = "Aortic valve" + (" long section" * 200 if long_heading else "")
     root, adapters, model = _repository(tmp_path, source_content=(
-        b"# Old topic\nOldmarker facts about the old topic.\n"
-        b"# Aortic valve\nThe aortic valve has three cusps.\n"
-    ))
+        "# Old topic\nOldmarker facts about the old topic.\n"
+        f"# {heading}\nThe aortic valve has three cusps.\n"
+    ).encode())
     calls = _install_hybrid_flashcard_model(model)
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
     sequence = cast(int, app.get("/api/v1/session")["high_water_sequence"])
@@ -263,7 +274,7 @@ def test_flashcard_about_this_uses_latest_explanation_sources(tmp_path: Path) ->
         assert receipt["status"] == "completed"
         sequence = cast(int, receipt["high_water_sequence"])
     receipt = app.post("/api/v1/session/turns", _command(
-        "flashcard-latest-explanation", sequence, "genera una flashcard su questo"
+        "flashcard-latest-explanation", sequence, request_text
     ))
     assert receipt["status"] == "completed", receipt["status"]
     assert len(calls) == 1

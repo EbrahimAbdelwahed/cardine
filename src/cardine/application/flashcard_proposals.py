@@ -840,7 +840,7 @@ def _lesson_unit(
             topics.append(
                 LessonTopic(
                     topic_key,
-                    f"{record.source.title} — {section}",
+                    _topic_title(f"{record.source.title} — {section}"),
                     1,
                     None,
                     position,
@@ -864,6 +864,11 @@ def _lesson_unit(
         tuple(topics),
         tuple(paragraphs),
     )
+
+
+def _topic_title(value: str) -> str:
+    """Bound presentation metadata without truncating canonical evidence."""
+    return value if len(value) <= 1_000 else value[:999] + "…"
 
 
 def _candidate_ceiling(value: JsonValue) -> int:

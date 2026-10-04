@@ -34,6 +34,8 @@ TUTOR_CONTEXT_PATHS = {
     "src/cardine/cli/repository.py",
     "src/cardine/hosts/flashcard_routing.py",
     "src/cardine/hosts/routing.py",
+    "src/study_agent/flashcards/planning.py",
+    "src/study_agent/flashcards/scope.py",
 }
 LATENCY_PATHS = {
     "src/cardine/adapters/model/openai_luna.py",
@@ -762,6 +764,7 @@ def _validate_cardine_transition(
                     and source_path not in RECOVERY_AST_VARIANCE
                     and source_path not in STUDENT_JOURNAL_PATHS
                     and source_path not in LATENCY_PATHS
+                    and source_path not in TUTOR_CONTEXT_PATHS
                 ):
                     baseline_source = _baseline_source(source_path)
                     if _normalized_ast(current_source, source_path) != _normalized_ast(

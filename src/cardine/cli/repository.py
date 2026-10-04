@@ -48,10 +48,13 @@ from cardine.hosts import (
     InvokeToolDecision,
     SourceGroundedTutorDecisionPort,
     TutorCapabilityCompletionReference,
+    TutorCompletionHandoff,
+    TutorCompletionHandoffState,
     TutorHostContextAssembler,
     TutorHostLimits,
     TutorHostRunner,
     TutorHostRunStatus,
+    completion_handoff_key,
     decision_fingerprint,
 )
 from cardine.hosts.flashcard_routing import (
@@ -178,6 +181,7 @@ from study_agent.domain import (
     SourceCommitment,
     SourceId,
     SourceKind,
+    TutorPresentationRecord,
 )
 from study_agent.domain._validation import JsonObject, JsonValue
 from study_agent.domain.features import FeatureMode
@@ -615,6 +619,9 @@ class _RepositoryTutorGateway:
                 None,
             )
             refs = () if presentation is None else presentation.source_refs
+            canonical_ids = (
+                None if presentation is None else self._explanation_chunk_ids(presentation)
+            )
             from study_agent.retrieval import canonical_source_locator
 
             chunks = frozenset(
@@ -625,12 +632,18 @@ class _RepositoryTutorGateway:
                 and record.source.trust_level >= minimum
                 and (not roles or record.source.source_role in roles)
                 for chunk in record.chunks
-                if any(
-                    ref["source_id"] == str(chunk.source_id)
-                    and ref["revision_id"] == str(chunk.revision_id)
-                    and ref["locator"]
-                    == canonical_source_locator(record, chunk, chunk.start_offset, chunk.end_offset)
-                    for ref in refs
+                if (
+                    chunk.chunk_id in canonical_ids
+                    if canonical_ids is not None
+                    else any(
+                        ref["source_id"] == str(chunk.source_id)
+                        and ref["revision_id"] == str(chunk.revision_id)
+                        and ref["locator"]
+                        == canonical_source_locator(
+                            record, chunk, chunk.start_offset, chunk.end_offset
+                        )
+                        for ref in refs
+                    )
                 )
             )
             if not chunks:
@@ -663,6 +676,61 @@ class _RepositoryTutorGateway:
         if not chunks:
             raise ValueError("flashcard topic has no current canonical evidence")
         return self._flashcards.for_chunks(chunks)
+
+    def _explanation_chunk_ids(
+        self, presentation: TutorPresentationRecord
+    ) -> frozenset[ChunkId] | None:
+        """Recover exact source identity, never the presentation's display locator."""
+        repository = self._repository
+        try:
+            payload = repository.tutor_completion_handoffs.load(completion_handoff_key(
+                self._course_id, self._session_id, presentation.host_turn_id,
+            ))
+        except KeyError:
+            # Historical presentations without a handoff may still use their
+            # exact, untruncated locator through the conservative legacy match.
+            return None
+        handoff = TutorCompletionHandoff.from_bytes(payload)
+        reference, context = handoff.completion_reference, handoff.execution_context
+        if (
+            handoff.state is not TutorCompletionHandoffState.COMPLETED
+            or handoff.course_id != self._course_id
+            or handoff.session_id != self._session_id
+            or handoff.host_turn_id != presentation.host_turn_id
+            or handoff.observed_host_context_sequence > presentation.observed_host_context_sequence
+            or handoff.context_fingerprint != presentation.host_context_fingerprint
+            or handoff.retry_receipt.action_fingerprint != presentation.decision_fingerprint
+            or reference is None
+            or context is None
+        ):
+            raise ValueError("recent explanation completion identity is unavailable")
+        output = self._gateway({"query": "completion recovery"}, context).recover_completed(
+            reference.capability_identity,
+            reference.manifest_fingerprint,
+            reference.run_id,
+            reference.output_fingerprint,
+            reference.retry_receipt_fingerprint,
+            context,
+        )
+        if output is None or output.get("status") != "answered":
+            raise ValueError("recent explanation completion cannot be recovered")
+        chunks: set[ChunkId] = set()
+        for segment in cast(tuple[JsonObject, ...], output["segments"]):
+            for raw in cast(tuple[JsonObject, ...], segment["citations"]):
+                citation = Citation(
+                    SourceId(cast(str, raw["source_id"])),
+                    RevisionId(cast(str, raw["revision_id"])),
+                    ChunkId(cast(str, raw["chunk_id"])),
+                    cast(int, raw["start_offset"]),
+                    cast(int, raw["end_offset"]),
+                    cast(str, raw["locator"]),
+                    cast(str, raw["quoted_snippet"]),
+                )
+                resolved = repository.for_course(self._course_id).content.resolve(citation)
+                if resolved.citation != citation:
+                    raise ValueError("recent explanation citation is no longer canonical")
+                chunks.add(citation.chunk_id)
+        return frozenset(chunks)
 
     def _ensure_retrieval_index(self) -> None:
         repository = self._repository

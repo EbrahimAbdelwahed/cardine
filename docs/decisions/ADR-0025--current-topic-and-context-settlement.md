@@ -34,7 +34,20 @@ Native SSE closes HTTP resources and its diagnostic span before exposing DONE.
 Normal iterator closure after DONE no longer creates a false provider failure;
 cancellation and actual stream errors retain their existing failure behavior.
 
-Exact product bytes are bound by `tests/parity/tutor-context-overlay.json`, after
+Full source identity for recent explanations is recovered through the original
+completed handoff, checking manifest, authority, retry identity and output hash.
+Canonical citations are re-resolved before selecting current chunks; display
+locators never authorize selection. Historical presentations without a handoff
+retain only the conservative exact untruncated locator match. English articles
+immediately before flashcards are request wording, without stripping topic terms.
+
+Canonical locator bounds in both copied planner and prepared scope expand from
+2,000 to 16,000 characters. Both use one shared bound, retain full exact locators
+and reject larger values. Derived topic titles stay within 1,000 characters;
+canonical metadata, ChunkIds, offsets, citations and hashes are unchanged. This
+is a bounded copied-core repair, not an installed-package migration.
+
+Exact continuation bytes are bound by `tests/parity/tutor-context-overlay.json`, after
 the earlier implementation overlays. Historical copied-core approval remains
 unchanged. Offline regression tests demonstrate current-topic correctness and
 bounded planning, not provider latency or model quality.

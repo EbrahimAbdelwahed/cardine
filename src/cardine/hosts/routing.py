@@ -100,7 +100,6 @@ def _conversation_context(context: TutorHostContext) -> JsonObject:
         from .runner import _bounded_observation_value
 
         items: list[JsonObject] = []
-        budget = 8_000
         for item in reversed(observations[-4:]):
             if not isinstance(item, Mapping):
                 continue
@@ -114,18 +113,15 @@ def _conversation_context(context: TutorHostContext) -> JsonObject:
                     }
                 ),
             )
-            size = len(_json(projected).encode())
-            if size > budget:
-                items.append(
-                    {
+            if len(_json({"tool_observations": (*items, projected)}).encode()) > 8_000:
+                projected = {
                         "tool_name": projected.get("tool_name"),
                         "status": projected.get("status"),
                         "result_omitted": True,
-                    }
-                )
+                }
+            if len(_json({"tool_observations": (*items, projected)}).encode()) > 8_000:
                 continue
             items.append(projected)
-            budget -= size
         if items:
             result["tool_observations"] = tuple(reversed(items))
     materials = snapshot.get("materials")
