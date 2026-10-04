@@ -832,28 +832,56 @@ STRUCTURE_NOTES_PATHS = {
 }
 
 
-def _load_study_notes_overlay(*, selected: bool = False, structure: bool = False) -> dict[str, str]:
+NOTES_PROGRESS_PATHS = {
+    "src/cardine/demo/browser.js",
+    "src/cardine/demo/browser.css",
+    "src/cardine/materials/product.py",
+}
+
+# Historical approval manifests remain immutable even when a newer product
+# continuation supersedes their runtime byte bindings.
+HISTORICAL_NOTES_OVERLAY_DIGESTS = {
+    "source-study-notes-overlay.json":
+        "a9e0090f28e610fa3ddfb59819cd81017b391f0fa9ec1dc141228e0e1b756688",
+    "selected-lesson-notes-overlay.json":
+        "bf4aa8cd7763376c885630b9423cfbda4fc82e07bc2b2f43ded66738326e25f4",
+    "structure-lesson-notes-overlay.json":
+        "66fe5124b67b2832ccbb9b1eef8525362dd79827357fcce542d1bd0bce7fe6d1",
+}
+
+
+def _load_study_notes_overlay(
+    *, selected: bool = False, structure: bool = False, progress: bool = False
+) -> dict[str, str]:
     """Bind the owner-approved feature scope without rewriting recovery custody.
 
     This is implementation custody, not evidence that automatic review or
     installed-package parity has passed. Unknown paths and digest drift fail.
     """
     filename = (
-        "structure-lesson-notes-overlay.json"
+        "notes-progress-overlay.json"
+        if progress
+        else "structure-lesson-notes-overlay.json"
         if structure
         else "selected-lesson-notes-overlay.json"
         if selected
         else "source-study-notes-overlay.json"
     )
     paths = (
-        STRUCTURE_NOTES_PATHS
+        NOTES_PROGRESS_PATHS
+        if progress
+        else STRUCTURE_NOTES_PATHS
         if structure
         else SELECTED_NOTES_PATHS
         if selected
         else STUDY_NOTES_PATHS
     )
     path = ROOT / "tests/parity" / filename
-    raw = json.loads(path.read_text(encoding="utf-8"))
+    data = path.read_bytes()
+    historical_digest = HISTORICAL_NOTES_OVERLAY_DIGESTS.get(filename)
+    if historical_digest and hashlib.sha256(data).hexdigest() != historical_digest:
+        raise ValueError("historical study notes custody manifest changed")
+    raw = json.loads(data)
     if (
         not isinstance(raw, dict)
         or set(raw) != {"schema_version", "plan", "rows"}
@@ -903,6 +931,7 @@ def validate(*, live: bool = False) -> list[str]:
         recovery_hashes.update(_load_study_notes_overlay(selected=True))
         recovery_hashes.update(_load_latency_overlay())
         recovery_hashes.update(_load_study_notes_overlay(structure=True))
+        recovery_hashes.update(_load_study_notes_overlay(progress=True))
         recovery_hashes.update(_load_tutor_context_overlay())
         for path in STUDENT_JOURNAL_REMOVED:
             recovery_hashes.pop(path, None)
