@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "decision": "ADR-0025--current-topic-and-context-settlement",
+  "rows": [
+    {
+      "path": "src/cardine/adapters/model/streaming.py",
+      "sha256": "34a454b76c439e4e2bbed93b752c4dcddcd64bffeaa1768da83898da3398d4a6"
+    },
+    {
+      "path": "src/cardine/application/explanation_validation.py",
+      "sha256": "32b7df01d2798a17402e51b00b8468212cd77a775612c560ad2f5265f2225c6f"
+    },
+    {
+      "path": "src/cardine/application/flashcard_proposals.py",
+      "sha256": "a968eccee7defa9937080d732ee143bbde8e4e8c6debe0b19caf5597a9666657"
+    },
+    {
+      "path": "src/cardine/cli/repository.py",
+      "sha256": "651dd2c0f651df01a32acf5cd9bb0bd6120dcf25a0d067d0a279c6a877e39446"
+    },
+    {
+      "path": "src/cardine/hosts/flashcard_routing.py",
+      "sha256": "c8959d40d235b8434a8c9ebe2d59e236572ff0744b359f4371fe63b39c25bbde"
+    },
+    {
+      "path": "src/cardine/hosts/routing.py",
+      "sha256": "94cea08b4703a3497d045ee77d1f3bded93439267541a9bf5c9b79190f286d37"
+    },
+    {
+      "path": "src/study_agent/flashcards/planning.py",
+      "sha256": "2eb4d8423d557dfb3d80bdc826ae75fc078641a65327844df3d5d1f89394f61f"
+    },
+    {
+      "path": "src/study_agent/flashcards/scope.py",
+      "sha256": "a5a80da81399d97ab70ff7d75bbb43d457101dbe3322633eb866eeca915e4076"
+    }
+  ]
+}

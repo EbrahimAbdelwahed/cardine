@@ -12,6 +12,7 @@ from cardine.application.flashcard_profile_selection import (
     select_flashcard_profile,
 )
 from study_agent.domain._validation import JsonObject
+from study_agent.ports.retrieval import MAX_RETRIEVAL_QUERY_CHARS
 from study_agent.ports.tutor_host import TutorDecisionPort, TutorInterruptionToken
 
 from .contracts import (
@@ -265,6 +266,98 @@ def _flashcard_inputs(learner_text: str) -> JsonObject:
         "candidate_ceiling": 24,
         "continuation_summary_json": None,
     }
+
+
+def flashcard_topic_query(text: str) -> str:
+    """Remove request wording without adding or guessing a study topic."""
+    stopwords = _MEMORY_TOPIC_STOPWORDS | frozenset(
+        {
+            "una",
+            "un",
+            "uno",
+            "con",
+            "su",
+            "sul",
+            "sulla",
+            "sulle",
+            "sui",
+            "sugli",
+            "sull",
+            "da",
+            "per",
+            "puoi",
+            "potresti",
+            "voglio",
+            "vorrei",
+            "generare",
+            "generi",
+            "creare",
+            "preparare",
+            "please",
+            "favore",
+            "can",
+            "could",
+            "would",
+            "you",
+            "me",
+            "mi",
+            "fonti",
+            "fonte",
+            "materiale",
+            "materiali",
+            "course",
+            "sources",
+            "source",
+            "notes",
+            "note",
+            "questa",
+            "questo",
+            "questi",
+            "queste",
+            "quella",
+            "quello",
+            "argomento",
+            "topic",
+            "this",
+            "that",
+            "it",
+            "on",
+            "from",
+            "spiegazione",
+            "explanation",
+            "appena",
+            "fatta",
+            "fatto",
+            "just",
+            "explained",
+            "scheda",
+            "schede",
+            "carte",
+            "carta",
+            "studio",
+            "hybrid",
+            "macro",
+            "detail",
+            "anatomiche",
+            "anatomici",
+            "ricostruzione",
+            "spaziale",
+            "topologica",
+            "topologico",
+        }
+    )
+    text = re.sub(rf"(?<![\w-]){_FLASHCARD_ACTION}(?![\w-])", "", text, flags=re.I)
+    text = re.sub(r"\b\d+\s+(?=flash\s*cards?|schede|carte)", "", text, flags=re.I)
+    text = re.sub(r"\b(?:a|an|the|one|some)\s+(?=flash\s*cards?\b)", "", text, flags=re.I)
+    query = " ".join(
+        word for word in re.findall(r"[^\W_]+", text.casefold()) if word not in stopwords
+    )
+    if len(query) <= MAX_RETRIEVAL_QUERY_CHARS:
+        return query
+    bounded = query[:MAX_RETRIEVAL_QUERY_CHARS]
+    if query[MAX_RETRIEVAL_QUERY_CHARS] != " " and " " in bounded:
+        bounded = bounded.rsplit(" ", 1)[0]
+    return bounded.rstrip()
 
 
 def _omitted_conversation_entries(context: TutorHostContext) -> int:

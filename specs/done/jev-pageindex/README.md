@@ -42,6 +42,14 @@ confined to OFF/SHADOW and explicitly configured emergency fallback.
 
 ## Configuration and code pointers
 
+The owner-requested 2026-10-04 repair supplies bounded recent conversation and
+same-turn tool observations to routing and the selected payload. Context cannot
+authorize source evidence or actions. Topic flashcards select current canonical
+chunks before planning; references to the latest explanation resolve its original
+source locators. Valid source uncertainty settles with an evidence-limit message.
+See [ADR-0025](../../../docs/decisions/ADR-0025--current-topic-and-context-settlement.md)
+for bounds, retry behavior and the unchanged human decision boundary.
+
 Repository configuration v2 separates providers, operations and consumer policy.
 V1 reads migrate explicitly to OFF without rewriting the file. Conservative
 thresholds are configurable policy choices; they are not calibrated claims.
@@ -78,3 +86,10 @@ performed. Current-head GitHub CI and automatic review remain external delivery
 checks, separate from implementation and local verification.
 
 See [ADR-0021](../../../docs/decisions/ADR-0021--bounded-judgement-and-derived-document-index.md).
+
+Owner completion continuation (2026-10-04): topic extraction shares routing's
+supported action vocabulary, removes polite request wording, and bounds the
+result to RetrievalQuery's 512-character contract while preserving token ends.
+Canonical lifetime filtering precedes index/search limits; a production-path
+retirement regression verifies that stale derived results cannot hide active
+evidence. No additional semantic review or live rollout is implied.

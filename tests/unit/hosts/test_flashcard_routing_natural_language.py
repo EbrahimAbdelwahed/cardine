@@ -14,8 +14,31 @@ from cardine.hosts import (
     TutorDecision,
     TutorHostContext,
 )
-from cardine.hosts.flashcard_routing import FlashcardProfileRoutingTutorDecisionPort
+from cardine.hosts.flashcard_routing import (
+    FlashcardProfileRoutingTutorDecisionPort,
+    flashcard_topic_query,
+)
 from study_agent.ports.tutor_host import TutorInterruptionToken
+
+
+@pytest.mark.parametrize("action", (
+    "Fammi", "Dammi", "Preparami", "Produci", "Costruisci", "Proponi", "Fai",
+    "Make", "Making", "Prepare", "Produce", "Build", "Draft", "Give me",
+))
+def test_topic_query_removes_supported_request_actions(action: str) -> None:
+    prompt = f"{action} una flashcard sulla mitosi please per favore"
+    assert flashcard_topic_query(prompt) == "mitosi"
+
+
+def test_topic_query_fits_retrieval_budget_without_splitting_words() -> None:
+    from study_agent.ports.retrieval import MAX_RETRIEVAL_QUERY_CHARS
+
+    terms = " ".join(f"mitosis{i}" for i in range(150))
+    query = flashcard_topic_query(f"Create a flashcard about {terms}")
+    assert 0 < len(query) <= MAX_RETRIEVAL_QUERY_CHARS
+    assert query.startswith("mitosis0 mitosis1")
+    assert all(term in terms.split() for term in query.split())
+    assert flashcard_topic_query("Create a flashcard about " + "x" * 600) == "x" * 512
 
 
 class _Token:

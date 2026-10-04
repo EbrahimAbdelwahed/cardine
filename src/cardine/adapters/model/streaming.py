@@ -26,6 +26,7 @@ class HttpxStreamingTransport:
         # httpx and pydantic-core are dependencies of the optional OpenAI SDK.
         # Provider-free installations never import them.
         httpx = importlib.import_module("httpx")
+        completed = False
         with trace_operation("provider_http") as operation:
             try:
                 async with (
@@ -56,10 +57,18 @@ class HttpxStreamingTransport:
                         if line.startswith("data:"):
                             data.append(line[5:].lstrip(" "))
                         elif not line and data:
-                            yield "\n".join(data)
+                            event = "\n".join(data)
                             data.clear()
+                            if event == "[DONE]":
+                                completed = True
+                                break
+                            yield event
                     if data:
-                        yield "\n".join(data)
+                        event = "\n".join(data)
+                        if event == "[DONE]":
+                            completed = True
+                        else:
+                            yield event
             except httpx.TimeoutException:
                 raise ModelError(
                     ModelErrorCode.TIMEOUT, "model stream timed out", retryable=True
@@ -68,6 +77,10 @@ class HttpxStreamingTransport:
                 raise ModelError(
                     ModelErrorCode.UNAVAILABLE, "model stream unavailable", retryable=True
                 ) from None
+        if completed:
+            # Release the HTTP resources and finish its diagnostic span before
+            # the adapter returns the final result and closes this generator.
+            yield "[DONE]"
 
 
 def draft_text(payload: str) -> str:

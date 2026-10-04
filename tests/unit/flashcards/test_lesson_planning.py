@@ -45,6 +45,18 @@ def _plain(value: JsonValue) -> Any:
     return value
 
 
+def test_long_canonical_locators_round_trip_in_plan_and_prepared_scope() -> None:
+    locator = "Long heading " * 200 + " · chars 10-20"
+    span = _span(10, 20, locator=locator)
+    entry = FlashcardScopeIndexEntry("topic", "Bounded heading", locator, 0, 10)
+    assert CanonicalSourceSpan.from_json(span.to_json()) == span
+    assert FlashcardScopeIndexEntry.from_json(entry.to_json()) == entry
+    with pytest.raises(ValueError, match="locator"):
+        _span(10, 20, locator="x" * 16_001)
+    with pytest.raises(ValueError, match="locator"):
+        replace(entry, locator="x" * 16_001)
+
+
 def _span(
     start: int,
     end: int,
