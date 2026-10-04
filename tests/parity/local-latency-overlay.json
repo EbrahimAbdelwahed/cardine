@@ -24,7 +24,7 @@
     },
     {
       "path": "src/cardine/demo/browser.js",
-      "sha256": "546740697e4b18a91a77c3da78534633edfb21434c50cccc05d8489a492a4a30"
+      "sha256": "d8ed39ad0cbd32f6ed72f3aed083862e3df85ece0b2c023cbba5715f8ae3af7a"
     },
     {
       "path": "src/cardine/demo/turn_output.py",
@@ -32,7 +32,7 @@
     },
     {
       "path": "src/cardine/demo/ui_application.py",
-      "sha256": "881658fde3ccfc60cbec9905eb5af34050d91060ae466739a001f6062befafe3"
+      "sha256": "31ed481f263af47e617cbd895c50df199ad4d2d6831188c31ed424bb966e7132"
     },
     {
       "path": "src/study_agent/adapters/filesystem/blob_store.py",
