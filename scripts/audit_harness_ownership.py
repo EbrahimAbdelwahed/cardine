@@ -826,6 +826,17 @@ NOTES_PROGRESS_PATHS = {
     "src/cardine/materials/product.py",
 }
 
+# Historical approval manifests remain immutable even when a newer product
+# continuation supersedes their runtime byte bindings.
+HISTORICAL_NOTES_OVERLAY_DIGESTS = {
+    "source-study-notes-overlay.json":
+        "a9e0090f28e610fa3ddfb59819cd81017b391f0fa9ec1dc141228e0e1b756688",
+    "selected-lesson-notes-overlay.json":
+        "7294c327bf2b5bdb7e70a4e33eb3514f5b01fd1abcfaa674dfd99844dacfc412",
+    "structure-lesson-notes-overlay.json":
+        "afc78dfe442a0d367b3325b012ebdd1ccebb2865308085edd34139bb87cd5f58",
+}
+
 
 def _load_study_notes_overlay(
     *, selected: bool = False, structure: bool = False, progress: bool = False
@@ -854,7 +865,11 @@ def _load_study_notes_overlay(
         else STUDY_NOTES_PATHS
     )
     path = ROOT / "tests/parity" / filename
-    raw = json.loads(path.read_text(encoding="utf-8"))
+    data = path.read_bytes()
+    historical_digest = HISTORICAL_NOTES_OVERLAY_DIGESTS.get(filename)
+    if historical_digest and hashlib.sha256(data).hexdigest() != historical_digest:
+        raise ValueError("historical study notes custody manifest changed")
+    raw = json.loads(data)
     if (
         not isinstance(raw, dict)
         or set(raw) != {"schema_version", "plan", "rows"}

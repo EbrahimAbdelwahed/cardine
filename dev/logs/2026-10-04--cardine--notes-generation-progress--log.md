@@ -34,6 +34,11 @@ existing design-system rule, corrected by using bar backgrounds only.
 Ruff and strict mypy (671 files), isolated wheel/sdist build and custody audit
 passed. Final post-commit checks determine readiness.
 
+The archive regressions also require historical manifest edits to fail even
+when a newer product overlay supersedes a runtime row. Their three immutable
+manifest digests are now checked separately from the latest runtime bindings.
+Historical files themselves are unchanged. PR #21 is stacked on PR #18.
+
 No paid provider calls, live source writes, restart, merge or deployment.
 Automatic GitHub semantic review is limited to two rounds. Local image critique
 does not replace that review. PR #20 owns the independent flashcard/context repair.
