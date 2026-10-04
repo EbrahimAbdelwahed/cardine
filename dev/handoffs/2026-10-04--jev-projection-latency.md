@@ -115,4 +115,3 @@ head are external pending checks; current results and actionable findings belong
 in PR #24. Marking ready starts automatic review round 1; maximum two rounds,
 no local reviewer. No merge, deployment, local rollout, study-store migration or
 paid provider call was performed. No tracked local implementation work remains.
-
