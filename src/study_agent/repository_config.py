@@ -363,9 +363,13 @@ def _decode_features(raw: object) -> SemanticFeaturesConfig:
     if not isinstance(raw, dict):
         raise LocalConfigError("features must be an object")
     values = dict(raw)
-    values.setdefault("flashcard_grounding_mode", "off")
-    values.setdefault("grounding_probability", 0.9)
-    values.setdefault("grounding_margin", 0.2)
+    grounding_fields = {"flashcard_grounding_mode", "grounding_probability", "grounding_margin"}
+    present = grounding_fields.intersection(values)
+    if present and present != grounding_fields:
+        raise LocalConfigError("grounding policy fields must be specified together")
+    if not present:
+        values.update(flashcard_grounding_mode="off", grounding_probability=0.9,
+                      grounding_margin=0.2)
     for name in (
         "document_index_mode",
         "flashcard_semantic_mode",

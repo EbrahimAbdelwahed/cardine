@@ -201,3 +201,20 @@ def test_grounding_policy_changes_checkpoint_identity() -> None:
         replace(policy, resolved_model_id="new-resolved"),
     ):
         assert changed.fingerprint != policy.fingerprint
+
+
+@pytest.mark.parametrize("missing", (
+    ("flashcard_grounding_mode",), ("grounding_probability",), ("grounding_margin",),
+    ("flashcard_grounding_mode", "grounding_probability"),
+    ("flashcard_grounding_mode", "grounding_margin"),
+    ("grounding_probability", "grounding_margin"),
+))
+def test_partial_grounding_configuration_is_rejected(missing: tuple[str, ...]) -> None:
+    import json
+
+    from study_agent.repository_config import LocalConfigError, LocalRepositoryConfig
+    raw = json.loads(LocalRepositoryConfig().to_bytes())
+    for key in missing:
+        del raw["features"][key]
+    with pytest.raises(LocalConfigError):
+        LocalRepositoryConfig.from_bytes(json.dumps(raw).encode())

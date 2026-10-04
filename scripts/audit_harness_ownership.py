@@ -240,7 +240,7 @@ POST_BASELINE_SHA256 = {
         "11bb38aeeea33101d1d1fe0dd6cb29d1e8fe112fa38d4c9d49a8141a8e2175c5"
     ),
     "src/study_agent/repository_config.py": (
-        "aa77948978a744872406906cc4032514701993a9e2a63c1b28db7f156182460a"
+        "d613fbfc512f83b349fa2084a195cab4282636da310aee7291e695b5272bba78"
     ),
 }
 

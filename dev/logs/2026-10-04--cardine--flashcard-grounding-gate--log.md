@@ -70,4 +70,11 @@ current-head CI runs. Updated only the two current tutor-context hash bindings
 and repository-config post-baseline hash in the audit script; frozen ownership
 classification/CSV, historical recovery and CA-02 custody overlays remain
 intact, and ownership/dispositions are unchanged.
-Automatic GitHub review is pending (zero rounds requested locally).
+Automatic GitHub review round 1 at 5a2d2c2 found partial grounding-policy
+configuration silently defaulted missing fields. Decoder now supplies OFF/default
+thresholds only if all three new fields are absent; every partial definition is
+rejected. Six offline malformed-shape regressions cover every partial subset.
+Round 2 will be the final automatic review for this PR; no local reviewer used.
+
+Review fix validation: 104 focused configuration/gate/production-profile tests
+passed; Ruff, strict mypy and ownership audit pass.
