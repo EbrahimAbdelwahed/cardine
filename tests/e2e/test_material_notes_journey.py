@@ -31,7 +31,7 @@ def test_source_notes_can_be_generated_reviewed_and_published(tmp_path: Path) ->
         environment={"OPENAI_API_KEY": "fixture"},
     )
     with _serve(application=app) as url, _real_browser(url) as browser:
-        browser.wait_for("Boolean(document.querySelector('[data-entry-form]'))")
+        browser.wait_for("Boolean(document.querySelector('[data-provider-consent]'))")
         browser.evaluate("document.querySelector('[data-route=fonti]').click()")
         browser.wait_for("Boolean(document.querySelector('[data-generate-notes]'))")
         browser.evaluate("document.querySelector('[data-generate-notes]').click()")

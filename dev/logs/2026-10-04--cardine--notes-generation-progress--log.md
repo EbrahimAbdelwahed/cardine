@@ -70,5 +70,15 @@ skips (clean-archive tests run separately after commit); all 25 product tests
 passed. Ruff, mypy (671 files), isolated wheel/sdist and custody audit passed.
 Previous-head CI had one Python 3.13 browser failure: the test clicked the static
 rail before initial UI readiness. The two relevant journeys now wait for the
-loaded composer before navigation; final browser/archive checks are recorded
+loaded bootstrap consent control before navigation; final browser/archive checks are recorded
 in the PR. Current submitted-commit CI remains required.
+
+Composer readiness was too narrow for an unfinished study setup: those fixture
+courses render onboarding instead of a composer. The readiness check uses the
+bootstrap-rendered consent control, shared by both onboarding and normal study.
+
+Final browser/clean-archive recheck: all 17 cases passed in 64.55 seconds,
+including the previously failing CI journey and both held-generation histories.
+All known note-progress review findings are fixed; no further semantic review
+was requested after the owner's continuation. Dependency #18, current-head CI
+and explicit merge authorization remain delivery gates.
