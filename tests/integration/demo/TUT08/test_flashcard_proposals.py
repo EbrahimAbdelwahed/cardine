@@ -9,6 +9,8 @@ from pathlib import Path
 from types import MethodType
 from typing import TYPE_CHECKING, Protocol, cast
 
+import pytest
+
 if TYPE_CHECKING:
     from tests.integration.demo.TUT08.test_repository_backed_chat import _command, _repository
 else:
@@ -226,6 +228,120 @@ def test_repository_chat_publishes_verified_pending_flashcard_proposal(tmp_path:
     )
     assert len(flashcard_requests) == 1
     assert flashcard_requests[-1].metadata["prompt_id"] == "hybrid_flashcards.v1"
+
+
+@pytest.mark.parametrize("request_text", (
+    "Crea una flashcard sulla aortic valve",
+    "Fammi una flashcard sulla aortic valve per favore",
+    "Make a flashcard about aortic valve please",
+    "Create a flashcard about aortic valve " + "valve " * 150,
+))
+def test_topic_flashcard_does_not_plan_the_entire_large_course(
+    tmp_path: Path, request_text: str,
+) -> None:
+    source = (
+        "\n".join(f"# Unrelated {i}\nUnrelated background {i}." for i in range(300))
+        + "\n# Aortic valve\nThe aortic valve has three cusps."
+    )
+    root, adapters, model = _repository(tmp_path, source_content=source.encode())
+    calls = _install_hybrid_flashcard_model(model)
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/session")["high_water_sequence"])
+    result = app.post(
+        "/api/v1/session/turns",
+        _command("topic-large-course", sequence, request_text),
+    )
+    assert result["status"] == "completed", result["status"]
+    assert len(calls) == 1
+    prompt = "\n".join(message.content for message in calls[0].messages)
+    assert "Unrelated background" not in prompt
+    assert "aortic valve has three cusps" in prompt
+
+
+@pytest.mark.parametrize("request_text,long_heading", (
+    ("genera una flashcard su questo", False),
+    ("Create a flashcard about this", False),
+    ("genera una flashcard su questo", True),
+    ("Create a flashcard about this", True),
+    ("Make a flashcard about this please", False),
+    ("Fammi una flashcard su questo per favore", False),
+))
+def test_flashcard_about_this_uses_latest_explanation_sources(
+    tmp_path: Path, request_text: str, long_heading: bool,
+) -> None:
+    heading = "Aortic valve" + (" long section" * 200 if long_heading else "")
+    root, adapters, model = _repository(tmp_path, source_content=(
+        "# Old topic\nOldmarker facts about the old topic.\n"
+        f"# {heading}\nThe aortic valve has three cusps.\n"
+    ).encode())
+    calls = _install_hybrid_flashcard_model(model)
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/session")["high_water_sequence"])
+    for position, content in enumerate(("Spiegami oldmarker", "Spiegami cusps")):
+        receipt = app.post("/api/v1/session/turns", _command(
+            f"explanation-{position}", sequence, content
+        ))
+        assert receipt["status"] == "completed"
+        sequence = cast(int, receipt["high_water_sequence"])
+    receipt = app.post("/api/v1/session/turns", _command(
+        "flashcard-latest-explanation", sequence, request_text
+    ))
+    assert receipt["status"] == "completed", receipt["status"]
+    assert len(calls) == 1
+    prompt = "\n".join(message.content for message in calls[0].messages)
+    assert "aortic valve has three cusps" in prompt
+    assert "Oldmarker" not in prompt
+
+
+def test_retired_chunks_cannot_hide_active_flashcard_topic(tmp_path: Path) -> None:
+    from study_agent.domain import SourceId
+    from study_agent.ports.retrieval import RetrievalQuery
+
+    source = "\n".join(
+        f"# Retired {i}\nAortic valve. Aortic valve. Retiredmarker {i}." for i in range(10)
+    )
+    root, adapters, model = _repository(tmp_path, source_content=source.encode())
+    calls = _install_hybrid_flashcard_model(model)
+    with LocalRepository.open(root, model_adapters=adapters) as repository:
+        context = ExecutionContext(
+            PrincipalKind.HUMAN, "fixture-active", COURSE, CorrelationId("fixture-active")
+        )
+        repository.for_course(COURSE).ingestion.ingest(
+            filename="active.md", content=b"The aortic valve has three cusps. Activemarker.",
+            source_id=SourceId("active"), title="Current lesson", trust_level=90,
+            source_role="primary", context=context,
+        )
+        course = repository.for_course(COURSE)
+        repository.reconcile_indexing()
+        baseline = course.retrieval.search(RetrievalQuery(COURSE, "aortic valve", limit=8))
+        assert len(baseline.evidence) == 8
+        assert all(item.chunk.source_id == SourceId("valves") for item in baseline.evidence)
+        repository.source_lifetime_service.retire(
+            context, SourceId("valves"), "retire-old-topic",
+            expected_sequence=repository.events.projection(COURSE).sequence,
+        )
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/session")["high_water_sequence"])
+    receipt = app.post("/api/v1/session/turns", _command(
+        "active-topic", sequence, "Create a flashcard about aortic valve"
+    ))
+    assert receipt["status"] == "completed", receipt["status"]
+    assert len(calls) == 1
+    prompt = "\n".join(message.content for message in calls[0].messages)
+    assert "Activemarker" in prompt and "Retiredmarker" not in prompt
+
+
+def test_topic_with_no_evidence_cannot_fall_back_to_the_old_course_topic(tmp_path: Path) -> None:
+    root, adapters, model = _repository(tmp_path)
+    calls = _install_hybrid_flashcard_model(model)
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/session")["high_water_sequence"])
+    receipt = app.post("/api/v1/session/turns", _command(
+        "unknown-topic", sequence, "genera una flashcard su absentmarker"
+    ))
+    assert receipt["status"] == "failed"
+    assert not calls
+    assert not app.get("/api/v1/artifacts")["items"]
 
 
 def test_repository_chat_recovers_live_flashcard_promise_into_lesson_one_proposals(

@@ -10,6 +10,24 @@ import pytest
 import scripts.audit_harness_ownership as audit
 
 
+@pytest.mark.parametrize("mutation", ("missing", "outside_path", "invalid_digest"))
+def test_tutor_context_custody_has_an_exact_product_scope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
+) -> None:
+    payload = json.loads(audit.TUTOR_CONTEXT_OVERLAY.read_text(encoding="utf-8"))
+    if mutation == "missing":
+        payload["rows"].pop()
+    elif mutation == "outside_path":
+        payload["rows"][0]["path"] = "src/study_agent/domain/__init__.py"
+    else:
+        payload["rows"][0]["sha256"] = "invalid"
+    candidate = tmp_path / "tutor-context.json"
+    candidate.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(audit, "TUTOR_CONTEXT_OVERLAY", candidate)
+    with pytest.raises(ValueError, match="tutor context overlay"):
+        audit._load_tutor_context_overlay()
+
+
 def test_transition_overlay_has_exact_target_cardinality() -> None:
     rows, entrypoints = audit._load_transition_overlay()
 

@@ -24,7 +24,7 @@ from study_agent.domain._validation import (
     freeze_object,
     require_text,
 )
-from study_agent.flashcards.scope import PreparedFlashcardScope
+from study_agent.flashcards.scope import MAX_CANONICAL_LOCATOR_CHARACTERS, PreparedFlashcardScope
 
 if TYPE_CHECKING:
     from study_agent.ports.flashcard_planning import FlashcardPlanningPolicy
@@ -77,7 +77,7 @@ class CanonicalSourceSpan:
             raise ValueError("start_offset must be a non-negative integer")
         if type(self.end_offset) is not int or self.end_offset <= self.start_offset:
             raise ValueError("end_offset must be greater than start_offset")
-        _bounded_text(self.locator, "locator", 2_000)
+        _bounded_text(self.locator, "locator", MAX_CANONICAL_LOCATOR_CHARACTERS)
 
     def to_json(self) -> JsonObject:
         return freeze_object(

@@ -130,6 +130,7 @@
     selectedAnswers: Object.create(null),
     freeAnswers: Object.create(null),
     revealedReviews: Object.create(null),
+    review: { snapshot: null, pending: [], saving: false, error: null, scope: "" },
     lastCommand: null,
     loading: false,
     pendingTurn: null,
@@ -645,12 +646,14 @@
     const course = form.elements.namedItem("course_id");
     const session = form.elements.namedItem("session_id");
     if (!(course instanceof HTMLSelectElement) || !(session instanceof HTMLSelectElement) || !course.value || !session.value) return;
+    if (!canLeaveReviewScope(JSON.stringify([course.value, session.value]))) return;
     await fetchJson("/api/v1/workspace/select", { method: "POST", body: JSON.stringify(workspaceCommand({ course_id: course.value, session_id: session.value })) });
     await loadBootstrap();
     await loadRoute("sessione");
   }
 
   async function startWorkspaceSession(form) {
+    if (!canLeaveReviewScope()) return;
     const courseControl = form.elements.namedItem("course_id");
     const input = form.elements.namedItem("session_id");
     const course = courseControl instanceof HTMLSelectElement
@@ -666,6 +669,7 @@
   }
 
   async function createWorkspaceCourse(form) {
+    if (!canLeaveReviewScope()) return;
     const value = (name) => {
       const item = form.elements.namedItem(name);
       return item instanceof HTMLInputElement ? item.value.trim() : "";
@@ -681,6 +685,7 @@
   }
 
   async function createChatCourse(form) {
+    if (!canLeaveReviewScope()) return;
     const field = (name) => {
       const item = form.elements.namedItem(name);
       return item instanceof HTMLInputElement || item instanceof HTMLSelectElement
@@ -738,6 +743,7 @@
   }
 
   async function logout() {
+    if (!canLeaveReviewScope()) return;
     try {
       await fetchJson("/api/v1/auth/logout", { method: "POST", body: JSON.stringify({}) });
     } catch (_) {
@@ -1482,7 +1488,11 @@
     const featureByRoute = { proposte: "artifacts", verifiche: "assessments", percorso: "student_state", ripasso: "recall" };
     if (state.bootstrap && object(state.bootstrap.features)[featureByRoute[route]] === false) {
       setStatus(text(state.bootstrap?.shell_status, "ready"), `${ROUTES[route].heading} · sezione non attiva`);
-      renderUnavailable(route);
+      if (route === "ripasso" && state.review.pending.length) {
+        renderRipasso({status: "unavailable", high_water_sequence: state.highWaterSequence, items: []});
+      } else {
+        renderUnavailable(route);
+      }
       return;
     }
     renderLoading(route);
@@ -2055,27 +2065,149 @@
     setView("percorso", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="student-state-heading"><h1 class="section-title" id="student-state-heading">Il tuo percorso</h1><p class="section-copy">Una cronologia delle tue attività e osservazioni di studio.</p>${rows}${payload.has_more ? `<p>Mostrate le ultime ${entries.length} attività su ${esc(payload.total_entries)}.</p><button class="button button--quiet" type="button" data-student-state-before="${esc(payload.next_cursor)}">Attività precedenti</button>` : ""}</section><aside class="section-grid__side"><form data-student-state-form class="side-card"><h2>Aggiungi un'osservazione</h2><label>Tipo<select name="kind"><option value="learner_signal">Difficoltà incontrata</option><option value="topic_covered">Argomento trattato</option></select></label><label>Argomento<input name="topic" maxlength="120" required></label><label>Dettaglio<textarea name="summary" maxlength="500" rows="3"></textarea></label><button class="button" type="submit">Aggiungi</button></form><button class="button button--quiet" type="button" data-command="student-state-import">Importa la cronologia precedente</button></aside></section>`);
   }
 
+  function reviewScope() {
+    return JSON.stringify([object(state.bootstrap?.course).id, object(state.bootstrap?.session).id]);
+  }
+
+  function canLeaveReviewScope(targetScope = null) {
+    if (!state.review.pending.length || targetScope === state.review.scope) return true;
+    showAlert({ tone: "warning", title: "Ci sono valutazioni da salvare", detail: "Completa il salvataggio prima di cambiare corso, sessione o account.", actions: [{ label: "Apri Ripasso", run: () => loadRoute("ripasso") }] });
+    return false;
+  }
+
+  function reviewSnapshot(payload) {
+    const review = state.review;
+    const scope = reviewScope();
+    if (review.scope !== scope && !review.pending.length) {
+      review.snapshot = null;
+      review.scope = scope;
+      state.revealedReviews = Object.create(null);
+    }
+    if (!review.snapshot || Number(payload.high_water_sequence || 0) >= Number(review.snapshot.high_water_sequence || 0)) {
+      review.snapshot = payload;
+    }
+    return review.snapshot;
+  }
+
+  function visibleReviewItems(payload) {
+    const pending = new Set(state.review.pending.map((command) => command.revisionId));
+    const due = array(first(payload, ["items", "due", "cards", "queue"], []))
+      .filter((card) => !pending.has(text(first(object(card), ["revision_id", "id"]))));
+    // An uncertain write is still pending. Restore its exact card for an
+    // explicit retry; never allow a different rating to acquire a new identity.
+    if (state.review.error && state.review.pending.length) due.unshift(state.review.pending[0].card);
+    return due;
+  }
+
+  function renderReviewState() {
+    if (state.route === "ripasso") renderRipasso(state.review.snapshot || state.viewData || {});
+  }
+
+  function rateReview(control) {
+    const review = state.review;
+    const revisionId = text(control.dataset.revisionId);
+    const rating = text(control.dataset.rating);
+    const card = visibleReviewItems(review.snapshot || state.viewData || {})[0];
+    if (review.error || review.scope !== reviewScope() || !card
+      || text(first(object(card), ["revision_id", "id"])) !== revisionId
+      || state.revealedReviews[revisionId] !== true
+      || !["again", "hard", "good", "easy"].includes(rating)
+      || review.pending.some((command) => command.revisionId === revisionId)) return;
+    const scope = Object.freeze({course_id: object(state.bootstrap?.course).id, session_id: object(state.bootstrap?.session).id});
+    review.pending.push(Object.freeze({ revisionId, rating, requestId: requestId(), card, scope }));
+    delete state.revealedReviews[revisionId];
+    // The due payload already contains the next card. Painting it does not
+    // claim a commit, compute a schedule, or wait for any network round trip.
+    renderReviewState();
+    $('[data-reveal-review]', root)?.focus({ preventScroll: true });
+    void saveReviews();
+  }
+
+  async function saveReviews() {
+    const review = state.review;
+    if (review.saving || review.error || !review.pending.length) return;
+    review.saving = true;
+    try {
+      while (review.pending.length && !review.error) {
+        if (review.scope !== reviewScope()) throw new Error("Il contesto di studio è cambiato. Torna al corso e alla sessione del ripasso.");
+        const command = review.pending[0];
+        const receipt = await fetchJson(`/api/v1/recall/${encodeURIComponent(command.revisionId)}/reviews`, {
+          method: "POST", body: JSON.stringify({ ...commandPayload({ rating: command.rating, review_scope: command.scope }, command.requestId), expected_sequence: Math.max(state.highWaterSequence, Number(review.snapshot?.high_water_sequence || 0)) }),
+        });
+        if (receipt.status !== "committed" || !Array.isArray(receipt.result?.items)
+          || !Number.isInteger(receipt.high_water_sequence)
+          || receipt.result.high_water_sequence !== receipt.high_water_sequence) {
+          throw new Error("La conferma del salvataggio non è completa. Riprova lo stesso salvataggio.");
+        }
+        updateSequence(Math.max(state.highWaterSequence, receipt.high_water_sequence));
+        // Each serialized POST uses the preceding canonical receipt's sequence.
+        // The server has already joined the next due queue at that same HWM.
+        reviewSnapshot(object(receipt.result));
+        review.pending.shift();
+        renderReviewState();
+      }
+      if (!review.pending.length) {
+        setStatus("committed", "Valutazioni salvate nel registro canonico");
+        // Sidebar counts are advisory and never block the next review.
+        void refreshBootstrapCounts();
+      }
+    } catch (error) {
+      review.error = error;
+      renderReviewState();
+      if (!error.authExpired) setStatus("error", "Salvataggio della valutazione da verificare. Apri Ripasso e riprova.", { alert: false });
+    } finally {
+      review.saving = false;
+    }
+  }
+
+  async function recoverReviews(discardRejected = false) {
+    const review = state.review;
+    if (review.saving || !review.error || review.scope !== reviewScope()) return;
+    if (discardRejected && (![400, 404, 409, 422].includes(review.error.status) || review.error.payload?.commandCommitted)) return;
+    review.saving = true;
+    try {
+      const payload = await fetchJson(ROUTES.ripasso.endpoint);
+      updateSequence(payload.high_water_sequence);
+      review.snapshot = payload;
+      if (discardRejected) review.pending.shift();
+      review.error = null;
+    } catch (error) {
+      review.error = error;
+    } finally {
+      review.saving = false;
+      renderReviewState();
+    }
+    // Retrying an ambiguous result keeps revision, rating and request ID.
+    // Only an explicit discard of a rejected command removes an unsaved intent.
+    if (!review.error) void saveReviews();
+  }
+
   function renderRipasso(payload) {
+    payload = reviewSnapshot(payload);
     const availabilityStatus = text(first(payload, ["status"], "empty"), "empty");
+    const due = visibleReviewItems(payload);
+    const review = state.review;
+    const pendingCopy = review.pending.length ? `<p role="status" data-review-pending>${review.pending.length} ${review.pending.length === 1 ? "valutazione in attesa di salvataggio" : "valutazioni in attesa di salvataggio"}.</p>` : "";
+    const rejected = review.error && [400, 404, 409, 422].includes(review.error.status) && !review.error.payload?.commandCommitted;
+    const recovery = review.error ? `<div role="alert" data-review-error><p>Il salvataggio non è confermato. Le valutazioni successive sono in pausa.</p><div class="state-actions"><button class="button" type="button" data-review-retry>Riprova lo stesso salvataggio</button>${rejected ? `<button class="button button--quiet" type="button" data-review-discard>Annulla la valutazione rifiutata e continua</button>` : ""}</div></div>` : "";
     if (availabilityStatus === "not_configured" || availabilityStatus === "unavailable") {
-      setView("ripasso", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="review-heading"><p class="section-kicker">ripasso · coda del giorno</p><h1 class="section-title" id="review-heading">Ripasso</h1>${emptyState("Ripasso non disponibile", first(payload, ["message"], "Il ripasso programmato non è configurato."), "unavailable")}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">stato</p><h2 class="side-card__title">Configurazione esplicita</h2><p class="side-card__copy">Nessuna data viene calcolata nel browser; configura un adapter scheduler e riprova.</p></div></aside></section>`);
+      setView("ripasso", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="review-heading"><p class="section-kicker">ripasso · coda del giorno</p><h1 class="section-title" id="review-heading">Ripasso</h1>${emptyState("Ripasso non disponibile", first(payload, ["message"], "Il ripasso programmato non è configurato."), "unavailable")}${pendingCopy}${recovery}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">stato</p><h2 class="side-card__title">Configurazione esplicita</h2><p class="side-card__copy">Nessuna data viene calcolata nel browser; configura un adapter scheduler e riprova.</p></div></aside></section>`);
       return;
     }
-    const due = array(payload);
     if (!due.length) {
-      setView("ripasso", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="review-heading"><p class="section-kicker">ripasso · coda del giorno</p><h1 class="section-title" id="review-heading">Ripasso</h1>${emptyState("Nessun ripasso dovuto", "Non ci sono card da ripassare oggi.")}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">recall</p><h2 class="side-card__title">Stato vuoto</h2><p class="side-card__copy">Un'assenza di card non viene sostituita da una coda inventata.</p></div></aside></section>`);
+      setView("ripasso", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="review-heading"><p class="section-kicker">ripasso · coda del giorno</p><h1 class="section-title" id="review-heading">Ripasso</h1>${review.pending.length ? emptyState("Salvataggio in corso", "La coda è terminata; attendo la conferma delle valutazioni.") : emptyState("Nessun ripasso dovuto", "Non ci sono card da ripassare oggi.")}${pendingCopy}${recovery}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">recall</p><h2 class="side-card__title">Stato vuoto</h2><p class="side-card__copy">Un'assenza di card non viene sostituita da una coda inventata.</p></div></aside></section>`);
       return;
     }
     const firstCard = object(due[0]);
     const revisionId = first(firstCard, ["revision_id", "id"], "");
-    const revealed = state.revealedReviews[revisionId] === true;
+    const revealed = review.error || state.revealedReviews[revisionId] === true;
     const position = `1 / ${due.length}`;
     const ticks = due.slice(0, 24).map((_, index) => `<span class="review-progress__tick ${index === 0 ? "is-current" : ""}"></span>`).join("");
     const front = first(firstCard, ["front", "question", "prompt"], "Contenuto della card non disponibile.");
     const back = first(firstCard, ["back", "answer", "response"], "Risposta non disponibile fino alla rivelazione.");
     const citation = first(firstCard, ["citation", "provenance", "source"], null);
-    const reviewActions = revealed && revisionId ? `<div class="rating-list">${[["again", "Ancora"], ["hard", "Difficile"], ["good", "Bene"], ["easy", "Facile"]].map(([value, label]) => `<button class="rating-button" type="button" data-command="review" data-revision-id="${esc(revisionId)}" data-rating="${value}">${label}<span class="rating-button__next">registra decisione</span></button>`).join("")}</div>` : revealed ? emptyState("Decisione non disponibile", "Manca l’identificativo della revisione.", "unavailable") : "";
-    setView("ripasso", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="review-heading"><p class="section-kicker">ripasso · coda del giorno</p><h1 class="section-title" id="review-heading">Ripasso</h1><div class="review-card"><div class="review-progress"><span>${esc(position)}</span><span class="review-progress__bar">${ticks}</span></div><div class="review-card__front">${esc(front)}</div>${revealed ? `<div class="review-card__back">${esc(back)}</div>` : revisionId ? `<button class="button" type="button" data-reveal-review="${esc(revisionId)}">Mostra risposta</button>` : emptyState("Card senza identificativo", "La rivelazione è sospesa finché il servizio non restituisce la revisione.", "unavailable")}${citation ? `<button class="provenance-chip" type="button" data-provenance='${esc(JSON.stringify(citation))}'>fonte · ${esc(first(object(citation), ["locator", "title"], typeof citation === "string" ? citation : "metadati"))}</button>` : ""}${reviewActions}</div></section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">stato</p><h2 class="side-card__title">${esc(text(firstCard.status, "due"))}</h2><p class="side-card__copy">La stessa coda viene usata su desktop e mobile. Il browser non calcola la prossima data.</p></div></aside></section>`);
+    const reviewActions = revealed && revisionId ? `<div class="rating-list">${[["again", "Ancora"], ["hard", "Difficile"], ["good", "Bene"], ["easy", "Facile"]].map(([value, label]) => `<button class="rating-button" type="button" data-command="review" data-revision-id="${esc(revisionId)}" data-rating="${value}"${review.error ? " disabled" : ""}>${label}<span class="rating-button__next">registra decisione</span></button>`).join("")}</div>` : revealed ? emptyState("Decisione non disponibile", "Manca l’identificativo della revisione.", "unavailable") : "";
+    setView("ripasso", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="review-heading"><p class="section-kicker">ripasso · coda del giorno</p><h1 class="section-title" id="review-heading">Ripasso</h1><div class="review-card"><div class="review-progress"><span>${esc(position)}</span><span class="review-progress__bar">${ticks}</span></div><div class="review-card__front">${esc(front)}</div>${revealed ? `<div class="review-card__back">${esc(back)}</div>` : revisionId ? `<button class="button" type="button" data-reveal-review="${esc(revisionId)}">Mostra risposta</button>` : emptyState("Card senza identificativo", "La rivelazione è sospesa finché il servizio non restituisce la revisione.", "unavailable")}${citation ? `<button class="provenance-chip" type="button" data-provenance='${esc(JSON.stringify(citation))}'>fonte · ${esc(first(object(citation), ["locator", "title"], typeof citation === "string" ? citation : "metadati"))}</button>` : ""}${reviewActions}${pendingCopy}${recovery}</div></section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">stato</p><h2 class="side-card__title">${esc(text(firstCard.status, "due"))}</h2><p class="side-card__copy">La stessa coda viene usata su desktop e mobile. Il browser non calcola la prossima data.</p></div></aside></section>`);
   }
 
   function renderPlan(payload) {
@@ -2840,6 +2972,8 @@
         submitArtifactBulk(form).catch((error) => showCommandError(error));
       });
     });
+    $$('[data-review-retry]').forEach((control) => control.addEventListener("click", () => recoverReviews()));
+    $$('[data-review-discard]').forEach((control) => control.addEventListener("click", () => recoverReviews(true)));
     $$('[data-reveal-review]').forEach((control) => control.addEventListener("click", () => { state.revealedReviews[control.dataset.revealReview] = true; renderRipasso(state.viewData || {}); }));
     $$('[data-choice]').forEach((control) => control.addEventListener("change", () => {
       const card = control.closest(".assessment-card");
@@ -3023,7 +3157,7 @@
     if (kind === "assessment-present") executeCommand(`/api/v1/assessments/${encodeURIComponent(control.dataset.revisionId || "")}/presentations`, {}, control.closest(".assessment-card"), "verifiche");
     if (kind === "assessment-grade") executeCommand(`/api/v1/assessments/${encodeURIComponent(control.dataset.attemptId || "")}/grade`, {}, control.closest(".assessment-card"), "verifiche");
     if (kind === "enroll") executeCommand(`/api/v1/recall/${encodeURIComponent(control.dataset.revisionId || "")}/enrollments`, {}, control.closest(".card"), "proposte");
-    if (kind === "review") executeCommand(`/api/v1/recall/${encodeURIComponent(control.dataset.revisionId || "")}/reviews`, { rating: control.dataset.rating }, control.closest(".review-card"), "ripasso");
+    if (kind === "review") rateReview(control);
   }
 
   function openProvenance(serialized) {
@@ -3521,6 +3655,11 @@
   }
 
   applyRailState();
+  window.addEventListener("beforeunload", (event) => {
+    if (!state.review.pending.length) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
   bindStaticControls();
   bindDynamicControls();
   bindSourceViewerResize();

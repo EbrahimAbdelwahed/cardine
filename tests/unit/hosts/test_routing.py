@@ -254,6 +254,91 @@ def test_general_routes_are_legal_and_projection_is_minimal() -> None:
     assert "harness_tools" not in payload
 
 
+def test_selected_payload_receives_recent_conversation_and_tool_results() -> None:
+    ctx = replace(
+        context(capabilities=(capability(schema=TOPIC),)),
+        tutor_snapshot={
+            "timeline": (
+                {"kind": "learner", "content": "Explain DNA polymerase", "course_sequence": 5},
+                {
+                    "kind": "learner",
+                    "content": "Create a flashcard about this",
+                    "course_sequence": 8,
+                },
+            ),
+            "tutor_presentations": (
+                {
+                    "kind": "assistant_message",
+                    "content": "DNA polymerase explanation",
+                    "course_sequence": 6,
+                },
+            ),
+            "agent_observations": (
+                {
+                    "tool_name": "conversation.read",
+                    "status": "succeeded",
+                    "action_fingerprint": "f" * 64,
+                    "result": {"entries": ({"excerpt": "DNA polymerase"},)},
+                },
+            ),
+        },
+    )
+    judge, model = Judge("start_capability"), Model({"topic": "DNA polymerase"})
+    decide(router(judge, model), ctx)
+    payload = json.loads(model.requests[0].messages[1].content)
+    assert "DNA polymerase explanation" in json.dumps(payload)
+    assert "conversation.read" in json.dumps(payload)
+    assert "action_fingerprint" not in json.dumps(payload)
+    assert "input_schema" not in json.dumps(payload)
+
+
+def test_selected_payload_context_is_bounded_and_excludes_future_or_private_data() -> None:
+    ctx = replace(
+        context(capabilities=(capability(schema=TOPIC),)),
+        tutor_snapshot_sequence=100,
+        tutor_snapshot={
+            "timeline": (
+                {"kind": "learner", "content": "FUTURE", "course_sequence": 101},
+                {"kind": "learner", "content": "UNSEQUENCED"},
+                *(
+                    {"kind": "learner", "content": "x" * 4_000, "course_sequence": i}
+                    for i in range(1, 16)
+                ),
+            ),
+            "agent_observations": ({
+                "tool_name": "conversation.read", "status": "succeeded",
+                "action_fingerprint": "PRIVATE-AUTHORITY",
+                "result": {"entries": ({"excerpt": "recent result"},)},
+            },),
+        },
+    )
+    judge, model = Judge("start_capability"), Model({"topic": "valves"})
+    decide(router(judge, model), ctx)
+    payload = json.loads(model.requests[0].messages[1].content)
+    assert sum(len(item["content"]) for item in payload["recent_conversation"]) <= 4_000
+    assert len(payload["recent_conversation"]) <= 8
+    rendered = json.dumps(payload)
+    assert all(value not in rendered for value in ("FUTURE", "UNSEQUENCED", "PRIVATE"))
+    assert "recent result" in rendered
+
+
+
+def test_tool_observations_include_omission_markers_inside_the_byte_budget() -> None:
+    result = {f"field_{i:02}": "x" * 500 for i in range(15)}
+    ctx = replace(
+        context(capabilities=(capability(schema=TOPIC),)),
+        tutor_snapshot={"agent_observations": tuple({
+            "tool_name": "conversation.read", "status": "succeeded", "result": result,
+        } for _ in range(4))},
+    )
+    judge, model = Judge("start_capability"), Model({"topic": "valves"})
+    decide(router(judge, model), ctx)
+    payload = json.loads(model.requests[0].messages[1].content)
+    observations = payload["tool_observations"]
+    assert len(json.dumps({"tool_observations": observations}, separators=(",", ":"))
+               .encode()) <= 8_000
+    assert any(item.get("result_omitted") for item in observations)
+
 def test_capability_options_only_advertised_and_empty_inputs_skip_model() -> None:
     judge, model = Judge("start_capability", "b.capability"), Model()
     result = decide(
