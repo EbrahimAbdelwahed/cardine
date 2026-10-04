@@ -1,6 +1,6 @@
 # Cardine development memory
 
-Updated: 2026-10-02 CEST
+Updated: 2026-10-04 CEST
 
 This file is the authoritative entrypoint for Cardine development memory.
 Cardine-specific plans, logs, notes, and handoffs belong in this repository's
@@ -8,6 +8,8 @@ Cardine-specific plans, logs, notes, and handoffs belong in this repository's
 archive and must not be treated as Cardine's current state.
 
 ## Start here
+
+- [Retrieval reliability audit](audits/2026-10-04--retrieval-reliability.md) — owner-requested needle benchmark on the live 559-page source; definition-only chimotripsin retrieval reproduced, 21 positive cases and two negatives, bounded keyword/context experiments and no runtime policy change.
 
 - [GPT-6 Luna and large-document PageIndex](logs/2026-10-02--cardine--gpt6-luna-pageindex--log.md) — owner-requested local upgrade, separate model identity and bounded indexing for 700 headings.
 - [Sources layout](logs/2026-10-02--cardine--sources-layout--log.md) — ordered library/reader composition, responsive actions, canonical provenance and PageIndex integration seam.
