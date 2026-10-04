@@ -26,6 +26,7 @@ from study_agent.grounding import EvidenceEnvelope
 
 MAX_FLASHCARD_SCOPE_ENTRIES = 256
 MAX_FLASHCARD_SCOPE_EVIDENCE_ITEMS = 24
+MAX_CANONICAL_LOCATOR_CHARACTERS = 16_000
 
 _SCOPE_FINGERPRINT_DOMAIN = b"prepared-flashcard-scope@1\0"
 _PORTABLE_IDENTIFIER = re.compile(r"[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*")
@@ -46,7 +47,7 @@ class FlashcardScopeIndexEntry:
         _bounded_text(self.topic_key, "topic_key", 128)
         _reject_receipt_shaped_handle(self.topic_key, "topic_key")
         _bounded_text(self.heading, "heading", 1000)
-        _bounded_text(self.locator, "locator", 2000)
+        _bounded_text(self.locator, "locator", MAX_CANONICAL_LOCATOR_CHARACTERS)
         if type(self.relative_position) is not int or self.relative_position < 0:
             raise ValueError("relative_position must be a non-negative integer")
         if (

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 from cardine.adapters.model.streaming import HttpxStreamingTransport, draft_text
+from cardine.diagnostics.turn_trace import TurnTraceStore
+from study_agent.domain._validation import JsonObject
 from study_agent.ports.model import ModelError, ModelErrorCode
 
 
@@ -85,6 +87,46 @@ def test_partial_json_exposes_only_answer_text_and_decodes_escapes() -> None:
     assert draft_text('{"segments":[{"text":"cuore \\u00e8') == "cuore è"
     assert draft_text('{"evidence_ids":["private-id"],"tool_arguments":{"text":"private"}}') == ""
     assert draft_text("not-json") == ""
+
+
+def test_done_closes_native_stream_without_recording_a_provider_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    http = pytest.importorskip("httpx")
+    client = http.AsyncClient
+    closed: list[bool] = []
+
+    class Stream(http.AsyncByteStream):  # type: ignore[misc, name-defined]
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            yield b"data: [DONE]\n\n"
+            raise AssertionError("transport read beyond provider completion")
+
+        async def aclose(self) -> None:
+            closed.append(True)
+
+    def factory(**kwargs: Any) -> Any:
+        return client(transport=http.MockTransport(
+            lambda _request: http.Response(200, stream=Stream())
+        ), **kwargs)
+
+    monkeypatch.setattr(http, "AsyncClient", factory)
+    traces = TurnTraceStore()
+
+    async def consume() -> None:
+        with traces.capture("stream-done", 0):
+            events = HttpxStreamingTransport().events("https://offline.invalid/", {}, b"{}", 1)
+            try:
+                assert await anext(events) == "[DONE]"
+            finally:
+                await events.aclose()
+
+    asyncio.run(consume())
+    assert closed == [True]
+    trace = traces.snapshot()["turn_traces"]
+    assert isinstance(trace, tuple)
+    operations = cast(tuple[JsonObject, ...], cast(JsonObject, trace[0])["operations"])
+    provider = next(item for item in operations if item["phase"] == "provider_http")
+    assert provider["status"] == "completed"
 
 
 @pytest.mark.parametrize(

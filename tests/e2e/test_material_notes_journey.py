@@ -31,10 +31,17 @@ def test_source_notes_can_be_generated_reviewed_and_published(tmp_path: Path) ->
         environment={"OPENAI_API_KEY": "fixture"},
     )
     with _serve(application=app) as url, _real_browser(url) as browser:
-        browser.wait_for("Boolean(document.querySelector('[data-route=fonti]'))")
+        browser.wait_for("Boolean(document.querySelector('[data-provider-consent]'))")
         browser.evaluate("document.querySelector('[data-route=fonti]').click()")
         browser.wait_for("Boolean(document.querySelector('[data-generate-notes]'))")
         browser.evaluate("document.querySelector('[data-generate-notes]').click()")
+        browser.wait_for("Boolean(document.querySelector('#notes-structure-lesson'))")
+        browser.evaluate(
+            "const selection = document.querySelector('#notes-structure-lesson');"
+            "selection.value = 'whole';"
+            "selection.dispatchEvent(new Event('change', {bubbles: true}));"
+            "document.querySelector('[data-notes-lessons] button[type=submit]').click()"
+        )
         browser.wait_for(
             "document.querySelectorAll('[data-note-decision=accept]').length === 2", timeout=20
         )
@@ -112,6 +119,8 @@ def test_pdf_notes_generate_only_checked_lessons(tmp_path: Path) -> None:
             "button => JSON.parse(button.dataset.generateNotes).source_id === "
             "'selected-pdf').click()"
         )
+        browser.wait_for("Boolean(document.querySelector('[data-notes-boundaries]'))")
+        browser.evaluate("document.querySelector('[data-notes-boundaries]').click()")
         browser.wait_for("Boolean(document.querySelector('[data-notes-lessons] textarea'))")
         # Corrected titles survive returning from selection to the boundary editor.
         browser.evaluate(
@@ -220,6 +229,8 @@ def test_pdf_notes_retry_id_survives_unchanged_select_all(tmp_path: Path) -> Non
             "button => JSON.parse(button.dataset.generateNotes).source_id === "
             "'selected-pdf').click()"
         )
+        browser.wait_for("Boolean(document.querySelector('[data-notes-boundaries]'))")
+        browser.evaluate("document.querySelector('[data-notes-boundaries]').click()")
         browser.wait_for("Boolean(document.querySelector('[data-notes-lessons] textarea'))")
         browser.evaluate(
             "document.querySelector('[data-notes-lessons] button[type=submit]').click()"

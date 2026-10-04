@@ -15,6 +15,7 @@ from uuid import uuid4
 from cardine.adapters.audio.groq import GroqAudioTranscriber
 from cardine.cli.repository import LocalRepository, ModelAdapterConfigurationError
 from cardine.integrations.study_agent.course_policy import ProviderConsentRequiredError
+from cardine.knowledge import PageIndexStatus
 from cardine.materials.generation_contracts import (
     MAX_SOURCE_BYTES,
     MAX_TRANSCRIPT_CHARACTERS,
@@ -27,6 +28,7 @@ from cardine.materials.materializer import (
     GeneratedSourceMaterializationError,
     GeneratedSourceMaterializer,
 )
+from cardine.materials.planning import SegmentBoundaries, UnitManifest
 from study_agent.adapters.sqlite.namespaced_run_store import NamespacedSQLiteRunStore
 from study_agent.artifacts.content import LessonMaterialContent
 from study_agent.domain import (
@@ -203,6 +205,17 @@ class MaterialProduct:
             registry = cast(dict[str, object], json.loads(raw))
             jobs = cast(list[JsonObject], registry["jobs"])
             reservations = cast(dict[str, JsonObject], registry.get("reservations", {}))
+            # All lesson modes share the original request suffix. Preserve old
+            # batch IDs and fingerprints so existing same-mode retries work.
+            request_key = reservation_id.rsplit(":", 1)[-1]
+            claimed_batches = set(reservations) | {
+                str(item["batch_id"]) for item in jobs if item.get("batch_id")
+            }
+            if any(
+                claim != reservation_id and claim.rsplit(":", 1)[-1] == request_key
+                for claim in claimed_batches
+            ):
+                raise ValueError("Richiesta lezioni riutilizzata con una modalità diversa.")
             existing_ids = {str(item["job_id"]) for item in jobs}
             for item in jobs:
                 if (
@@ -219,7 +232,13 @@ class MaterialProduct:
                 ):
                     raise ValueError("Richiesta lezioni riutilizzata con confini diversi.")
                 current_owner = current.get("owner_id")
-                if current_owner != owner_id:
+                # Structural retries have a stable request owner. Exact identity
+                # checks above also permit recovery of old random-owner records.
+                structural_retry = (
+                    reservation_id.startswith("structure-lesson:")
+                    and owner_id == f"request:{reservation_id}:{fingerprint}"
+                )
+                if current_owner != owner_id and not structural_retry:
                     raise ValueError("Questa richiesta di lezioni è già in lavorazione; riprova.")
                 reservations[reservation_id] = {
                     **current,
@@ -436,11 +455,53 @@ class MaterialProduct:
             stage = "publication_retryable"
         if worker_error and stage not in {"proposed", "stale", "failed_terminal"}:
             stage = "retryable"
+        active_stage = (
+            state.lease_stage.value
+            if state.lease_stage is not None
+            and state.lease_until is not None
+            and state.lease_until > self.repo.clock.now()
+            and stage not in {"retryable", "stale", "failed_terminal", "proposed"}
+            else None
+        )
+        segment_total = None
+        segment_title = None
+        progress_error = None
+        if state.boundaries is not None:
+            try:
+                if state.unit_manifest is None:
+                    raise ValueError("segment manifest is missing")
+                boundaries = SegmentBoundaries.from_bytes(self.repo.blobs.get(state.boundaries))
+                manifest = UnitManifest.from_bytes(self.repo.blobs.get(state.unit_manifest))
+                pin = state.request.pin
+                transcript = self.repo.blobs.get(pin.normalized_blob).decode("utf-8")
+                if (
+                    manifest.text_fingerprint != pin.normalized_blob.checksum_sha256
+                    or manifest.character_length != pin.normalized_character_length
+                    or len(transcript) != manifest.character_length
+                    or any(
+                        unit.text != transcript[unit.start : unit.end] for unit in manifest.units
+                    )
+                ):
+                    raise ValueError("segment manifest does not match the pinned transcript")
+                boundaries.validate_against(manifest)
+                if not (
+                    len(state.segments) <= len(boundaries.segments) <= state.request.max_segments
+                ):
+                    raise ValueError("segment progress is outside the request bounds")
+                segment_total = len(boundaries.segments)
+                if active_stage == "complete_segment" and len(state.segments) < segment_total:
+                    segment_title = boundaries.segments[len(state.segments)].title
+            except (LookupError, OSError, ValueError):
+                progress_error = "Dettagli di avanzamento non disponibili."
         return {
             "schema_version": 1,
             **descriptor,
             "stage": stage,
             "segment_count": len(state.segments),
+            "active_stage": active_stage,
+            "segment_total": segment_total,
+            "segment_title": segment_title,
+            "progress_error": progress_error,
             "error_code": None if state.error_code is None else state.error_code.value,
             "error": "Salvataggio in attesa: il sistema riproverà senza cambiare le approvazioni."
             if publication_pending
@@ -529,6 +590,7 @@ class MaterialProduct:
 
     def lessons(self, source_id: str, revision_id: str) -> JsonObject:
         record = self.source(source_id, revision_id)
+        structure = self._lesson_structure(record)
         provenance = record.source.conversion_provenance
         if provenance is None or not provenance.page_spans:
             return {
@@ -536,6 +598,7 @@ class MaterialProduct:
                 "revision_id": revision_id,
                 "lessons": (),
                 "page_count": None,
+                **structure,
             }
         starts: list[tuple[int, str]] = []
         for span in provenance.page_spans:
@@ -559,7 +622,135 @@ class MaterialProduct:
             "revision_id": revision_id,
             "lessons": cast(tuple[JsonObject, ...], lessons),
             "page_count": count,
+            **structure,
         }
+
+    def _lesson_structure(self, record: SourceRevisionRecord) -> JsonObject:
+        """Expose verified navigation spans, never provider summaries or evidence IDs."""
+        source_id, revision_id = str(record.source.source_id), str(record.source.revision_id)
+        digest = sha256(record.text.encode("utf-8")).hexdigest()
+        projection = next(
+            (
+                item
+                for item in self.repo.pageindex_status(self.course)
+                if item.source_id == source_id and item.revision_id == revision_id
+            ),
+            None,
+        )
+        status = "absent" if projection is None else projection.status.value
+        if projection is None or projection.status is not PageIndexStatus.READY:
+            return {"structure_status": status, "structure": ()}
+        if projection.content_sha256 != digest or any(
+            item.content_sha256 != digest
+            or not 0 <= item.start_offset < item.end_offset <= len(record.text)
+            for item in projection.candidates
+        ):
+            return {"structure_status": "unavailable", "structure": ()}
+        return {
+            "structure_status": status,
+            "structure": tuple(
+                {
+                    "title": item.title,
+                    "start_offset": item.start_offset,
+                    "end_offset": item.end_offset,
+                    "content_sha256": digest,
+                }
+                for item in sorted(
+                    projection.candidates,
+                    key=lambda item: (item.start_offset, -item.end_offset, item.title),
+                )
+                if len(item.title) <= 240
+            ),
+        }
+
+    def start_structure_lesson(
+        self, source_id: str, revision_id: str, lesson: dict[str, object], request_id: str
+    ) -> tuple[JsonObject, ...]:
+        """HUMAN-selected exact span becomes an extracted transcript with canonical lineage."""
+        record = self.source(source_id, revision_id)
+        extraction = record.source.extraction_provenance
+        if extraction is not None:
+            ancestry = json.loads(self.repo.blobs.get(BlobRef(
+                BlobId("sha256:" + extraction.manifest_sha256),
+                extraction.manifest_sha256,
+                extraction.manifest_byte_length,
+            )))
+            if ancestry.get("parent_source_id") is not None:
+                raise ValueError(
+                    "Scegli la fonte originale; un estratto non può essere estratto di nuovo."
+                )
+        if (
+            set(lesson) != {"title", "start_offset", "end_offset", "content_sha256"}
+            or type(lesson["start_offset"]) is not int
+            or type(lesson["end_offset"]) is not int
+            or type(lesson["title"]) is not str
+            or type(lesson["content_sha256"]) is not str
+        ):
+            raise ValueError("Selezione della struttura non valida.")
+        structure = self._lesson_structure(record)
+        if lesson not in cast(tuple[JsonObject, ...], structure["structure"]):
+            raise ValueError(
+                "La lezione non è più disponibile nella struttura; aggiorna la selezione."
+            )
+        start, end = lesson["start_offset"], lesson["end_offset"]
+        text = record.text[start:end]
+        self._validate_transcript_size(
+            normalize("NFC", text.replace("\r\n", "\n").replace("\r", "\n"))
+        )
+        if not (consent := self.repo.provider_consent.get(self.course)) or not consent.granted:
+            raise ProviderConsentRequiredError("provider consent is required")
+        manifest: JsonObject = {
+            "parent_source_id": source_id,
+            "parent_revision_id": revision_id,
+            "parent_content_sha256": str(lesson["content_sha256"]),
+            "start_offset": start,
+            "end_offset": end,
+            "title": str(lesson["title"]),
+        }
+        fingerprint = sha256(canonical_json_bytes(manifest)).hexdigest()
+        # Bind the original request to its selection before any canonical admission.
+        batch_id = (
+            "structure-lesson:"
+            + sha256(f"{self.course}\0{self.session}\0{request_id}".encode()).hexdigest()
+        )
+        job_id = self._material_job_id(str(self.course), str(self.session), request_id)
+        owner_id = f"request:{batch_id}:{fingerprint}"
+        if any(
+            item["job_id"] == job_id and item.get("batch_id") != batch_id for item in self.jobs()
+        ):
+            raise ValueError("Richiesta riutilizzata con una selezione diversa.")
+        self._reserve_batch(batch_id, fingerprint, (job_id,), owner_id)
+        admitted_effects = False
+        registered = False
+        try:
+            sequence = self.repo.events.projection(self.course).sequence
+            self.source(source_id, revision_id)
+            admitted = self.admit_extraction(
+                original=self.repo.blobs.get(record.source.blob),
+                text=text,
+                title=str(lesson["title"]),
+                manifest=manifest,
+                adapter="canonical-lesson-extraction@1",
+                media_type="application/pdf"
+                if record.source.conversion_provenance
+                else "text/plain",
+                limitations=(
+                    "Estratto limitato ai confini della struttura confermati dall'utente.",
+                ),
+                expected_sequence=sequence,
+            )
+            admitted_effects = True
+            result = self.start(
+                str(admitted.source.source_id),
+                str(admitted.source.revision_id),
+                request_id,
+                batch=(batch_id, fingerprint, 0),
+            )
+            registered = True
+            return (result,)
+        finally:
+            if not admitted_effects or registered:
+                self._release_batch(batch_id, owner_id)
 
     def start_lessons(
         self, source_id: str, revision_id: str, lessons: list[dict[str, object]], request_id: str

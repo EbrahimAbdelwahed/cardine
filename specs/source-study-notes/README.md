@@ -137,3 +137,83 @@ retains its request ID across failed submissions while selection is unchanged.
 Existing batch reservations, extraction manifests, restart checkpoints and
 parent lifetime validation remain authoritative. Unselected lessons produce
 no extraction or model job. Chat-triggered note generation remains deferred.
+
+## PageIndex lesson dropdown — owner-approved continuation, 2026-10-02
+
+The source note action opens a dropdown over the existing ready PageIndex
+navigation for the exact current source/revision. It supports Markdown/text
+and PDF, preserves nested sections, starts unselected, and submits only the
+explicitly chosen lesson. The browser confirms the scope before starting.
+An explicit whole-source choice remains available for non-PDF input.
+
+Preparation returns `structure_status` and `structure`, whose entries carry
+only title, exact Unicode offsets and the canonical text SHA-256. The new
+`structure_lesson` generation payload is mutually exclusive with `lessons`
+and `selected_lessons`. The server revalidates the exact ready projection,
+source/revision, digest, bounds, selected candidate, consent and capacity before
+admission. PDF selections retain exact character boundaries even when lessons
+share a page; they never expand to whole pages. Node IDs and summaries do not
+cross this boundary or authorize evidence/citations.
+
+A selected canonical slice is admitted with immutable extraction lineage
+(parent source/revision/text hash and exact offsets), then enters the existing
+paired-material pipeline. The canonical extraction and its SourceChunks own
+citations and evidence. HUMAN proposal decisions and dependency-aware
+publication stay unchanged. Request identity binds the exact selection;
+unchanged retries reuse the job, changed selections require a new request.
+A retired/replaced parent blocks generation and publication as before.
+
+Loading, queued/indexing, missing/disabled/degraded structure and failed reads
+are explicit. Refresh retries preparation without model work. Absent structure
+cannot start structural generation. The existing PDF boundary editor and
+multiple-lesson selection remain an explicit alternative. Uploads made from
+Sources stay on Sources; first-source study setup remains available on Today.
+Source admission still completes independently of derived indexing, and note
+preparation does not run extraction or initiate model calls.
+
+Integration points for the parallel Sources layout task: retain
+`[data-generate-notes]` with its exact source/revision JSON, `#material-jobs`,
+and the `[data-notes-lessons]` polling guard. No CSS or source-grid layout change
+is part of this continuation. Its new custody overlay binds only the three
+changed runtime paths, preserving all historical custody overlays.
+
+Offline coverage: `test_structure_lesson_notes.py`,
+`test_structure_lesson_notes_journey.py`, existing PDF selection and material
+journeys, plus exact custody drift checks. Run pytest, Ruff, mypy, ownership
+audit and package build before delivery. No paid provider tests are authorized.
+
+Delivery verification (2026-10-03 CEST): PR #18 includes published main `0990dbf`;
+2,910 offline tests passed with four expected optional/live skips. Ruff, strict
+mypy (670 files), ownership audit, JS syntax, wheel/sdist and package verification
+passed. GitHub CI and automatic Codex review remain pending at publication.
+See [the focused handoff](../../dev/logs/2026-10-02--cardine--lesson-structure-picker--log.md).
+No merge or deployment was performed.
+
+## Visible lesson progress — owner-requested continuation, 2026-10-04
+
+Based on PR #18's automatic PageIndex lesson picker. Successful submission
+focuses the generated lesson panel. Each job reports its active checkpoint lease:
+segmenting the named lesson, generating the named segment, merging complete notes,
+preparing study notes and preparing the proposal. Queued work explicitly waits
+for a worker slot. No queue position, completion time or percentage is invented.
+
+Segment totals and titles are read from hash-verified boundary and unit checkpoints
+and validated against their manifest and request bounds. Missing or inconsistent
+progress details produce a bounded presentation warning without writes or changes
+to generation authority. Active stages require a non-expired lease; failures and
+terminal states never appear as active. Restart retains completed counts.
+
+The accessible native progress bar counts completed segments only; accompanying
+text distinguishes the current segment from completed work. Resume appears only
+for generation/publication retry states. HUMAN approval, PageIndex scope checks,
+paired outputs, source lifetime and canonical publication remain unchanged.
+
+The three runtime paths have a separate `notes-progress-overlay.json`; historical
+custody records remain intact. Offline browser coverage holds the model at the
+segmentation and generation seams before completion, checks mobile overflow,
+completion and approval controls. Product tests cover restart, manifest mismatch
+and read-only status behavior. Visual critique covers desktop/mobile captures.
+
+Progress validation also binds the manifest fingerprint, character length and
+every unit's contents to the pinned normalized transcript; a mutually consistent
+checkpoint pair copied from another lesson cannot supply progress details.

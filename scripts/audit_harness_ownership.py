@@ -26,6 +26,17 @@ CLASSIFICATION = ROOT / "tests/parity/ownership-classification.json"
 TRANSITION_OVERLAY = ROOT / "tests/parity/ca02-transition-overlay.json"
 RECOVERY_OVERLAY = ROOT / "tests/parity/wave-a-recovery-overlay.json"
 STUDENT_JOURNAL_OVERLAY = ROOT / "tests/parity/student-journal-overlay.json"
+TUTOR_CONTEXT_OVERLAY = ROOT / "tests/parity/tutor-context-overlay.json"
+TUTOR_CONTEXT_PATHS = {
+    "src/cardine/adapters/model/streaming.py",
+    "src/cardine/application/explanation_validation.py",
+    "src/cardine/application/flashcard_proposals.py",
+    "src/cardine/cli/repository.py",
+    "src/cardine/hosts/flashcard_routing.py",
+    "src/cardine/hosts/routing.py",
+    "src/study_agent/flashcards/planning.py",
+    "src/study_agent/flashcards/scope.py",
+}
 LATENCY_PATHS = {
     "src/cardine/adapters/model/openai_luna.py",
     "src/cardine/adapters/model/streaming.py",
@@ -753,6 +764,7 @@ def _validate_cardine_transition(
                     and source_path not in RECOVERY_AST_VARIANCE
                     and source_path not in STUDENT_JOURNAL_PATHS
                     and source_path not in LATENCY_PATHS
+                    and source_path not in TUTOR_CONTEXT_PATHS
                 ):
                     baseline_source = _baseline_source(source_path)
                     if _normalized_ast(current_source, source_path) != _normalized_ast(
@@ -813,18 +825,63 @@ SELECTED_NOTES_PATHS = {
 }
 
 
-def _load_study_notes_overlay(*, selected: bool = False) -> dict[str, str]:
+STRUCTURE_NOTES_PATHS = {
+    "src/cardine/demo/browser.js",
+    "src/cardine/demo/ui_application.py",
+    "src/cardine/materials/product.py",
+}
+
+
+NOTES_PROGRESS_PATHS = {
+    "src/cardine/demo/browser.js",
+    "src/cardine/demo/browser.css",
+    "src/cardine/materials/product.py",
+}
+
+# Historical approval manifests remain immutable even when a newer product
+# continuation supersedes their runtime byte bindings.
+HISTORICAL_NOTES_OVERLAY_DIGESTS = {
+    "source-study-notes-overlay.json":
+        "a9e0090f28e610fa3ddfb59819cd81017b391f0fa9ec1dc141228e0e1b756688",
+    "selected-lesson-notes-overlay.json":
+        "bf4aa8cd7763376c885630b9423cfbda4fc82e07bc2b2f43ded66738326e25f4",
+    "structure-lesson-notes-overlay.json":
+        "66fe5124b67b2832ccbb9b1eef8525362dd79827357fcce542d1bd0bce7fe6d1",
+}
+
+
+def _load_study_notes_overlay(
+    *, selected: bool = False, structure: bool = False, progress: bool = False
+) -> dict[str, str]:
     """Bind the owner-approved feature scope without rewriting recovery custody.
 
     This is implementation custody, not evidence that automatic review or
     installed-package parity has passed. Unknown paths and digest drift fail.
     """
     filename = (
-        "selected-lesson-notes-overlay.json" if selected else "source-study-notes-overlay.json"
+        "notes-progress-overlay.json"
+        if progress
+        else "structure-lesson-notes-overlay.json"
+        if structure
+        else "selected-lesson-notes-overlay.json"
+        if selected
+        else "source-study-notes-overlay.json"
     )
-    paths = SELECTED_NOTES_PATHS if selected else STUDY_NOTES_PATHS
+    paths = (
+        NOTES_PROGRESS_PATHS
+        if progress
+        else STRUCTURE_NOTES_PATHS
+        if structure
+        else SELECTED_NOTES_PATHS
+        if selected
+        else STUDY_NOTES_PATHS
+    )
     path = ROOT / "tests/parity" / filename
-    raw = json.loads(path.read_text(encoding="utf-8"))
+    data = path.read_bytes()
+    historical_digest = HISTORICAL_NOTES_OVERLAY_DIGESTS.get(filename)
+    if historical_digest and hashlib.sha256(data).hexdigest() != historical_digest:
+        raise ValueError("historical study notes custody manifest changed")
+    raw = json.loads(data)
     if (
         not isinstance(raw, dict)
         or set(raw) != {"schema_version", "plan", "rows"}
@@ -853,6 +910,19 @@ def _load_latency_overlay() -> dict[str, str]:
     return _bound_hashes(raw["rows"], LATENCY_PATHS, "latency overlay")
 
 
+def _load_tutor_context_overlay() -> dict[str, str]:
+    """Bind the requested product repair, preserving historical core approvals."""
+    raw = json.loads(TUTOR_CONTEXT_OVERLAY.read_text(encoding="utf-8"))
+    if (
+        not isinstance(raw, dict)
+        or set(raw) != {"schema_version", "decision", "rows"}
+        or raw["schema_version"] != 1
+        or raw["decision"] != "ADR-0025--current-topic-and-context-settlement"
+    ):
+        raise ValueError("tutor context overlay fields are invalid")
+    return _bound_hashes(raw["rows"], TUTOR_CONTEXT_PATHS, "tutor context overlay")
+
+
 def validate(*, live: bool = False) -> list[str]:
     errors: list[str] = []
     try:
@@ -860,6 +930,9 @@ def validate(*, live: bool = False) -> list[str]:
         recovery_hashes.update(_load_student_journal_overlay())
         recovery_hashes.update(_load_study_notes_overlay(selected=True))
         recovery_hashes.update(_load_latency_overlay())
+        recovery_hashes.update(_load_study_notes_overlay(structure=True))
+        recovery_hashes.update(_load_study_notes_overlay(progress=True))
+        recovery_hashes.update(_load_tutor_context_overlay())
         for path in STUDENT_JOURNAL_REMOVED:
             recovery_hashes.pop(path, None)
         reviewed = _load_classification()

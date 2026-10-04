@@ -7,6 +7,8 @@ import tarfile
 from io import BytesIO
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).parents[2]
 
 
@@ -221,9 +223,19 @@ def test_new_unclassified_core_file_remains_rejected(tmp_path: Path) -> None:
     )
 
 
-def test_selected_notes_custody_rejects_drift_and_scope_changes(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "selected-lesson-notes-overlay.json",
+        "structure-lesson-notes-overlay.json",
+        "notes-progress-overlay.json",
+    ],
+)
+def test_selected_notes_custody_rejects_drift_and_scope_changes(
+    tmp_path: Path, filename: str
+) -> None:
     clean_root = _clean_archive(tmp_path)
-    overlay = clean_root / "tests/parity/selected-lesson-notes-overlay.json"
+    overlay = clean_root / "tests/parity" / filename
     original = overlay.read_text(encoding="utf-8")
     raw = json.loads(original)
     for mutate in ("missing", "foreign", "drift"):

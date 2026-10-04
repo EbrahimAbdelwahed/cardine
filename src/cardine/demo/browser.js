@@ -130,6 +130,7 @@
     selectedAnswers: Object.create(null),
     freeAnswers: Object.create(null),
     revealedReviews: Object.create(null),
+    review: { snapshot: null, pending: [], saving: false, error: null, scope: "" },
     lastCommand: null,
     loading: false,
     pendingTurn: null,
@@ -645,12 +646,14 @@
     const course = form.elements.namedItem("course_id");
     const session = form.elements.namedItem("session_id");
     if (!(course instanceof HTMLSelectElement) || !(session instanceof HTMLSelectElement) || !course.value || !session.value) return;
+    if (!canLeaveReviewScope(JSON.stringify([course.value, session.value]))) return;
     await fetchJson("/api/v1/workspace/select", { method: "POST", body: JSON.stringify(workspaceCommand({ course_id: course.value, session_id: session.value })) });
     await loadBootstrap();
     await loadRoute("sessione");
   }
 
   async function startWorkspaceSession(form) {
+    if (!canLeaveReviewScope()) return;
     const courseControl = form.elements.namedItem("course_id");
     const input = form.elements.namedItem("session_id");
     const course = courseControl instanceof HTMLSelectElement
@@ -666,6 +669,7 @@
   }
 
   async function createWorkspaceCourse(form) {
+    if (!canLeaveReviewScope()) return;
     const value = (name) => {
       const item = form.elements.namedItem(name);
       return item instanceof HTMLInputElement ? item.value.trim() : "";
@@ -681,6 +685,7 @@
   }
 
   async function createChatCourse(form) {
+    if (!canLeaveReviewScope()) return;
     const field = (name) => {
       const item = form.elements.namedItem(name);
       return item instanceof HTMLInputElement || item instanceof HTMLSelectElement
@@ -738,6 +743,7 @@
   }
 
   async function logout() {
+    if (!canLeaveReviewScope()) return;
     try {
       await fetchJson("/api/v1/auth/logout", { method: "POST", body: JSON.stringify({}) });
     } catch (_) {
@@ -939,7 +945,7 @@
       if (["queued", "indexing"].includes(text(indexing.status))) {
         pollIndexing(null).catch(() => {});
       }
-      if (route !== "percorso") updateSequence(first(payload, ["high_water_sequence", "sequence"], state.highWaterSequence));
+      updateSequence(first(payload, ["high_water_sequence", "sequence"], state.highWaterSequence));
       renderCourse(payload);
       updateCounts(payload);
       updateContinuation(payload);
@@ -1482,7 +1488,11 @@
     const featureByRoute = { proposte: "artifacts", verifiche: "assessments", percorso: "student_state", ripasso: "recall" };
     if (state.bootstrap && object(state.bootstrap.features)[featureByRoute[route]] === false) {
       setStatus(text(state.bootstrap?.shell_status, "ready"), `${ROUTES[route].heading} · sezione non attiva`);
-      renderUnavailable(route);
+      if (route === "ripasso" && state.review.pending.length) {
+        renderRipasso({status: "unavailable", high_water_sequence: state.highWaterSequence, items: []});
+      } else {
+        renderUnavailable(route);
+      }
       return;
     }
     renderLoading(route);
@@ -2055,27 +2065,149 @@
     setView("percorso", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="student-state-heading"><h1 class="section-title" id="student-state-heading">Il tuo percorso</h1><p class="section-copy">Una cronologia delle tue attività e osservazioni di studio.</p>${rows}${payload.has_more ? `<p>Mostrate le ultime ${entries.length} attività su ${esc(payload.total_entries)}.</p><button class="button button--quiet" type="button" data-student-state-before="${esc(payload.next_cursor)}">Attività precedenti</button>` : ""}</section><aside class="section-grid__side"><form data-student-state-form class="side-card"><h2>Aggiungi un'osservazione</h2><label>Tipo<select name="kind"><option value="learner_signal">Difficoltà incontrata</option><option value="topic_covered">Argomento trattato</option></select></label><label>Argomento<input name="topic" maxlength="120" required></label><label>Dettaglio<textarea name="summary" maxlength="500" rows="3"></textarea></label><button class="button" type="submit">Aggiungi</button></form><button class="button button--quiet" type="button" data-command="student-state-import">Importa la cronologia precedente</button></aside></section>`);
   }
 
+  function reviewScope() {
+    return JSON.stringify([object(state.bootstrap?.course).id, object(state.bootstrap?.session).id]);
+  }
+
+  function canLeaveReviewScope(targetScope = null) {
+    if (!state.review.pending.length || targetScope === state.review.scope) return true;
+    showAlert({ tone: "warning", title: "Ci sono valutazioni da salvare", detail: "Completa il salvataggio prima di cambiare corso, sessione o account.", actions: [{ label: "Apri Ripasso", run: () => loadRoute("ripasso") }] });
+    return false;
+  }
+
+  function reviewSnapshot(payload) {
+    const review = state.review;
+    const scope = reviewScope();
+    if (review.scope !== scope && !review.pending.length) {
+      review.snapshot = null;
+      review.scope = scope;
+      state.revealedReviews = Object.create(null);
+    }
+    if (!review.snapshot || Number(payload.high_water_sequence || 0) >= Number(review.snapshot.high_water_sequence || 0)) {
+      review.snapshot = payload;
+    }
+    return review.snapshot;
+  }
+
+  function visibleReviewItems(payload) {
+    const pending = new Set(state.review.pending.map((command) => command.revisionId));
+    const due = array(first(payload, ["items", "due", "cards", "queue"], []))
+      .filter((card) => !pending.has(text(first(object(card), ["revision_id", "id"]))));
+    // An uncertain write is still pending. Restore its exact card for an
+    // explicit retry; never allow a different rating to acquire a new identity.
+    if (state.review.error && state.review.pending.length) due.unshift(state.review.pending[0].card);
+    return due;
+  }
+
+  function renderReviewState() {
+    if (state.route === "ripasso") renderRipasso(state.review.snapshot || state.viewData || {});
+  }
+
+  function rateReview(control) {
+    const review = state.review;
+    const revisionId = text(control.dataset.revisionId);
+    const rating = text(control.dataset.rating);
+    const card = visibleReviewItems(review.snapshot || state.viewData || {})[0];
+    if (review.error || review.scope !== reviewScope() || !card
+      || text(first(object(card), ["revision_id", "id"])) !== revisionId
+      || state.revealedReviews[revisionId] !== true
+      || !["again", "hard", "good", "easy"].includes(rating)
+      || review.pending.some((command) => command.revisionId === revisionId)) return;
+    const scope = Object.freeze({course_id: object(state.bootstrap?.course).id, session_id: object(state.bootstrap?.session).id});
+    review.pending.push(Object.freeze({ revisionId, rating, requestId: requestId(), card, scope }));
+    delete state.revealedReviews[revisionId];
+    // The due payload already contains the next card. Painting it does not
+    // claim a commit, compute a schedule, or wait for any network round trip.
+    renderReviewState();
+    $('[data-reveal-review]', root)?.focus({ preventScroll: true });
+    void saveReviews();
+  }
+
+  async function saveReviews() {
+    const review = state.review;
+    if (review.saving || review.error || !review.pending.length) return;
+    review.saving = true;
+    try {
+      while (review.pending.length && !review.error) {
+        if (review.scope !== reviewScope()) throw new Error("Il contesto di studio è cambiato. Torna al corso e alla sessione del ripasso.");
+        const command = review.pending[0];
+        const receipt = await fetchJson(`/api/v1/recall/${encodeURIComponent(command.revisionId)}/reviews`, {
+          method: "POST", body: JSON.stringify({ ...commandPayload({ rating: command.rating, review_scope: command.scope }, command.requestId), expected_sequence: Math.max(state.highWaterSequence, Number(review.snapshot?.high_water_sequence || 0)) }),
+        });
+        if (receipt.status !== "committed" || !Array.isArray(receipt.result?.items)
+          || !Number.isInteger(receipt.high_water_sequence)
+          || receipt.result.high_water_sequence !== receipt.high_water_sequence) {
+          throw new Error("La conferma del salvataggio non è completa. Riprova lo stesso salvataggio.");
+        }
+        updateSequence(Math.max(state.highWaterSequence, receipt.high_water_sequence));
+        // Each serialized POST uses the preceding canonical receipt's sequence.
+        // The server has already joined the next due queue at that same HWM.
+        reviewSnapshot(object(receipt.result));
+        review.pending.shift();
+        renderReviewState();
+      }
+      if (!review.pending.length) {
+        setStatus("committed", "Valutazioni salvate nel registro canonico");
+        // Sidebar counts are advisory and never block the next review.
+        void refreshBootstrapCounts();
+      }
+    } catch (error) {
+      review.error = error;
+      renderReviewState();
+      if (!error.authExpired) setStatus("error", "Salvataggio della valutazione da verificare. Apri Ripasso e riprova.", { alert: false });
+    } finally {
+      review.saving = false;
+    }
+  }
+
+  async function recoverReviews(discardRejected = false) {
+    const review = state.review;
+    if (review.saving || !review.error || review.scope !== reviewScope()) return;
+    if (discardRejected && (![400, 404, 409, 422].includes(review.error.status) || review.error.payload?.commandCommitted)) return;
+    review.saving = true;
+    try {
+      const payload = await fetchJson(ROUTES.ripasso.endpoint);
+      updateSequence(payload.high_water_sequence);
+      review.snapshot = payload;
+      if (discardRejected) review.pending.shift();
+      review.error = null;
+    } catch (error) {
+      review.error = error;
+    } finally {
+      review.saving = false;
+      renderReviewState();
+    }
+    // Retrying an ambiguous result keeps revision, rating and request ID.
+    // Only an explicit discard of a rejected command removes an unsaved intent.
+    if (!review.error) void saveReviews();
+  }
+
   function renderRipasso(payload) {
+    payload = reviewSnapshot(payload);
     const availabilityStatus = text(first(payload, ["status"], "empty"), "empty");
+    const due = visibleReviewItems(payload);
+    const review = state.review;
+    const pendingCopy = review.pending.length ? `<p role="status" data-review-pending>${review.pending.length} ${review.pending.length === 1 ? "valutazione in attesa di salvataggio" : "valutazioni in attesa di salvataggio"}.</p>` : "";
+    const rejected = review.error && [400, 404, 409, 422].includes(review.error.status) && !review.error.payload?.commandCommitted;
+    const recovery = review.error ? `<div role="alert" data-review-error><p>Il salvataggio non è confermato. Le valutazioni successive sono in pausa.</p><div class="state-actions"><button class="button" type="button" data-review-retry>Riprova lo stesso salvataggio</button>${rejected ? `<button class="button button--quiet" type="button" data-review-discard>Annulla la valutazione rifiutata e continua</button>` : ""}</div></div>` : "";
     if (availabilityStatus === "not_configured" || availabilityStatus === "unavailable") {
-      setView("ripasso", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="review-heading"><p class="section-kicker">ripasso · coda del giorno</p><h1 class="section-title" id="review-heading">Ripasso</h1>${emptyState("Ripasso non disponibile", first(payload, ["message"], "Il ripasso programmato non è configurato."), "unavailable")}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">stato</p><h2 class="side-card__title">Configurazione esplicita</h2><p class="side-card__copy">Nessuna data viene calcolata nel browser; configura un adapter scheduler e riprova.</p></div></aside></section>`);
+      setView("ripasso", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="review-heading"><p class="section-kicker">ripasso · coda del giorno</p><h1 class="section-title" id="review-heading">Ripasso</h1>${emptyState("Ripasso non disponibile", first(payload, ["message"], "Il ripasso programmato non è configurato."), "unavailable")}${pendingCopy}${recovery}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">stato</p><h2 class="side-card__title">Configurazione esplicita</h2><p class="side-card__copy">Nessuna data viene calcolata nel browser; configura un adapter scheduler e riprova.</p></div></aside></section>`);
       return;
     }
-    const due = array(payload);
     if (!due.length) {
-      setView("ripasso", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="review-heading"><p class="section-kicker">ripasso · coda del giorno</p><h1 class="section-title" id="review-heading">Ripasso</h1>${emptyState("Nessun ripasso dovuto", "Non ci sono card da ripassare oggi.")}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">recall</p><h2 class="side-card__title">Stato vuoto</h2><p class="side-card__copy">Un'assenza di card non viene sostituita da una coda inventata.</p></div></aside></section>`);
+      setView("ripasso", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="review-heading"><p class="section-kicker">ripasso · coda del giorno</p><h1 class="section-title" id="review-heading">Ripasso</h1>${review.pending.length ? emptyState("Salvataggio in corso", "La coda è terminata; attendo la conferma delle valutazioni.") : emptyState("Nessun ripasso dovuto", "Non ci sono card da ripassare oggi.")}${pendingCopy}${recovery}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">recall</p><h2 class="side-card__title">Stato vuoto</h2><p class="side-card__copy">Un'assenza di card non viene sostituita da una coda inventata.</p></div></aside></section>`);
       return;
     }
     const firstCard = object(due[0]);
     const revisionId = first(firstCard, ["revision_id", "id"], "");
-    const revealed = state.revealedReviews[revisionId] === true;
+    const revealed = review.error || state.revealedReviews[revisionId] === true;
     const position = `1 / ${due.length}`;
     const ticks = due.slice(0, 24).map((_, index) => `<span class="review-progress__tick ${index === 0 ? "is-current" : ""}"></span>`).join("");
     const front = first(firstCard, ["front", "question", "prompt"], "Contenuto della card non disponibile.");
     const back = first(firstCard, ["back", "answer", "response"], "Risposta non disponibile fino alla rivelazione.");
     const citation = first(firstCard, ["citation", "provenance", "source"], null);
-    const reviewActions = revealed && revisionId ? `<div class="rating-list">${[["again", "Ancora"], ["hard", "Difficile"], ["good", "Bene"], ["easy", "Facile"]].map(([value, label]) => `<button class="rating-button" type="button" data-command="review" data-revision-id="${esc(revisionId)}" data-rating="${value}">${label}<span class="rating-button__next">registra decisione</span></button>`).join("")}</div>` : revealed ? emptyState("Decisione non disponibile", "Manca l’identificativo della revisione.", "unavailable") : "";
-    setView("ripasso", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="review-heading"><p class="section-kicker">ripasso · coda del giorno</p><h1 class="section-title" id="review-heading">Ripasso</h1><div class="review-card"><div class="review-progress"><span>${esc(position)}</span><span class="review-progress__bar">${ticks}</span></div><div class="review-card__front">${esc(front)}</div>${revealed ? `<div class="review-card__back">${esc(back)}</div>` : revisionId ? `<button class="button" type="button" data-reveal-review="${esc(revisionId)}">Mostra risposta</button>` : emptyState("Card senza identificativo", "La rivelazione è sospesa finché il servizio non restituisce la revisione.", "unavailable")}${citation ? `<button class="provenance-chip" type="button" data-provenance='${esc(JSON.stringify(citation))}'>fonte · ${esc(first(object(citation), ["locator", "title"], typeof citation === "string" ? citation : "metadati"))}</button>` : ""}${reviewActions}</div></section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">stato</p><h2 class="side-card__title">${esc(text(firstCard.status, "due"))}</h2><p class="side-card__copy">La stessa coda viene usata su desktop e mobile. Il browser non calcola la prossima data.</p></div></aside></section>`);
+    const reviewActions = revealed && revisionId ? `<div class="rating-list">${[["again", "Ancora"], ["hard", "Difficile"], ["good", "Bene"], ["easy", "Facile"]].map(([value, label]) => `<button class="rating-button" type="button" data-command="review" data-revision-id="${esc(revisionId)}" data-rating="${value}"${review.error ? " disabled" : ""}>${label}<span class="rating-button__next">registra decisione</span></button>`).join("")}</div>` : revealed ? emptyState("Decisione non disponibile", "Manca l’identificativo della revisione.", "unavailable") : "";
+    setView("ripasso", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="review-heading"><p class="section-kicker">ripasso · coda del giorno</p><h1 class="section-title" id="review-heading">Ripasso</h1><div class="review-card"><div class="review-progress"><span>${esc(position)}</span><span class="review-progress__bar">${ticks}</span></div><div class="review-card__front">${esc(front)}</div>${revealed ? `<div class="review-card__back">${esc(back)}</div>` : revisionId ? `<button class="button" type="button" data-reveal-review="${esc(revisionId)}">Mostra risposta</button>` : emptyState("Card senza identificativo", "La rivelazione è sospesa finché il servizio non restituisce la revisione.", "unavailable")}${citation ? `<button class="provenance-chip" type="button" data-provenance='${esc(JSON.stringify(citation))}'>fonte · ${esc(first(object(citation), ["locator", "title"], typeof citation === "string" ? citation : "metadati"))}</button>` : ""}${reviewActions}${pendingCopy}${recovery}</div></section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">stato</p><h2 class="side-card__title">${esc(text(firstCard.status, "due"))}</h2><p class="side-card__copy">La stessa coda viene usata su desktop e mobile. Il browser non calcola la prossima data.</p></div></aside></section>`);
   }
 
   function renderPlan(payload) {
@@ -2451,10 +2583,8 @@
         pollIndexing(status).catch(() => {});
       }
       state.studySetup = null;
-      if (!indexingContinues) {
-        await refreshBootstrapCounts();
-        await loadRoute("oggi");
-      }
+      await refreshBootstrapCounts();
+      await loadRoute(state.route === "fonti" ? "fonti" : "oggi");
     } catch (error) {
       if (status) status.textContent = error.message;
     } finally {
@@ -2470,47 +2600,115 @@
     control.addEventListener(event, handler);
   }
 
+  function notesScope() {
+    return JSON.stringify([object(state.bootstrap?.course).id, object(state.bootstrap?.session).id]);
+  }
+
   async function prepareNotes(control) {
+    const pane = $("#material-jobs");
+    if (!pane || control.disabled) return;
     control.disabled = true;
+    const scope = notesScope();
+    const pin = JSON.parse(control.dataset.generateNotes);
+    // This marker keeps job polling from replacing loading, selection or errors.
+    patch(pane, `<section class="notes-job" data-notes-lessons aria-busy="true"><h2>Scegli una lezione</h2><p role="status">Carico la struttura della fonte…</p></section>`);
+    const loading = pane.firstElementChild;
     try {
-      const scope = state.bootstrap;
-      const pin = JSON.parse(control.dataset.generateNotes);
       const prepared = await fetchJson("/api/v1/material-generations/prepare", {
         method: "POST", body: JSON.stringify(commandPayload(pin)),
       });
-      if (scope !== state.bootstrap || !control.isConnected) return;
-      if (array(prepared.lessons).length) {
-        const pane = $("#material-jobs");
-        patch(pane, `<section class="notes-job"><h2>Verifica le lezioni del PDF</h2><p>Correggi titoli e intervalli. Ogni riga: titolo | pagina iniziale | pagina finale. La divisione deve coprire tutte le pagine una volta. Nel passaggio successivo scegli quali lezioni generare.</p><form data-notes-lessons><label for="notes-lesson-ranges">Lezioni del PDF</label><textarea id="notes-lesson-ranges" rows="8">${esc(array(prepared.lessons).map((item) => `${item.title} | ${item.start_page} | ${item.end_page}`).join("\n"))}</textarea><button class="button" type="submit">Conferma confini e scegli lezioni</button><p data-notes-error role="status"></p></form></section>`);
-        $("[data-notes-lessons]", pane).addEventListener("submit", (event) => {
-          event.preventDefault();
-          const form = event.currentTarget;
-          try {
-            const lessons = $("textarea", form).value.split("\n").filter((line) => line.trim()).map((line) => {
-              const parts = line.split("|").map((item) => item.trim());
-              if (parts.length !== 3) throw new Error("Ogni riga deve contenere titolo | pagina iniziale | pagina finale.");
-              const [title, start, end] = parts;
-              return {title, start_page: Number(start), end_page: Number(end)};
-            });
-            let previous = 0;
-            if (!lessons.length || lessons.length > 64) throw new Error("Inserisci da 1 a 64 lezioni.");
-            for (const lesson of lessons) {
-              if (!lesson.title || lesson.title.length > 240 || !Number.isInteger(lesson.start_page) || !Number.isInteger(lesson.end_page) || lesson.start_page !== previous + 1 || lesson.end_page < lesson.start_page || lesson.end_page > prepared.page_count) {
-                throw new Error("La divisione deve coprire tutte le pagine in ordine, senza vuoti o sovrapposizioni.");
-              }
-              previous = lesson.end_page;
-            }
-            if (previous !== prepared.page_count) throw new Error("Mancano pagine nella divisione per lezioni.");
-            const boundaryEditor = pane.firstElementChild;
-            showNoteLessonSelection(pane, pin, lessons, scope, () => pane.replaceChildren(boundaryEditor));
-          } catch (error) { $("[data-notes-error]", form).textContent = error.message; }
-        });
-      } else {
-        await fetchJson("/api/v1/material-generations", {method: "POST", body: JSON.stringify(commandPayload(pin))});
+      if (scope !== notesScope() || !control.isConnected || pane.firstElementChild !== loading) return;
+      showNoteStructureSelection(pane, pin, prepared, scope);
+    } catch (error) {
+      if (scope !== notesScope() || pane.firstElementChild !== loading) return;
+      patch(pane, `<section class="notes-job" data-notes-lessons><h2>Struttura non disponibile</h2><p role="status">${esc(error.message)}</p><button class="button" type="button" data-notes-reload>Riprova</button></section>`);
+      $('[data-notes-reload]', pane).addEventListener("click", () => prepareNotes(control));
+    } finally { control.disabled = false; }
+  }
+
+  function showNoteStructureSelection(pane, pin, prepared, scope) {
+    const structure = array(prepared.structure);
+    const pdf = Number.isInteger(prepared.page_count);
+    const status = text(prepared.structure_status, "absent");
+    const waiting = ["queued", "indexing"].includes(status);
+    const detail = structure.length
+      ? "Scegli una lezione o una sezione dello scheletro PageIndex. Verrà elaborato solo il suo testo, senza ampliare i confini alle pagine vicine."
+      : waiting ? "La fonte è salvata. La struttura delle lezioni è ancora in elaborazione: aggiorna fra poco."
+      : status === "failed" ? "L’estrazione della struttura non è riuscita. Puoi riprovare dopo aver reindicizzato la fonte."
+      : "Non è disponibile una struttura delle lezioni per questa fonte.";
+    const options = structure.map((lesson, index) => {
+      const depth = structure.filter((parent) => parent.start_offset <= lesson.start_offset && parent.end_offset >= lesson.end_offset && (parent.start_offset < lesson.start_offset || parent.end_offset > lesson.end_offset)).length;
+      return `<option value="${index}">${esc(`${"› ".repeat(Math.min(depth, 8))}${lesson.title}`)}</option>`;
+    }).join("");
+    patch(pane, `<section class="notes-job"><h2>Scegli una lezione</h2><p role="status">${esc(detail)}</p><form data-notes-lessons><div class="field"><label for="notes-structure-lesson">Lezione o sezione della fonte</label><select id="notes-structure-lesson" name="structure_lesson"><option value="">Scegli una lezione…</option>${options}${!pdf ? '<option value="whole">Intera fonte</option>' : ""}</select></div><p data-notes-boundary class="field-note"></p><div class="state-actions"><button class="button" type="submit" disabled>Genera note per la lezione scelta</button><button class="button button--quiet" type="button" data-notes-reload>Aggiorna struttura</button>${pdf ? '<button class="button button--quiet" type="button" data-notes-boundaries>Modifica confini PDF / scegli più lezioni</button>' : ""}<button class="button button--quiet" type="button" data-notes-cancel>Annulla</button></div><p data-notes-error role="status"></p></form></section>`);
+    const form = $('[data-notes-lessons]', pane);
+    const select = $('select', form);
+    const submit = $('[type="submit"]', form);
+    let submission = null;
+    let previous = "";
+    select.addEventListener("change", () => {
+      if (select.value !== previous) submission = null;
+      previous = select.value;
+      submit.disabled = !select.value;
+      submit.textContent = select.value === "whole" ? "Genera note per l’intera fonte" : "Genera note per la lezione scelta";
+      const lesson = select.value !== "" && select.value !== "whole" ? structure[Number(select.value)] : null;
+      $('[data-notes-boundary]', form).textContent = lesson ? `${lesson.title} · ${lesson.end_offset - lesson.start_offset} caratteri. Confermi questi confini avviando la generazione.` : select.value === "whole" ? "Verrà elaborata l’intera revisione della fonte." : "";
+    });
+    $('[data-notes-cancel]', form).addEventListener("click", async () => {
+      form.remove();
+      await refreshMaterialJobs();
+    });
+    $('[data-notes-reload]', form).addEventListener("click", () => {
+      const control = $$('[data-generate-notes]').find((item) => item.dataset.generateNotes === JSON.stringify(pin));
+      if (control) prepareNotes(control);
+    });
+    if (pdf) $('[data-notes-boundaries]', form).addEventListener("click", () => showNoteBoundaryEditor(pane, pin, prepared, scope));
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (scope !== notesScope() || !form.isConnected || !select.value || submit.disabled) return;
+      submission ||= commandPayload({...pin, ...(select.value === "whole" ? {} : {structure_lesson: structure[Number(select.value)]})});
+      const controls = $$('select, button', form);
+      controls.forEach((item) => { item.disabled = true; });
+      try {
+        const receipt = await fetchJson("/api/v1/material-generations", {method: "POST", body: JSON.stringify(submission)});
+        if (scope !== notesScope() || !form.isConnected) return;
+        form.remove();
         await refreshMaterialJobs();
+        focusMaterialProgress(array(receipt.items)[0]?.job_id);
+      } catch (error) {
+        if (form.isConnected) $('[data-notes-error]', form).textContent = error.message;
+      } finally {
+        controls.forEach((item) => { item.disabled = false; });
+        submit.disabled = !select.value;
       }
-    } catch (error) { setStatus("unavailable", error.message); }
-    finally { control.disabled = false; }
+    });
+  }
+
+  function showNoteBoundaryEditor(pane, pin, prepared, scope) {
+    patch(pane, `<section class="notes-job"><h2>Verifica le lezioni del PDF</h2><p>Correggi titoli e intervalli. Ogni riga: titolo | pagina iniziale | pagina finale. La divisione deve coprire tutte le pagine una volta. Nel passaggio successivo scegli quali lezioni generare.</p><form data-notes-lessons><label for="notes-lesson-ranges">Lezioni del PDF</label><textarea id="notes-lesson-ranges" rows="8">${esc(array(prepared.lessons).map((item) => `${item.title} | ${item.start_page} | ${item.end_page}`).join("\n"))}</textarea><button class="button" type="submit">Conferma confini e scegli lezioni</button><p data-notes-error role="status"></p></form></section>`);
+    $("[data-notes-lessons]", pane).addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      try {
+        const lessons = $("textarea", form).value.split("\n").filter((line) => line.trim()).map((line) => {
+          const parts = line.split("|").map((item) => item.trim());
+          if (parts.length !== 3) throw new Error("Ogni riga deve contenere titolo | pagina iniziale | pagina finale.");
+          const [title, start, end] = parts;
+          return {title, start_page: Number(start), end_page: Number(end)};
+        });
+        let previous = 0;
+        if (!lessons.length || lessons.length > 64) throw new Error("Inserisci da 1 a 64 lezioni.");
+        for (const lesson of lessons) {
+          if (!lesson.title || lesson.title.length > 240 || !Number.isInteger(lesson.start_page) || !Number.isInteger(lesson.end_page) || lesson.start_page !== previous + 1 || lesson.end_page < lesson.start_page || lesson.end_page > prepared.page_count) {
+            throw new Error("La divisione deve coprire tutte le pagine in ordine, senza vuoti o sovrapposizioni.");
+          }
+          previous = lesson.end_page;
+        }
+        if (previous !== prepared.page_count) throw new Error("Mancano pagine nella divisione per lezioni.");
+        const boundaryEditor = pane.firstElementChild;
+        showNoteLessonSelection(pane, pin, lessons, scope, () => pane.replaceChildren(boundaryEditor));
+      } catch (error) { $("[data-notes-error]", form).textContent = error.message; }
+    });
   }
 
   function showNoteLessonSelection(pane, pin, lessons, scope, editBoundaries) {
@@ -2538,29 +2736,52 @@
     $('[data-notes-edit]', form).addEventListener("click", editBoundaries);
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      if (scope !== state.bootstrap || !form.isConnected) return;
+      if (scope !== notesScope() || !form.isConnected) return;
       const selected_lessons = selectedLessons();
       if (!selected_lessons.length) return;
       submission ||= commandPayload({...pin, selected_lessons});
       const controls = $$('input, button', form);
       controls.forEach((control) => { control.disabled = true; });
       try {
-        await fetchJson("/api/v1/material-generations", {method: "POST", body: JSON.stringify(submission)});
-        if (scope !== state.bootstrap || !form.isConnected) return;
+        const receipt = await fetchJson("/api/v1/material-generations", {method: "POST", body: JSON.stringify(submission)});
+        if (scope !== notesScope() || !form.isConnected) return;
         form.remove();
         await refreshMaterialJobs();
+        focusMaterialProgress(array(receipt.items)[0]?.job_id);
       } catch (error) { $("[data-notes-error]", form).textContent = error.message; }
       finally { controls.forEach((control) => { control.disabled = false; }); }
     });
   }
 
+  function focusMaterialProgress(jobId) {
+    const job = $$('#material-jobs .notes-job[data-key]').find((item) => item.dataset.key === jobId);
+    if (!job) return;
+    job.tabIndex = -1;
+    job.focus({preventScroll: true});
+    job.scrollIntoView({block: "nearest"});
+  }
+
+  function materialProgress(job, labels) {
+    const stage = job.active_stage || job.stage;
+    const title = text(job.title, "la lezione");
+    if (job.active_stage === "boundaries") return `Sto suddividendo ${title} in segmenti…`;
+    if (job.active_stage === "complete_segment" && job.segment_total) {
+      return `Sto generando ${title}, segmento ${Number(job.segment_count) + 1} di ${job.segment_total}${job.segment_title && job.segment_title !== title ? ` · ${job.segment_title}` : ""}`;
+    }
+    if (job.active_stage === "complete_merge") return `Sto unendo i segmenti di ${title}…`;
+    if (job.active_stage === "study") return `Sto preparando le note di studio per ${title}…`;
+    if (job.active_stage === "proposal") return `Sto preparando l’anteprima di ${title}…`;
+    if (stage === "queued") return "In coda: la generazione inizierà appena si libera uno spazio.";
+    return labels[stage] || "Preparazione delle note…";
+  }
+
   async function refreshMaterialJobs() {
     clearTimeout(materialPoll);
     if (state.route !== "fonti" || !$("#material-jobs") || $("[data-notes-lessons]")) return;
-    const scope = state.bootstrap;
+    const scope = notesScope();
     const pane = $("#material-jobs");
     const payload = await fetchJson("/api/v1/material-generations");
-    if (scope !== state.bootstrap || pane !== $("#material-jobs")) return;
+    if (scope !== notesScope() || pane !== $("#material-jobs")) return;
     if (state.route !== "fonti" || !$("#material-jobs") || $("[data-notes-lessons]")) return;
     const labels = {queued: "In coda", transcribing: "Trascrizione audio", boundaries: "Segmentazione",
       complete_segment: "Rielaborazione", complete_merge: "Unione dei segmenti", study: "Versione studio",
@@ -2568,7 +2789,7 @@
       proposal: "Preparazione anteprima", proposed: "Note pronte da revisionare", retryable: "Interrotto: puoi riprendere",
       stale: "Fonte aggiornata: rigenera", failed_terminal: "Generazione non riuscita"};
     const jobs = array(payload.items);
-    patch($("#material-jobs"), jobs.length ? jobs.map((job) => `<section class="notes-job" data-key="${esc(job.job_id)}"><h2>Note di studio · ${esc(job.title)}</h2><p>${esc(labels[job.stage] || job.stage)}${job.transcribed_chunks ? ` · ${esc(job.transcribed_chunks)} ${job.transcribed_chunks === 1 ? "blocco trascritto" : "blocchi trascritti"}` : ""}${job.segment_count ? ` · ${esc(job.segment_count)} ${job.segment_count === 1 ? "segmento elaborato" : "segmenti elaborati"}` : ""}</p>${job.error ? `<p role="status">${esc(job.error)}</p>` : ""}${array(job.outputs).map((output) => `<details class="notes-output" data-key="${esc(output.revision_id)}" data-note-preview-job="${esc(job.job_id)}" data-note-preview-revision="${esc(output.revision_id)}"><summary>${output.variant === "complete" ? "Sbobina completa" : "Materiale studio"} · ${esc(statusLabel(output.status))}</summary><div class="notes-markdown">${materialPreviews.get(output.revision_id) || "Apri per leggere le note."}</div>${array(output.limitations).map((item) => `<p class="field-note">${esc(item)}</p>`).join("")}${output.status === "proposed" ? `<div class="state-actions"><button class="button" data-note-decision="accept" data-note-revision="${esc(output.revision_id)}" data-note-job="${esc(job.job_id)}">Approva</button><button class="button button--quiet" data-note-decision="reject" data-note-revision="${esc(output.revision_id)}" data-note-job="${esc(job.job_id)}">Rifiuta</button></div>` : output.publication === "published" ? `<p>Salvato come fonte di studio.</p><button class="button button--quiet" data-source-viewer-mode="page" data-source-viewer='${esc(JSON.stringify({source_id: output.published_source_id, revision_id: output.published_revision_id, viewer_kind: "markdown", title: output.title}))}'>Apri note</button>` : output.status === "accepted" ? `<p>Approvato. La pubblicazione richiede il materiale completo approvato e una fonte ancora valida.</p>` : ""}</details>`).join("")}${!["proposed", "stale", "failed_terminal"].includes(job.stage) ? `<button class="button button--quiet" data-note-resume="${esc(job.job_id)}">${job.stage === "publication_retryable" ? "Riprova salvataggio" : "Riprendi generazione"}</button>` : ""}<p data-note-error role="status"></p></section>`).join("") : '<p class="field-note">Nessuna generazione in corso. Scegli «Genera note di studio» su una fonte per iniziare.</p>');
+    patch($("#material-jobs"), jobs.length ? jobs.map((job) => `<section class="notes-job" data-key="${esc(job.job_id)}"><h2>Note di studio · ${esc(job.title)}</h2><p role="status" aria-atomic="true" data-note-progress>${esc(materialProgress(job, labels))}${job.transcribed_chunks ? ` · ${esc(job.transcribed_chunks)} ${job.transcribed_chunks === 1 ? "blocco trascritto" : "blocchi trascritti"}` : ""}${job.segment_count ? ` · ${esc(job.segment_count)} ${job.segment_count === 1 ? "segmento elaborato" : "segmenti elaborati"}` : ""}</p>${job.segment_total ? `<progress class="notes-progress" value="${esc(job.segment_count)}" max="${esc(job.segment_total)}" aria-label="Segmenti elaborati per ${esc(job.title)}"></progress><p class="field-note">Segmenti completati: ${esc(job.segment_count)} di ${esc(job.segment_total)}</p>` : ""}${job.progress_error ? `<p class="field-note">${esc(job.progress_error)}</p>` : ""}${job.error ? `<p role="status">${esc(job.error)}</p>` : ""}${array(job.outputs).map((output) => `<details class="notes-output" data-key="${esc(output.revision_id)}" data-note-preview-job="${esc(job.job_id)}" data-note-preview-revision="${esc(output.revision_id)}"><summary>${output.variant === "complete" ? "Sbobina completa" : "Materiale studio"} · ${esc(statusLabel(output.status))}</summary><div class="notes-markdown">${materialPreviews.get(output.revision_id) || "Apri per leggere le note."}</div>${array(output.limitations).map((item) => `<p class="field-note">${esc(item)}</p>`).join("")}${output.status === "proposed" ? `<div class="state-actions"><button class="button" data-note-decision="accept" data-note-revision="${esc(output.revision_id)}" data-note-job="${esc(job.job_id)}">Approva</button><button class="button button--quiet" data-note-decision="reject" data-note-revision="${esc(output.revision_id)}" data-note-job="${esc(job.job_id)}">Rifiuta</button></div>` : output.publication === "published" ? `<p>Salvato come fonte di studio.</p><button class="button button--quiet" data-source-viewer-mode="page" data-source-viewer='${esc(JSON.stringify({source_id: output.published_source_id, revision_id: output.published_revision_id, viewer_kind: "markdown", title: output.title}))}'>Apri note</button>` : output.status === "accepted" ? `<p>Approvato. La pubblicazione richiede il materiale completo approvato e una fonte ancora valida.</p>` : ""}</details>`).join("")}${["retryable", "publication_retryable"].includes(job.stage) ? `<button class="button button--quiet" data-note-resume="${esc(job.job_id)}">${job.stage === "publication_retryable" ? "Riprova salvataggio" : "Riprendi generazione"}</button>` : ""}<p data-note-error role="status"></p></section>`).join("") : '<p class="field-note">Nessuna generazione in corso. Scegli «Genera note di studio» su una fonte per iniziare.</p>');
     $$('[data-note-preview-job]').forEach((details) => bindNoteControl(details, "toggle", async () => {
       if (!details.open || materialPreviews.has(details.dataset.notePreviewRevision)) return;
       try {
@@ -2582,12 +2803,12 @@
       } catch (error) { $(".notes-markdown", details).textContent = error.message; }
     }));
     $$('[data-note-decision]').forEach((button) => bindNoteControl(button, "click", async () => {
-      const decisionScope = state.bootstrap;
+      const decisionScope = notesScope();
       button.disabled = true;
       try {
         // Refresh the canonical sequence immediately before the HUMAN command.
         const job = await fetchJson(`/api/v1/material-generations/${encodeURIComponent(button.dataset.noteJob)}`);
-        if (!button.isConnected || decisionScope !== state.bootstrap) return;
+        if (!button.isConnected || decisionScope !== notesScope()) return;
         updateSequence(job.high_water_sequence);
         const receipt = await fetchJson(`/api/v1/material-generations/${encodeURIComponent(button.dataset.noteJob)}/decisions`, {
           method: "POST", body: JSON.stringify(commandPayload({revision_id: button.dataset.noteRevision, decision: button.dataset.noteDecision})),
@@ -2631,6 +2852,7 @@
       if (!["queued", "indexing"].includes(status)) {
         await refreshBootstrapCounts();
         if (state.route === "oggi") await loadRoute("oggi");
+        if (state.route === "fonti" && !$("[data-notes-lessons]")) await loadRoute("fonti");
         return;
       }
       await new Promise((resolve) => window.setTimeout(resolve, 750));
@@ -2750,6 +2972,8 @@
         submitArtifactBulk(form).catch((error) => showCommandError(error));
       });
     });
+    $$('[data-review-retry]').forEach((control) => control.addEventListener("click", () => recoverReviews()));
+    $$('[data-review-discard]').forEach((control) => control.addEventListener("click", () => recoverReviews(true)));
     $$('[data-reveal-review]').forEach((control) => control.addEventListener("click", () => { state.revealedReviews[control.dataset.revealReview] = true; renderRipasso(state.viewData || {}); }));
     $$('[data-choice]').forEach((control) => control.addEventListener("change", () => {
       const card = control.closest(".assessment-card");
@@ -2933,7 +3157,7 @@
     if (kind === "assessment-present") executeCommand(`/api/v1/assessments/${encodeURIComponent(control.dataset.revisionId || "")}/presentations`, {}, control.closest(".assessment-card"), "verifiche");
     if (kind === "assessment-grade") executeCommand(`/api/v1/assessments/${encodeURIComponent(control.dataset.attemptId || "")}/grade`, {}, control.closest(".assessment-card"), "verifiche");
     if (kind === "enroll") executeCommand(`/api/v1/recall/${encodeURIComponent(control.dataset.revisionId || "")}/enrollments`, {}, control.closest(".card"), "proposte");
-    if (kind === "review") executeCommand(`/api/v1/recall/${encodeURIComponent(control.dataset.revisionId || "")}/reviews`, { rating: control.dataset.rating }, control.closest(".review-card"), "ripasso");
+    if (kind === "review") rateReview(control);
   }
 
   function openProvenance(serialized) {
@@ -3431,6 +3655,11 @@
   }
 
   applyRailState();
+  window.addEventListener("beforeunload", (event) => {
+    if (!state.review.pending.length) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
   bindStaticControls();
   bindDynamicControls();
   bindSourceViewerResize();
