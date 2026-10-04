@@ -74,4 +74,45 @@ Retrieval, Jev transport, generation and post-generation verification are not
 exercised; provider calls are zero. This is local projection evidence, not live
 latency evidence or a provider/model benchmark.
 
-Delivery and final verification results will be recorded here before publication.
+Measured locally with Python 3.13 on 2026-10-04 (same generated input, 1,407,908
+UTF-8 bytes, within the 2 MiB admission bound):
+
+| Phase/count | Base `6e9c904` | This implementation |
+| --- | ---: | ---: |
+| Fixture/canonical setup | 0.0702 s | 0.1204 s |
+| Cold projection | 80.4884 s | 0.0470 s |
+| Repeated projection | 72.9408 s | 0.0422 s |
+| Cold locator resolutions | 1,402 | 701 |
+| Repeated locator resolutions | 1,402 | 0 |
+| Whole canonical chunks verified per projection | 3,676 | 3,676 |
+| Canonical candidates constructed per projection | 3,676 | 8 |
+
+Selected-output digest (orders, offsets and owning nodes) matches exactly:
+`2b2505e3cbe8bd2be3460fa7cbed6ec20baf9aa80fb5dfd5a9b2ac64af5fb99c`.
+Text preparation now occurs in setup; cold projection still verifies the entire
+canonical catalog. Semantic cache reuse is separately checked by the behavioral
+regression: one selected projection and one canonical catalog validation across
+cache key, analyze, cached validation and planning. A reopened analyzer prepares
+and verifies its selected scope once rather than trusting the persisted cache.
+
+## Delivery and verification
+
+Implementation commit: `579db63`. Published branch and
+[PR #24](https://github.com/EbrahimAbdelwahed/cardine/pull/24) include this handoff
+and source-free evidence; PR is attached to the owning Codex chat. The current
+submitted commit is the branch head, including final documentation.
+
+Dedicated `uv sync --frozen --extra dev --extra openai --extra jev --extra pdf`
+environment: **3,003 offline tests passed, four expected opt-in/platform skips**
+(189.87 s). Additional mocked transport/streaming/PDF group: 74 passed, one
+platform containment skip. Ruff, strict mypy (681 files), wheel/sdist build and
+archive verification, clean provider-free wheel imports/CLI help, and exact-byte
+ownership audit (322 historical rows) pass. The three modified copied-core
+commitments were updated in the existing audit, without changing classifications.
+
+At publication, GitHub CI and the automatic Codex review of the final submitted
+head are external pending checks; current results and actionable findings belong
+in PR #24. Marking ready starts automatic review round 1; maximum two rounds,
+no local reviewer. No merge, deployment, local rollout, study-store migration or
+paid provider call was performed. No tracked local implementation work remains.
+
