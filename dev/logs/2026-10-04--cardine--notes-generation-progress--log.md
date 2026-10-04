@@ -42,3 +42,9 @@ Historical files themselves are unchanged. PR #21 is stacked on PR #18.
 No paid provider calls, live source writes, restart, merge or deployment.
 Automatic GitHub semantic review is limited to two rounds. Local image critique
 does not replace that review. PR #20 owns the independent flashcard/context repair.
+
+Final runtime commit `004075d`: all 26 post-commit archive/design/browser checks
+passed, covering both originally failing gates. Additional 34 design/product
+checks and 63 PageIndex/PDF/browser cases passed. Ruff, strict mypy, isolated
+build and custody audit passed. PR #21 is ready for automatic review, with
+current-head GitHub CI/review pending. No unpublished runtime changes remain.
