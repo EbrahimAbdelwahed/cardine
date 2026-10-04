@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Callable
 from dataclasses import replace
@@ -15,6 +16,7 @@ from cardine.cli import (
     ModelAdapterRegistry,
     initialize_local_repository,
 )
+from cardine.materials.generation_contracts import MaterialGenerationState
 from cardine.materials.product import MaterialProduct
 from study_agent.adapters.model import GPT_5_6_LUNA_ADAPTER_ID
 from study_agent.domain import ContentOrigin, PrincipalKind
@@ -33,6 +35,51 @@ def _registry() -> ModelAdapterRegistry:
         return ScriptedLuna()
 
     return ModelAdapterRegistry({GPT_5_6_LUNA_ADAPTER_ID: cast(ModelAdapterBuilder, build)})
+
+
+def test_progress_survives_reopen_and_rejects_mismatched_boundaries(tmp_path: Path) -> None:
+    from cardine.materials.planning import SegmentBoundaries
+
+    root = tmp_path / "repo"
+    initialize_local_repository(root, _config())
+    context = _service_context()
+    assert context.session_id is not None
+    with LocalRepository.open(
+        root, model_adapters=_registry(), environment={"OPENAI_API_KEY": "fixture"}
+    ) as repository:
+        admitted = _prepare(repository, consent=True)
+        product = MaterialProduct(repository, context)
+        job_id = str(product.start(
+            str(admitted.source.source_id), str(admitted.source.revision_id), "progress-1"
+        )["job_id"])
+        assert product.status(job_id)["segment_total"] is None
+        pin = repository.material_transcript_pin(
+            context.course_id, context.session_id,
+            admitted.source.source_id, admitted.source.revision_id,
+        )
+        service = repository.material_generation(pin, context)
+        asyncio.run(service.reconcile(job_id, bounded_budget=1, context=context))
+        view = product.status(job_id)
+        assert view["segment_total"] == 1 and view["segment_count"] == 0
+        assert view["active_stage"] is None
+    with LocalRepository.open(root) as repository:
+        product = MaterialProduct(repository, context)
+        assert product.status(job_id)["segment_total"] == 1
+        raw = product.states.load(job_id)
+        state = MaterialGenerationState.from_bytes(raw)
+        assert state.boundaries is not None
+        boundaries = SegmentBoundaries.from_bytes(repository.blobs.get(state.boundaries))
+        forged = repository.blobs.put(replace(
+            boundaries, manifest_fingerprint="f" * 64,
+        ).to_bytes())
+        changed = replace(state, boundaries=forged).to_bytes()
+        assert product.states.compare_and_set(job_id, raw, changed)
+        before = len(tuple(repository.events.read(context.course_id)))
+        view = product.status(job_id)
+        assert view["segment_total"] is None
+        assert view["progress_error"] == "Dettagli di avanzamento non disponibili."
+        assert product.states.load(job_id) == changed
+        assert len(tuple(repository.events.read(context.course_id))) == before
 
 
 def test_product_requires_explicit_decisions_and_publishes_parent_first(tmp_path: Path) -> None:

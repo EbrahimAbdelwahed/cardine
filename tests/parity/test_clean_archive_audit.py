@@ -228,6 +228,7 @@ def test_new_unclassified_core_file_remains_rejected(tmp_path: Path) -> None:
     [
         "selected-lesson-notes-overlay.json",
         "structure-lesson-notes-overlay.json",
+        "notes-progress-overlay.json",
     ],
 )
 def test_selected_notes_custody_rejects_drift_and_scope_changes(

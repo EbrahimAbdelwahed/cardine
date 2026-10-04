@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "plan": "specs/source-study-notes/README.md",
+  "rows": [
+    {
+      "path": "src/cardine/demo/browser.css",
+      "sha256": "83a01c925e8e792d6678e83cf3bd70cb128c9e8489a5aee18a754e81c0d2ed11"
+    },
+    {
+      "path": "src/cardine/demo/browser.js",
+      "sha256": "e9a20de9a72c4af4b0f37647c1c111fb1f3fd90e695e20ecde691437f3f28a9d"
+    },
+    {
+      "path": "src/cardine/materials/product.py",
+      "sha256": "bbba4abb2ccedf23e8269cc44bcbcfc9f8ef46a7236aa119245fd3a10a050dca"
+    }
+  ]
+}

@@ -188,3 +188,28 @@ mypy (670 files), ownership audit, JS syntax, wheel/sdist and package verificati
 passed. GitHub CI and automatic Codex review remain pending at publication.
 See [the focused handoff](../../dev/logs/2026-10-02--cardine--lesson-structure-picker--log.md).
 No merge or deployment was performed.
+
+## Visible lesson progress — owner-requested continuation, 2026-10-04
+
+Based on PR #18's automatic PageIndex lesson picker. Successful submission
+focuses the generated lesson panel. Each job reports its active checkpoint lease:
+segmenting the named lesson, generating the named segment, merging complete notes,
+preparing study notes and preparing the proposal. Queued work explicitly waits
+for a worker slot. No queue position, completion time or percentage is invented.
+
+Segment totals and titles are read from hash-verified boundary and unit checkpoints
+and validated against their manifest and request bounds. Missing or inconsistent
+progress details produce a bounded presentation warning without writes or changes
+to generation authority. Active stages require a non-expired lease; failures and
+terminal states never appear as active. Restart retains completed counts.
+
+The accessible native progress bar counts completed segments only; accompanying
+text distinguishes the current segment from completed work. Resume appears only
+for generation/publication retry states. HUMAN approval, PageIndex scope checks,
+paired outputs, source lifetime and canonical publication remain unchanged.
+
+The three runtime paths have a separate `notes-progress-overlay.json`; historical
+custody records remain intact. Offline browser coverage holds the model at the
+segmentation and generation seams before completion, checks mobile overflow,
+completion and approval controls. Product tests cover restart, manifest mismatch
+and read-only status behavior. Visual critique covers desktop/mobile captures.

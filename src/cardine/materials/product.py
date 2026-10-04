@@ -28,6 +28,7 @@ from cardine.materials.materializer import (
     GeneratedSourceMaterializationError,
     GeneratedSourceMaterializer,
 )
+from cardine.materials.planning import SegmentBoundaries, UnitManifest
 from study_agent.adapters.sqlite.namespaced_run_store import NamespacedSQLiteRunStore
 from study_agent.artifacts.content import LessonMaterialContent
 from study_agent.domain import (
@@ -454,11 +455,42 @@ class MaterialProduct:
             stage = "publication_retryable"
         if worker_error and stage not in {"proposed", "stale", "failed_terminal"}:
             stage = "retryable"
+        active_stage = (
+            state.lease_stage.value
+            if state.lease_stage is not None
+            and state.lease_until is not None
+            and state.lease_until > self.repo.clock.now()
+            and stage not in {"retryable", "stale", "failed_terminal", "proposed"}
+            else None
+        )
+        segment_total = None
+        segment_title = None
+        progress_error = None
+        if state.boundaries is not None:
+            try:
+                if state.unit_manifest is None:
+                    raise ValueError("segment manifest is missing")
+                boundaries = SegmentBoundaries.from_bytes(self.repo.blobs.get(state.boundaries))
+                manifest = UnitManifest.from_bytes(self.repo.blobs.get(state.unit_manifest))
+                boundaries.validate_against(manifest)
+                if not (
+                    len(state.segments) <= len(boundaries.segments) <= state.request.max_segments
+                ):
+                    raise ValueError("segment progress is outside the request bounds")
+                segment_total = len(boundaries.segments)
+                if active_stage == "complete_segment" and len(state.segments) < segment_total:
+                    segment_title = boundaries.segments[len(state.segments)].title
+            except (LookupError, OSError, ValueError):
+                progress_error = "Dettagli di avanzamento non disponibili."
         return {
             "schema_version": 1,
             **descriptor,
             "stage": stage,
             "segment_count": len(state.segments),
+            "active_stage": active_stage,
+            "segment_total": segment_total,
+            "segment_title": segment_title,
+            "progress_error": progress_error,
             "error_code": None if state.error_code is None else state.error_code.value,
             "error": "Salvataggio in attesa: il sistema riproverà senza cambiare le approvazioni."
             if publication_pending

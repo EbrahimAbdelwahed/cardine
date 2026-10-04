@@ -2542,6 +2542,7 @@
         if (scope !== notesScope() || !form.isConnected) return;
         form.remove();
         await refreshMaterialJobs();
+        focusMaterialProgress();
       } catch (error) {
         if (form.isConnected) $('[data-notes-error]', form).textContent = error.message;
       } finally {
@@ -2614,9 +2615,32 @@
         if (scope !== notesScope() || !form.isConnected) return;
         form.remove();
         await refreshMaterialJobs();
+        focusMaterialProgress();
       } catch (error) { $("[data-notes-error]", form).textContent = error.message; }
       finally { controls.forEach((control) => { control.disabled = false; }); }
     });
+  }
+
+  function focusMaterialProgress() {
+    const job = $('#material-jobs .notes-job[data-key]');
+    if (!job) return;
+    job.tabIndex = -1;
+    job.focus({preventScroll: true});
+    job.scrollIntoView({block: "nearest"});
+  }
+
+  function materialProgress(job, labels) {
+    const stage = job.active_stage || job.stage;
+    const title = text(job.title, "la lezione");
+    if (job.active_stage === "boundaries") return `Sto suddividendo ${title} in segmenti…`;
+    if (job.active_stage === "complete_segment" && job.segment_total) {
+      return `Sto generando ${title}, segmento ${Number(job.segment_count) + 1} di ${job.segment_total}${job.segment_title && job.segment_title !== title ? ` · ${job.segment_title}` : ""}`;
+    }
+    if (job.active_stage === "complete_merge") return `Sto unendo i segmenti di ${title}…`;
+    if (job.active_stage === "study") return `Sto preparando le note di studio per ${title}…`;
+    if (job.active_stage === "proposal") return `Sto preparando l’anteprima di ${title}…`;
+    if (stage === "queued") return "In coda: la generazione inizierà appena si libera uno spazio.";
+    return labels[stage] || "Preparazione delle note…";
   }
 
   async function refreshMaterialJobs() {
@@ -2633,7 +2657,7 @@
       proposal: "Preparazione anteprima", proposed: "Note pronte da revisionare", retryable: "Interrotto: puoi riprendere",
       stale: "Fonte aggiornata: rigenera", failed_terminal: "Generazione non riuscita"};
     const jobs = array(payload.items);
-    patch($("#material-jobs"), jobs.length ? jobs.map((job) => `<section class="notes-job" data-key="${esc(job.job_id)}"><h2>Note di studio · ${esc(job.title)}</h2><p>${esc(labels[job.stage] || job.stage)}${job.transcribed_chunks ? ` · ${esc(job.transcribed_chunks)} ${job.transcribed_chunks === 1 ? "blocco trascritto" : "blocchi trascritti"}` : ""}${job.segment_count ? ` · ${esc(job.segment_count)} ${job.segment_count === 1 ? "segmento elaborato" : "segmenti elaborati"}` : ""}</p>${job.error ? `<p role="status">${esc(job.error)}</p>` : ""}${array(job.outputs).map((output) => `<details class="notes-output" data-key="${esc(output.revision_id)}" data-note-preview-job="${esc(job.job_id)}" data-note-preview-revision="${esc(output.revision_id)}"><summary>${output.variant === "complete" ? "Sbobina completa" : "Materiale studio"} · ${esc(statusLabel(output.status))}</summary><div class="notes-markdown">${materialPreviews.get(output.revision_id) || "Apri per leggere le note."}</div>${array(output.limitations).map((item) => `<p class="field-note">${esc(item)}</p>`).join("")}${output.status === "proposed" ? `<div class="state-actions"><button class="button" data-note-decision="accept" data-note-revision="${esc(output.revision_id)}" data-note-job="${esc(job.job_id)}">Approva</button><button class="button button--quiet" data-note-decision="reject" data-note-revision="${esc(output.revision_id)}" data-note-job="${esc(job.job_id)}">Rifiuta</button></div>` : output.publication === "published" ? `<p>Salvato come fonte di studio.</p><button class="button button--quiet" data-source-viewer-mode="page" data-source-viewer='${esc(JSON.stringify({source_id: output.published_source_id, revision_id: output.published_revision_id, viewer_kind: "markdown", title: output.title}))}'>Apri note</button>` : output.status === "accepted" ? `<p>Approvato. La pubblicazione richiede il materiale completo approvato e una fonte ancora valida.</p>` : ""}</details>`).join("")}${!["proposed", "stale", "failed_terminal"].includes(job.stage) ? `<button class="button button--quiet" data-note-resume="${esc(job.job_id)}">${job.stage === "publication_retryable" ? "Riprova salvataggio" : "Riprendi generazione"}</button>` : ""}<p data-note-error role="status"></p></section>`).join("") : '<p class="field-note">Nessuna generazione in corso. Scegli «Genera note di studio» su una fonte per iniziare.</p>');
+    patch($("#material-jobs"), jobs.length ? jobs.map((job) => `<section class="notes-job" data-key="${esc(job.job_id)}"><h2>Note di studio · ${esc(job.title)}</h2><p role="status" aria-atomic="true" data-note-progress>${esc(materialProgress(job, labels))}${job.transcribed_chunks ? ` · ${esc(job.transcribed_chunks)} ${job.transcribed_chunks === 1 ? "blocco trascritto" : "blocchi trascritti"}` : ""}${job.segment_count ? ` · ${esc(job.segment_count)} ${job.segment_count === 1 ? "segmento elaborato" : "segmenti elaborati"}` : ""}</p>${job.segment_total ? `<progress class="notes-progress" value="${esc(job.segment_count)}" max="${esc(job.segment_total)}" aria-label="Segmenti elaborati per ${esc(job.title)}"></progress><p class="field-note">Segmenti completati: ${esc(job.segment_count)} di ${esc(job.segment_total)}</p>` : ""}${job.progress_error ? `<p class="field-note">${esc(job.progress_error)}</p>` : ""}${job.error ? `<p role="status">${esc(job.error)}</p>` : ""}${array(job.outputs).map((output) => `<details class="notes-output" data-key="${esc(output.revision_id)}" data-note-preview-job="${esc(job.job_id)}" data-note-preview-revision="${esc(output.revision_id)}"><summary>${output.variant === "complete" ? "Sbobina completa" : "Materiale studio"} · ${esc(statusLabel(output.status))}</summary><div class="notes-markdown">${materialPreviews.get(output.revision_id) || "Apri per leggere le note."}</div>${array(output.limitations).map((item) => `<p class="field-note">${esc(item)}</p>`).join("")}${output.status === "proposed" ? `<div class="state-actions"><button class="button" data-note-decision="accept" data-note-revision="${esc(output.revision_id)}" data-note-job="${esc(job.job_id)}">Approva</button><button class="button button--quiet" data-note-decision="reject" data-note-revision="${esc(output.revision_id)}" data-note-job="${esc(job.job_id)}">Rifiuta</button></div>` : output.publication === "published" ? `<p>Salvato come fonte di studio.</p><button class="button button--quiet" data-source-viewer-mode="page" data-source-viewer='${esc(JSON.stringify({source_id: output.published_source_id, revision_id: output.published_revision_id, viewer_kind: "markdown", title: output.title}))}'>Apri note</button>` : output.status === "accepted" ? `<p>Approvato. La pubblicazione richiede il materiale completo approvato e una fonte ancora valida.</p>` : ""}</details>`).join("")}${["retryable", "publication_retryable"].includes(job.stage) ? `<button class="button button--quiet" data-note-resume="${esc(job.job_id)}">${job.stage === "publication_retryable" ? "Riprova salvataggio" : "Riprendi generazione"}</button>` : ""}<p data-note-error role="status"></p></section>`).join("") : '<p class="field-note">Nessuna generazione in corso. Scegli «Genera note di studio» su una fonte per iniziare.</p>');
     $$('[data-note-preview-job]').forEach((details) => bindNoteControl(details, "toggle", async () => {
       if (!details.open || materialPreviews.has(details.dataset.notePreviewRevision)) return;
       try {
