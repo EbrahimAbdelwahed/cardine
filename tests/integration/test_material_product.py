@@ -82,6 +82,60 @@ def test_progress_survives_reopen_and_rejects_mismatched_boundaries(tmp_path: Pa
         assert len(tuple(repository.events.read(context.course_id))) == before
 
 
+@pytest.mark.parametrize("substitution", ["foreign", "fingerprint", "length", "units"])
+def test_progress_rejects_consistent_checkpoints_for_another_transcript(
+    tmp_path: Path, substitution: str,
+) -> None:
+    from cardine.materials.planning import SegmentBoundaries, UnitManifest, build_unit_manifest
+
+    root = tmp_path / "repo"
+    initialize_local_repository(root, _config())
+    context = _service_context()
+    assert context.session_id is not None
+    with LocalRepository.open(
+        root, model_adapters=_registry(), environment={"OPENAI_API_KEY": "fixture"}
+    ) as repository:
+        admitted = _prepare(repository, consent=True)
+        product = MaterialProduct(repository, context)
+        job_id = str(product.start(
+            str(admitted.source.source_id), str(admitted.source.revision_id), "progress-pin"
+        )["job_id"])
+        pin = repository.material_transcript_pin(
+            context.course_id, context.session_id,
+            admitted.source.source_id, admitted.source.revision_id,
+        )
+        asyncio.run(repository.material_generation(pin, context).reconcile(
+            job_id, bounded_budget=1, context=context,
+        ))
+        raw = product.states.load(job_id)
+        state = MaterialGenerationState.from_bytes(raw)
+        assert state.unit_manifest is not None and state.boundaries is not None
+        original = UnitManifest.from_bytes(repository.blobs.get(state.unit_manifest))
+        boundaries = SegmentBoundaries.from_bytes(repository.blobs.get(state.boundaries))
+        text = repository.blobs.get(state.request.pin.normalized_blob).decode("utf-8")
+        if substitution == "fingerprint":
+            manifest = replace(original, text_fingerprint="f" * 64)
+        else:
+            foreign_text = "x" * (len(text) + (1 if substitution == "length" else 0))
+            manifest = build_unit_manifest(foreign_text)
+            if substitution in {"length", "units"}:
+                manifest = replace(manifest, text_fingerprint=original.text_fingerprint)
+        changed = replace(
+            state,
+            unit_manifest=repository.blobs.put(manifest.to_bytes()),
+            boundaries=repository.blobs.put(replace(
+                boundaries, manifest_fingerprint=manifest.fingerprint,
+            ).to_bytes()),
+        ).to_bytes()
+        assert product.states.compare_and_set(job_id, raw, changed)
+        before = tuple(repository.events.read(context.course_id))
+        view = product.status(job_id)
+        assert view["segment_total"] is None and view["segment_title"] is None
+        assert view["progress_error"] == "Dettagli di avanzamento non disponibili."
+        assert product.states.load(job_id) == changed
+        assert tuple(repository.events.read(context.course_id)) == before
+
+
 def test_product_requires_explicit_decisions_and_publishes_parent_first(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     initialize_local_repository(root, _config())

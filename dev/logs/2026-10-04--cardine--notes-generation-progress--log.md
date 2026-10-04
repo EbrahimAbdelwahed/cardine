@@ -56,3 +56,19 @@ historical progress. Empty-history and existing-job progress cases pass, togethe
 with the existing PDF/PageIndex browser journeys (nine cases). The final focused
 progress recheck passes both scenarios. Ruff, mypy, isolated build and custody
 checks pass. Only a second final automatic review is authorized for this PR.
+
+Owner continuation, 2026-10-04: “termina il lavoro” explicitly authorizes fixing
+the remaining second-round finding without requesting another automatic review.
+A mutually consistent foreign manifest/boundaries pair was reproduced in four
+offline cases (foreign text, digest, length and unit content). Status now binds
+all manifest units, fingerprint and length to the exact pinned transcript before
+exposing segment details; invalid progress remains read-only and unavailable.
+No additional automatic review, merge, deployment or paid calls are requested.
+
+Final owner-continuation verification: 2,932 offline tests passed, four optional
+skips (clean-archive tests run separately after commit); all 25 product tests
+passed. Ruff, mypy (671 files), isolated wheel/sdist and custody audit passed.
+Previous-head CI had one Python 3.13 browser failure: the test clicked the static
+rail before initial UI readiness. The two relevant journeys now wait for the
+loaded composer before navigation; final browser/archive checks are recorded
+in the PR. Current submitted-commit CI remains required.

@@ -213,3 +213,7 @@ custody records remain intact. Offline browser coverage holds the model at the
 segmentation and generation seams before completion, checks mobile overflow,
 completion and approval controls. Product tests cover restart, manifest mismatch
 and read-only status behavior. Visual critique covers desktop/mobile captures.
+
+Progress validation also binds the manifest fingerprint, character length and
+every unit's contents to the pinned normalized transcript; a mutually consistent
+checkpoint pair copied from another lesson cannot supply progress details.

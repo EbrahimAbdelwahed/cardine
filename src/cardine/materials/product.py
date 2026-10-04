@@ -472,6 +472,17 @@ class MaterialProduct:
                     raise ValueError("segment manifest is missing")
                 boundaries = SegmentBoundaries.from_bytes(self.repo.blobs.get(state.boundaries))
                 manifest = UnitManifest.from_bytes(self.repo.blobs.get(state.unit_manifest))
+                pin = state.request.pin
+                transcript = self.repo.blobs.get(pin.normalized_blob).decode("utf-8")
+                if (
+                    manifest.text_fingerprint != pin.normalized_blob.checksum_sha256
+                    or manifest.character_length != pin.normalized_character_length
+                    or len(transcript) != manifest.character_length
+                    or any(
+                        unit.text != transcript[unit.start : unit.end] for unit in manifest.units
+                    )
+                ):
+                    raise ValueError("segment manifest does not match the pinned transcript")
                 boundaries.validate_against(manifest)
                 if not (
                     len(state.segments) <= len(boundaries.segments) <= state.request.max_segments
