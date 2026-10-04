@@ -16,7 +16,7 @@ from cardine.integrations.study_agent.course_policy import (
     register_course_policy_events,
 )
 from study_agent.adapters.filesystem.blob_store import FilesystemBlobStore
-from study_agent.adapters.sqlite.event_store import SQLiteEventStore
+from study_agent.adapters.sqlite.event_store import ProjectionConsistencyError, SQLiteEventStore
 from study_agent.adapters.sqlite.fts_retrieval import SQLiteFtsRetrieval
 from study_agent.artifacts import register_artifact_events
 from study_agent.assessments import register_assessment_events
@@ -116,8 +116,14 @@ def audit_snapshot(
             register_assessment_events(registry)
             register_recall_events(registry)
             events = SQLiteEventStore(snapshot / "events.sqlite3", registry, read_only=True)
+            course_ids = events.list_course_ids()
+            for key in course_ids:
+                if not events.verify_projection(key):
+                    raise ProjectionConsistencyError(
+                        "audit projection differs from canonical event replay"
+                    )
             catalog = AuditCatalog(
-                {key: CourseSourceContent(key, events, blobs) for key in events.list_course_ids()},
+                {key: CourseSourceContent(key, events, blobs) for key in course_ids},
                 ProjectionSourceLifetimeView(events.projection),
             )
             retrieval = SQLiteFtsRetrieval(snapshot / "retrieval.sqlite3", catalog, read_only=True)

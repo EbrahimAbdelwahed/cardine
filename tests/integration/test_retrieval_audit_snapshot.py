@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from contextlib import closing
 from hashlib import sha256
@@ -11,6 +12,7 @@ from cardine.courses import register_course_events
 from cardine.evaluation.snapshot import audit_snapshot
 from study_agent.adapters.filesystem import FilesystemBlobStore
 from study_agent.adapters.sqlite import SQLiteEventStore, SQLiteFtsRetrieval
+from study_agent.adapters.sqlite.event_store import ProjectionConsistencyError
 from study_agent.adapters.sqlite.fts_retrieval import RetrievalIndexIntegrityError
 from study_agent.domain import CorrelationId, CourseId, ExecutionContext, PrincipalKind, SourceId
 from study_agent.ingestion import TextIngestionService, register_source_revision_events
@@ -82,3 +84,51 @@ def test_snapshot_reads_committed_wal_and_never_repairs_live_index(tmp_path: Pat
         assert retrieval_wal.execute("SELECT text FROM retrieval_fts").fetchone() == (
             "tampered bytes",
         )
+
+
+@pytest.mark.parametrize("tampered_course", ["selected", "other"])
+@pytest.mark.parametrize("projection_field", ["source_policy", "source_lifetime"])
+def test_snapshot_rejects_same_sequence_projection_tampering_without_repair(
+    tmp_path: Path, tampered_course: str, projection_field: str,
+) -> None:
+    state = tmp_path / "state"
+    state.mkdir()
+    selected = CourseId("selected")
+    with FilesystemBlobStore(tmp_path / "blobs") as blobs:
+        registry = EventRegistry()
+        register_course_events(registry)
+        events = SQLiteEventStore(state / "events.sqlite3", registry)
+        for key in (selected, CourseId("other")):
+            create_canonical_course(events, key)
+        SQLiteFtsRetrieval(
+            state / "retrieval.sqlite3", CourseSourceContent(selected, events, blobs),
+        )
+        with closing(sqlite3.connect(state / "events.sqlite3")) as connection:
+            sequence, raw = connection.execute(
+                "SELECT course_sequence, state FROM projections WHERE course_id = ?",
+                (tampered_course,),
+            ).fetchone()
+            projection = json.loads(raw)
+            if projection_field == "source_policy":
+                projection["course"]["source_policy"]["minimum_trust_level"] = 100
+            else:
+                projection["source_lifetime"] = {"invented-source": {"status": "retired"}}
+            connection.execute(
+                "UPDATE projections SET state = ? WHERE course_id = ?",
+                (json.dumps(projection).encode(), tampered_course),
+            )
+            connection.commit()
+            before = connection.execute(
+                "SELECT course_sequence, state FROM projections WHERE course_id = ?",
+                (tampered_course,),
+            ).fetchone()
+            assert before[0] == sequence
+            with (
+                pytest.raises(ProjectionConsistencyError, match="canonical event replay"),
+                audit_snapshot(tmp_path, selected),
+            ):
+                pass
+            assert connection.execute(
+                "SELECT course_sequence, state FROM projections WHERE course_id = ?",
+                (tampered_course,),
+            ).fetchone() == before

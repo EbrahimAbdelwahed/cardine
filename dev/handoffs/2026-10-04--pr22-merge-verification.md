@@ -10,11 +10,16 @@ recent delivery entries. No runtime source or custody overlay requires manual
 resolution. The previously merged PRs' outstanding automatic findings remain
 documented in their existing handoffs and are not findings introduced by PR 22.
 
-PR 22 had no CI or review evidence because its merge conflict prevented CI.
+At initial inspection PR 22 had no CI or review evidence; its conflict prevented CI.
 Require CI and automatic GitHub Codex review of the submitted integration head
-before merging. No previous review round exists on this PR; request round one
-only after publishing the conflict resolution. The repository limit is two
-rounds total. Do not merge based only on the original local green suite.
+before merging. Automatic round one subsequently reported a P2: the benchmark
+trusted same-sequence persisted projections for policy and retirement state.
+The fix verifies every course against canonical event replay before constructing
+any projection-backed view and fails without repair. Four regressions cover both
+fields in the selected course and another course. The integrated full suite
+passed 2,996 tests with four optional smoke skips before this fix. Request only
+the final follow-up round after publishing the fix and its validation; the
+repository limit is two rounds total. Do not merge based on an older green head.
 
 The running local server uses `merge-open-prs-8901/cardine` on clean main
 `34a3e31`, port 8765, store `cardine-wave-a-live`, course `course-wave-a` and

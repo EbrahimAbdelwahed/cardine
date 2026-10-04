@@ -74,6 +74,9 @@ SQLite backups into an automatically deleted temporary directory. This includes
 committed WAL frames; `immutable=1` is used only for the completed copies. The
 two database backups are not an atomic transaction: a full catalog/index
 integrity check rejects an inconsistent pair. Canonical source records are
+decoded only after every course's persisted projection matches an independent
+replay of its canonical events, including courses outside the selected query.
+Altered policy or retirement state fails the audit without repair. Records are
 decoded and verified against read-only, content-addressed blobs. The audit
 catalog then freezes those verified records and validates every citation's
 ownership, bounds and optional quote against their exact bytes.
