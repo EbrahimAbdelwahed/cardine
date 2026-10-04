@@ -228,6 +228,63 @@ def test_repository_chat_publishes_verified_pending_flashcard_proposal(tmp_path:
     assert flashcard_requests[-1].metadata["prompt_id"] == "hybrid_flashcards.v1"
 
 
+def test_topic_flashcard_does_not_plan_the_entire_large_course(tmp_path: Path) -> None:
+    source = (
+        "\n".join(f"# Unrelated {i}\nUnrelated background {i}." for i in range(300))
+        + "\n# Aortic valve\nThe aortic valve has three cusps."
+    )
+    root, adapters, model = _repository(tmp_path, source_content=source.encode())
+    calls = _install_hybrid_flashcard_model(model)
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/session")["high_water_sequence"])
+    result = app.post(
+        "/api/v1/session/turns",
+        _command("topic-large-course", sequence, "Crea una flashcard sulla aortic valve"),
+    )
+    assert result["status"] == "completed", result["status"]
+    assert len(calls) == 1
+    prompt = "\n".join(message.content for message in calls[0].messages)
+    assert "Unrelated background" not in prompt
+    assert "aortic valve has three cusps" in prompt
+
+
+def test_flashcard_about_this_uses_latest_explanation_sources(tmp_path: Path) -> None:
+    root, adapters, model = _repository(tmp_path, source_content=(
+        b"# Old topic\nOldmarker facts about the old topic.\n"
+        b"# Aortic valve\nThe aortic valve has three cusps.\n"
+    ))
+    calls = _install_hybrid_flashcard_model(model)
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/session")["high_water_sequence"])
+    for position, content in enumerate(("Spiegami oldmarker", "Spiegami cusps")):
+        receipt = app.post("/api/v1/session/turns", _command(
+            f"explanation-{position}", sequence, content
+        ))
+        assert receipt["status"] == "completed"
+        sequence = cast(int, receipt["high_water_sequence"])
+    receipt = app.post("/api/v1/session/turns", _command(
+        "flashcard-latest-explanation", sequence, "genera una flashcard su questo"
+    ))
+    assert receipt["status"] == "completed", receipt["status"]
+    assert len(calls) == 1
+    prompt = "\n".join(message.content for message in calls[0].messages)
+    assert "aortic valve has three cusps" in prompt
+    assert "Oldmarker" not in prompt
+
+
+def test_topic_with_no_evidence_cannot_fall_back_to_the_old_course_topic(tmp_path: Path) -> None:
+    root, adapters, model = _repository(tmp_path)
+    calls = _install_hybrid_flashcard_model(model)
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/session")["high_water_sequence"])
+    receipt = app.post("/api/v1/session/turns", _command(
+        "unknown-topic", sequence, "genera una flashcard su absentmarker"
+    ))
+    assert receipt["status"] == "failed"
+    assert not calls
+    assert not app.get("/api/v1/artifacts")["items"]
+
+
 def test_repository_chat_recovers_live_flashcard_promise_into_lesson_one_proposals(
     tmp_path: Path,
 ) -> None:

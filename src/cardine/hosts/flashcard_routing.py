@@ -267,6 +267,82 @@ def _flashcard_inputs(learner_text: str) -> JsonObject:
     }
 
 
+def flashcard_topic_query(text: str) -> str:
+    """Remove request wording without adding or guessing a study topic."""
+    stopwords = _MEMORY_TOPIC_STOPWORDS | frozenset(
+        {
+            "una",
+            "un",
+            "uno",
+            "con",
+            "su",
+            "sul",
+            "sulla",
+            "sulle",
+            "sui",
+            "sugli",
+            "sull",
+            "da",
+            "per",
+            "puoi",
+            "potresti",
+            "voglio",
+            "vorrei",
+            "generare",
+            "generi",
+            "creare",
+            "preparare",
+            "fonti",
+            "fonte",
+            "materiale",
+            "materiali",
+            "course",
+            "sources",
+            "source",
+            "notes",
+            "note",
+            "questa",
+            "questo",
+            "questi",
+            "queste",
+            "quella",
+            "quello",
+            "argomento",
+            "topic",
+            "this",
+            "that",
+            "it",
+            "on",
+            "from",
+            "spiegazione",
+            "explanation",
+            "appena",
+            "fatta",
+            "fatto",
+            "just",
+            "explained",
+            "scheda",
+            "schede",
+            "carte",
+            "carta",
+            "studio",
+            "hybrid",
+            "macro",
+            "detail",
+            "anatomiche",
+            "anatomici",
+            "ricostruzione",
+            "spaziale",
+            "topologica",
+            "topologico",
+        }
+    )
+    text = re.sub(r"\b\d+\s+(?=flash\s*cards?|schede|carte)", "", text, flags=re.I)
+    return " ".join(
+        word for word in re.findall(r"[^\W_]+", text.casefold()) if word not in stopwords
+    )[:4_000]
+
+
 def _omitted_conversation_entries(context: TutorHostContext) -> int:
     window = context.tutor_snapshot.get("conversation_window")
     if not isinstance(window, Mapping):

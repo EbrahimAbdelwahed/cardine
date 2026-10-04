@@ -42,6 +42,14 @@ confined to OFF/SHADOW and explicitly configured emergency fallback.
 
 ## Configuration and code pointers
 
+The owner-requested 2026-10-04 repair supplies bounded recent conversation and
+same-turn tool observations to routing and the selected payload. Context cannot
+authorize source evidence or actions. Topic flashcards select current canonical
+chunks before planning; references to the latest explanation resolve its original
+source locators. Valid source uncertainty settles with an evidence-limit message.
+See [ADR-0025](../../../docs/decisions/ADR-0025--current-topic-and-context-settlement.md)
+for bounds, retry behavior and the unchanged human decision boundary.
+
 Repository configuration v2 separates providers, operations and consumer policy.
 V1 reads migrate explicitly to OFF without rewriting the file. Conservative
 thresholds are configurable policy choices; they are not calibrated claims.

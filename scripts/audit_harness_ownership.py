@@ -26,6 +26,15 @@ CLASSIFICATION = ROOT / "tests/parity/ownership-classification.json"
 TRANSITION_OVERLAY = ROOT / "tests/parity/ca02-transition-overlay.json"
 RECOVERY_OVERLAY = ROOT / "tests/parity/wave-a-recovery-overlay.json"
 STUDENT_JOURNAL_OVERLAY = ROOT / "tests/parity/student-journal-overlay.json"
+TUTOR_CONTEXT_OVERLAY = ROOT / "tests/parity/tutor-context-overlay.json"
+TUTOR_CONTEXT_PATHS = {
+    "src/cardine/adapters/model/streaming.py",
+    "src/cardine/application/explanation_validation.py",
+    "src/cardine/application/flashcard_proposals.py",
+    "src/cardine/cli/repository.py",
+    "src/cardine/hosts/flashcard_routing.py",
+    "src/cardine/hosts/routing.py",
+}
 LATENCY_PATHS = {
     "src/cardine/adapters/model/openai_luna.py",
     "src/cardine/adapters/model/streaming.py",
@@ -853,6 +862,19 @@ def _load_latency_overlay() -> dict[str, str]:
     return _bound_hashes(raw["rows"], LATENCY_PATHS, "latency overlay")
 
 
+def _load_tutor_context_overlay() -> dict[str, str]:
+    """Bind the requested product repair, preserving historical core approvals."""
+    raw = json.loads(TUTOR_CONTEXT_OVERLAY.read_text(encoding="utf-8"))
+    if (
+        not isinstance(raw, dict)
+        or set(raw) != {"schema_version", "decision", "rows"}
+        or raw["schema_version"] != 1
+        or raw["decision"] != "ADR-0025--current-topic-and-context-settlement"
+    ):
+        raise ValueError("tutor context overlay fields are invalid")
+    return _bound_hashes(raw["rows"], TUTOR_CONTEXT_PATHS, "tutor context overlay")
+
+
 def validate(*, live: bool = False) -> list[str]:
     errors: list[str] = []
     try:
@@ -860,6 +882,7 @@ def validate(*, live: bool = False) -> list[str]:
         recovery_hashes.update(_load_student_journal_overlay())
         recovery_hashes.update(_load_study_notes_overlay(selected=True))
         recovery_hashes.update(_load_latency_overlay())
+        recovery_hashes.update(_load_tutor_context_overlay())
         for path in STUDENT_JOURNAL_REMOVED:
             recovery_hashes.pop(path, None)
         reviewed = _load_classification()

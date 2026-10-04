@@ -44,6 +44,7 @@ from study_agent.capabilities.morphology_flashcards import (
 )
 from study_agent.capabilities.worker_adapter import GatewayIsolatedCapabilityRunAdapter
 from study_agent.domain import (
+    ChunkId,
     Citation,
     CourseId,
     ExecutionContext,
@@ -432,10 +433,22 @@ class FlashcardProposalComposition:
         scoped = _ScopedCourseSourceContent(self._content, pin)
         if not scoped.catalog():
             raise ValueError("lesson pin contains no complete canonical chunk")
+        return self._for_content(cast(CourseSourceContent, scoped), interaction_id)
+
+    def for_chunks(self, chunk_ids: frozenset[ChunkId]) -> FlashcardProposalComposition:
+        """Bind a topic request to exact whole canonical chunks before planning."""
+        scoped = _ChunkScopedCourseSourceContent(self._content, chunk_ids)
+        if not scoped.catalog():
+            raise ValueError("flashcard topic contains no current canonical chunks")
+        return self._for_content(cast(CourseSourceContent, scoped), self._interaction_id)
+
+    def _for_content(
+        self, content: CourseSourceContent, interaction_id: InteractionId | None
+    ) -> FlashcardProposalComposition:
         return FlashcardProposalComposition(
             course_id=self._course_id,
             session_id=self._session_id,
-            content=cast(CourseSourceContent, scoped),
+            content=content,
             course_profile=self._course_profile,
             model=self._model,
             model_adapter=self._model_adapter,
@@ -1072,6 +1085,53 @@ def _mask_outside_pin(text: str, start_offset: int, end_offset: int) -> str:
     start = max(0, min(start_offset, len(text)))
     end = max(start, min(end_offset, len(text)))
     return " " * start + text[start:end] + " " * (len(text) - end)
+
+
+class _ChunkScopedCourseSourceContent(_ScopedCourseSourceContent):
+    """A topic allowlist retaining historical chunk identity and exact offsets."""
+
+    def __init__(self, parent: CourseSourceContent, chunk_ids: frozenset[ChunkId]) -> None:
+        if not chunk_ids or any(not isinstance(item, ChunkId) for item in chunk_ids):
+            raise ValueError("topic scope requires canonical chunk ids")
+        self._parent = parent
+        self._chunk_ids = chunk_ids
+
+    def catalog(self) -> tuple[SourceRevisionRecord, ...]:
+        records: list[SourceRevisionRecord] = []
+        for record in self._parent.catalog():
+            chunks = tuple(chunk for chunk in record.chunks if chunk.chunk_id in self._chunk_ids)
+            if not record.is_current_revision or not chunks:
+                continue
+            pieces: list[str] = []
+            position = 0
+            for chunk in sorted(chunks, key=lambda item: item.start_offset):
+                pieces.extend(
+                    (
+                        " " * (chunk.start_offset - position),
+                        record.text[chunk.start_offset : chunk.end_offset],
+                    )
+                )
+                position = chunk.end_offset
+            pieces.append(" " * (len(record.text) - position))
+            records.append(
+                SourceRevisionRecord(record.course_id, record.source, chunks, "".join(pieces), True)
+            )
+        return tuple(records)
+
+    def get_text(self, revision_id: RevisionId) -> str:
+        for record in self.catalog():
+            if record.source.revision_id == revision_id:
+                return record.text
+        raise LookupError("revision lies outside the selected flashcard topic")
+
+    def resolve(self, citation: Citation) -> ResolvedCitation:
+        if citation.chunk_id not in self._chunk_ids or not any(
+            citation.chunk_id == chunk.chunk_id
+            for record in self.catalog()
+            for chunk in record.chunks
+        ):
+            raise ValueError("citation lies outside the selected flashcard topic")
+        return self._parent.resolve(citation)
 
 
 __all__ = ["FlashcardProposalComposition"]

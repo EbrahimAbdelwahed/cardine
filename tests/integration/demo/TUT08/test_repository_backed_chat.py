@@ -949,6 +949,26 @@ def test_attached_long_lesson_publishes_complete_answer_with_compact_sources(
     assert len(answer) <= 4_000
 
 
+def test_source_bound_uncertainty_is_shown_as_insufficient_evidence(tmp_path: Path) -> None:
+    root, adapters, model = _repository(tmp_path, explain_output={
+        "status": "insufficient_evidence",
+        "segments": ({"kind": "uncertainty", "text": "The source does not describe this detail.",
+                      "evidence_ids": ()},),
+        "unsupported_information_note": "The requested detail is absent from these excerpts.",
+    })
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/session")["high_water_sequence"])
+    receipt = app.post("/api/v1/session/turns", _command(
+        "source-uncertainty", sequence, "Spiegami aortic valve"
+    ))
+    assert receipt["status"] == "terminated"
+    assert sum(request.metadata.get("prompt_id") == "explain_concept.v1"
+               for request in model.requests) == 1
+    timeline = cast(tuple[dict[str, object], ...], app.get("/api/v1/session")["timeline"])
+    assert "evidenze sufficienti" in str(timeline[-1]["content"])
+    assert "Non sono riuscito" not in str(timeline[-1]["content"])
+
+
 @pytest.mark.parametrize(
     "decision",
     (

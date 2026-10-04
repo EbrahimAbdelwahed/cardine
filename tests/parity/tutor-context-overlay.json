@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "decision": "ADR-0025--current-topic-and-context-settlement",
+  "rows": [
+    {
+      "path": "src/cardine/adapters/model/streaming.py",
+      "sha256": "34a454b76c439e4e2bbed93b752c4dcddcd64bffeaa1768da83898da3398d4a6"
+    },
+    {
+      "path": "src/cardine/application/explanation_validation.py",
+      "sha256": "32b7df01d2798a17402e51b00b8468212cd77a775612c560ad2f5265f2225c6f"
+    },
+    {
+      "path": "src/cardine/application/flashcard_proposals.py",
+      "sha256": "fbd1528cb36660a430e2f567b95a1a7cbb5a41b90e7d7385f0d7890400a7f58f"
+    },
+    {
+      "path": "src/cardine/cli/repository.py",
+      "sha256": "dbc4de124e1ea6df595e1e9b5a2a9e6f493f3b42e6d9f0f21429c6306fbd5bec"
+    },
+    {
+      "path": "src/cardine/hosts/flashcard_routing.py",
+      "sha256": "81299def1ba7bf0ab6e51716c81e62bf55ec6cc01d8ea466aa00ba55b6d0c714"
+    },
+    {
+      "path": "src/cardine/hosts/routing.py",
+      "sha256": "dc4f4a4d0c2d7be1e8fa0365a51673edab19507fde0f0943e589be7d27ebb47d"
+    }
+  ]
+}
