@@ -230,7 +230,15 @@ def test_repository_chat_publishes_verified_pending_flashcard_proposal(tmp_path:
     assert flashcard_requests[-1].metadata["prompt_id"] == "hybrid_flashcards.v1"
 
 
-def test_topic_flashcard_does_not_plan_the_entire_large_course(tmp_path: Path) -> None:
+@pytest.mark.parametrize("request_text", (
+    "Crea una flashcard sulla aortic valve",
+    "Fammi una flashcard sulla aortic valve per favore",
+    "Make a flashcard about aortic valve please",
+    "Create a flashcard about aortic valve " + "valve " * 150,
+))
+def test_topic_flashcard_does_not_plan_the_entire_large_course(
+    tmp_path: Path, request_text: str,
+) -> None:
     source = (
         "\n".join(f"# Unrelated {i}\nUnrelated background {i}." for i in range(300))
         + "\n# Aortic valve\nThe aortic valve has three cusps."
@@ -241,7 +249,7 @@ def test_topic_flashcard_does_not_plan_the_entire_large_course(tmp_path: Path) -
     sequence = cast(int, app.get("/api/v1/session")["high_water_sequence"])
     result = app.post(
         "/api/v1/session/turns",
-        _command("topic-large-course", sequence, "Crea una flashcard sulla aortic valve"),
+        _command("topic-large-course", sequence, request_text),
     )
     assert result["status"] == "completed", result["status"]
     assert len(calls) == 1
@@ -255,6 +263,8 @@ def test_topic_flashcard_does_not_plan_the_entire_large_course(tmp_path: Path) -
     ("Create a flashcard about this", False),
     ("genera una flashcard su questo", True),
     ("Create a flashcard about this", True),
+    ("Make a flashcard about this please", False),
+    ("Fammi una flashcard su questo per favore", False),
 ))
 def test_flashcard_about_this_uses_latest_explanation_sources(
     tmp_path: Path, request_text: str, long_heading: bool,
@@ -281,6 +291,44 @@ def test_flashcard_about_this_uses_latest_explanation_sources(
     prompt = "\n".join(message.content for message in calls[0].messages)
     assert "aortic valve has three cusps" in prompt
     assert "Oldmarker" not in prompt
+
+
+def test_retired_chunks_cannot_hide_active_flashcard_topic(tmp_path: Path) -> None:
+    from study_agent.domain import SourceId
+    from study_agent.ports.retrieval import RetrievalQuery
+
+    source = "\n".join(
+        f"# Retired {i}\nAortic valve. Aortic valve. Retiredmarker {i}." for i in range(10)
+    )
+    root, adapters, model = _repository(tmp_path, source_content=source.encode())
+    calls = _install_hybrid_flashcard_model(model)
+    with LocalRepository.open(root, model_adapters=adapters) as repository:
+        context = ExecutionContext(
+            PrincipalKind.HUMAN, "fixture-active", COURSE, CorrelationId("fixture-active")
+        )
+        repository.for_course(COURSE).ingestion.ingest(
+            filename="active.md", content=b"The aortic valve has three cusps. Activemarker.",
+            source_id=SourceId("active"), title="Current lesson", trust_level=90,
+            source_role="primary", context=context,
+        )
+        course = repository.for_course(COURSE)
+        repository.reconcile_indexing()
+        baseline = course.retrieval.search(RetrievalQuery(COURSE, "aortic valve", limit=8))
+        assert len(baseline.evidence) == 8
+        assert all(item.chunk.source_id == SourceId("valves") for item in baseline.evidence)
+        repository.source_lifetime_service.retire(
+            context, SourceId("valves"), "retire-old-topic",
+            expected_sequence=repository.events.projection(COURSE).sequence,
+        )
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/session")["high_water_sequence"])
+    receipt = app.post("/api/v1/session/turns", _command(
+        "active-topic", sequence, "Create a flashcard about aortic valve"
+    ))
+    assert receipt["status"] == "completed", receipt["status"]
+    assert len(calls) == 1
+    prompt = "\n".join(message.content for message in calls[0].messages)
+    assert "Activemarker" in prompt and "Retiredmarker" not in prompt
 
 
 def test_topic_with_no_evidence_cannot_fall_back_to_the_old_course_topic(tmp_path: Path) -> None:

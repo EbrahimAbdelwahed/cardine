@@ -86,3 +86,10 @@ performed. Current-head GitHub CI and automatic review remain external delivery
 checks, separate from implementation and local verification.
 
 See [ADR-0021](../../../docs/decisions/ADR-0021--bounded-judgement-and-derived-document-index.md).
+
+Owner completion continuation (2026-10-04): topic extraction shares routing's
+supported action vocabulary, removes polite request wording, and bounds the
+result to RetrievalQuery's 512-character contract while preserving token ends.
+Canonical lifetime filtering precedes index/search limits; a production-path
+retirement regression verifies that stale derived results cannot hide active
+evidence. No additional semantic review or live rollout is implied.

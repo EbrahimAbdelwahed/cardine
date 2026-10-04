@@ -12,6 +12,7 @@ from cardine.application.flashcard_profile_selection import (
     select_flashcard_profile,
 )
 from study_agent.domain._validation import JsonObject
+from study_agent.ports.retrieval import MAX_RETRIEVAL_QUERY_CHARS
 from study_agent.ports.tutor_host import TutorDecisionPort, TutorInterruptionToken
 
 from .contracts import (
@@ -292,6 +293,14 @@ def flashcard_topic_query(text: str) -> str:
             "generi",
             "creare",
             "preparare",
+            "please",
+            "favore",
+            "can",
+            "could",
+            "would",
+            "you",
+            "me",
+            "mi",
             "fonti",
             "fonte",
             "materiale",
@@ -337,11 +346,18 @@ def flashcard_topic_query(text: str) -> str:
             "topologico",
         }
     )
+    text = re.sub(rf"(?<![\w-]){_FLASHCARD_ACTION}(?![\w-])", "", text, flags=re.I)
     text = re.sub(r"\b\d+\s+(?=flash\s*cards?|schede|carte)", "", text, flags=re.I)
     text = re.sub(r"\b(?:a|an|the|one|some)\s+(?=flash\s*cards?\b)", "", text, flags=re.I)
-    return " ".join(
+    query = " ".join(
         word for word in re.findall(r"[^\W_]+", text.casefold()) if word not in stopwords
-    )[:4_000]
+    )
+    if len(query) <= MAX_RETRIEVAL_QUERY_CHARS:
+        return query
+    bounded = query[:MAX_RETRIEVAL_QUERY_CHARS]
+    if query[MAX_RETRIEVAL_QUERY_CHARS] != " " and " " in bounded:
+        bounded = bounded.rsplit(" ", 1)[0]
+    return bounded.rstrip()
 
 
 def _omitted_conversation_entries(context: TutorHostContext) -> int:

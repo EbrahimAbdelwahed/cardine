@@ -49,3 +49,34 @@ Post-review full suite: 2,913 passed, four optional/live skips; Ruff, strict myp
 isolated wheel/sdist build and 322-row custody audit passed. Completion recovery
 also matches the canonical presentation context/action fingerprints and permits
 its fresh settlement sequence without widening the original execution authority.
+
+Owner continuation, 2026-10-04: “termina il lavoro” explicitly authorizes
+completion after the review limit, without requesting another semantic review.
+Two remaining findings reproduced: supported action/politeness words prevented
+deictic resolution, and requests over 512 characters failed RetrievalQuery.
+Topic extraction now removes the same supported actions recognized by routing,
+filters polite request words and fits the retrieval contract on token boundaries
+(a single oversized token remains bounded and cannot become empty/global scope).
+Italian/English explicit and deictic application regressions plus all supported
+action forms cover this continuation. Original capability input identity is intact.
+
+The retired-source finding was disproved at the real repository seam.
+_RepositorySourceCatalog.documents excludes retired IDs before both indexing
+and the search integrity audit; _ensure_retrieval_index compares that filtered
+catalog fingerprint. A regression gives ten soon-retired chunks all first eight
+results, retires the source with an old index still present, then verifies one
+active-only generated proposal. No redundant retrieval/core change was needed.
+
+An overlapping manual follow-up caused a third duplicate automatic review on the
+previous head; this was acknowledged to the owner. No further review is requested.
+All known findings are now either repaired with executable reproduction or
+dismissed with production-path regression evidence. Current-head CI and explicit
+merge authorization remain required; port 8765 still runs the old checkout.
+
+Final owner-continuation verification: 2,924 offline tests passed with four
+expected optional/live skips (clean-archive cases run separately after commit).
+All 63 focused topic/routing cases pass, including both new deictic regressions,
+large-course explicit polite requests, long queries and the retirement test.
+Ruff, strict mypy (670 files), isolated wheel/sdist build and the 322-row custody
+audit pass. Final submitted-head CI is checked after publication. No unpublished
+runtime changes are intended, and no additional review or rollout is requested.
