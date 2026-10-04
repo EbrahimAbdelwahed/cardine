@@ -11,6 +11,8 @@ archive and must not be treated as Cardine's current state.
 
 - [Flashcard context and settlement repair](logs/2026-10-04--cardine--flashcard-context-reliability--log.md) — current-topic canonical planning, bounded Jev conversation/tool context and truthful evidence-limit settlement; local rollout pending.
 
+- [Immediate flashcard review](logs/2026-10-03--cardine--flashcard-review-latency--log.md) — next card advances locally while canonical ratings save in order; exact retries, pending/error states and measured local HTTP/browser latency.
+- [Source structure dropdown and scoped notes](logs/2026-10-02--cardine--lesson-structure-picker--log.md) — ready PageIndex spans feed a direct lesson dropdown, exact scoped extraction and restart-safe note proposals; 2,910 offline tests and package/static gates pass; PR #18 published, CI and automatic review pending.
 - [GPT-6 Luna and large-document PageIndex](logs/2026-10-02--cardine--gpt6-luna-pageindex--log.md) — owner-requested local upgrade, separate model identity and bounded indexing for 700 headings.
 - [Sources layout](logs/2026-10-02--cardine--sources-layout--log.md) — ordered library/reader composition, responsive actions, canonical provenance and PageIndex integration seam.
 
