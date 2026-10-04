@@ -6,6 +6,8 @@ from pathlib import Path
 from threading import Event
 from typing import cast
 
+import pytest
+
 from cardine.cli import (
     LocalRepository,
     ModelAdapterBuilder,
@@ -13,6 +15,7 @@ from cardine.cli import (
     initialize_local_repository,
 )
 from cardine.demo.ui_application import RepositoryUiApplication
+from cardine.materials.product import MaterialProduct
 from study_agent.adapters.model import GPT_5_6_LUNA_ADAPTER_ID
 from study_agent.ports import ModelRequest, ModelResponse
 from tests.e2e.test_cardine_repository_browser_journey import _real_browser, _serve
@@ -22,7 +25,9 @@ from tests.integration.test_material_generation_repository_composition import (
     ScriptedLuna,
     _config,
     _prepare,
+    _service_context,
 )
+from tests.integration.test_material_product import _registry
 
 
 class HeldLuna(ScriptedLuna):
@@ -40,11 +45,23 @@ class HeldLuna(ScriptedLuna):
         return await super().generate(request)
 
 
-def test_notes_show_lesson_and_segment_progress_before_completion(tmp_path: Path) -> None:
+@pytest.mark.parametrize("existing_job", (False, True))
+def test_notes_show_lesson_and_segment_progress_before_completion(
+    tmp_path: Path,
+    existing_job: bool,
+) -> None:
     root = tmp_path / "repository"
     initialize_local_repository(root, _config())
-    with LocalRepository.open(root) as repository:
-        _prepare(repository, consent=True)
+    with LocalRepository.open(
+        root, model_adapters=_registry(), environment={"OPENAI_API_KEY": "fixture"}
+    ) as repository:
+        admitted = _prepare(repository, consent=True)
+        if existing_job:
+            product = MaterialProduct(repository, _service_context())
+            previous = product.start(
+                str(admitted.source.source_id), str(admitted.source.revision_id), "previous-notes"
+            )
+            product.advance(str(previous["job_id"]))
     model = HeldLuna()
     registry = ModelAdapterRegistry(
         {
@@ -72,8 +89,11 @@ def test_notes_show_lesson_and_segment_progress_before_completion(tmp_path: Path
                 "document.querySelector('[data-notes-lessons] button[type=submit]').click()"
             )
             browser.wait_for("Boolean(document.querySelector('.notes-job[data-key]'))")
+            browser.wait_for("document.activeElement.classList.contains('notes-job')")
+            browser.evaluate("window.notesJob = document.querySelector('.notes-job:last-child')")
+            assert browser.evaluate("document.activeElement === window.notesJob")
             browser.wait_for(
-                "document.querySelector('.notes-job').textContent.includes('Sto suddividendo')",
+                "window.notesJob.textContent.includes('Sto suddividendo')",
                 timeout=6,
             )
             if directory := os.environ.get("CARDINE_NOTES_PROGRESS_VISUAL_DIR"):
@@ -85,14 +105,12 @@ def test_notes_show_lesson_and_segment_progress_before_completion(tmp_path: Path
             assert not browser.evaluate("Boolean(document.querySelector('[data-note-resume]'))")
             model.boundaries.set()
             browser.wait_for(
-                "document.querySelector('.notes-job').textContent.includes('segmento 1 di 1')",
+                "window.notesJob.textContent.includes('segmento 1 di 1')",
                 timeout=8,
             )
-            assert browser.evaluate("document.querySelector('progress').max") == 1
-            assert browser.evaluate("document.querySelector('progress').value") == 0
-            assert browser.evaluate(
-                "document.querySelector('.notes-job').textContent.includes('Lesson')"
-            )
+            assert browser.evaluate("window.notesJob.querySelector('progress').max") == 1
+            assert browser.evaluate("window.notesJob.querySelector('progress').value") == 0
+            assert browser.evaluate("window.notesJob.textContent.includes('Lesson')")
             if directory:
                 shot = browser.call("Page.captureScreenshot", format="png")
                 output.joinpath("generating-desktop.png").write_bytes(
@@ -117,9 +135,9 @@ def test_notes_show_lesson_and_segment_progress_before_completion(tmp_path: Path
                 browser.call("Emulation.clearDeviceMetricsOverride")
             model.segment.set()
             browser.wait_for(
-                "document.querySelectorAll('[data-note-decision=accept]').length === 2"
+                "window.notesJob.querySelectorAll('[data-note-decision=accept]').length === 2"
             )
-            assert browser.evaluate("document.querySelector('progress').value") == 1
+            assert browser.evaluate("window.notesJob.querySelector('progress').value") == 1
             assert not browser.evaluate("Boolean(document.querySelector('[data-note-resume]'))")
     finally:
         model.boundaries.set()

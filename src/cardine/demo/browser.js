@@ -2538,11 +2538,11 @@
       const controls = $$('select, button', form);
       controls.forEach((item) => { item.disabled = true; });
       try {
-        await fetchJson("/api/v1/material-generations", {method: "POST", body: JSON.stringify(submission)});
+        const receipt = await fetchJson("/api/v1/material-generations", {method: "POST", body: JSON.stringify(submission)});
         if (scope !== notesScope() || !form.isConnected) return;
         form.remove();
         await refreshMaterialJobs();
-        focusMaterialProgress();
+        focusMaterialProgress(array(receipt.items)[0]?.job_id);
       } catch (error) {
         if (form.isConnected) $('[data-notes-error]', form).textContent = error.message;
       } finally {
@@ -2611,18 +2611,18 @@
       const controls = $$('input, button', form);
       controls.forEach((control) => { control.disabled = true; });
       try {
-        await fetchJson("/api/v1/material-generations", {method: "POST", body: JSON.stringify(submission)});
+        const receipt = await fetchJson("/api/v1/material-generations", {method: "POST", body: JSON.stringify(submission)});
         if (scope !== notesScope() || !form.isConnected) return;
         form.remove();
         await refreshMaterialJobs();
-        focusMaterialProgress();
+        focusMaterialProgress(array(receipt.items)[0]?.job_id);
       } catch (error) { $("[data-notes-error]", form).textContent = error.message; }
       finally { controls.forEach((control) => { control.disabled = false; }); }
     });
   }
 
-  function focusMaterialProgress() {
-    const job = $('#material-jobs .notes-job[data-key]');
+  function focusMaterialProgress(jobId) {
+    const job = $$('#material-jobs .notes-job[data-key]').find((item) => item.dataset.key === jobId);
     if (!job) return;
     job.tabIndex = -1;
     job.focus({preventScroll: true});

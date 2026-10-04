@@ -48,3 +48,11 @@ passed, covering both originally failing gates. Additional 34 design/product
 checks and 63 PageIndex/PDF/browser cases passed. Ruff, strict mypy, isolated
 build and custody audit passed. PR #21 is ready for automatic review, with
 current-head GitHub CI/review pending. No unpublished runtime changes remain.
+
+First automatic review (`0e9e010`): one P2 finding, oldest-job focus after a new
+submission. Reproduced with an existing proposed job at the real browser seam.
+Both submission flows now use the returned job ID; no fallback selects unrelated
+historical progress. Empty-history and existing-job progress cases pass, together
+with the existing PDF/PageIndex browser journeys (nine cases). The final focused
+progress recheck passes both scenarios. Ruff, mypy, isolated build and custody
+checks pass. Only a second final automatic review is authorized for this PR.
