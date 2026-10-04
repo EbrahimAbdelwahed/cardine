@@ -12,11 +12,11 @@
     },
     {
       "path": "src/cardine/application/flashcard_proposals.py",
-      "sha256": "a968eccee7defa9937080d732ee143bbde8e4e8c6debe0b19caf5597a9666657"
+      "sha256": "ca244c280f622516d77d9e66e61b363d5ebcde53866f22c3a68a4bbe7c7f0b1e"
     },
     {
       "path": "src/cardine/cli/repository.py",
-      "sha256": "651dd2c0f651df01a32acf5cd9bb0bd6120dcf25a0d067d0a279c6a877e39446"
+      "sha256": "97fbf83e73f55bba38b5d4a27a46cad9e4c48296778f12e7afcce978c905a05c"
     },
     {
       "path": "src/cardine/hosts/flashcard_routing.py",

@@ -63,4 +63,11 @@ No paid calls, rollout, migration, deployment or merge performed.
 Local verification: initial complete suite 3,020 passed / four expected skips;
 latest focused suite 62 passed, including post-await retirement and consent port.
 Ruff, strict mypy (682 files), wheel/sdist build and package verifier pass.
-Final complete suite and current-head GitHub CI/review are pending publication.
+Final complete suite: 3,039 passed / four expected skips, plus the latest
+focused suite (62 passed) covering the subsequently added retirement case.
+PR https://github.com/EbrahimAbdelwahed/cardine/pull/23 published as draft while
+current-head CI runs. Updated only the two current tutor-context hash bindings
+and repository-config post-baseline hash in the audit script; frozen ownership
+classification/CSV, historical recovery and CA-02 custody overlays remain
+intact, and ownership/dispositions are unchanged.
+Automatic GitHub review is pending (zero rounds requested locally).
