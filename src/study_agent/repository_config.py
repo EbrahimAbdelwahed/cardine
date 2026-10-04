@@ -146,6 +146,9 @@ class SemanticFeaturesConfig:
     document_index_mode: FeatureMode = FeatureMode.OFF
     flashcard_semantic_mode: FeatureMode = FeatureMode.OFF
     tutor_routing_mode: FeatureMode = FeatureMode.OFF
+    flashcard_grounding_mode: FeatureMode = FeatureMode.OFF
+    grounding_probability: float = 0.9
+    grounding_margin: float = 0.2
     policy_version: str = "conservative-v1"
     anchor_probability: float = 0.8
     context_probability: float = 0.95
@@ -163,10 +166,17 @@ class SemanticFeaturesConfig:
 
     def __post_init__(self) -> None:
         _trimmed(self.policy_version, "features.policy_version")
-        for name in ("document_index_mode", "flashcard_semantic_mode", "tutor_routing_mode"):
+        for name in (
+            "document_index_mode",
+            "flashcard_semantic_mode",
+            "tutor_routing_mode",
+            "flashcard_grounding_mode",
+        ):
             if not isinstance(getattr(self, name), FeatureMode):
                 raise LocalConfigError(f"features.{name} must be off, shadow or on")
         for name in (
+            "grounding_probability",
+            "grounding_margin",
             "anchor_probability",
             "context_probability",
             "exclusion_probability",
@@ -183,6 +193,8 @@ class SemanticFeaturesConfig:
             value = getattr(self, name)
             if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 1:
                 raise LocalConfigError(f"features.{name} must be a finite probability")
+        if self.grounding_probability <= 0 or self.grounding_margin <= 0:
+            raise LocalConfigError("grounding thresholds must be positive")
         if self.exclusion_probability < self.context_probability:
             raise LocalConfigError("exclusion threshold cannot be weaker than context threshold")
         if type(self.emergency_fallback) is not bool:
@@ -229,7 +241,11 @@ class LocalRepositoryConfig:
             raise LocalConfigError("semantic configuration is incompatible")
         if self.judgement is None and any(
             mode is not FeatureMode.OFF
-            for mode in (self.features.flashcard_semantic_mode, self.features.tutor_routing_mode)
+            for mode in (
+                self.features.flashcard_semantic_mode,
+                self.features.tutor_routing_mode,
+                self.features.flashcard_grounding_mode,
+            )
         ):
             raise LocalConfigError("enabled semantic features require a judgement adapter")
 
@@ -347,7 +363,15 @@ def _decode_features(raw: object) -> SemanticFeaturesConfig:
     if not isinstance(raw, dict):
         raise LocalConfigError("features must be an object")
     values = dict(raw)
-    for name in ("document_index_mode", "flashcard_semantic_mode", "tutor_routing_mode"):
+    values.setdefault("flashcard_grounding_mode", "off")
+    values.setdefault("grounding_probability", 0.9)
+    values.setdefault("grounding_margin", 0.2)
+    for name in (
+        "document_index_mode",
+        "flashcard_semantic_mode",
+        "tutor_routing_mode",
+        "flashcard_grounding_mode",
+    ):
         value = values.get(name)
         if not isinstance(value, str):
             raise LocalConfigError("feature mode must be text")

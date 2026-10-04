@@ -9,6 +9,8 @@ archive and must not be treated as Cardine's current state.
 
 ## Start here
 
+- [Flashcard documentary support gate](logs/2026-10-04--cardine--flashcard-grounding-gate--log.md) — optional Jev support validation after core integrity and before proof/proposal registration; OFF by default, HUMAN acceptance preserved.
+
 - [Retrieval reliability audit](audits/2026-10-04--retrieval-reliability.md) — owner-requested needle benchmark on the live 559-page source; definition-only chimotripsin retrieval reproduced, 21 positive cases and two negatives, bounded keyword/context experiments and no runtime policy change.
 
 - [Visible study-note progress](logs/2026-10-04--cardine--notes-generation-progress--log.md) — active lesson/segment feedback and completed counts, stacked on PR #18's automatic PageIndex picker; live rollout pending.
