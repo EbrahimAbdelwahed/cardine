@@ -218,3 +218,38 @@ def test_partial_grounding_configuration_is_rejected(missing: tuple[str, ...]) -
         del raw["features"][key]
     with pytest.raises(LocalConfigError):
         LocalRepositoryConfig.from_bytes(json.dumps(raw).encode())
+
+
+@pytest.mark.parametrize("fingerprint", (None, "old-policy"))
+def test_recovery_rejects_ungrounded_checkpoint_before_proposal_registration(
+    fingerprint: str | None, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dataclasses import replace
+
+    import cardine.application.flashcard_proposals as module
+    from cardine.hosts import TutorCapabilityCompletionReference
+    from study_agent.capabilities import PROPOSE_FLASHCARDS_MANIFEST
+    from study_agent.domain import CorrelationId, CourseId, ExecutionContext, PrincipalKind, RunId
+    from study_agent.flashcards.lesson_worker_contracts import LessonWorkerCheckpoint
+
+    composition = object.__new__(module.FlashcardProposalComposition)
+    composition._grounding_policy = FlashcardGroundingPolicy(FeatureMode.ON, "resolved", 0.9, 0.2)
+    composition._lesson_store = MagicMock()
+    composition._artifact_service = MagicMock()
+    summary = {} if fingerprint is None else {"grounding_policy_fingerprint": fingerprint}
+    request = replace(_request(), continuation_summary=summary)
+    monkeypatch.setattr(
+        LessonWorkerCheckpoint, "from_bytes", lambda _: SimpleNamespace(request=request)
+    )
+    reached_worker = MagicMock(side_effect=RuntimeError("stale request reached worker"))
+    monkeypatch.setattr(composition, "_worker_for_request", reached_worker)
+    reference = TutorCapabilityCompletionReference(
+        "propose_flashcards@1", PROPOSE_FLASHCARDS_MANIFEST.fingerprint,
+        RunId("run-recovery-policy"), "a" * 64, "b" * 64,
+    )
+    context = ExecutionContext(
+        PrincipalKind.SERVICE, "fixture", CourseId("course"), CorrelationId("recovery")
+    )
+    assert composition.recover(reference, context) is None
+    reached_worker.assert_not_called()
+    composition._artifact_service.record_generated.assert_not_called()

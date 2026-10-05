@@ -78,3 +78,10 @@ Round 2 will be the final automatic review for this PR; no local reviewer used.
 
 Review fix validation: 104 focused configuration/gate/production-profile tests
 passed; Ruff, strict mypy and ownership audit pass.
+
+Final review correction (2026-10-05): recovery under ON rejects absent or stale
+policy fingerprints before worker review or proposal registration. Two regression
+cases failed before the guard and pass afterward. No third review is requested.
+Validation: 3,048 offline tests pass / four expected skips; strict mypy and build
+pass. Update only the current tutor-context proposal hash; historical custody
+manifests and ownership classifications are preserved.

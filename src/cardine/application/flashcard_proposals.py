@@ -61,6 +61,7 @@ from study_agent.domain import (
     SourceId,
 )
 from study_agent.domain._validation import JsonObject, JsonValue, freeze_object
+from study_agent.domain.features import FeatureMode
 from study_agent.flashcards.lesson_worker_contracts import (
     LessonWorkerCheckpoint,
     LessonWorkerRequest,
@@ -561,6 +562,13 @@ class FlashcardProposalComposition:
                 self._lesson_store.load(str(reference.run_id))
             )
             request = checkpoint.request
+            if (
+                self._grounding_policy is not None
+                and self._grounding_policy.mode is FeatureMode.ON
+                and (request.continuation_summary or {}).get("grounding_policy_fingerprint")
+                != self._grounding_policy.fingerprint
+            ):
+                return None
             worker = self._worker_for_request(request)
             service = LessonWorkerService(
                 store=self._lesson_store,

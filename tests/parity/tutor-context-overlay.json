@@ -12,7 +12,7 @@
     },
     {
       "path": "src/cardine/application/flashcard_proposals.py",
-      "sha256": "ca244c280f622516d77d9e66e61b363d5ebcde53866f22c3a68a4bbe7c7f0b1e"
+      "sha256": "ec1ede9f55ed1c9cff1b39d850b6399cceee29e3577d8668d9bbab4781291213"
     },
     {
       "path": "src/cardine/cli/repository.py",
