@@ -224,6 +224,34 @@ def test_envelope_decoder_rejects_arbitrary_ids_versions_and_timestamps(
         registry.decode(tamper(event))
 
 
+def test_identity_reuses_verified_digest_without_skipping_original_integrity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import study_agent.ingestion.events as events
+
+    original = "Cafe\u0301 🫀 valve".encode()
+    event, load_blob = make_event(original=original)
+    digest = sha256
+    original_hashes = 0
+
+    def counted(data: bytes = b"") -> object:
+        nonlocal original_hashes
+        if data == original:
+            original_hashes += 1
+        return digest(data)
+
+    monkeypatch.setattr(events, "sha256", counted)
+    decoded = decode_source_revision_event(event, load_blob)
+    assert original_hashes == 1, "identity recomputed the already verified original digest"
+    # A later same-length edit still has to read and hash the actual bytes.
+    with pytest.raises(ValueError, match="checksum does not match loaded"):
+        decode_source_revision_event(
+            event,
+            lambda ref: b"x" * ref.byte_length
+            if ref == decoded.source.blob else load_blob(ref),
+        )
+
+
 def test_decoder_rejects_corrupt_normalized_blob_and_chunk_checksum() -> None:
     event, load_blob = make_event()
     decoded = decode_source_revision_event(event, load_blob)

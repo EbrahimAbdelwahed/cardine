@@ -1,6 +1,6 @@
 # Cardine development memory
 
-Updated: 2026-10-04 CEST
+Updated: 2026-10-05 CEST
 
 This file is the authoritative entrypoint for Cardine development memory.
 Cardine-specific plans, logs, notes, and handoffs belong in this repository's
@@ -8,6 +8,8 @@ Cardine-specific plans, logs, notes, and handoffs belong in this repository's
 archive and must not be treated as Cardine's current state.
 
 ## Start here
+
+- [Three-second page-load budgets](logs/2026-10-04--cardine--page-load-latency--log.md) — desktop/mobile navigation and API regression gates, large canonical fixture and reduced duplicate source/index validation.
 
 - [Retrieval reliability audit](audits/2026-10-04--retrieval-reliability.md) — owner-requested needle benchmark on the live 559-page source; definition-only chimotripsin retrieval reproduced, 21 positive cases and two negatives, bounded keyword/context experiments and no runtime policy change.
 
