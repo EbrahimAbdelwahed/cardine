@@ -9,7 +9,7 @@ archive and must not be treated as Cardine's current state.
 
 ## Start here
 
-- [Three-second page-load budgets](logs/2026-10-04--cardine--page-load-latency--log.md) — desktop/mobile navigation and API regression gates, large canonical fixture and reduced duplicate source/index validation.
+- [Page-load regression budgets](logs/2026-10-04--cardine--page-load-latency--log.md) — browser thresholds pinned to measured real-course desktop/mobile startup and page results; API ceiling and deterministic work guards retained.
 
 - [Retrieval reliability audit](audits/2026-10-04--retrieval-reliability.md) — owner-requested needle benchmark on the live 559-page source; definition-only chimotripsin retrieval reproduced, 21 positive cases and two negatives, bounded keyword/context experiments and no runtime policy change.
 

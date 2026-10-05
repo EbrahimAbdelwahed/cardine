@@ -63,6 +63,20 @@ The final synthetic browser gate also passes: initial 1.733 s desktop and
 1.654 s mobile; all route samples below 1.61 s, with no provider requests or
 canonical event changes. The work guards fail on main and pass on this branch.
 
+## Regression limits
+
+The browser test baselines are set from the slowest recorded real-course
+sample above, in milliseconds: startup 2,764 desktop / 2,590 mobile; Oggi 2,538;
+Chat 1,450; Fonti 2,913; Proposte 316; Verifiche 316; Percorso 332; Ripasso 365;
+Piano 282; Settings 34. This makes a repeat run on the same representative
+fixture fail when it exceeds the baseline by 15%, with a minimum 100 ms allowance
+and 1 ms timer-precision grace for browser scheduling and rounded source measurements. The first strict run
+showed 332 ms against a 316 ms Proposte baseline and 332.5 ms against a 332 ms
+Percorso baseline, confirming that exact rounded samples are too tight for CI.
+API routes retain the three-second ceiling because the original API measurements
+were summarized as a maximum rather than tabulated per route. The limits are specific to the
+recorded course and machine; CI's synthetic fixture remains well below them.
+
 ## Verification and delivery
 
 Final local verification on implementation commit `5d28773`: 3,007 tests passed,
