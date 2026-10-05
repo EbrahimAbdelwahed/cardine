@@ -5,7 +5,6 @@ from collections.abc import Mapping
 
 from cardine.hosts import (
     AdvertisedCapability,
-    AskLearnerDecision,
     AssistantMessageDecision,
     InvokeToolDecision,
     StartCapabilityDecision,
@@ -13,7 +12,6 @@ from cardine.hosts import (
     TutorHostContext,
 )
 from cardine.hosts.clarification_recovery import ClarificationRecoveryTutorDecisionPort
-from cardine.hosts.flashcard_routing import FlashcardProfileRoutingTutorDecisionPort
 from cardine.hosts.source_grounding import SourceGroundedTutorDecisionPort
 from study_agent.domain._validation import JsonObject
 from study_agent.ports.tutor_host import TutorInterruptionToken
@@ -87,31 +85,8 @@ def _context(
     )
 
 
-def test_explicit_flashcard_effect_skips_routing_model_call() -> None:
-    delegate = _CountingPort()
-
-    decision = asyncio.run(
-        FlashcardProfileRoutingTutorDecisionPort(delegate).decide(
-            _context("genera 15 flashcards sulla lezione 1"), _Token()
-        )
-    )
-
-    assert isinstance(decision, StartCapabilityDecision)
-    assert decision.capability_id == "propose_flashcards"
-    assert delegate.calls == 0
 
 
-def test_flashcard_meta_question_still_uses_language_model() -> None:
-    delegate = _CountingPort()
-
-    decision = asyncio.run(
-        FlashcardProfileRoutingTutorDecisionPort(delegate).decide(
-            _context("Cosa sono le flashcards?"), _Token()
-        )
-    )
-
-    assert isinstance(decision, AssistantMessageDecision)
-    assert delegate.calls == 1
 
 
 def test_explicit_grounded_explanation_skips_routing_model_call() -> None:
@@ -149,42 +124,8 @@ def test_answered_clarification_enriches_the_single_model_call() -> None:
     assert resolution["current_answer"] == "negli istoni"
 
 
-def test_history_scoped_start_without_validated_read_requests_concrete_topic() -> None:
-    expected = StartCapabilityDecision(
-        "propose_flashcards",
-        {
-            "query": "glicolisi",
-            "scope": "glicolisi",
-            "language": "it",
-            "candidate_ceiling": 12,
-            "continuation_summary_json": None,
-        },
-    )
-    delegate = _CountingPort(expected)
-
-    decision = asyncio.run(
-        FlashcardProfileRoutingTutorDecisionPort(delegate).decide(
-            _context("Crea flashcard su quello che abbiamo discusso finora"),
-            _Token(),
-        )
-    )
-
-    assert isinstance(decision, AskLearnerDecision)
-    assert delegate.calls == 1
 
 
-def test_history_scoped_model_promise_cannot_complete_the_effect() -> None:
-    delegate = _CountingPort()
-
-    decision = asyncio.run(
-        FlashcardProfileRoutingTutorDecisionPort(delegate).decide(
-            _context("Crea flashcard su quello che abbiamo discusso finora"),
-            _Token(),
-        )
-    )
-
-    assert not isinstance(decision, AssistantMessageDecision)
-    assert delegate.calls == 1
 
 
 def test_difficulty_explanation_preserves_student_state_decisions() -> None:
@@ -203,16 +144,3 @@ def test_difficulty_explanation_preserves_student_state_decisions() -> None:
             )
             assert decision == memory
             assert delegate.calls == 1
-
-
-def test_flashcard_difficulty_preserves_memory_tool_before_generation() -> None:
-    for tool in ("student_state.record", "student_state.search"):
-        memory = InvokeToolDecision(tool, {})
-        delegate = _CountingPort(memory)
-        decision = asyncio.run(
-            FlashcardProfileRoutingTutorDecisionPort(delegate).decide(
-                _context("Ho difficoltà con la glicolisi, crea flashcards"), _Token()
-            )
-        )
-        assert decision == memory
-        assert delegate.calls == 1

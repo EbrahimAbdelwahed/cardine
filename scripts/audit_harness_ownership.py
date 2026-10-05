@@ -28,6 +28,8 @@ RECOVERY_OVERLAY = ROOT / "tests/parity/wave-a-recovery-overlay.json"
 STUDENT_JOURNAL_OVERLAY = ROOT / "tests/parity/student-journal-overlay.json"
 TUTOR_CONTEXT_OVERLAY = ROOT / "tests/parity/tutor-context-overlay.json"
 TUTOR_CONTEXT_PATHS = {
+    "src/cardine/application/flashcard_profile_selection.py",
+    "src/cardine/application/flashcard_scope.py",
     "src/cardine/adapters/model/streaming.py",
     "src/cardine/application/explanation_validation.py",
     "src/cardine/application/flashcard_proposals.py",

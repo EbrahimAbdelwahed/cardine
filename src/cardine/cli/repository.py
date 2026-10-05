@@ -21,6 +21,7 @@ from cardine.application.capability_completion import (
 from cardine.application.conversation_history import ConversationHistoryReader
 from cardine.application.explanation_validation import SourceBoundedExplanationValidator
 from cardine.application.flashcard_proposals import FlashcardProposalComposition
+from cardine.application.flashcard_scope import FlashcardScope, learner_fingerprint
 from cardine.application.indexing import (
     IndexingCoordinator,
     IndexingPhase,
@@ -57,13 +58,7 @@ from cardine.hosts import (
     completion_handoff_key,
     decision_fingerprint,
 )
-from cardine.hosts.flashcard_routing import (
-    FlashcardProfileRoutingTutorDecisionPort,
-    _is_flashcard_generation_request,
-    flashcard_topic_query,
-)
 from cardine.hosts.routing import RoutingThreshold, RoutingTutorDecisionPort, TutorRoutingPolicy
-from cardine.hosts.scope_resolution import recent_explicit_lesson_references
 from cardine.integrations.study_agent.course_policy import (
     ConsentModelPort,
     CourseConsentService,
@@ -496,17 +491,6 @@ def _record_failed_verification() -> None:
     )
 
 
-_DEICTIC_LESSON_SCOPE = re.compile(
-    r"\b(?:questa|quella|la)\s+lezione\b|\b(?:this|that)\s+lesson\b",
-    re.IGNORECASE,
-)
-_DEICTIC_TOPIC_SCOPE = re.compile(
-    r"\b(?:su\s+(?:questo|quello)|(?:questa|la)\s+spiegazione|"
-    r"spiegazione\s+appena|(?:about|on)\s+(?:this|that|it))\b",
-    re.IGNORECASE,
-)
-
-
 class _RepositoryTutorGateway:
     """Request-bound real explain capability over canonical repository reads."""
 
@@ -531,52 +515,31 @@ class _RepositoryTutorGateway:
     def _flashcard_lesson_pin(self, inputs: Mapping[str, object]) -> SourcePin | None:
         """Resolve only an explicit or immediately recent canonical lesson scope."""
 
+        scope = self._semantic_flashcard_scope(inputs)
         if self._lesson_pin is not None:
-            return self._lesson_pin
+            self._repository.validate_lesson_pin(self._lesson_pin)
+            if scope.kind == "selected_lesson":
+                return self._lesson_pin
+        if scope.kind != "selected_lesson":
+            return None
         query = inputs.get("query")
-        if not isinstance(query, str) or not query.strip():
-            return None
-        human_interactions = tuple(
-            interaction
-            for interaction in self._repository.sessions.interactions(
-                self._course_id, self._session_id
-            )
-            if interaction.kind.value == "human"
+        if not isinstance(query, str):
+            raise ValueError("selected lesson scope is missing")
+        result = self._repository.search_lessons(self._course_id, query)
+        if len(result.candidates) != 1:
+            raise ValueError("selected lesson scope is missing, ambiguous or stale")
+        return self._repository.select_lesson(
+            self._course_id, query, result.candidates[0].candidate_id
         )
-        current_learner_text = (
-            human_interactions[-1].content if human_interactions else None
-        )
-        if current_learner_text is not None:
-            current_references = recent_explicit_lesson_references((current_learner_text,))
-            if current_references:
-                # The current learner turn is trusted scope authority even when
-                # the model distilled it to a topic-only capability query.
-                pin = self._repository.resolve_lesson_scope(
-                    self._course_id, current_references[0]
-                )
-                if pin is None:
-                    raise ValueError("explicit lesson scope is unavailable")
-                return pin
-        direct = self._repository.resolve_lesson_scope(self._course_id, query)
-        if direct is not None:
-            return direct
-        if recent_explicit_lesson_references((query,)):
-            raise ValueError("explicit lesson scope is unavailable")
-        if current_learner_text is None:
-            return None
-        if _DEICTIC_LESSON_SCOPE.search(current_learner_text) is None:
-            return None
-        references = recent_explicit_lesson_references(
-            tuple(interaction.content for interaction in human_interactions)
-        )
-        if references:
-            # The nearest explicit reference remains authoritative even when
-            # unavailable; falling back would silently change lesson scope.
-            pin = self._repository.resolve_lesson_scope(self._course_id, references[0])
-            if pin is None:
-                raise ValueError("explicit lesson scope is unavailable")
-            return pin
-        raise ValueError("explicit lesson scope is unavailable")
+
+    def _semantic_flashcard_scope(self, inputs: Mapping[str, object]) -> FlashcardScope:
+        scope = FlashcardScope.parse(inputs.get("scope"))
+        humans = tuple(item for item in self._repository.sessions.interactions(
+            self._course_id, self._session_id) if item.kind.value == "human")
+        if (not humans or learner_fingerprint(humans[-1].content) != scope.learner_fingerprint
+                or str(humans[-1].id) != scope.learner_interaction_id):
+            raise ValueError("flashcard scope is stale")
+        return scope
 
     def _topic_flashcard_composition(self, inputs: JsonObject) -> FlashcardProposalComposition:
         assert self._flashcards is not None
@@ -587,7 +550,6 @@ class _RepositoryTutorGateway:
             for item in repository.sessions.interactions(self._course_id, self._session_id)
             if item.kind.value == "human"
         )
-        current = humans[-1].content if humans else str(inputs["query"])
         policy = cast(
             Mapping[str, object],
             course_profile_manifest(repository.courses.get(self._course_id))["source_policy"],
@@ -595,35 +557,13 @@ class _RepositoryTutorGateway:
         minimum = cast(int, policy["minimum_trust_level"])
         roles = cast(tuple[str, ...], policy["allowed_roles"])
         retired = repository.source_lifetime.retired_source_ids(self._course_id)
-        if _DEICTIC_TOPIC_SCOPE.search(current) and not flashcard_topic_query(current):
-            # A reference to the last explanation selects its original source spans,
-            # never the assistant's generated prose or an older unrelated answer.
-            previous = next(
-                (
-                    item
-                    for item in reversed(humans[-13:-1])
-                    if not _is_flashcard_generation_request(item.content)
-                ),
-                None,
-            )
-            presentation = next(
-                (
-                    item
-                    for item in reversed(
-                        repository.tutor_presentations.presentations(
-                            self._course_id, self._session_id
-                        )
-                    )
-                    if previous is not None and item.in_reply_to_interaction_id == previous.id
-                ),
-                None,
-            )
-            refs = () if presentation is None else presentation.source_refs
-            canonical_ids = (
-                None if presentation is None else self._explanation_chunk_ids(presentation)
-            )
-            from study_agent.retrieval import canonical_source_locator
-
+        semantic = self._semantic_flashcard_scope(inputs)
+        if semantic.kind == "latest_explanation":
+            presentation = self._recent_explanation_presentation()
+            if (presentation is None or presentation.in_reply_to_interaction_id not in
+                    {item.id for item in humans[:-1]}):
+                raise ValueError("latest explanation scope is missing or stale")
+            canonical_ids = self._explanation_chunk_ids(presentation)
             chunks = frozenset(
                 chunk.chunk_id
                 for record in course.content.catalog()
@@ -632,32 +572,29 @@ class _RepositoryTutorGateway:
                 and record.source.trust_level >= minimum
                 and (not roles or record.source.source_role in roles)
                 for chunk in record.chunks
-                if (
-                    chunk.chunk_id in canonical_ids
-                    if canonical_ids is not None
-                    else any(
-                        ref["source_id"] == str(chunk.source_id)
-                        and ref["revision_id"] == str(chunk.revision_id)
-                        and ref["locator"]
-                        == canonical_source_locator(
-                            record, chunk, chunk.start_offset, chunk.end_offset
-                        )
-                        for ref in refs
-                    )
-                )
+                if chunk.chunk_id in canonical_ids
             )
+            if self._lesson_pin is not None:
+                pin = self._lesson_pin
+                chunks = frozenset(chunk.chunk_id for record in course.content.catalog()
+                    for chunk in record.chunks if chunk.chunk_id in chunks
+                    and str(chunk.source_id) == pin.source_id
+                    and str(chunk.revision_id) == pin.revision_id
+                    and chunk.start_offset >= pin.start_offset
+                    and chunk.end_offset <= pin.end_offset)
             if not chunks:
                 raise ValueError("recent explanation has no current canonical flashcard evidence")
             return self._flashcards.for_chunks(chunks)
-        query = flashcard_topic_query(current)
-        if not _is_flashcard_generation_request(current):
-            query = flashcard_topic_query(str(inputs["query"]))
-        if not query:
-            return self._flashcards
+        query = inputs.get("query")
+        if not isinstance(query, str) or not query.strip() or len(query) > 512:
+            raise ValueError("semantic flashcard topic is missing")
         self._ensure_retrieval_index()
         activity = begin_activity(kind="retrieval", ref="retrieval.search")
         try:
-            evidence = course.retrieval.search(
+            retrieval = (cast(RetrievalPort, _PinnedRetrieval(course.retrieval, self._lesson_pin))
+                         if self._lesson_pin is not None
+                         else course.retrieval)
+            evidence = retrieval.search(
                 RetrievalQuery(
                     self._course_id,
                     query,
@@ -677,9 +614,34 @@ class _RepositoryTutorGateway:
             raise ValueError("flashcard topic has no current canonical evidence")
         return self._flashcards.for_chunks(chunks)
 
+    def _recent_explanation_presentation(self) -> TutorPresentationRecord | None:
+        repository = self._repository
+        for item in reversed(repository.tutor_presentations.presentations(
+            self._course_id, self._session_id
+        )[-24:]):
+            if item.kind.value != "assistant_message":
+                continue
+            try:
+                payload = repository.tutor_completion_handoffs.load(completion_handoff_key(
+                    self._course_id, self._session_id, item.host_turn_id
+                ))
+            except KeyError:
+                # Missing canonical completion identity cannot authorize evidence.
+                if item.source_refs:
+                    raise ValueError(
+                        "recent explanation completion identity is unavailable"
+                    ) from None
+                continue
+            handoff = TutorCompletionHandoff.from_bytes(payload)
+            if handoff.capability_identity == EXPLAIN_CONCEPT_MANIFEST.identity:
+                # Select the nearest explanation even when it has failed or stale
+                # evidence. Verification must fail rather than choose an older one.
+                return item
+        return None
+
     def _explanation_chunk_ids(
         self, presentation: TutorPresentationRecord
-    ) -> frozenset[ChunkId] | None:
+    ) -> frozenset[ChunkId]:
         """Recover exact source identity, never the presentation's display locator."""
         repository = self._repository
         try:
@@ -687,9 +649,7 @@ class _RepositoryTutorGateway:
                 self._course_id, self._session_id, presentation.host_turn_id,
             ))
         except KeyError:
-            # Historical presentations without a handoff may still use their
-            # exact, untruncated locator through the conservative legacy match.
-            return None
+            raise ValueError("recent explanation completion identity is unavailable") from None
         handoff = TutorCompletionHandoff.from_bytes(payload)
         reference, context = handoff.completion_reference, handoff.execution_context
         if (
@@ -2013,13 +1973,11 @@ class LocalRepository:
             selected_session_id,
             model,
             self._model_adapters.artifact(self.config.model.adapter_id),
-            flashcards,
+            flashcards if features.tutor_routing_mode is FeatureMode.ON else None,
             lesson_pin,
         )
-        legacy = FlashcardProfileRoutingTutorDecisionPort(
-            SourceGroundedTutorDecisionPort(
-                ClarificationRecoveryTutorDecisionPort(ModelTutorDecisionPort(model))
-            )
+        legacy = SourceGroundedTutorDecisionPort(
+            ClarificationRecoveryTutorDecisionPort(ModelTutorDecisionPort(model))
         )
         decision_port: TutorDecisionPort = legacy
         if features.tutor_routing_mode is not FeatureMode.OFF:
@@ -2039,6 +1997,7 @@ class LocalRepository:
                 ),
                 legacy=legacy,
                 record_receipt=self._routing_receipts.record,
+                selected_lesson_available=lesson_pin is not None,
             )
         runner = TutorHostRunner(
             decision_port,
@@ -3001,7 +2960,8 @@ class LocalRepository:
             raise ValueError("flashcard capability is not executable")
         inputs: JsonObject = {
             "query": query.strip(),
-            "scope": pin.section_title,
+            "scope": FlashcardScope("selected_lesson", "default",
+                                    learner_fingerprint(learner.content), str(learner.id)).encode(),
             "language": "it",
             "candidate_ceiling": 24,
             "continuation_summary_json": None,

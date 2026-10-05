@@ -5,10 +5,13 @@ import sqlite3
 from pathlib import Path
 from typing import cast
 
-from cardine.demo.ui_application import RepositoryUiApplication
+import pytest
+
 from study_agent.domain._validation import JsonObject
 from tests.integration.demo.TUT08.test_flashcard_proposals import (
+    RepositoryUiApplication,
     _install_hybrid_flashcard_model,
+    _install_semantic_repository_fixture,
 )
 from tests.integration.demo.TUT08.test_repository_backed_chat import (
     COURSE,
@@ -18,7 +21,9 @@ from tests.integration.demo.TUT08.test_repository_backed_chat import (
 )
 
 
-def test_long_chat_can_search_memory_before_source_grounded_flashcards(tmp_path: Path) -> None:
+def test_long_chat_jev_context_stays_separate_from_flashcard_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A long chat is recoverable without treating its prose as source evidence."""
     decisions: tuple[JsonObject, ...] = (
         *(
@@ -28,29 +33,6 @@ def test_long_chat_can_search_memory_before_source_grounded_flashcards(tmp_path:
             }
             for index in range(13)
         ),
-        {
-            "kind": "invoke_tool",
-            "tool_name": "conversation.search",
-            "arguments": {"query": "pompa sodio potassio", "limit": 8},
-        },
-        {
-            "kind": "start_capability",
-            "capability_id": "propose_flashcards",
-            "inputs": {
-                "query": "MEMORY-SHORT-SENTINEL frase copiata",
-                "scope": "MEMORY-SHORT-SENTINEL frase copiata",
-                "language": "it",
-                "candidate_ceiling": 3,
-                "continuation_summary_json": json.dumps(
-                    {
-                        "conversation_topic": "pompa sodio potassio",
-                        "messages_consulted": 8,
-                        "verbatim_excerpt": "MEMORY-EXCERPT-ONLY",
-                    },
-                    sort_keys=True,
-                ),
-            },
-        },
     )
     root, adapters, model = _repository(
         tmp_path,
@@ -60,7 +42,6 @@ def test_long_chat_can_search_memory_before_source_grounded_flashcards(tmp_path:
             b"La pompa sodio-potassio trasporta tre ioni sodio fuori e due ioni potassio dentro."
         ),
     )
-    flashcard_requests = _install_hybrid_flashcard_model(model)
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
 
     for index in range(13):
@@ -79,6 +60,9 @@ def test_long_chat_can_search_memory_before_source_grounded_flashcards(tmp_path:
             ),
         )
 
+    _install_semantic_repository_fixture(monkeypatch)
+    flashcard_requests = _install_hybrid_flashcard_model(model)
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
     before = app.get("/api/v1/session")
     receipt = app.post(
         "/api/v1/session/turns",
@@ -95,26 +79,13 @@ def test_long_chat_can_search_memory_before_source_grounded_flashcards(tmp_path:
     prompt = "\n".join(message.content for message in flashcard_requests[0].messages)
     assert "La pompa sodio-potassio trasporta tre ioni sodio" in prompt
 
-    decision_requests = tuple(
-        request
-        for request in model.requests
-        if request.metadata.get("prompt_id") == "tutor_decision.v1"
-    )
-    assert len(decision_requests) == 15
-    observed = json.loads(decision_requests[-1].messages[-1].content)
-    observations = observed["tutor_snapshot"]["agent_observations"]
-    memory_search = next(
-        item for item in observations if item["tool_name"] == "conversation.search"
-    )
-    assert memory_search["status"] == "succeeded"
-    trajectory = cast(
-        tuple[dict[str, object], ...], app.turn_traces.snapshot()["turn_traces"]
-    )[-1]
-    assert trajectory["steps"] == (
-        {"kind": "invoke_tool", "tool_name": "conversation.read"},
-        {"kind": "invoke_tool", "tool_name": "conversation.search"},
-        {"kind": "start_capability", "capability_id": "propose_flashcards"},
-    )
+    selected_requests = tuple(request for request in model.requests
+                              if request.structured_output is not None
+                              and request.structured_output.name == "capability_inputs")
+    assert len(selected_requests) == 1
+    observed = json.loads(selected_requests[0].messages[-1].content)
+    assert observed["recent_conversation"]
+    assert "MEMORY-EXCERPT-ONLY" not in prompt
 
     with sqlite3.connect(root / "state" / "runs.sqlite3") as connection:
         durable_handoffs = tuple(

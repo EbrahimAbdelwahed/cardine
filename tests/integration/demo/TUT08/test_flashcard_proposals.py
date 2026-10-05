@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from collections.abc import Mapping
-from dataclasses import replace
+from collections.abc import Callable, Mapping
+from dataclasses import asdict, replace
 from pathlib import Path
 from types import MethodType
 from typing import TYPE_CHECKING, Protocol, cast
@@ -13,15 +13,22 @@ import pytest
 
 if TYPE_CHECKING:
     from tests.integration.demo.TUT08.test_repository_backed_chat import _command, _repository
+    from tests.integration.demo.TUT08.test_repository_backed_chat import (
+        _FixtureModel as DecisionModel,
+    )
 else:
     try:
         from tests.integration.demo.TUT08.test_repository_backed_chat import _command, _repository
+        from tests.integration.demo.TUT08.test_repository_backed_chat import (
+            _FixtureModel as DecisionModel,
+        )
     except ModuleNotFoundError:
         from test_repository_backed_chat import _command, _repository
+        from test_repository_backed_chat import _FixtureModel as DecisionModel
 
 from cardine.adapters.model.openai_luna import OpenAIGpt56LunaConfig, OpenAIGpt56LunaModel
 from cardine.cli.repository import LocalRepository
-from cardine.demo.ui_application import RepositoryUiApplication
+from cardine.demo.ui_application import RepositoryUiApplication as _RepositoryUiApplication
 from study_agent.adapters.model.openai_compatible import HttpResponse
 from study_agent.capabilities import FailedCapabilityOutcome
 from study_agent.domain import CorrelationId, CourseId, ExecutionContext, PrincipalKind, SessionId
@@ -39,8 +46,114 @@ COURSE = CourseId("cardine-course")
 SESSION = SessionId("cardine-session")
 
 
+class RepositoryUiApplication(_RepositoryUiApplication):
+    """Use this test's explicitly injected offline Jev opener for every UI read/write."""
+    def __init__(self, root: Path, course: CourseId, session: SessionId,
+                 **kwargs: object) -> None:
+        kwargs.setdefault("repository_opener", LocalRepository.open)
+        initialize = cast(Callable[..., None], super().__init__)
+        initialize(root, course, session, **kwargs)
+
+
 class _FixtureModel(Protocol):
     async def generate(self, request: ModelRequest) -> ModelResponse: ...
+
+
+def _fixture_flashcard_scope(text: str, state: JsonObject) -> tuple[str, str]:
+    """Deterministic fake Jev decisions; no claim of provider language accuracy."""
+    lowered = text.casefold()
+    if any(marker in lowered for marker in ("quesot", "su questo", "about this", "on this")):
+        return "latest_explanation", "latest explanation"
+    if "lezione" in lowered or state.get("selected_lesson_available"):
+        references = re.findall(r"lezione\s+(\d+)", lowered)
+        if not references:
+            recent = state.get("recent_conversation", ())
+            for item in reversed(recent if isinstance(recent, (tuple, list)) else ()):
+                if isinstance(item, Mapping):
+                    references = re.findall(r"lezione\s+(\d+)", str(item.get("content", "")))
+                    if references:
+                        break
+        return "selected_lesson", f"Lezione {references[-1]}" if references else "Valve notes"
+    for topic in (
+        "oldmarker", "absentmarker", "aortic valve", "cusps", "mitosi", "pompa sodio-potassio"
+    ):
+        if topic in lowered:
+            return "explicit_topic", topic
+    return "conversation", "aortic valve"
+
+
+def _install_semantic_repository_fixture(monkeypatch: pytest.MonkeyPatch) -> None:
+    from study_agent.domain.features import FeatureMode
+    from study_agent.ports.judgement import (
+        ChoiceJudgement,
+        ChoiceJudgementRequest,
+        ChoiceProbability,
+    )
+    from study_agent.repository_config import JudgementAdapterConfig
+
+    class FixtureJudge:
+        async def judge(self, request: ChoiceJudgementRequest) -> ChoiceJudgement:
+            state = cast(JsonObject, request.state)
+            text = str(state.get("latest_learner_utterance", ""))
+            card = "flash" in text.casefold() or "cards" in text.casefold()
+            use = request.metadata["use_case"]
+            if use == "route":
+                selected = "start_capability"
+            elif use == "capability":
+                selected = "propose_flashcards" if card else "explain_concept"
+            elif use == "flashcard_scope":
+                selected = _fixture_flashcard_scope(text, state)[0]
+            elif use == "flashcard_profile":
+                selected = ("morphology" if any(word in text.casefold()
+                    for word in ("anatom", "topologic", "ricostru")) else "default")
+            else:
+                selected = request.options[0].key
+            return ChoiceJudgement(selected, tuple(ChoiceProbability(
+                item.key, 1.0 if item.key == selected else 0.0) for item in request.options),
+                1.0, "offline-fixture", "1", "fake-jev", 0.0)
+
+    original_open = cast(Callable[..., LocalRepository], LocalRepository.open)
+    def open_repository(cls: type[LocalRepository], /, root: str | Path,
+                        **kwargs: object) -> LocalRepository:
+        del cls
+        kwargs.setdefault("judgement", FixtureJudge())
+        repo = original_open(root, **kwargs)
+        repo.config = replace(repo.config, judgement=JudgementAdapterConfig(),
+            features=replace(repo.config.features, tutor_routing_mode=FeatureMode.ON,
+                             emergency_fallback=False))
+        return repo
+    monkeypatch.setattr(LocalRepository, "open", classmethod(open_repository))
+
+    original_generate = DecisionModel.generate
+    async def generate(self: DecisionModel, request: ModelRequest) -> ModelResponse:
+        constraint = request.structured_output
+        if constraint is None or constraint.name != "capability_inputs":
+            return await original_generate(self, request)
+        self._calls.append(request)
+        state = cast(JsonObject, json.loads(request.messages[-1].content))
+        text = str(state["latest_learner_utterance"])
+        props = cast(Mapping[str, JsonObject], constraint.schema["properties"])
+        if "scope" in props:
+            query = _fixture_flashcard_scope(text, state)[1]
+            fixed_query = props["query"].get("enum")
+            if isinstance(fixed_query, tuple):
+                query = str(fixed_query[0])
+            payload: JsonObject = {"query": query,
+                "scope": cast(tuple[str, ...], props["scope"]["enum"])[0],
+                "language": "it", "candidate_ceiling": 24, "continuation_summary_json": None}
+        else:
+            query = next((marker for marker in ("oldmarker", "cusps")
+                          if marker in text.casefold()), text)
+            payload = {"query": query, "target": query, "language": "it",
+                       "learner_goal": None, "continuation_summary_json": None}
+        return ModelResponse("", None, ModelFinishReason.STOP,
+            ModelInvocation("fixture", "1.0.0", "fixture"), structured_output=payload)
+    monkeypatch.setattr(DecisionModel, "generate", generate)
+
+
+@pytest.fixture(autouse=True)
+def _semantic_repository_fixture(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_semantic_repository_fixture(monkeypatch)
 
 
 def _flashcard_draft(request: ModelRequest) -> JsonObject:
@@ -720,3 +833,129 @@ def test_repository_flashcards_cross_luna_wire_and_publish_verified_proposals(
     assert activity["proposal_count"] == 1
     items = cast(tuple[dict[str, object], ...], app.get("/api/v1/artifacts")["items"])
     assert items[0]["status"] == "proposed"
+
+
+@pytest.mark.parametrize("scope,query,request_text", (
+    ("latest_explanation", "quesot", "genera una flashcard su quesot"),
+    ("explicit_topic", "oldmarker", "genera una flashcard su oldmarker"),
+    ("conversation", "cusps", "crea una flashcard sui temi di questa conversazione"),
+    ("selected_lesson", "Aortic valve", "crea una flashcard sulla lezione Aortic valve"),
+))
+@pytest.mark.parametrize("prior_failed_request", (False, True))
+@pytest.mark.parametrize("with_pin", (False, True))
+def test_primary_jev_flashcard_path_owns_scope_without_downstream_language_parser(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scope: str, query: str, request_text: str,
+    prior_failed_request: bool, with_pin: bool,
+) -> None:
+    from study_agent.domain.features import FeatureMode
+    from study_agent.ports.judgement import (
+        ChoiceJudgement,
+        ChoiceJudgementRequest,
+        ChoiceProbability,
+    )
+    from study_agent.repository_config import JudgementAdapterConfig
+    from tests.unit.hosts.test_routing import Judge
+
+    root, adapters, model = _repository(tmp_path, source_content=(
+        b"# Old topic\nOldmarker facts about the old topic.\n"
+        b"# Aortic valve\nThe aortic valve has three cusps.\n"
+    ))
+    calls = _install_hybrid_flashcard_model(model)
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/session")["high_water_sequence"])
+    explained = app.post("/api/v1/session/turns", _command("explain", sequence, "Spiegami cusps"))
+    assert explained["status"] == "completed"
+    sequence = cast(int, explained["high_water_sequence"])
+    if prior_failed_request:
+        failure = app.post("/api/v1/session/turns", _command(
+            "failed-old-card-request", sequence, "Create a flashcard about absentmarker"))
+        assert failure["status"] == "failed"
+        sequence = cast(int, failure["high_water_sequence"])
+        assert calls == []
+    pin_json: dict[str, object] | None = None
+    if with_pin:
+        with LocalRepository.open(root, model_adapters=adapters) as repo:
+            found = repo.search_lessons(COURSE, "Aortic valve")
+            pin_json = asdict(repo.select_lesson(COURSE, "Aortic valve",
+                                               found.candidates[0].candidate_id))
+    judge = Judge("start_capability", "propose_flashcards", scope, "default")
+    original_judge = judge.judge
+
+    async def judgement(request: ChoiceJudgementRequest) -> ChoiceJudgement:
+        if judge.selections:
+            return await original_judge(request)
+        selected = "stop" if request.metadata["use_case"] == "route" else request.options[0].key
+        return ChoiceJudgement(selected, tuple(ChoiceProbability(
+            option.key, 1.0 if option.key == selected else 0.0) for option in request.options),
+            1.0, "fake", "1", "fake", 0.0)
+
+    monkeypatch.setattr(judge, "judge", judgement)
+    original = model.generate
+
+    async def generate(request: ModelRequest) -> ModelResponse:
+        constraint = request.structured_output
+        if constraint is not None and constraint.name == "capability_inputs":
+            props = cast(Mapping[str, JsonObject], constraint.schema["properties"])
+            fixed_scope = cast(tuple[str, ...], props["scope"]["enum"])[0]
+            fixed_queries = props["query"].get("enum")
+            selected_query = fixed_queries[0] if isinstance(fixed_queries, tuple) else query
+            return ModelResponse("", None, ModelFinishReason.STOP,
+                ModelInvocation("fixture", "1", "fixture"), structured_output={
+                    "query": selected_query, "scope": fixed_scope, "language": "it",
+                    "candidate_ceiling": 24, "continuation_summary_json": None})
+        return await original(request)
+
+    monkeypatch.setattr(model, "generate", generate)
+
+    def open_repository(path: str | Path, **kwargs: object) -> LocalRepository:
+        del kwargs
+        repo = LocalRepository.open(path, model_adapters=adapters, judgement=judge)
+        repo.config = replace(repo.config, judgement=JudgementAdapterConfig(),
+                              features=replace(repo.config.features,
+            tutor_routing_mode=FeatureMode.ON, emergency_fallback=False))
+        return repo
+
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters,
+                                  repository_opener=open_repository)
+    command = _command("semantic-cards", sequence, request_text)
+    if pin_json is not None:
+        cast(dict[str, object], command["payload"])["lesson_pin"] = pin_json
+    result = app.post("/api/v1/session/turns", command)
+    scope_state = cast(Mapping[str, object], judge.requests[2].state)
+    assert scope_state["selected_lesson_available"] == with_pin
+    if with_pin and scope == "explicit_topic":
+        assert result["status"] == "failed"
+        assert calls == [] and not app.get("/api/v1/artifacts")["items"]
+        return
+    assert result["status"] == "completed", (json.dumps(result, default=str),
+        [(item.metadata, item.state) for item in judge.requests], model.requests)
+    assert len(calls) == 1
+    prompt = "\n".join(message.content for message in calls[0].messages)
+    assert ("Oldmarker" in prompt) == (scope == "explicit_topic")
+    assert ("aortic valve has three cusps" in prompt) == (scope != "explicit_topic")
+    assert [item.metadata["use_case"] for item in judge.requests][:4] == [
+        "route", "capability", "flashcard_scope", "flashcard_profile"]
+    assert app.get("/api/v1/artifacts")["items"]
+
+
+@pytest.mark.parametrize("raw_scope", (None, "free-form scope", "stale", "wrong-turn"))
+def test_primary_gateway_rejects_missing_or_stale_semantic_scope(
+    tmp_path: Path, raw_scope: str | None,
+) -> None:
+    from cardine.application.flashcard_scope import FlashcardScope, learner_fingerprint
+    from cardine.cli.repository import _RepositoryTutorGateway
+
+    root, adapters, model = _repository(tmp_path)
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/session")["high_water_sequence"])
+    app.post("/api/v1/session/turns", _command("human", sequence, "Spiegami cusps"))
+    with LocalRepository.open(root, model_adapters=adapters) as repo:
+        human = repo.sessions.interactions(COURSE, SESSION)[0]
+        if raw_scope in {"stale", "wrong-turn"}:
+            raw_scope = FlashcardScope("explicit_topic", "default",
+                learner_fingerprint("old topic" if raw_scope == "stale" else human.content),
+                str(human.id) if raw_scope == "stale" else "previous-turn").encode()
+        gateway = _RepositoryTutorGateway(repo, COURSE, SESSION, model,
+            repo._model_adapters.artifact("fixture"))
+        with pytest.raises(ValueError, match="scope"):
+            gateway._flashcard_lesson_pin({"query": "cusps", "scope": raw_scope})

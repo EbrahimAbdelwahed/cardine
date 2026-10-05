@@ -8,10 +8,10 @@ from typing import NoReturn, cast
 
 from cardine.application.capability_completion import CapabilityCompletionProductReceipt
 from cardine.application.flashcard_profile_selection import (
-    FlashcardProfileRouteKind,
     FlashcardProfileSelectionDecision,
-    select_flashcard_profile,
+    semantic_flashcard_profile,
 )
+from cardine.application.flashcard_scope import FlashcardScope
 from cardine.application.study_semantics import FlashcardSemanticPreprocessor
 from cardine.hosts import TutorCapabilityCompletionReference
 from study_agent.adapters.sqlite import NamespacedSQLiteRunStore, SQLiteRunStore
@@ -473,12 +473,8 @@ class FlashcardProposalComposition:
         public: JsonObject = inputs
         try:
             public = _public_inputs(inputs)
-            prompt = str(public["query"])
-            decision = select_flashcard_profile(prompt)
-            if decision.kind is FlashcardProfileRouteKind.CLARIFICATION:
-                raise ValueError(
-                    decision.clarification or "flashcard profile selection is ambiguous"
-                )
+            semantic = FlashcardScope.parse(public["scope"])
+            decision = semantic_flashcard_profile(semantic.profile)
             request = await self._request(public, context, decision)
             worker = self._worker_for_request(request)
             service = LessonWorkerService(
@@ -626,8 +622,6 @@ class FlashcardProposalComposition:
         interaction_id = self._interaction_id or self._latest_interaction_id()
         receipt = decision.receipt(interaction_id)
         profile = decision.profile
-        if profile is None:
-            raise ValueError("selected flashcard route has no profile")
         binding = _profile_binding(self, profile)
         expectation = _profile_expectation(binding, receipt)
         commitments = tuple(
@@ -639,7 +633,7 @@ class FlashcardProposalComposition:
         return LessonWorkerRequest(
             plan,
             str(public["query"]),
-            str(public["scope"] or str(public["query"])),
+            str(public["query"]),
             str(public["language"]),
             _candidate_ceiling(public["candidate_ceiling"]),
             {

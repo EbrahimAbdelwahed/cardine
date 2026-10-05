@@ -1,5 +1,13 @@
 # Cardine — Agent Instructions
 
+## Ground rules for the current pre-user product
+
+- No backward compatibility and no data migrations.
+- Replace changed behavior with the simplest implementation and update every caller.
+- Change docs first, then behavior tests observed failing, then implementation;
+  remove code, files and docs made unused by the change.
+- Do not delete a database or reset data without asking the owner.
+
 ## Repository boundary and source of truth
 
 - Work in the Cardine repository. Read `CONTEXT.md`, the relevant approved spec
@@ -133,3 +141,9 @@
   PageIndex failure must be explicit and legacy semantic parsers/router wrappers
   must not run as a second normal path. Test cache identity, tamper detection,
   outages without persistent poisoning and disabled-state preservation.
+
+- For flashcard tutor ON, scope/profile Choices and the turn-bound structured
+  contract replace downstream language scans. Verify current-topic precedence,
+  pin intersections, conservative missing/stale scope failure, and original
+  explanation citation recovery. Conversation context never becomes evidence;
+  explicitly configured legacy emergency routing cannot bypass this contract.
