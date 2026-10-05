@@ -1271,6 +1271,10 @@ class ModelAdapterConfigurationError(ValueError):
     """A configured technical model adapter cannot be constructed safely."""
 
 
+class JudgementCredentialUnavailableError(ModelAdapterConfigurationError):
+    """The closed-choice judgement (Jev) credential is missing from the environment."""
+
+
 class ModelAdapterBuilder(Protocol):
     def __call__(self, config: ModelAdapterConfig, credential: str | None) -> ModelPort: ...
 
@@ -1874,7 +1878,7 @@ class LocalRepository:
             environment = os.environ if self._environment is None else self._environment
             credential = environment.get(config.credential_env)
             if not isinstance(credential, str) or not credential.strip():
-                raise ModelAdapterConfigurationError(
+                raise JudgementCredentialUnavailableError(
                     "configured judgement credential is unavailable"
                 )
             self._judgement = JevChoiceAdapter(
@@ -1894,7 +1898,7 @@ class LocalRepository:
             environment = os.environ if self._environment is None else self._environment
             credential = environment.get(config.credential_env)
             if not isinstance(credential, str) or not credential.strip():
-                raise ModelAdapterConfigurationError("grounding credential is unavailable")
+                raise JudgementCredentialUnavailableError("grounding credential is unavailable")
             self._grounding_judgement = JevChoiceAdapter(
                 api_key=credential, model_id=config.resolved_model_id,
                 timeout_seconds=config.timeout_seconds, max_retries=config.max_retries,

@@ -38,7 +38,10 @@ _PHASES = frozenset(
         "capability_resume",
     }
 )
-_ERROR_CODES = frozenset(code.value for code in ModelErrorCode) | {"tutor_configuration"}
+_ERROR_CODES = frozenset(code.value for code in ModelErrorCode) | {
+    "tutor_configuration",
+    "judgement_configuration",
+}
 _OUTCOMES = frozenset(
     {
         "completed",
