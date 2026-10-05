@@ -148,6 +148,9 @@ REVIEWED_NON_IMPORT_AST_VARIANCE = {
 # Exact bytes from committed Wave A product evolution after the historical
 # CA-01/CA-02 snapshots. Preserve the frozen ledgers and reject further drift.
 POST_BASELINE_SHA256 = {
+    "src/study_agent/ports/retrieval.py": (
+        "64ea240caea67e375c036177f850c478b376434663092878d1dd930c5512dd0e"
+    ),
     "src/study_agent/workers/contracts.py": (
         "80831c2c0c77e9c09bf20a9e109b503134a2bac39226ca68dcc3b671afca270c"
     ),
@@ -218,7 +221,7 @@ POST_BASELINE_SHA256 = {
         "3be7ae528ff8fb6fd63aa424fa2b19de22faead876ab1972f09f36b33c859e6b"
     ),
     "src/study_agent/adapters/sqlite/fts_retrieval.py": (
-        "ab6f8ab5f27da541742526127729c29c317dfaf241edd7f63e6a674dd642930c"
+        "838807f452d46e9f849c72cdf4e1d6aadf9a27301c1eef68674de37c8c1e4a57"
     ),
     "src/study_agent/prompts/explain_concept_v1.py": (
         "00957942586239a396bae507593b687b1896fee120eba83e37feae592a95ff48"

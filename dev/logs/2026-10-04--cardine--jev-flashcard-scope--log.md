@@ -60,3 +60,11 @@ and tests identical to the base; no unrelated journal code was changed.
 
 No merge, deployment, paid provider call, study-store migration or local rollout
 was performed. No unpublished changes exist in the shared checkout from this task.
+
+2026-10-05 merge preparation: first-review findings reproduced and fixed.
+Pinned retrieval sends canonical whole-chunk bounds into FTS before ranking
+limits, including title and bounded relevance branches and query commitments.
+Contextual flashcard labels no longer append factual topic entries. Existing
+explanation memory stays authoritative. Regression tests fail before the fixes.
+Current exact-byte overlay binds repository composition; post-baseline hashes
+bind only the two changed retrieval files. Historical manifests are preserved.

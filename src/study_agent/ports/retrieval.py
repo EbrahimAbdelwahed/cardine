@@ -56,6 +56,7 @@ class RetrievalQuery:
     source_kinds: tuple[SourceKind, ...] = ()
     source_roles: tuple[str, ...] = ()
     include_superseded: bool = False
+    canonical_span: tuple[int, int] | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "revision_ids", tuple(self.revision_ids))
@@ -76,6 +77,13 @@ class RetrievalQuery:
         ):
             if len(set(values)) != len(values):
                 raise ValueError(f"{name} must not contain duplicates")
+        if self.canonical_span is not None:
+            start, end = self.canonical_span
+            if (len(self.revision_ids) != 1 or type(start) is not int
+                    or type(end) is not int or not 0 <= start < end):
+                raise ValueError(
+                    "canonical span requires one revision and valid whole-chunk bounds"
+                )
         for role in self.source_roles:
             require_text(role, "source role filter")
 

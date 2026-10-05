@@ -407,6 +407,10 @@ class SQLiteFtsRetrieval:
             and (not query.source_kinds or document.source_kind in query.source_kinds)
             and (not query.source_roles or document.source_role in query.source_roles)
             and document.trust_level >= query.minimum_trust_level
+            and (query.canonical_span is None or (
+                document.chunk.start_offset >= query.canonical_span[0]
+                and document.chunk.end_offset <= query.canonical_span[1]
+            ))
         )
         ordered = sorted(
             matches,
@@ -584,6 +588,9 @@ def _search_sql(query: RetrievalQuery, compiled: str) -> tuple[str, tuple[object
         if values:
             conditions.append(f"{column} IN ({','.join('?' for _ in values)})")
             parameters.extend(values)
+    if query.canonical_span is not None:
+        conditions.extend(("m.start_offset >= ?", "m.end_offset <= ?"))
+        parameters.extend(query.canonical_span)
     sql = f"""
         SELECT f.text, bm25(retrieval_fts), m.chunk_id, m.source_id, m.revision_id,
                m.start_offset, m.end_offset, m.section_path, m.ordinal,
@@ -617,6 +624,7 @@ def _bounded_relevance_rows(
         source_kinds=query.source_kinds,
         source_roles=query.source_roles,
         include_superseded=query.include_superseded,
+        canonical_span=query.canonical_span,
     )
     token_rows: list[tuple[int, str, tuple[tuple[object, ...], ...]]] = []
     for position, token in enumerate(unique_tokens):
@@ -693,6 +701,7 @@ def _query_fingerprint(query: RetrievalQuery) -> str:
             "source_roles": query.source_roles,
             "minimum_trust_level": query.minimum_trust_level,
             "include_superseded": query.include_superseded,
+            "canonical_span": query.canonical_span,
         },
         sort_keys=True,
         separators=(",", ":"),

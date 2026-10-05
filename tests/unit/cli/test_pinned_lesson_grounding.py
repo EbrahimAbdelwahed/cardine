@@ -130,3 +130,34 @@ def test_pinned_retrieval_discards_cross_section_and_partial_chunks(tmp_path: Pa
         outside = scoped.search(RetrievalQuery(course_id, "altro"))
         assert outside.evidence == ()
         assert outside.status.value == "insufficient"
+
+
+@pytest.mark.parametrize("query", ("valvola aortica", "Molte lezioni", "valvola aortica absent"))
+def test_pinned_topic_is_not_hidden_by_higher_ranked_outside_matches(
+    tmp_path: Path, query: str,
+) -> None:
+    root, course_id = _repository(tmp_path, [])
+    with LocalRepository.open(root, environment={}) as repository:
+        repository.for_course(course_id).ingestion.ingest(
+            filename="many.md",
+            content=(
+                "# Lezione 3\n"
+                + "\n".join(f"## Tema {i}\nValvola aortica." for i in range(30))
+                + "\n# Lezione 4\nLa valvola aortica ha tre cuspidi. Dettaglio selezionato."
+            ).encode(),
+            source_id=SourceId("source-many"), title="Molte lezioni", trust_level=100,
+            source_role="reference",
+            context=ExecutionContext(PrincipalKind.SERVICE, "fixture", course_id,
+                                     CorrelationId("many-ingest")),
+        )
+        repository.rebuild_retrieval()
+        result = repository.search_lessons(course_id, "Lezione 4")
+        pin = repository.select_lesson(course_id, "Lezione 4", result.candidates[0].candidate_id)
+        evidence = _PinnedRetrieval(repository.for_course(course_id).retrieval, pin).search(
+            RetrievalQuery(course_id, query, limit=1)
+        )
+        assert evidence.evidence
+        assert evidence.evidence[0].chunk.start_offset >= pin.start_offset
+        assert evidence.evidence[0].chunk.end_offset <= pin.end_offset
+        if query != "Molte lezioni":
+            assert "Dettaglio selezionato" in evidence.evidence[0].text

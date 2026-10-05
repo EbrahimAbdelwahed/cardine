@@ -404,6 +404,8 @@ def test_flashcard_about_this_uses_latest_explanation_sources(
     prompt = "\n".join(message.content for message in calls[0].messages)
     assert "aortic valve has three cusps" in prompt
     assert "Oldmarker" not in prompt
+    with LocalRepository.open(root, model_adapters=adapters) as repository:
+        assert not repository.student_state.search(COURSE, query="latest explanation")
 
 
 def test_retired_chunks_cannot_hide_active_flashcard_topic(tmp_path: Path) -> None:

@@ -24,7 +24,7 @@
     },
     {
       "path": "src/cardine/cli/repository.py",
-      "sha256": "419725cd1cffcea50532f0cb13fca2ea271d123cb42a50db537bf9e63b1619f8"
+      "sha256": "4a2635290c50e90f8e1fe580c4f4bdcc7ad6050be7959f75af6b92dbd337fe15"
     },
     {
       "path": "src/cardine/hosts/flashcard_routing.py",

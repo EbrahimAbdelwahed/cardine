@@ -346,7 +346,10 @@ class _PinnedRetrieval:
         return self._inner.index(documents)
 
     def search(self, query: RetrievalQuery) -> RetrievalEvidenceSet:
-        scoped = replace(query, revision_ids=(RevisionId(self._pin.revision_id),))
+        scoped = replace(
+            query, revision_ids=(RevisionId(self._pin.revision_id),),
+            canonical_span=(self._pin.start_offset, self._pin.end_offset),
+        )
         evidence = self._inner.search(scoped)
         selected = tuple(
             item
@@ -847,6 +850,15 @@ class _RepositoryTutorGateway:
 
         if not isinstance(outcome, CompletedCapabilityOutcome):
             return
+        scope = inputs.get("scope")
+        if isinstance(scope, str):
+            try:
+                contextual = FlashcardScope.parse(scope)
+            except ValueError:
+                pass
+            else:
+                if contextual.kind in {"latest_explanation", "selected_lesson"}:
+                    return
         query = inputs.get("query")
         if not isinstance(query, str) or not query.strip():
             return
