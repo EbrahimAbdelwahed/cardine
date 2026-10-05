@@ -79,7 +79,7 @@ summaries provide retrieval context only and cannot become cited evidence.
 The duplicate action/topic/reference/profile language interpreter is removed.
 Tutor flashcards require the semantic ON route; OFF/SHADOW do not advertise the
 capability. Direct selected-lesson generation builds the same closed contract
-from its validated pin and explicit profile selection. The explicit emergency
+from its validated pin and host default hybrid profile. The explicit emergency
 decision fallback is called at most once and cannot bypass the scope contract.
 Cancellation never enters fallback. Choice distributions must cover all options,
 be finite and normalized, and pass configured probability/margin thresholds.

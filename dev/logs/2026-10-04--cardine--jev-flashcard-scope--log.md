@@ -4,7 +4,8 @@ Owner-requested task points 1–2, one independently verifiable outcome.
 Base: fetched `origin/main` at `6e9c904` (PR #22). Dedicated checkout:
 `/Users/ebrahimabdelwahed/.codex/worktrees/jev-flashcard-scope/cardine`;
 branch `codex/jev-flashcard-scope`. The shared project checkout and its dirty
-files were preserved. Delivery uses one PR on this branch; current-head CI and automatic GitHub review
+files were preserved. Implementation commit: `962df76`. PR: https://github.com/EbrahimAbdelwahed/cardine/pull/26.
+Delivery uses one PR on this branch; current-head CI and automatic GitHub review
 remain required before any merge.
 
 ## Implementation and authority
@@ -53,8 +54,7 @@ canonical evidence. The fixture suite contains 42 flashcard integration cases
 plus the long-conversation regression.
 
 Ruff, mypy (679 files), ownership audit (322 rows), wheel/sdist build and archive
-verification, and provider-free installed-wheel imports pass. Full-suite final
-verification is pending. Earlier runs exposed the now-corrected free-form scope
+verification, and provider-free installed-wheel imports pass. Final full suite: 2,998 passed, 4 skipped in 194.73 seconds. Earlier runs exposed the now-corrected free-form scope
 fixture and an intermittent student-journal concurrent append failure in code
 and tests identical to the base; no unrelated journal code was changed.
 
