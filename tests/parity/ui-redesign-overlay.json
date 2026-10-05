@@ -3,8 +3,32 @@
   "decision": "ADR-0027--study-first-ui-redesign",
   "rows": [
     {
+      "path": "src/cardine/cli/repository.py",
+      "sha256": "f4f9eb9839292e709edd8ee41baa358b22ade0fad49c99a43202861ac70a0dac"
+    },
+    {
+      "path": "src/cardine/courses/__init__.py",
+      "sha256": "c66c68b0974555af26b2652f7edf4ca25b56552e8916c5596ac80bc56cd7d127"
+    },
+    {
+      "path": "src/cardine/courses/events.py",
+      "sha256": "ee2be55c7e10f69054d0d0cef80a796a9462284440d88d51ac53f422092ed878"
+    },
+    {
+      "path": "src/cardine/courses/projection.py",
+      "sha256": "0aafb3cf195b47a55105f948f85fe4b5e07ac9cfa02a477dc71f2fd3d3a2c2da"
+    },
+    {
+      "path": "src/cardine/courses/service.py",
+      "sha256": "9ca0cc7109ab47bc57bc1b12bfd1fe4280b35ee041b89687b2b4d103392cd222"
+    },
+    {
+      "path": "src/cardine/courses/view.py",
+      "sha256": "8a0d4e3e64c621e0482bde20aa80db85149c080cf023b638aca9e7c22a9f30b0"
+    },
+    {
       "path": "src/cardine/demo/browser.css",
-      "sha256": "0c4921739c6a4f554a8a5fd2898146b73085f40a8960c0cad87aa6329ebfe02d"
+      "sha256": "108cd43d43c27deed9388144896644e4379224887ad3c0e0862a3eef1c3ba507"
     },
     {
       "path": "src/cardine/demo/browser.html",
@@ -12,7 +36,11 @@
     },
     {
       "path": "src/cardine/demo/browser.js",
-      "sha256": "2c1c85cac2fdbf2cd9694930217bfb1932dd1cfcad90c333bcc811e65cb24c83"
+      "sha256": "b6eb01057f04187bf696292909bc99dd7bc5f437bbb7ffc0be8356aa37b7b5e7"
+    },
+    {
+      "path": "src/cardine/demo/ui_application.py",
+      "sha256": "21ee97e6fcfc34365641fdeaf3f3761a6a36cd3d0970f31dcc4a786986ce84f1"
     }
   ]
 }

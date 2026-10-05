@@ -9,6 +9,7 @@ archive and must not be treated as Cardine's current state.
 
 ## Start here
 
+- [UI/UX redesign phase 2](logs/2026-10-05--cardine--ui-ux-redesign-phase-2--log.md) — canonical study plan event, derived lesson outline and day-by-day schedule, exam-first onboarding with visible processing; stacked on PR #29.
 - [UI/UX redesign phase 1](logs/2026-10-05--cardine--ui-ux-redesign-phase-1--log.md) and [five-phase plan](../specs/ui-ux-redesign/README.md) — two-group rail, one page frame, architecture copy removed, calmer Libreria/Piano/Da approvare; frontend only, full suite green.
 
 - [Closed Jev flashcard scope](logs/2026-10-04--cardine--jev-flashcard-scope--log.md) — ON scope/profile choices replace downstream language scans; canonical evidence, turn binding and HUMAN decisions remain authoritative.

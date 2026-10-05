@@ -66,6 +66,8 @@
 
   const STATUS_LABELS = Object.freeze({
     ready: "pronto",
+    committed: "salvato",
+    selected: "pronto",
     working: "in lavorazione",
     needs_learner_input: "attende una risposta",
     suspended: "sospesa",
@@ -134,7 +136,9 @@
     continuation: null,
     continuationDraft: "",
     chatCourseCreation: null,
-    studySetup: null,
+    onboarding: { step: null },
+    planEditing: false,
+    lessonIndex: new Map(),
     lastTurn: null,
     turnActivities: Object.create(null),
     turnCommands: Object.create(null),
@@ -1521,18 +1525,9 @@
 
   function renderOggi(payload) {
     const course = object(first(payload, ["course"], state.bootstrap?.course));
-    const materials = array(object(payload.materials).items);
-    const onboarding = object(payload.onboarding);
-    if (!materials.length) {
-      renderSourceFirstOnboarding(course, materials);
-      return;
-    }
-    if (onboarding.needs_study_intent && !state.studySetup) {
-      renderStudyIntentStep(course, materials);
-      return;
-    }
-    if (onboarding.needs_study_intent && state.studySetup) {
-      renderStudyTopicStep(course, materials);
+    const step = onboardingStep(payload);
+    if (step) {
+      renderOnboarding(step, payload);
       return;
     }
     const status = text(first(payload, ["shell_status", "status"], state.bootstrap?.shell_status), "ready");
@@ -1540,7 +1535,7 @@
     const createCourse = state.auth.authenticated
       ? `<button class="chat-home__course-action" type="button" data-open-course-creation>Crea un corso</button>`
       : "";
-    setView("oggi", `<section class="chat-home" aria-labelledby="home-heading"><div class="chat-home__center"><p class="chat-home__course">${esc(text(course.title, "Il tuo corso"))}</p><h1 id="home-heading">${suspended ? "Riprendiamo da dove eravamo?" : "Come vuoi studiare oggi?"}</h1>${lessonPinAttachment()}${entryForm("hero-entry", "Scrivi al tutor", "Chiedi qualsiasi cosa sulle tue fonti…")}${renderLessonStudy()}${suspended ? `<button class="resume-chat" type="button" data-route="sessione">Riprendi la conversazione</button>` : ""}${homeAgenda(payload)}${createCourse}${renderChatCourseCreation()}</div></section>`);
+    setView("oggi", `<section class="chat-home" aria-labelledby="home-heading"><div class="chat-home__center"><p class="chat-home__course">${esc(text(course.title, "Il tuo corso"))}</p><h1 id="home-heading">${suspended ? "Riprendiamo da dove eravamo?" : "Come vuoi studiare oggi?"}</h1>${lessonPinAttachment()}${entryForm("hero-entry", "Scrivi al tutor", "Chiedi qualsiasi cosa sulle tue fonti…")}${renderLessonStudy()}${suspended ? `<button class="resume-chat" type="button" data-route="sessione">Riprendi la conversazione</button>` : ""}${homeToday(payload)}${homeAgenda(payload)}${createCourse}${renderChatCourseCreation()}</div></section>`);
   }
 
   /* Today's work as one quiet list: only what actually needs attention,
@@ -1548,13 +1543,17 @@
   function homeAgenda(payload) {
     const counts = object(payload.counts);
     const readiness = object(payload.readiness);
-    const exam = object(readiness.exam);
+    const today = object(payload.today);
     const due = Number(first(counts, ["due_reviews"], first(object(readiness.recall), ["due_count"], 0))) || 0;
     const pending = Number(first(counts, ["pending_proposals"], 0)) || 0;
-    const days = first(exam, ["days_remaining"], null);
+    const days = first(today, ["days_remaining"], first(object(readiness.exam), ["days_remaining"], null));
     const rows = [];
     if (Number.isInteger(days) && days >= 0) {
-      rows.push({ route: "piano", label: days === 0 ? "L’esame è oggi" : `${days} ${days === 1 ? "giorno" : "giorni"} all’esame`, detail: text(exam.date), icon: "icon--calendar-blank" });
+      const studied = Number(today.lessons_studied) || 0;
+      const total = Number(today.lessons_total) || 0;
+      rows.push({ route: "piano", label: days === 0 ? "L’esame è oggi" : `${days} ${days === 1 ? "giorno" : "giorni"} all’esame`, detail: total ? `${studied} di ${total} lezioni studiate` : formatDate(text(today.exam_date)), icon: "icon--calendar-blank" });
+    } else if (text(today.status, "unset") === "unset") {
+      rows.push({ action: "data-onboarding-open", label: "Imposta la data d’esame", detail: "Per avere un piano giorno per giorno", icon: "icon--calendar-blank" });
     }
     if (due > 0) rows.push({ route: "ripasso", label: `${due} card da ripassare`, detail: "Ripasso di oggi", icon: "icon--cards" });
     if (pending > 0) rows.push({ route: "proposte", label: `${pending} ${pending === 1 ? "proposta da approvare" : "proposte da approvare"}`, detail: "Flashcard e note generate", icon: "icon--note-pencil" });
@@ -1564,7 +1563,19 @@
       ? ""
       : `<p class="field-note home-agenda__note" data-pageindex-status>Struttura delle lezioni: ${esc(statusLabel(pageindexStatus))}. Il testo resta ricercabile anche se la struttura è ridotta.</p>`;
     if (!rows.length) return `<p class="home-agenda__clear">Sei in pari. Fai una domanda o apri la <button class="text-button" type="button" data-route="fonti">libreria</button>.</p>${structureNote}`;
-    return `<nav class="home-agenda" aria-label="Da fare oggi"><ul class="home-agenda__list">${rows.map((row) => `<li><button class="home-agenda__item" type="button" data-route="${esc(row.route)}"><span class="icon ${esc(row.icon)}" aria-hidden="true"></span><span class="home-agenda__label">${esc(row.label)}</span><span class="home-agenda__detail">${esc(row.detail)}</span></button></li>`).join("")}</ul></nav>${structureNote}`;
+    return `<nav class="home-agenda" aria-label="Da fare oggi"><ul class="home-agenda__list">${rows.map((row) => `<li><button class="home-agenda__item" type="button" ${row.route ? `data-route="${esc(row.route)}"` : row.action}><span class="icon ${esc(row.icon)}" aria-hidden="true"></span><span class="home-agenda__label">${esc(row.label)}</span><span class="home-agenda__detail">${esc(row.detail)}</span></button></li>`).join("")}</ul></nav>${structureNote}`;
+  }
+
+  /* The lessons the plan assigns to today, ready to study from the home page. */
+  function homeToday(payload) {
+    const today = object(payload.today);
+    const lessons = array(today.lessons).map(object);
+    registerLessons(lessons);
+    if (today.kind === "review") {
+      return `<section class="home-today" aria-labelledby="home-today-heading"><h2 class="home-today__title" id="home-today-heading">Oggi</h2><p class="home-today__note">Oggi il piano prevede ripasso: rivedi le card e le lezioni più difficili.</p><button class="button button--quiet button--sm" type="button" data-route="ripasso">Vai al ripasso</button></section>`;
+    }
+    if (!lessons.length) return "";
+    return `<section class="home-today" aria-labelledby="home-today-heading"><div class="home-today__header"><h2 class="home-today__title" id="home-today-heading">Oggi</h2><button class="text-button" type="button" data-route="piano">Vedi il piano</button></div><ol class="lesson-list">${lessons.map((lesson) => lessonRow(lesson)).join("")}</ol></section>`;
   }
 
   /* The lesson picker is a disclosure, not a second hero: the composer stays
@@ -1604,44 +1615,328 @@
     return `<div class="composer-attachment" aria-live="polite"><span class="composer-attachment__label">Lezione allegata</span><span class="composer-attachment__title">${esc(text(pin.section_title, "Lezione"))}</span>${origin ? `<span class="composer-attachment__meta">${esc(origin)}</span>` : ""}<button class="composer-attachment__remove" type="button" data-lesson-unpin aria-label="Rimuovi la lezione allegata" data-tooltip="Rimuovi la lezione allegata">Rimuovi</button></div>`;
   }
 
-  /* A three-step setup shows where you are and lets you go back. The frame
-     is identical on every step, so only the card content changes. */
-  const SETUP_STEPS = Object.freeze(["Materiali", "Obiettivo", "Argomento"]);
 
-  function wizardSteps(current) {
-    return `<nav class="wizard-steps" aria-label="Avanzamento del setup">${SETUP_STEPS.map((label, index) => {
-      const state = index + 1 < current ? "done" : index + 1 === current ? "current" : "todo";
-      return `<span class="wizard-steps__step" data-state="${state}"${state === "current" ? ' aria-current="step"' : ""}>${esc(label)}</span>`;
-    }).join("")}</nav>`;
+
+
+
+
+
+  /* ---- Onboarding: exam → sources → plan ------------------------------- */
+  /* Three short steps in the order a student thinks about an exam: when it
+     is, what to study from, and what that means day by day. Each step can
+     be left for later; only a course without sources keeps asking for one. */
+  const ONBOARDING_STEPS = Object.freeze(["Esame", "Fonti", "Piano"]);
+  const DAILY_MINUTES = Object.freeze([[30, "30 min"], [60, "1 ora"], [120, "2 ore"], [180, "3 ore o più"]]);
+  const WEEKDAYS = Object.freeze(["lun", "mar", "mer", "gio", "ven", "sab", "dom"]);
+  const MONTHS_SHORT = Object.freeze(["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"]);
+  const STRUCTURE_STATUS_LABELS = Object.freeze({
+    queued: "In coda per l’analisi",
+    indexing: "Leggo la struttura delle lezioni…",
+    failed: "Struttura non disponibile",
+  });
+  let onboardingSourcesPoll = null;
+  const PLAN_SCHEDULE_ENDPOINT = "/api/v1/plan/schedule";
+
+  function onboardingKey() {
+    return `cardine.onboarding.later:${text(object(state.bootstrap?.course).id)}`;
   }
 
-  function setupView(step, heading, lede, card) {
-    setView("oggi", `<section class="chat-home chat-home--setup" aria-labelledby="home-heading"><div class="chat-home__center">${wizardSteps(step)}<h1 id="home-heading">${esc(heading)}</h1><p class="chat-home__lede">${lede}</p>${card}</div></section>`);
+  function onboardingLater() {
+    try { return window.localStorage.getItem(onboardingKey()) === "1"; } catch (_) { return false; }
   }
 
-  function renderSourceFirstOnboarding(course, materials) {
-    const authenticated = state.auth.mode !== "private" || state.auth.authenticated;
-    const uploadBody = authenticated
-      ? `<form class="source-upload-form" data-source-upload novalidate><label for="source-upload-file">File PDF, testo, Markdown o audio <span class="field-optional">(facoltativo)</span></label><input id="source-upload-file" name="file" type="file" accept=".pdf,.txt,.md,.mp3,.wav,.m4a,.mp4,.ogg,.webm,.flac,.aac"><p class="field-note">I PDF devono contenere testo selezionabile. Scansioni e immagini richiedono OCR e vengono rifiutate senza salvare una fonte.</p><label for="source-upload-text">Testo della fonte <span class="field-required">obbligatorio se non carichi un file</span></label><textarea id="source-upload-text" name="content" rows="6" maxlength="196608" placeholder="Incolla appunti, programma o una lezione…"></textarea><label for="source-upload-title">Titolo <span class="field-optional">(facoltativo)</span></label><input id="source-upload-title" name="title" maxlength="240" placeholder="es. Lezione 1 · Emodinamica"><div class="state-actions"><button class="button" type="submit">Aggiungi fonte / trascrivi audio</button><span class="settings-card__status" data-source-upload-status role="status"></span></div></form>`
-      : `<p class="field-note">Accedi per aggiungere fonti al corso e iniziare il setup.</p><div class="state-actions"><button class="button" type="button" data-route="login">Accedi</button></div>`;
-    setupView(1, "Partiamo dai materiali.", "Prima leggiamo le fonti del corso; solo dopo sceglieremo l’argomento iniziale insieme.",
-      `<section class="study-setup-card" aria-labelledby="source-setup-heading"><h2 id="source-setup-heading">Aggiungi una fonte</h2><p>Cardine usa solo le fonti salvate nel repository del corso. Puoi aggiungere una lezione alla volta.</p>${uploadBody}</section>`);
+  function setOnboardingLater() {
+    try { window.localStorage.setItem(onboardingKey(), "1"); } catch (_) { /* per-viewer convenience only */ }
   }
 
-  function renderStudyIntentStep(course, materials) {
-    const sourceNames = materials.slice(0, 3).map((item) => text(object(item).title)).filter(Boolean).join(", ");
-    setupView(2, "Ho letto le tue fonti.", "Ora impostiamo il contesto dello studio, così il primo argomento parte con il ritmo giusto.",
-      `<section class="study-setup-card" aria-labelledby="intent-setup-heading"><h2 id="intent-setup-heading">Il tuo obiettivo</h2><p>${esc(String(materials.length))} ${materials.length === 1 ? "fonte è pronta" : "fonti sono pronte"}${sourceNames ? `: ${esc(sourceNames)}` : ""}. Inserisci solo ciò che serve per questa sessione.</p><form data-study-setup class="study-setup-form" novalidate><label for="study-objective">Obiettivo di studio <span class="field-required">obbligatorio</span></label><input id="study-objective" name="objective" required maxlength="240" placeholder="es. capire la fisiologia, non memorizzare a caso"><label for="study-time">Tempo disponibile oggi <span class="field-required">obbligatorio</span></label><select id="study-time" name="available_time" required><option value="10 minuti">10 minuti</option><option value="25 minuti" selected>25 minuti</option><option value="45 minuti">45 minuti</option><option value="60 minuti o più">60 minuti o più</option></select><label for="study-exam-date">Data dell’esame <span class="field-optional">(facoltativa)</span></label><input id="study-exam-date" name="exam_date" type="date"><div class="state-actions"><button class="button" type="submit">Continua</button></div></form></section>`);
+  function onboardingStep(payload) {
+    if (state.onboarding.step) return state.onboarding.step;
+    const materials = array(object(payload.materials).items);
+    if (object(payload.onboarding).needs_study_plan === true && !onboardingLater()) return 1;
+    return materials.length ? 0 : 2;
   }
 
-  function renderStudyTopicStep(course, materials) {
-    const setup = object(state.studySetup);
-    const source = object(materials[0]);
-    const suggested = text(first(source, ["title"], "la prima fonte"));
-    const sourceCount = materials.length === 1 ? "della fonte disponibile" : `delle ${materials.length} fonti disponibili`;
-    setupView(3, "Scegliamo il primo argomento.", `Dalla struttura ${esc(sourceCount)} partirei da <strong>${esc(suggested)}</strong>. È una proposta, non una decisione automatica.`,
-      `<section class="study-setup-card" aria-labelledby="topic-setup-heading"><h2 id="topic-setup-heading">Primo focus</h2><p>Obiettivo: ${esc(text(setup.objective))} · Tempo: ${esc(text(setup.availableTime))}${setup.examDate ? ` · Esame: ${esc(text(setup.examDate))}` : ""}</p><div class="state-actions"><button class="button" type="button" data-study-topic-default="${esc(suggested)}">Inizia da ${esc(suggested)}</button><button class="button button--quiet" type="button" data-study-setup-back>Torna indietro</button></div><form class="study-setup-form study-setup-form--priority" data-study-topic novalidate><label for="study-topic-custom">Oppure scegli un’altra priorità</label><input id="study-topic-custom" name="topic" required maxlength="240" placeholder="es. le parti più difficili per me"><div class="state-actions"><button class="button button--quiet" type="submit">Usa questa priorità</button></div></form></section>`);
+  function setOnboardingStep(step) {
+    state.onboarding = { step };
+    renderOggi(state.viewData || state.bootstrap || {});
   }
+
+  function onboardingFrame(step, heading, lede, body) {
+    const steps = ONBOARDING_STEPS.map((label, index) => {
+      const position = index + 1;
+      const status = position < step ? "done" : position === step ? "current" : "todo";
+      return `<li class="onboarding__step" data-state="${status}"${status === "current" ? ' aria-current="step"' : ""}><span class="onboarding__dot" aria-hidden="true">${position}</span><span>${esc(label)}</span></li>`;
+    }).join("");
+    setView("oggi", `<section class="onboarding" aria-labelledby="home-heading"><div class="onboarding__column"><ol class="onboarding__steps" aria-label="Configurazione del corso">${steps}</ol><h1 class="onboarding__title" id="home-heading">${esc(heading)}</h1><p class="onboarding__lede">${lede}</p>${body}</div></section>`);
+  }
+
+  function renderOnboarding(step, payload) {
+    clearTimeout(onboardingSourcesPoll);
+    if (step === 1) {
+      onboardingFrame(1, "Quando hai l’esame?", "Costruisco un piano che arriva al giorno dell’esame, con il ripasso già incluso.",
+        planForm(object(object(payload.today).plan || {}), { submitLabel: "Continua", today: text(object(payload.today).today), secondary: `<button class="button button--quiet" type="button" data-onboarding-later>Più tardi</button>` }));
+      return;
+    }
+    if (step === 2) {
+      const materials = array(object(payload.materials).items);
+      const next = materials.length ? `<div class="state-actions onboarding__next"><button class="button" type="button" data-onboarding-step="3">Vedi il piano</button></div>` : "";
+      onboardingFrame(2, "Aggiungi le tue fonti", "PDF delle lezioni, sbobine o registrazioni. Le elaboro in background: puoi aggiungerne altre mentre lavoro.",
+        `${sourceDropzone()}<ul class="onboarding-sources" data-onboarding-sources aria-live="polite">${materials.map((item) => onboardingSourceRow({ title: object(item).title })).join("")}</ul>${next}`);
+      if (materials.length) void refreshOnboardingSources();
+      return;
+    }
+    onboardingFrame(3, "Il tuo piano", "Ecco come arriviamo all’esame. Si aggiorna da solo quando studi una lezione o aggiungi una fonte.",
+      `<div data-plan-preview aria-busy="true"><div class="skeleton-stack" aria-hidden="true"><span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span></div></div><div class="state-actions onboarding__next"><button class="button" type="button" data-onboarding-finish>Inizia a studiare</button><button class="button button--quiet" type="button" data-onboarding-step="1">Modifica l’esame</button></div>`);
+    void loadPlanPreview();
+  }
+
+  function sourceDropzone() {
+    return `<form class="source-upload-form source-upload-form--drop" data-source-upload novalidate><label class="dropzone" for="source-upload-file"><span class="dropzone__icon icon icon--plus" aria-hidden="true"></span><strong class="dropzone__title" data-dropzone-name>Scegli o trascina un file</strong><span class="dropzone__hint">PDF con testo selezionabile, Markdown, testo o audio</span><input class="dropzone__input" id="source-upload-file" name="file" type="file" accept=".pdf,.txt,.md,.mp3,.wav,.m4a,.mp4,.ogg,.webm,.flac,.aac"></label><details class="paste-source"><summary>Oppure incolla il testo</summary><div class="paste-source__body"><label class="visually-hidden" for="source-upload-text">Testo della fonte</label><textarea id="source-upload-text" name="content" rows="6" maxlength="196608" placeholder="Incolla appunti, programma o una lezione…"></textarea><label for="source-upload-title">Titolo <span class="field-optional">(facoltativo)</span></label><input id="source-upload-title" name="title" maxlength="240" placeholder="es. Lezione 1 · Emodinamica"><div class="state-actions"><button class="button" type="submit">Aggiungi fonte</button></div></div></details><p class="field-note" data-source-upload-status role="status"></p></form>`;
+  }
+
+  function structureChip(status) {
+    const label = STRUCTURE_STATUS_LABELS[text(status)];
+    if (!label) return "";
+    const tone = text(status) === "failed" ? "warning" : "working";
+    return `<span class="processing-chip" data-tone="${tone}">${tone === "working" ? '<span class="processing-chip__pulse" aria-hidden="true"></span>' : ""}${esc(label)}</span>`;
+  }
+
+  function onboardingSourceRow(item) {
+    const status = text(item.structure_status);
+    const done = !STRUCTURE_STATUS_LABELS[status];
+    return `<li class="onboarding-source"><span class="onboarding-source__icon icon icon--book-open" aria-hidden="true"></span><span class="onboarding-source__title">${esc(text(item.title, "Fonte"))}</span>${done ? '<span class="onboarding-source__ready">Pronta</span>' : structureChip(status)}</li>`;
+  }
+
+  async function refreshOnboardingSources() {
+    clearTimeout(onboardingSourcesPoll);
+    const list = $("[data-onboarding-sources]", root);
+    if (!list) return;
+    try {
+      const items = array(await fetchJson("/api/v1/materials")).map(object);
+      if (list !== $("[data-onboarding-sources]", root)) return;
+      patch(list, items.map(onboardingSourceRow).join(""));
+      if (items.some((item) => ["queued", "indexing"].includes(text(item.structure_status)))) {
+        onboardingSourcesPoll = setTimeout(() => { void refreshOnboardingSources(); }, 2500);
+      }
+    } catch (_) { /* the list stays as rendered; the Library shows details */ }
+  }
+
+  async function loadPlanPreview() {
+    const target = $("[data-plan-preview]", root);
+    if (!target) return;
+    try {
+      const plan = object(await fetchJson(PLAN_SCHEDULE_ENDPOINT));
+      if (target !== $("[data-plan-preview]", root)) return;
+      const schedule = object(plan.schedule);
+      const outline = array(plan.outline).map(object);
+      registerOutline(outline);
+      const processing = outline.filter((source) => STRUCTURE_STATUS_LABELS[text(source.structure_status)] && text(source.structure_status) !== "failed").length;
+      const note = processing ? `<p class="field-note">Sto ancora leggendo la struttura di ${processing} ${processing === 1 ? "fonte" : "fonti"}: le lezioni compariranno qui appena pronte.</p>` : "";
+      patch(target, `${planSummary(schedule)}${schedule.status === "ready" ? planTimeline(schedule, { limit: 6, startAt: 0 }) : `<p class="page__note">Senza una data d’esame mostro solo le lezioni: puoi aggiungerla quando vuoi.</p>${planOutline(outline, { compact: true })}`}${note}`);
+      target.removeAttribute("aria-busy");
+    } catch (error) {
+      patch(target, emptyState("Non riesco a preparare il piano", error.message, "error"));
+    }
+  }
+
+  function finishOnboarding() {
+    setOnboardingLater();
+    state.onboarding = { step: null };
+    void loadRoute("oggi");
+  }
+
+  function planForm(plan, { submitLabel = "Salva", secondary = "", today = "" } = {}) {
+    const minutes = Number(plan.daily_minutes) || 60;
+    const options = DAILY_MINUTES.some(([value]) => value === minutes) ? DAILY_MINUTES : [...DAILY_MINUTES, [minutes, `${minutes} min`]];
+    const chips = options.map(([value, label]) => `<label class="choice-chip"><input type="radio" name="daily_minutes" value="${value}"${value === minutes ? " checked" : ""}><span>${esc(label)}</span></label>`).join("");
+    return `<form class="plan-form" data-study-plan novalidate><div class="field"><label for="plan-exam-date">Data dell’esame</label><input id="plan-exam-date" name="exam_date" type="date" value="${esc(text(plan.exam_date))}"${today ? ` min="${esc(today)}"` : ""}><p class="field-note">Lasciala vuota se non la conosci ancora.</p></div><fieldset class="field plan-form__rhythm"><legend>Quanto tempo puoi studiare al giorno?</legend><div class="choice-chips">${chips}</div></fieldset><div class="field"><label for="plan-objective">Obiettivo <span class="field-optional">(facoltativo)</span></label><input id="plan-objective" name="objective" maxlength="240" value="${esc(text(plan.objective))}" placeholder="es. capire i meccanismi, non memorizzare"></div><div class="state-actions"><button class="button" type="submit">${esc(submitLabel)}</button>${secondary}</div><p class="field-note" data-plan-status role="status"></p></form>`;
+  }
+
+  async function savePlan(form) {
+    const status = $("[data-plan-status]", form);
+    const submit = $("button[type=submit]", form);
+    const examDate = text($("[name=exam_date]", form)?.value).trim();
+    const minutes = Number($("[name=daily_minutes]:checked", form)?.value) || null;
+    const objective = text($("[name=objective]", form)?.value).trim();
+    if (submit) submit.disabled = true;
+    if (status) status.textContent = "Salvo il piano…";
+    try {
+      const receipt = await fetchJson("/api/v1/plan", {
+        method: "POST",
+        body: JSON.stringify(commandPayload({ exam_date: examDate || null, daily_minutes: minutes, objective: objective || null })),
+      });
+      updateSequence(first(receipt, ["high_water_sequence"], state.highWaterSequence));
+      await refreshBootstrapCounts();
+      if (form.closest(".onboarding")) {
+        const hasSources = array(object(state.bootstrap?.materials).items).length > 0;
+        state.onboarding = { step: hasSources ? 3 : 2 };
+        await loadRoute("oggi");
+        return;
+      }
+      state.planEditing = false;
+      await loadRoute("piano");
+      setStatus("committed", "Piano aggiornato");
+    } catch (error) {
+      if (status) status.textContent = error.message;
+    } finally {
+      if (submit && submit.isConnected) submit.disabled = false;
+    }
+  }
+
+  /* ---- Lessons: one registry, three actions ----------------------------- */
+  function registerLessons(lessons) {
+    lessons.forEach((lesson) => { if (text(lesson.key)) state.lessonIndex.set(text(lesson.key), lesson); });
+  }
+
+  function registerOutline(outline) {
+    outline.forEach((source) => registerLessons(array(source.lessons).map((lesson) => ({ ...object(lesson), source_title: text(source.title) }))));
+  }
+
+  function lessonRow(lesson, { compact = false } = {}) {
+    const studied = lesson.studied === true;
+    const key = esc(text(lesson.key));
+    const actions = compact ? "" : `<div class="lesson-row__actions">${studied ? "" : `<button class="button button--sm" type="button" data-lesson-study="${key}">Studia</button>`}${lesson.structure_lesson ? `<button class="button button--quiet button--sm" type="button" data-lesson-notes="${key}">Genera note</button>` : ""}${studied ? "" : `<button class="text-button lesson-row__done" type="button" data-lesson-done="${key}">Segna studiata</button>`}</div>`;
+    return `<li class="lesson-row${studied ? " is-studied" : ""}"><span class="lesson-row__check" aria-hidden="true"></span><div class="lesson-row__text"><p class="lesson-row__title">${esc(text(lesson.title, "Lezione"))}${studied ? '<span class="visually-hidden"> (studiata)</span>' : ""}</p>${text(lesson.source_title) && text(lesson.source_title) !== text(lesson.title) ? `<p class="lesson-row__meta">${esc(text(lesson.source_title))}</p>` : ""}${lesson.status_chip ? `<p class="lesson-row__meta">${lesson.status_chip}</p>` : ""}</div>${actions}</li>`;
+  }
+
+  async function studyLesson(lesson) {
+    if (state.pendingTurn || state.loading) return;
+    let pin = null;
+    try {
+      const search = await fetchJson("/api/v1/lessons/search", { method: "POST", body: JSON.stringify(commandPayload({ query: text(lesson.title) })) });
+      const candidates = array(search.candidates).map(object);
+      const match = candidates.find((item) => text(item.source_id) === text(lesson.source_id)
+        && Number(item.start_offset) === Number(lesson.start_offset) && Number(item.end_offset) === Number(lesson.end_offset))
+        || candidates.find((item) => text(item.source_id) === text(lesson.source_id) && text(item.section_title) === text(lesson.title));
+      if (match) {
+        const receipt = await fetchJson("/api/v1/lessons/select", { method: "POST", body: JSON.stringify(commandPayload({ query: text(lesson.title), candidate_id: text(match.candidate_id) })) });
+        pin = object(receipt.pin);
+      }
+    } catch (_) {
+      pin = null; // The lesson is still named in the question; only the scope is wider.
+    }
+    state.lesson = { query: text(lesson.title), candidates: [], pin, answer: null };
+    const prompt = `Studiamo «${text(lesson.title)}». Spiegami i concetti chiave in ordine, poi fammi due domande per verificare se ho capito.`;
+    await executeCommand("/api/v1/session/turns", { content: prompt, ...(pin ? { lesson_pin: pin } : {}) }, null, "sessione");
+  }
+
+  async function markLessonStudied(lesson, control) {
+    if (control) control.disabled = true;
+    try {
+      await fetchJson("/api/v1/student-state", { method: "POST", body: JSON.stringify(commandPayload({ kind: "topic_covered", topic: text(lesson.topic) })) });
+      await loadRoute(state.route);
+      setStatus("committed", `«${text(lesson.title)}» segnata come studiata`);
+    } catch (error) {
+      if (control && control.isConnected) control.disabled = false;
+      showCommandError(error);
+    }
+  }
+
+  async function generateLessonNotes(lesson, control) {
+    if (!lesson.structure_lesson) return;
+    if (control) control.disabled = true;
+    try {
+      const receipt = await fetchJson("/api/v1/material-generations", {
+        method: "POST",
+        body: JSON.stringify(commandPayload({ source_id: text(lesson.source_id), revision_id: text(lesson.revision_id), structure_lesson: object(lesson.structure_lesson) })),
+      });
+      await loadRoute("fonti");
+      await refreshMaterialJobs();
+      focusMaterialProgress(array(receipt.items)[0]?.job_id);
+      setStatus("working", `Genero le note di «${text(lesson.title)}»`);
+    } catch (error) {
+      if (control && control.isConnected) control.disabled = false;
+      showCommandError(error);
+    }
+  }
+
+  function lessonFromControl(control, attribute) {
+    return state.lessonIndex.get(text(control.getAttribute(attribute)));
+  }
+
+  /* ---- Plan presentation ------------------------------------------------- */
+  function dayLabel(day, index, schedule) {
+    if (text(day.date) === text(schedule.today)) return "Oggi";
+    const days = array(schedule.days).map(object);
+    if (index === 1 && text(days[0]?.date) === text(schedule.today) && day.kind !== "exam") return "Domani";
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text(day.date));
+    const weekday = WEEKDAYS[Number(day.weekday)] || "";
+    return match ? `${weekday} ${Number(match[3])} ${MONTHS_SHORT[Number(match[2]) - 1] || ""}`.trim() : text(day.date);
+  }
+
+  function planSummary(schedule) {
+    const pending = Number(schedule.lessons_pending) || 0;
+    const stats = schedule.status === "ready" ? [
+      [String(schedule.days_remaining), Number(schedule.days_remaining) === 1 ? "giorno all’esame" : "giorni all’esame"],
+      [String(schedule.lessons_total), Number(schedule.lessons_total) === 1 ? "lezione" : "lezioni"],
+      [pending ? String(schedule.lessons_per_study_day).replace(".", ",") : "0", Number(schedule.lessons_per_study_day) === 1 ? "lezione per giorno di studio" : "lezioni per giorno di studio"],
+      [String(schedule.review_days), Number(schedule.review_days) === 1 ? "giorno di ripasso" : "giorni di ripasso"],
+    ] : [[String(schedule.lessons_total), Number(schedule.lessons_total) === 1 ? "lezione" : "lezioni"], [String(schedule.lessons_studied), "studiate"]];
+    return `<dl class="plan-summary">${stats.map(([value, label]) => `<div class="plan-summary__item"><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl>`;
+  }
+
+  /* Consecutive practice or review days read as one stretch, not as a
+     column of identical rows; lesson days and the exam stay individual. */
+  function timelineGroups(days, offset) {
+    const groups = [];
+    days.forEach((day, index) => {
+      const previous = groups[groups.length - 1];
+      if (previous && ["practice", "review"].includes(day.kind) && previous.kind === day.kind) {
+        previous.days.push({ day, index: offset + index });
+      } else {
+        groups.push({ kind: text(day.kind), days: [{ day, index: offset + index }] });
+      }
+    });
+    return groups;
+  }
+
+  function planTimeline(schedule, { limit = 14, startAt = 1 } = {}) {
+    const days = array(schedule.days).map(object);
+    const row = (group) => {
+      const firstDay = group.days[0];
+      const lastDay = group.days[group.days.length - 1];
+      const label = group.days.length > 1
+        ? `${dayLabel(firstDay.day, firstDay.index, schedule)} – ${dayLabel(lastDay.day, lastDay.index, schedule)}`
+        : dayLabel(firstDay.day, firstDay.index, schedule);
+      const length = group.days.length > 1 ? ` · ${group.days.length} giorni` : "";
+      const lessons = array(firstDay.day.lesson_keys).map((key) => state.lessonIndex.get(text(key))).filter(Boolean);
+      const body = group.kind === "exam"
+        ? '<span class="plan-day__kind">Esame</span>'
+        : group.kind === "review"
+          ? `<span class="plan-day__kind">Ripasso finale${length}</span>`
+          : group.kind === "practice"
+            ? `<span class="plan-day__kind">Esercizio e card${length}</span>`
+            : lessons.map((lesson) => `<span class="plan-day__lesson">${esc(text(lesson.title))}</span>`).join("");
+      return `<li class="plan-day" data-kind="${esc(group.kind)}"><span class="plan-day__date">${esc(label)}</span><span class="plan-day__body">${body}</span></li>`;
+    };
+    const groups = timelineGroups(days.slice(startAt), startAt);
+    const visible = groups.slice(0, limit);
+    const rest = groups.slice(limit);
+    if (!visible.length) return "";
+    const more = rest.length ? `<details class="plan-more"><summary>Mostra il resto del piano</summary><ol class="plan-timeline">${rest.map(row).join("")}</ol></details>` : "";
+    return `<ol class="plan-timeline">${visible.map(row).join("")}</ol>${more}`;
+  }
+
+  function planOutline(outline, { compact = false } = {}) {
+    if (!outline.length) return `<p class="page__note">Aggiungi una fonte in <button class="text-button" type="button" data-route="fonti">Libreria</button> per vedere le sue lezioni.</p>`;
+    const total = outline.reduce((sum, source) => sum + array(source.lessons).length, 0);
+    // A source that is a single lesson is listed as that lesson; only a
+    // source with several lessons earns its own group heading.
+    const singles = outline.filter((source) => array(source.lessons).length === 1);
+    const groups = outline.filter((source) => array(source.lessons).length > 1);
+    const singleRows = singles.map((source) => {
+      const lesson = { ...object(array(source.lessons)[0]), source_title: "" };
+      const chip = structureChip(source.structure_status);
+      return lessonRow({ ...lesson, status_chip: chip }, { compact });
+    }).join("");
+    const grouped = groups.map((source) => {
+      const lessons = array(source.lessons).map((lesson) => ({ ...object(lesson), source_title: "" }));
+      const studied = lessons.filter((lesson) => lesson.studied === true).length;
+      return `<details class="plan-source"${total <= 24 ? " open" : ""}><summary class="plan-source__summary"><span class="plan-source__title">${esc(text(source.title))}</span>${structureChip(source.structure_status)}<span class="plan-source__count">${studied}/${lessons.length}</span></summary><ol class="lesson-list">${lessons.map((lesson) => lessonRow(lesson, { compact })).join("")}</ol></details>`;
+    }).join("");
+    return `${singleRows ? `<ol class="lesson-list">${singleRows}</ol>` : ""}${grouped}`;
+  }
+
 
   function entryForm(id, label, placeholder, buttonClass = "", attributes = "") {
     const textareaId = id === "hero-entry" ? "entry" : `${id}-text`;
@@ -1904,7 +2199,7 @@
     if (source.can_generate_notes && ["local_repository", "private"].includes(text(first(state.bootstrap, ["mode"], "local_repository")))) {
       sourceAction += `<button class="button button--quiet button--sm" type="button" data-generate-notes='${esc(JSON.stringify({source_id: source.source_id, revision_id: source.revision_id}))}'>Genera note</button>`;
     }
-    return `<li class="source-row" data-source-id="${esc(text(source.source_id))}" data-revision-id="${esc(text(source.revision_id))}"><div class="source-row__document"><span class="source-row__icon icon icon--book-open" aria-hidden="true"></span><div class="source-row__text"><h3 class="source-row__title">${esc(title)}</h3><p class="source-row__meta">${esc(kindLabel)}</p></div></div><div class="source-row__button">${sourceAction}<button class="source-row__provenance" type="button" data-provenance='${provenance}' aria-label="Dettagli di ${esc(title)}">Dettagli</button></div></li>`;
+    return `<li class="source-row" data-source-id="${esc(text(source.source_id))}" data-revision-id="${esc(text(source.revision_id))}"><div class="source-row__document"><span class="source-row__icon icon icon--book-open" aria-hidden="true"></span><div class="source-row__text"><h3 class="source-row__title">${esc(title)}</h3><p class="source-row__meta">${esc(kindLabel)}${structureChip(source.structure_status)}</p></div></div><div class="source-row__button">${sourceAction}<button class="source-row__provenance" type="button" data-provenance='${provenance}' aria-label="Dettagli di ${esc(title)}">Dettagli</button></div></li>`;
   }
 
   function renderProposte(payload) {
@@ -2203,7 +2498,6 @@
 
   function renderPlan(payload) {
     const plan = object(payload);
-    const readiness = object(first(plan, ["readiness"], plan));
     if (text(plan.status, "ready") === "unavailable") {
       setView("piano", page({
         headingId: "plan-heading",
@@ -2212,39 +2506,72 @@
       }));
       return;
     }
-    const exam = object(first(readiness, ["exam"], plan));
-    const dateValue = text(first(exam, ["date", "exam_date"], first(readiness, ["exam_date"], "")));
-    const days = first(exam, ["days_remaining"], first(readiness, ["days_remaining"], null));
-    const recall = object(readiness.recall);
-    const examBlock = dateValue && Number.isInteger(days)
-      ? `<section class="exam-countdown" aria-label="Data d’esame"><p class="exam-countdown__days"><strong>${esc(String(Math.max(days, 0)))}</strong> ${days === 1 ? "giorno" : "giorni"}</p><p class="exam-countdown__date">all’esame del ${esc(formatDate(dateValue))}</p></section>`
-      : `<section class="exam-countdown exam-countdown--empty" aria-label="Data d’esame"><p class="exam-countdown__title">Data d’esame non impostata</p><p class="exam-countdown__date">Quando la data è configurata, qui vedi i giorni che mancano e il lavoro aperto.</p></section>`;
-    const counts = array(readiness.artifact_counts).map(object)
-      .filter((row) => Number(text(row.pending, "0")) > 0 || Number(text(row.accepted, "0")) > 0);
-    const stats = [
-      recall.available ? { value: text(recall.due_count, "0"), label: "card da ripassare oggi", route: "ripasso" } : null,
-      ...counts.map((row) => ({ value: text(row.accepted, "0"), label: `${(ARTIFACT_LABELS[text(row.kind)] || "Materiali").toLowerCase()} approvate${Number(text(row.pending, "0")) ? ` · ${text(row.pending)} da approvare` : ""}`, route: "proposte" })),
-    ].filter(Boolean);
-    const statsView = stats.length
-      ? `<ul class="plan-stats">${stats.map((stat) => `<li><button type="button" class="plan-stats__item" data-route="${esc(stat.route)}"><strong>${esc(stat.value)}</strong><span>${esc(stat.label)}</span></button></li>`).join("")}</ul>`
+    // The header paints from the fast plan; the outline and schedule follow.
+    if (plan.schedule === undefined) void loadPlanSchedule(plan);
+    const loading = plan.schedule === undefined;
+    const schedule = object(plan.schedule);
+    const studyPlan = object(plan.study_plan);
+    const outline = array(plan.outline).map(object);
+    registerOutline(outline);
+    const unset = loading ? !text(studyPlan.exam_date) : text(schedule.status, "unset") === "unset";
+    const editing = state.planEditing || unset;
+    const editor = editing
+      ? `<section class="plan-editor" aria-labelledby="plan-editor-heading">${unset ? `<h2 class="plan-editor__title" id="plan-editor-heading">Data d’esame non impostata</h2><p class="page__note">Indica quando hai l’esame: distribuisco le lezioni sui giorni che restano e lascio spazio al ripasso finale.</p>` : `<h2 class="plan-editor__title" id="plan-editor-heading">Modifica il piano</h2>`}${planForm(studyPlan, { submitLabel: "Salva il piano", today: text(schedule.today), secondary: unset ? "" : `<button class="button button--quiet" type="button" data-plan-cancel>Annulla</button>` })}</section>`
       : "";
-    const listOf = (items) => array(items).map((item) => text(first(object(item), ["value"], item))).filter(Boolean);
-    const constraintItems = array(readiness.constraints).map(object).map((row) => [text(row.kind), text(row.value)].filter(Boolean).join(": ")).filter(Boolean);
-    const formatItems = array(readiness.blueprints).map(object).map((row) => [...array(row.observed_topics), ...array(row.observed_formats)].map((value) => text(first(object(value), ["value"], ""))).filter(Boolean).join(", ")).filter(Boolean);
-    const groups = [
-      ["Obiettivi", listOf(readiness.learning_goals)],
-      ["Come verrai valutato", listOf(readiness.assessment_styles)],
-      ["Vincoli", constraintItems],
-      ["Formato d’esame osservato", formatItems],
-    ].filter(([, items]) => items.length);
-    const details = groups.length
-      ? `<dl class="plan-details">${groups.map(([label, items]) => `<div class="plan-details__group"><dt>${esc(label)}</dt>${items.map((item) => `<dd>${esc(item)}</dd>`).join("")}</div>`).join("")}</dl>`
-      : `<p class="page__note">Obiettivi e vincoli del corso compariranno qui quando saranno configurati.</p>`;
+    const past = text(schedule.status) === "past"
+      ? emptyState("L’esame è passato", "Imposta la data del prossimo appello per un nuovo piano.", "empty")
+      : "";
+    const hero = text(schedule.status) === "ready" ? planHero(schedule) : "";
+    const today = text(schedule.status) === "ready" ? planToday(schedule) : "";
+    const upcoming = text(schedule.status) === "ready" && array(schedule.days).length > 1
+      ? `<section class="plan-section" aria-labelledby="plan-upcoming-heading"><h2 class="plan-section__title" id="plan-upcoming-heading">Prossimi giorni</h2>${planTimeline(schedule)}</section>`
+      : "";
+    const lessons = loading
+      ? `<div class="skeleton-stack" aria-hidden="true"><span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span></div>`
+      : `<section class="plan-section" aria-labelledby="plan-lessons-heading"><h2 class="plan-section__title" id="plan-lessons-heading">Lezioni</h2>${planOutline(outline)}</section>`;
+    const objective = text(studyPlan.objective);
     setView("piano", page({
       headingId: "plan-heading",
       title: "Piano d’esame",
-      body: `${examBlock}${statsView}${details}`,
+      lede: objective ? `Obiettivo: ${esc(objective)}` : "",
+      actions: editing ? "" : `<button class="button button--quiet" type="button" data-plan-edit>Modifica</button>`,
+      body: `${editor}${past}${hero}${today}${upcoming}${lessons}`,
     }));
+  }
+
+  async function loadPlanSchedule(plan) {
+    const version = state.navigationVersion;
+    try {
+      const schedule = object(await fetchJson(PLAN_SCHEDULE_ENDPOINT));
+      if (version !== state.navigationVersion || state.route !== "piano") return;
+      state.viewData = { ...plan, ...schedule };
+      renderPlan(state.viewData);
+    } catch (error) {
+      if (version !== state.navigationVersion || state.route !== "piano") return;
+      state.viewData = { ...plan, schedule: null, outline: [] };
+      renderPlan(state.viewData);
+      showCommandError(error);
+    }
+  }
+
+  function planHero(schedule) {
+    const days = Number(schedule.days_remaining);
+    const total = Number(schedule.lessons_total) || 0;
+    const studied = Number(schedule.lessons_studied) || 0;
+    const pending = Number(schedule.lessons_pending) || 0;
+    const pace = !pending
+      ? "Hai studiato tutte le lezioni: ora è il momento del ripasso."
+      : `${pending} ${pending === 1 ? "lezione" : "lezioni"} in ${schedule.study_days} ${Number(schedule.study_days) === 1 ? "giorno" : "giorni"} di studio, poi ${schedule.review_days} ${Number(schedule.review_days) === 1 ? "giorno" : "giorni"} di ripasso finale.`;
+    return `<section class="plan-hero" aria-label="Avanzamento verso l’esame"><div class="plan-hero__countdown"><p class="plan-hero__days"><strong>${esc(String(days))}</strong> ${days === 1 ? "giorno" : "giorni"}</p><p class="plan-hero__date">${days === 0 ? "L’esame è oggi" : `all’esame del ${esc(formatDate(text(schedule.exam_date)))}`}</p></div><div class="plan-hero__progress"><p class="plan-hero__label"><strong>${studied}</strong> di ${total} lezioni studiate</p><progress class="plan-progress" value="${studied}" max="${Math.max(total, 1)}" aria-label="Lezioni studiate"></progress><p class="plan-hero__pace">${esc(pace)}</p></div></section>`;
+  }
+
+  function planToday(schedule) {
+    const day = object(array(schedule.days)[0]);
+    if (text(day.date) !== text(schedule.today)) return "";
+    if (day.kind === "exam") return `<section class="plan-today" aria-labelledby="plan-today-heading"><h2 class="plan-section__title" id="plan-today-heading">Oggi</h2><p class="plan-today__note">È il giorno dell’esame. In bocca al lupo!</p></section>`;
+    if (day.kind === "review") return `<section class="plan-today" aria-labelledby="plan-today-heading"><h2 class="plan-section__title" id="plan-today-heading">Oggi</h2><p class="plan-today__note">Giorno di ripasso: rivedi le card e le lezioni che ti sono sembrate più difficili.</p><button class="button button--quiet button--sm" type="button" data-route="ripasso">Vai al ripasso</button></section>`;
+    const lessons = array(day.lesson_keys).map((key) => state.lessonIndex.get(text(key))).filter(Boolean);
+    return `<section class="plan-today" aria-labelledby="plan-today-heading"><h2 class="plan-section__title" id="plan-today-heading">Oggi</h2><ol class="lesson-list">${lessons.map((lesson) => lessonRow(lesson)).join("")}</ol></section>`;
   }
 
   const MONTHS = Object.freeze(["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"]);
@@ -2582,8 +2909,8 @@
         if (status) status.textContent = "Fonte salvata. Indicizzazione in background…";
         pollIndexing(status).catch(() => {});
       }
-      state.studySetup = null;
       await refreshBootstrapCounts();
+      if (form.closest(".onboarding")) state.onboarding = { step: 2 };
       await loadRoute(state.route === "fonti" ? "fonti" : "oggi");
     } catch (error) {
       if (status) status.textContent = error.message;
@@ -2859,25 +3186,7 @@
     }
   }
 
-  function saveStudySetup(form) {
-    const objective = text($("[name=objective]", form)?.value).trim();
-    const availableTime = text($("[name=available_time]", form)?.value).trim();
-    if (!objective || !availableTime) return;
-    state.studySetup = {
-      objective,
-      availableTime,
-      examDate: text($("[name=exam_date]", form)?.value).trim(),
-    };
-    renderOggi(state.viewData || state.bootstrap || {});
-  }
 
-  function startSourceFirstStudy(topic) {
-    if (state.pendingTurn || state.loading || !text(topic).trim()) return;
-    const setup = object(state.studySetup);
-    const sourceNames = array(object(state.bootstrap?.materials).items).map((item) => text(object(item).title)).filter(Boolean);
-    const prompt = `Ho caricato ${sourceNames.join(", ") || "le fonti del corso"}. Il mio obiettivo è ${text(setup.objective)}; oggi ho ${text(setup.availableTime)}${setup.examDate ? ` e l'esame è il ${text(setup.examDate)}` : ""}. Vorrei iniziare da ${text(topic)}. Guidami passo per passo usando prima le fonti disponibili.`;
-    executeCommand("/api/v1/session/turns", { content: prompt }, null, "sessione").catch((error) => setStatus("error", error.message));
-  }
 
   /* A failed command reports into the shell's alert region, which is
      outside #view-root and therefore still in the document after the
@@ -3437,7 +3746,56 @@
     return !firstInvalid;
   }
 
+  /* Plan, onboarding and lesson controls share one dispatcher so every
+     surface that shows a lesson offers the same three actions. */
+  function handlePlanControl(event) {
+    const target = event.target;
+    const lessonActions = [
+      ["data-lesson-study", (lesson) => studyLesson(lesson)],
+      ["data-lesson-done", (lesson, control) => markLessonStudied(lesson, control)],
+      ["data-lesson-notes", (lesson, control) => generateLessonNotes(lesson, control)],
+    ];
+    for (const [attribute, run] of lessonActions) {
+      const control = target.closest(`[${attribute}]`);
+      if (!control) continue;
+      event.preventDefault();
+      const lesson = lessonFromControl(control, attribute);
+      if (lesson) void run(lesson, control);
+      return true;
+    }
+    const step = target.closest("[data-onboarding-step]");
+    if (step) {
+      event.preventDefault();
+      setOnboardingStep(Number(step.dataset.onboardingStep) || null);
+      return true;
+    }
+    const simple = [
+      ["[data-onboarding-later]", () => { setOnboardingLater(); state.onboarding = { step: null }; renderOggi(state.viewData || state.bootstrap || {}); }],
+      ["[data-onboarding-finish]", finishOnboarding],
+      ["[data-onboarding-open]", () => setOnboardingStep(1)],
+      ["[data-plan-edit]", () => { state.planEditing = true; renderPlan(state.viewData || {}); $("#plan-exam-date", root)?.focus(); }],
+      ["[data-plan-cancel]", () => { state.planEditing = false; renderPlan(state.viewData || {}); }],
+    ];
+    for (const [selector, run] of simple) {
+      if (!target.closest(selector)) continue;
+      event.preventDefault();
+      run();
+      return true;
+    }
+    return false;
+  }
+
   function bindStaticControls() {
+    // Choosing a file in the dropzone is the whole gesture: it names the
+    // file and adds it, so a student never hunts for a second button.
+    document.addEventListener("change", (event) => {
+      const input = event.target.closest?.(".dropzone__input");
+      if (!input) return;
+      const form = input.closest("[data-source-upload]");
+      const name = $("[data-dropzone-name]", form);
+      if (name) name.textContent = input.files?.[0]?.name || "Scegli o trascina un file";
+      if (form && input.files?.length) uploadSource(form);
+    });
     document.addEventListener("submit", (event) => {
       const form = event.target instanceof HTMLFormElement ? event.target : null;
       if (!form) return;
@@ -3478,13 +3836,9 @@
         event.preventDefault();
         uploadSource(form);
       }
-      if (form.matches("[data-study-setup]")) {
+      if (form.matches("[data-study-plan]")) {
         event.preventDefault();
-        saveStudySetup(form);
-      }
-      if (form.matches("[data-study-topic]")) {
-        event.preventDefault();
-        startSourceFirstStudy(text($("[name=topic]", form)?.value).trim());
+        savePlan(form);
       }
     });
     document.addEventListener("click", (event) => {
@@ -3531,12 +3885,7 @@
         closeChatCourseCreation();
         return;
       }
-      const suggestedTopic = event.target.closest("[data-study-topic-default]");
-      if (suggestedTopic) {
-        event.preventDefault();
-        startSourceFirstStudy(suggestedTopic.dataset.studyTopicDefault || "la prima fonte");
-        return;
-      }
+      if (handlePlanControl(event)) return;
       if (event.target.closest("#trust-mini")) $("#trust-drawer").showModal();
       if (event.target.closest("[data-open-tutor-info]")) $("#trust-drawer").showModal();
       const consentControl = event.target.closest("[data-provider-consent]");
@@ -3574,11 +3923,6 @@
           secretToggle.setAttribute("aria-pressed", String(!revealed));
           field.focus({ preventScroll: true });
         }
-      }
-      if (event.target.closest("[data-study-setup-back]")) {
-        event.preventDefault();
-        state.studySetup = null;
-        renderOggi(state.viewData || state.bootstrap || {});
       }
       if (event.target.closest("#global-alert-dismiss")) {
         event.preventDefault();

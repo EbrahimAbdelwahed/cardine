@@ -505,7 +505,7 @@ def test_repository_ui_full_route_keyboard_reload_and_process_restart(
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
 
     with _serve(application=app) as url, _real_browser(url) as browser:
-        browser.wait_for("Boolean(document.querySelector('[data-study-setup]'))")
+        browser.wait_for("Boolean(document.querySelector('[data-study-plan]'))")
         browser.evaluate("document.querySelector('[data-route=\"sessione\"]').click()")
         browser.wait_for("Boolean(document.querySelector('#session-entry-text:not([disabled])'))")
         browser.evaluate("document.querySelector('#session-entry-text').focus()")
@@ -684,7 +684,7 @@ def test_repository_browser_retry_binds_original_request_across_interleaved_turn
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
 
     with _serve(application=app) as url, _real_browser(url) as browser:
-        browser.wait_for("Boolean(document.querySelector('[data-study-setup]'))")
+        browser.wait_for("Boolean(document.querySelector('[data-study-plan]'))")
         browser.evaluate("document.querySelector('[data-route=\"sessione\"]').click()")
         browser.wait_for("Boolean(document.querySelector('#session-entry-text:not([disabled])'))")
         browser.evaluate("document.querySelector('#session-entry-text').focus()")
@@ -753,7 +753,7 @@ def test_repository_browser_terminal_fallback_gets_new_request_id(
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
 
     with _serve(application=app) as url, _real_browser(url) as browser:
-        browser.wait_for("Boolean(document.querySelector('[data-study-setup]'))")
+        browser.wait_for("Boolean(document.querySelector('[data-study-plan]'))")
         browser.evaluate("document.querySelector('[data-route=\"sessione\"]').click()")
         browser.wait_for("Boolean(document.querySelector('#session-entry-text:not([disabled])'))")
         browser.evaluate("document.querySelector('#session-entry-text').focus()")
@@ -801,6 +801,9 @@ def test_repository_browser_source_first_setup_uploads_a_text_source(tmp_path: P
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
 
     with _serve(application=app) as url, _real_browser(url) as browser:
+        # The exam comes first; it can be left for later, the sources cannot.
+        browser.wait_for("Boolean(document.querySelector('[data-study-plan]'))")
+        browser.evaluate("document.querySelector('[data-onboarding-later]').click()")
         browser.wait_for("Boolean(document.querySelector('[data-source-upload]'))")
         browser.evaluate(
             "document.querySelector('[data-source-upload] textarea').value="
@@ -809,9 +812,14 @@ def test_repository_browser_source_first_setup_uploads_a_text_source(tmp_path: P
             "document.querySelector('[data-source-upload]')"
             ".dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}))"
         )
-        browser.wait_for("Boolean(document.querySelector('[data-study-setup]'))")
-        view_text = cast(str, browser.evaluate("document.querySelector('#view-root').innerText"))
-        assert "Emodinamica" in view_text
+        browser.wait_for(
+            "document.querySelector('[data-onboarding-sources]')?.innerText.includes('Emodinamica')"
+        )
+        browser.evaluate("document.querySelector('[data-onboarding-step=\"3\"]').click()")
+        browser.wait_for(
+            "document.querySelector('[data-plan-preview]:not([aria-busy])')"
+            "?.innerText.includes('Emodinamica')"
+        )
         _assert_no_browser_errors(browser)
 
 
@@ -937,7 +945,7 @@ def test_sources_empty_library_is_distinct_from_unavailable_state(tmp_path: Path
     root, adapters, _model = _repository(tmp_path, with_source=False)
     app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
     with _serve(application=app) as url, _real_browser(url) as browser:
-        browser.wait_for("Boolean(document.querySelector('[data-source-upload]'))")
+        browser.wait_for("Boolean(document.querySelector('[data-study-plan]'))")
         browser.evaluate("document.querySelector('[data-route=fonti]').click()")
         browser.wait_for("Boolean(document.querySelector('.sources-page .empty-state'))")
         assert browser.evaluate("document.querySelectorAll('.source-list').length") == 0

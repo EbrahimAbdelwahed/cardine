@@ -1,8 +1,7 @@
 # Cardine UI/UX redesign
 
-Status: proposed 2026-10-05. Phase 1 is in implementation on
-`claude/cardine-ui-ux-redesign-bbc0d6`; later phases need owner approval
-before implementation.
+Status: owner-requested 2026-10-05 (ADR-0027). Phase 1 is PR #29; phase 2
+is stacked on it; phases 3–5 follow in order.
 
 ## Goal
 
@@ -101,13 +100,32 @@ Frontend only, no API change.
 - Piano: a single exam-date block (countdown or an honest "not set yet"),
   then goals and constraints as a plain list.
 
-### Phase 2 — Onboarding and exam plan (needs backend)
+### Phase 2 — Onboarding and exam plan
 
-- Persist the exam date and study intent as canonical course configuration
-  (new command endpoint), replacing the in-memory wizard state.
-- Plan page: countdown, lessons remaining vs. days, due reviews per day.
-- Onboarding upload with per-source processing progress (conversion →
-  indexing → lesson structure) that continues in the background.
+- `course.study_plan_set@1` (HUMAN or SERVICE, course-scoped, idempotent by
+  request key) records the exam date, daily minutes (5–720) and an optional
+  objective. Its reducer replaces the profile's exam date; readiness and the
+  plan read it like any other canonical fact.
+- The lesson outline is derived on read: the verified top-level PageIndex
+  spans of each active original source (a lone title wrapper over three or
+  more chapters is unwrapped; a heading-free or unstructured source is one
+  lesson). Generated, extracted and inferred sources are not lessons.
+- A lesson is studied when the student journal holds a `topic_covered` entry
+  with the lesson's bounded topic (case and spacing insensitive). "Segna
+  studiata" appends that entry; nothing else stores progress.
+- The schedule spreads unstudied lessons over the days left in source order;
+  the last ~15% of days (1–7) are final review and the exam closes it. With
+  fewer lessons than study days, lessons are spaced out and the days between
+  them are practice days. Nothing is stored; the browser only names weekdays.
+- `GET /api/v1/plan` stays fast (readiness and plan); `GET /api/v1/plan/schedule`
+  returns the outline and schedule and loads after the header. Bootstrap adds
+  today's lessons using the PageIndex statuses it already reads.
+- Onboarding for a fresh course: Esame → Fonti (dropzone, per-source structure
+  progress that keeps running in the background) → Piano preview. A course
+  already in use is never interrupted; home offers "Imposta la data d'esame".
+- Every surface that shows a lesson offers the same actions: Studia (pins the
+  lesson and asks the tutor), Genera note (the exact verified span) and Segna
+  studiata.
 
 ### Phase 3 — Study notes as documents
 

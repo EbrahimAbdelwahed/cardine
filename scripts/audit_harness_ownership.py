@@ -28,9 +28,16 @@ RECOVERY_OVERLAY = ROOT / "tests/parity/wave-a-recovery-overlay.json"
 STUDENT_JOURNAL_OVERLAY = ROOT / "tests/parity/student-journal-overlay.json"
 TUTOR_CONTEXT_OVERLAY = ROOT / "tests/parity/tutor-context-overlay.json"
 UI_REDESIGN_PATHS = {
+    "src/cardine/cli/repository.py",
+    "src/cardine/courses/__init__.py",
+    "src/cardine/courses/events.py",
+    "src/cardine/courses/projection.py",
+    "src/cardine/courses/service.py",
+    "src/cardine/courses/view.py",
     "src/cardine/demo/browser.css",
     "src/cardine/demo/browser.html",
     "src/cardine/demo/browser.js",
+    "src/cardine/demo/ui_application.py",
 }
 PAGE_LOAD_PATHS = {
     "src/cardine/adapters/pageindex/coordinator.py",

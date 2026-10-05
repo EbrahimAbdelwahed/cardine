@@ -2729,8 +2729,13 @@ class LocalRepository:
             raise ValueError("lesson pin is not a current canonical candidate")
         return source
 
-    def pageindex_summary(self, course_id: CourseId) -> JsonObject:
-        statuses = self.pageindex_status(course_id)
+    def pageindex_summary(
+        self,
+        course_id: CourseId,
+        statuses: tuple[PageIndexProjection, ...] | None = None,
+    ) -> JsonObject:
+        if statuses is None:
+            statuses = self.pageindex_status(course_id)
         rows = tuple(
             {
                 "source_id": item.source_id,
