@@ -65,5 +65,17 @@ canonical event changes. The work guards fail on main and pass on this branch.
 
 ## Verification and delivery
 
-In progress: final full offline suite, static/package checks, current-head CI and
-initial automatic Codex GitHub review. No paid provider calls or live rollout.
+Final local verification on implementation commit `5d28773`: 3,007 tests passed,
+four optional/network/PDF-containment smoke skips, in 233.22 seconds. Browser,
+source-integrity, PageIndex, read-coherence and clean-archive custody cases all ran.
+Ruff, strict mypy (682 files), the 322-row ownership audit, offline wheel/sdist
+build and exact packaged-source verification pass. The new required GitHub
+`page-loads` check is green on the implementation commit, along with ten other
+checks; the two full Python jobs were still running at the documentation update.
+
+Published as [PR #25](https://github.com/EbrahimAbdelwahed/cardine/pull/25).
+This documentation-only continuation records completed verification; local work
+is committed and pushed on the same branch. Final-head CI and the initial
+automatic Codex GitHub review are tracked on the PR, with a two-round limit.
+No paid provider calls, merge, data migration, deployment or live restart occurred.
+The running server still needs an owner-authorized update to receive this patch.
