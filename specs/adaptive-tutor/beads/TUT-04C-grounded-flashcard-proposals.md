@@ -47,3 +47,9 @@ one trusted pedagogical profile selected by the host.
 - Planner/bundle/worker recovery contracts, profile-specific prompt/validator
   fixtures, direct gateway evals, injection, source gaps, parsimony/parent
   overlap, tool parity, and full gates.
+
+## Grounding policy recovery
+
+When documentary grounding is ON, completion recovery must reject a checkpoint
+without the current grounding-policy fingerprint before registering proposals.
+Already recorded proposals remain readable. OFF and SHADOW retain their recovery behavior.

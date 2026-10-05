@@ -720,3 +720,99 @@ def test_repository_flashcards_cross_luna_wire_and_publish_verified_proposals(
     assert activity["proposal_count"] == 1
     items = cast(tuple[dict[str, object], ...], app.get("/api/v1/artifacts")["items"])
     assert items[0]["status"] == "proposed"
+
+
+@pytest.mark.parametrize("profile", ("hybrid", "morphology"))
+@pytest.mark.parametrize("decision", (
+    "supported", "contradicted", "insufficient", "weak", "wrong-model", "unavailable",
+    "invalid-distribution", "unknown-key", "cancelled", "timeout",
+))
+def test_jev_gate_precedes_canonical_proposals(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, profile: str, decision: str,
+) -> None:
+    from cardine.application.study_semantics import ConsentChoiceJudgementPort
+    from study_agent.domain.features import FeatureMode
+    from study_agent.ports.judgement import (
+        ChoiceJudgement,
+        ChoiceJudgementRequest,
+        ChoiceProbability,
+    )
+    from study_agent.repository_config import (
+        CONFIG_FILENAME,
+        JudgementAdapterConfig,
+        LocalRepositoryConfig,
+        SemanticFeaturesConfig,
+    )
+
+    root, adapters, model = _repository(tmp_path)
+    install = (_install_hybrid_flashcard_model if profile == "hybrid"
+               else _install_morphology_flashcard_model)
+    install(model)
+    config = LocalRepositoryConfig.from_bytes((root / CONFIG_FILENAME).read_bytes())
+    (root / CONFIG_FILENAME).write_bytes(replace(
+        config, judgement=JudgementAdapterConfig(resolved_model_id="resolved-jev"),
+        features=SemanticFeaturesConfig(flashcard_grounding_mode=FeatureMode.ON),
+    ).to_bytes())
+    calls: list[ChoiceJudgementRequest] = []
+
+    class Judge:
+        async def judge(self, request: ChoiceJudgementRequest) -> ChoiceJudgement:
+            calls.append(request)
+            state = cast(Mapping[str, object], request.state)
+            assert state["cited_canonical_excerpts"] == ("The aortic valve has three cusps.",)
+            assert "question" in state and "answer_blocks" in state
+            if decision == "unavailable":
+                raise RuntimeError("private provider error")
+            if decision == "cancelled":
+                raise asyncio.CancelledError
+            if decision == "timeout":
+                raise TimeoutError
+            key = decision if decision in ("contradicted", "insufficient") else "supported"
+            probabilities = tuple(ChoiceProbability(option.key, .98 if option.key == key else .01)
+                                  for option in request.options)
+            if decision == "weak":
+                probabilities = (ChoiceProbability("supported", .6),
+                                 ChoiceProbability("contradicted", .2),
+                                 ChoiceProbability("insufficient", .2))
+            result = ChoiceJudgement(key, probabilities, None, "fixture", "1", "resolved-jev", 1)
+            if decision == "wrong-model":
+                object.__setattr__(result, "model_id", "alias")
+            if decision == "invalid-distribution":
+                object.__setattr__(result.probabilities[0], "probability", float("nan"))
+            if decision == "unknown-key":
+                object.__setattr__(result, "selected_key", "foreign")
+            return result
+
+    def guarded(self: LocalRepository, course_id: CourseId) -> ConsentChoiceJudgementPort:
+        return ConsentChoiceJudgementPort(Judge(), course_id, self.provider_consent)
+
+    monkeypatch.setattr(LocalRepository, "_course_grounding_judgement", guarded)
+    app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+    text = ("Crea flashcard da queste fonti" if profile == "hybrid" else
+            "Crea flashcard anatomiche con ricostruzione spaziale e topologica dalle fonti")
+    if decision == "cancelled":
+        with pytest.raises(asyncio.CancelledError):
+            app.post("/api/v1/session/turns", _command("jev-cards", sequence, text))
+    else:
+        app.post("/api/v1/session/turns", _command("jev-cards", sequence, text))
+    items = cast(tuple[dict[str, object], ...], app.get("/api/v1/artifacts")["items"])
+    assert len(items) == (1 if decision == "supported" else 0)
+    assert len(calls) == 1
+    if items:
+        assert items[0]["status"] == "proposed"
+    else:
+        import sqlite3
+        with LocalRepository.open(root, model_adapters=adapters) as repository:
+            with sqlite3.connect(repository.paths.runs) as connection:
+                payloads = connection.execute("SELECT payload FROM playbook_runs").fetchall()
+            assert not any("proof" in json.loads(payload) for (payload,) in payloads)
+    if decision == "unavailable":
+        decision = "supported"
+        app = RepositoryUiApplication(root, COURSE, SESSION, model_adapters=adapters)
+        app.post("/api/v1/session/turns", _command("jev-cards", sequence, text))
+        assert len(calls) == 1  # Failed original remains idempotent across reopen.
+        sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+        app.post("/api/v1/session/turns", _command("jev-retry", sequence, text))
+        assert len(calls) == 2
+        assert len(cast(tuple[object, ...], app.get("/api/v1/artifacts")["items"])) == 1
