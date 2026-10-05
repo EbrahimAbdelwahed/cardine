@@ -266,13 +266,13 @@ POST_BASELINE_ADDITIONS = {
         "b2941a0d1e5f40fc4b4ae9e6b072abd7337c99bf5b59255420e1c7b730a0c10a"
     ),
     "src/study_agent/flashcards/semantic.py": (
-        "6c328980a79df765dc81edb18128bd29e313b5b0b91e4dff94c65adcde88dc47"
+        "a4927d2b55e3d0f9169eec9e9feab19eb2d87f1de28dd13f37d044d1f162b7c5"
     ),
     "src/study_agent/knowledge/__init__.py": (
         "60b3770e79b5c172314488df96e09b006bf6af0c578736c804d3818f5ec19b1b"
     ),
     "src/study_agent/knowledge/document_index.py": (
-        "c793034bf0232d3e14cd895a6b69ab093475bd34257efcac6c8bf04a988dc0e2"
+        "3fc279322e0b292be4f7f39efcead6d88946eb618eddc27905aa247e4054ee9d"
     ),
     "src/study_agent/ports/document_index.py": (
         "5ca1262be14d93a3019814c0e742e93b60c7583bfed0964f1d85de452c27f210"
@@ -281,7 +281,7 @@ POST_BASELINE_ADDITIONS = {
         "b223ac82d1016a88f89440dd42092b520c7d097fa1323c8882967d5b43bb638a"
     ),
     "src/study_agent/knowledge/unitizer.py": (
-        "ab1b3a5a44c78cc7ec1b2f3ca731188c0f79184c951a12f8817d8141836faba8"
+        "512934f56453c679af5f68188b78160653309459d02039d7946fe9b56c83686b"
     ),
 }
 
