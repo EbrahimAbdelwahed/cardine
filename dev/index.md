@@ -1,6 +1,6 @@
 # Cardine development memory
 
-Updated: 2026-10-04 CEST
+Updated: 2026-10-05 CEST
 
 This file is the authoritative entrypoint for Cardine development memory.
 Cardine-specific plans, logs, notes, and handoffs belong in this repository's
@@ -9,6 +9,7 @@ archive and must not be treated as Cardine's current state.
 
 ## Start here
 
+- [Page-load regression budgets](logs/2026-10-04--cardine--page-load-latency--log.md) — browser thresholds pinned to measured real-course desktop/mobile startup and page results; API ceiling and deterministic work guards retained.
 - [Flashcard documentary support gate](logs/2026-10-04--cardine--flashcard-grounding-gate--log.md) — optional Jev support validation after core integrity and before proof/proposal registration; OFF by default, HUMAN acceptance preserved.
 - [Jev projection latency](handoffs/2026-10-04--jev-projection-latency.md) — full canonical verification with bounded line/node preparation, selected-chunk projection and shared semantic cache preparation; source-free before/after evidence and PR #24, no live rollout.
 

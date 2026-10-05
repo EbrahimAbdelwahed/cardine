@@ -27,6 +27,11 @@ TRANSITION_OVERLAY = ROOT / "tests/parity/ca02-transition-overlay.json"
 RECOVERY_OVERLAY = ROOT / "tests/parity/wave-a-recovery-overlay.json"
 STUDENT_JOURNAL_OVERLAY = ROOT / "tests/parity/student-journal-overlay.json"
 TUTOR_CONTEXT_OVERLAY = ROOT / "tests/parity/tutor-context-overlay.json"
+PAGE_LOAD_PATHS = {
+    "src/cardine/adapters/pageindex/coordinator.py",
+    "src/cardine/demo/ui_application.py",
+    "src/study_agent/ingestion/events.py",
+}
 TUTOR_CONTEXT_PATHS = {
     "src/cardine/adapters/model/streaming.py",
     "src/cardine/application/explanation_validation.py",
@@ -910,6 +915,20 @@ def _load_latency_overlay() -> dict[str, str]:
     return _bound_hashes(raw["rows"], LATENCY_PATHS, "latency overlay")
 
 
+def _load_page_load_overlay() -> dict[str, str]:
+    """Bind the owner's three-second page-load continuation to exact bytes."""
+    raw = json.loads((ROOT / "tests/parity/page-load-latency-overlay.json").read_text())
+    if (
+        not isinstance(raw, dict)
+        or set(raw) != {"schema_version", "decision", "rows"}
+        or raw["schema_version"] != 1
+        or raw["decision"] != "ADR-0026--three-second-page-load-budget"
+        or not isinstance(raw["rows"], list)
+    ):
+        raise ValueError("page load overlay fields are invalid")
+    return _bound_hashes(raw["rows"], PAGE_LOAD_PATHS, "page load overlay")
+
+
 def _load_tutor_context_overlay() -> dict[str, str]:
     """Bind the requested product repair, preserving historical core approvals."""
     raw = json.loads(TUTOR_CONTEXT_OVERLAY.read_text(encoding="utf-8"))
@@ -933,6 +952,7 @@ def validate(*, live: bool = False) -> list[str]:
         recovery_hashes.update(_load_study_notes_overlay(structure=True))
         recovery_hashes.update(_load_study_notes_overlay(progress=True))
         recovery_hashes.update(_load_tutor_context_overlay())
+        recovery_hashes.update(_load_page_load_overlay())
         for path in STUDENT_JOURNAL_REMOVED:
             recovery_hashes.pop(path, None)
         reviewed = _load_classification()

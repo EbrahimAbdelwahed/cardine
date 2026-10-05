@@ -128,10 +128,11 @@ class PageIndexCoordinator:
     enqueue = request
 
     def load(self, revision: PageIndexRevision) -> PageIndexProjection:
-        current = self._load(revision)
+        fingerprint = self._cache_fingerprint(revision)
+        current = self._load(revision, cache_fingerprint=fingerprint)
         # Historical schema-1 structure is migration data only. Rebuild it
         # through the single DocumentIndex producer; never trust its text map.
-        stale = current.cache_fingerprint != self._cache_fingerprint(revision)
+        stale = current.cache_fingerprint != fingerprint
         missing_index = current.status in {PageIndexStatus.READY, PageIndexStatus.DEGRADED} and (
             current.document_index is None
         )
@@ -341,7 +342,9 @@ class PageIndexCoordinator:
             json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
         ).hexdigest()
 
-    def _load(self, revision: PageIndexRevision) -> PageIndexProjection:
+    def _load(
+        self, revision: PageIndexRevision, *, cache_fingerprint: str | None = None,
+    ) -> PageIndexProjection:
         try:
             payload = self._runs.load(_key(revision))
         except KeyError:
@@ -356,7 +359,11 @@ class PageIndexCoordinator:
             raise ValueError("stored PageIndex projection is stale")
         if projection.document_index is not None:
             index = projection.document_index
-            if projection.cache_fingerprint == self._cache_fingerprint(revision) and (
+            fingerprint = (
+                self._cache_fingerprint(revision)
+                if cache_fingerprint is None else cache_fingerprint
+            )
+            if projection.cache_fingerprint == fingerprint and (
                 index.producer_id != "pageindex-qualified-structural"
                 or index.producer_version != QUALIFIED_UPSTREAM_COMMIT
                 or index.config_fingerprint
