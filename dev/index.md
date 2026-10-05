@@ -10,6 +10,7 @@ archive and must not be treated as Cardine's current state.
 ## Start here
 
 - [Page-load regression budgets](logs/2026-10-04--cardine--page-load-latency--log.md) — browser thresholds pinned to measured real-course desktop/mobile startup and page results; API ceiling and deterministic work guards retained.
+- [Flashcard documentary support gate](logs/2026-10-04--cardine--flashcard-grounding-gate--log.md) — optional Jev support validation after core integrity and before proof/proposal registration; OFF by default, HUMAN acceptance preserved.
 - [Jev projection latency](handoffs/2026-10-04--jev-projection-latency.md) — full canonical verification with bounded line/node preparation, selected-chunk projection and shared semantic cache preparation; source-free before/after evidence and PR #24, no live rollout.
 
 - [Retrieval reliability audit](audits/2026-10-04--retrieval-reliability.md) — owner-requested needle benchmark on the live 559-page source; definition-only chimotripsin retrieval reproduced, 21 positive cases and two negatives, bounded keyword/context experiments and no runtime policy change.

@@ -37,7 +37,7 @@ real-course samples recorded in the development log: startup is 2.764 s desktop
 and 2.590 s mobile; per-page limits are Oggi 2.538 s, Chat 1.450 s, Fonti
 2.913 s, Proposte 0.316 s, Verifiche 0.316 s, Percorso 0.332 s, Ripasso
 0.365 s, Piano 0.282 s and Settings 0.034 s. The test allows 15% (at least
-300 ms), plus 1 ms for sub-millisecond timer precision, above each rounded
+500 ms), plus 1 ms for sub-millisecond timer precision, above each rounded
 millisecond baseline to cover browser scheduling and sample rounding. The computed browser ceiling is always capped at 3,000 ms.
 API responses retain the separately
 measured three-second ceiling because the logged real-course API samples do not
@@ -47,3 +47,6 @@ and machine; they are a regression baseline, not a universal performance claim.
 The three changed runtime paths are bound by
 `tests/parity/page-load-latency-overlay.json`. Historical custody manifests remain
 unchanged; installed-Harness parity/removal and live deployment remain separate.
+
+Settings readiness requires the populated workspace controls and completed
+local diagnostics, including their secondary requests in the page timer.

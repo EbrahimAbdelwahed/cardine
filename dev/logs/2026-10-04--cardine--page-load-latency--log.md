@@ -99,3 +99,12 @@ the first automatic review finding. CI repeatedly measured 449–549 ms on
 316–332 ms baselines, so minimum scheduling allowance is 300 ms while preserving
 15% for larger baselines and the absolute contract. The ceiling regression
 failed before the fix. No provider calls or canonical study data writes.
+
+Integrated CI full-suite scheduling produced one 699 ms Verifiche sample
+against 316 ms baseline; minimum jitter allowance is now 500 ms, with the
+unchanged hard 3,000 ms cap. Dedicated page-load job passed before this adjustment.
+
+Final review finding: Settings readiness now waits for populated workspace
+controls and completed diagnostics. A browser regression blocks each secondary
+request separately; it failed with the heading-only selector before the fix.
+Second review is complete; no third review request.
