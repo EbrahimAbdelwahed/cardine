@@ -197,6 +197,9 @@ def test_small_rounding_error_normalized_in_request_order() -> None:
     ],
 )
 def test_http_transport_only_retry_and_no_redirect(status: int, attempts: int) -> None:
+    codes = {401: "jev_credentials_rejected", 403: "jev_credentials_rejected",
+             402: "jev_credits_exhausted", 400: "jev_request_rejected",
+             413: "jev_request_rejected"}
     calls = []
 
     def handler(incoming: Any) -> Any:
@@ -214,7 +217,8 @@ def test_http_transport_only_retry_and_no_redirect(status: int, attempts: int) -
     else:
         with pytest.raises(JevProviderError) as caught:
             asyncio.run(adapter(handler, max_retries=1).judge(request()))
-        assert str(caught.value) == "jev_provider_failure"
+        assert str(caught.value) == codes.get(status, "jev_provider_failure")
+        assert caught.value.code == str(caught.value)
         assert caught.value.__cause__ is None
     assert len(calls) == attempts
 

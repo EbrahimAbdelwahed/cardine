@@ -32,6 +32,14 @@ PAGE_LOAD_PATHS = {
     "src/cardine/demo/ui_application.py",
     "src/study_agent/ingestion/events.py",
 }
+JEV_ROUTING_PATHS = {
+    "src/cardine/application/routing_calibration.py",
+    "src/cardine/hosts/clarification_recovery.py",
+    "src/cardine/hosts/clarification_state.py",
+    "src/cardine/hosts/contracts.py",
+    "src/cardine/hosts/routing.py",
+    "src/study_agent/prompts/tutor_decision_v1.py",
+}
 TUTOR_CONTEXT_PATHS = {
     "src/cardine/application/flashcard_profile_selection.py",
     "src/cardine/application/flashcard_scope.py",
@@ -262,7 +270,7 @@ POST_BASELINE_ADDITIONS = {
         "b8abef779a6218b8eed200b15800217b374e6fef4ff384d34efcc665a801e0ec"
     ),
     "src/study_agent/adapters/judgement/jev.py": (
-        "a8905a56c38f4e7d060c0ba5cd25eb23a656833bb26be9e6e86966fcf8dd787b"
+        "b2ebddb41617a7d2188a1ccf8f23a2cb16b60a60e65719161892270635c0794f"
     ),
     "src/study_agent/domain/document_index.py": (
         "004d895a70b26ab9e4a3a616079792874be60dd2ef584755efdf1f11b9207c99"
@@ -775,6 +783,7 @@ def _validate_cardine_transition(
                     and source_path not in STUDENT_JOURNAL_PATHS
                     and source_path not in LATENCY_PATHS
                     and source_path not in TUTOR_CONTEXT_PATHS
+                    and source_path not in JEV_ROUTING_PATHS
                 ):
                     baseline_source = _baseline_source(source_path)
                     if _normalized_ast(current_source, source_path) != _normalized_ast(
@@ -934,6 +943,20 @@ def _load_page_load_overlay() -> dict[str, str]:
     return _bound_hashes(raw["rows"], PAGE_LOAD_PATHS, "page load overlay")
 
 
+def _load_jev_routing_overlay() -> dict[str, str]:
+    """Bind the owner's useful Jev routing repair (ADR-0027) to exact bytes."""
+    raw = json.loads((ROOT / "tests/parity/jev-routing-overlay.json").read_text())
+    if (
+        not isinstance(raw, dict)
+        or set(raw) != {"schema_version", "decision", "rows"}
+        or raw["schema_version"] != 1
+        or raw["decision"] != "ADR-0027--useful-jev-routing-and-bounded-clarification"
+        or not isinstance(raw["rows"], list)
+    ):
+        raise ValueError("jev routing overlay fields are invalid")
+    return _bound_hashes(raw["rows"], JEV_ROUTING_PATHS, "jev routing overlay")
+
+
 def _load_tutor_context_overlay() -> dict[str, str]:
     """Bind the requested product repair, preserving historical core approvals."""
     raw = json.loads(TUTOR_CONTEXT_OVERLAY.read_text(encoding="utf-8"))
@@ -958,6 +981,7 @@ def validate(*, live: bool = False) -> list[str]:
         recovery_hashes.update(_load_study_notes_overlay(progress=True))
         recovery_hashes.update(_load_tutor_context_overlay())
         recovery_hashes.update(_load_page_load_overlay())
+        recovery_hashes.update(_load_jev_routing_overlay())
         for path in STUDENT_JOURNAL_REMOVED:
             recovery_hashes.pop(path, None)
         reviewed = _load_classification()

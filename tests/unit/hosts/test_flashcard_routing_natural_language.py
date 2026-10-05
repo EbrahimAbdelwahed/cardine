@@ -29,7 +29,7 @@ def test_jev_owns_topic_query_for_natural_requests(action: str) -> None:
                                       "interaction_id": "current-request"},)})
     scope = FlashcardScope("explicit_topic", "default", learner_fingerprint(prompt),
                           "current-request")
-    judge = Judge("start_capability", "explicit_topic", "default", "supported")
+    judge = Judge("capability:propose_flashcards", "explicit_topic", "default", "supported")
     model = Model({"query": "mitosi", "scope": scope.encode(), "language": "it",
                    "candidate_ceiling": 24, "continuation_summary_json": None})
     decision = asyncio.run(router(judge, model).decide(ctx, _Token()))

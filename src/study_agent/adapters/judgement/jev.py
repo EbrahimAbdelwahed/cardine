@@ -176,13 +176,25 @@ class JevChoiceAdapter:
                     response.status_code not in {408, 429}
                     and not 500 <= response.status_code <= 599
                 ):
-                    raise JevProviderError("jev_provider_failure")
+                    raise JevProviderError(_rejection_code(response.status_code))
                 if attempt == self._retries:
                     raise JevProviderError("jev_provider_failure")
                 retry_after = _retry_delay(response.headers.get("Retry-After"))
             delay = min(2.0, self._backoff * 2**attempt) if retry_after is None else retry_after
             await asyncio.sleep(delay)
         raise JevProviderError("jev_provider_failure")
+
+
+def _rejection_code(status: int) -> str:
+    """Closed, non-retryable status classes that are actionable in receipts."""
+
+    if status in {401, 403}:
+        return "jev_credentials_rejected"
+    if status == 402:
+        return "jev_credits_exhausted"
+    if 400 <= status <= 499:
+        return "jev_request_rejected"
+    return "jev_provider_failure"
 
 
 def _retry_delay(value: str | None) -> float | None:

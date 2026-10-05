@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from cardine.demo.ui_application import RepositoryUiApplication
 from study_agent.domain import CourseId, SessionId
@@ -152,6 +152,12 @@ def test_answered_clarification_gets_one_semantic_retry_then_explains(
         ),
         "instruction": (
             "Treat the current answer as resolving the previous question. "
-            "Choose the study action now; ask again only if the answer is genuinely unusable."
+            "Choose the study action now. Another question is unavailable; if the answer is "
+            "genuinely unusable, say briefly in an assistant_message what is needed."
         ),
     }
+    constraint = model.requests[1].structured_output
+    assert constraint is not None
+    branches = cast(Any, constraint.schema)["properties"]["decision"]["anyOf"]
+    kinds = {branch["properties"]["kind"]["enum"][0] for branch in branches}
+    assert "ask_learner" not in kinds and "start_capability" in kinds

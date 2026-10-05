@@ -98,9 +98,8 @@ def _install_semantic_repository_fixture(monkeypatch: pytest.MonkeyPatch) -> Non
             card = "flash" in text.casefold() or "cards" in text.casefold()
             use = request.metadata["use_case"]
             if use == "route":
-                selected = "start_capability"
-            elif use == "capability":
-                selected = "propose_flashcards" if card else "explain_concept"
+                selected = ("capability:propose_flashcards" if card
+                            else "capability:explain_concept")
             elif use == "flashcard_scope":
                 selected = _fixture_flashcard_scope(text, state)[0]
             elif use == "flashcard_profile":
@@ -881,7 +880,7 @@ def test_primary_jev_flashcard_path_owns_scope_without_downstream_language_parse
             found = repo.search_lessons(COURSE, "Aortic valve")
             pin_json = asdict(repo.select_lesson(COURSE, "Aortic valve",
                                                found.candidates[0].candidate_id))
-    judge = Judge("start_capability", "propose_flashcards", scope, "default")
+    judge = Judge("capability:propose_flashcards", scope, "default")
     original_judge = judge.judge
 
     async def judgement(request: ChoiceJudgementRequest) -> ChoiceJudgement:
@@ -925,7 +924,7 @@ def test_primary_jev_flashcard_path_owns_scope_without_downstream_language_parse
     if pin_json is not None:
         cast(dict[str, object], command["payload"])["lesson_pin"] = pin_json
     result = app.post("/api/v1/session/turns", command)
-    scope_state = cast(Mapping[str, object], judge.requests[2].state)
+    scope_state = cast(Mapping[str, object], judge.requests[1].state)
     assert scope_state["selected_lesson_available"] == with_pin
     if with_pin and scope == "explicit_topic":
         assert result["status"] == "failed"
@@ -942,8 +941,8 @@ def test_primary_jev_flashcard_path_owns_scope_without_downstream_language_parse
             assert not repo.student_state.search(COURSE, query="selected lesson")
             if not with_pin:
                 assert repo.student_state.search(COURSE, query="Aortic valve")
-    assert [item.metadata["use_case"] for item in judge.requests][:4] == [
-        "route", "capability", "flashcard_scope", "flashcard_profile"]
+    assert [item.metadata["use_case"] for item in judge.requests][:3] == [
+        "route", "flashcard_scope", "flashcard_profile"]
     assert app.get("/api/v1/artifacts")["items"]
 
 

@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import replace
 
 from study_agent.ports.tutor_host import TutorDecisionPort, TutorInterruptionToken
 
+from .clarification_state import answered_clarification
 from .contracts import TutorDecision, TutorHostContext
 
 _RECOVERY_INSTRUCTION = (
     "Treat the current answer as resolving the previous question. "
-    "Choose the study action now; ask again only if the answer is genuinely unusable."
+    "Choose the study action now. Another question is unavailable; if the answer is "
+    "genuinely unusable, say briefly in an assistant_message what is needed."
 )
 
 
@@ -26,9 +27,7 @@ class ClarificationRecoveryTutorDecisionPort(TutorDecisionPort):
     async def decide(
         self, context: TutorHostContext, interruption: TutorInterruptionToken
     ) -> TutorDecision:
-        if context.pending_continuation is not None:
-            return await self._delegate.decide(context, interruption)
-        exchange = _latest_clarification_exchange(context)
+        exchange = answered_clarification(context)
         if exchange is None:
             return await self._delegate.decide(context, interruption)
         previous_question, current_answer = exchange
@@ -44,40 +43,6 @@ class ClarificationRecoveryTutorDecisionPort(TutorDecisionPort):
             },
         )
         return await self._delegate.decide(resolved_context, interruption)
-
-
-def _latest_clarification_exchange(context: TutorHostContext) -> tuple[str, str] | None:
-    timeline = context.tutor_snapshot.get("timeline")
-    presentations = context.tutor_snapshot.get("tutor_presentations")
-    if not isinstance(timeline, tuple) or not isinstance(presentations, tuple):
-        return None
-    latest_learner = next(
-        (
-            item
-            for item in reversed(timeline)
-            if isinstance(item, Mapping) and item.get("kind") == "learner"
-        ),
-        None,
-    )
-    latest_question = presentations[-1] if presentations else None
-    if latest_learner is None or not isinstance(latest_question, Mapping):
-        return None
-    learner_sequence = latest_learner.get("course_sequence")
-    question_sequence = latest_question.get("course_sequence")
-    current_answer = latest_learner.get("content")
-    previous_question = latest_question.get("content")
-    if (
-        type(learner_sequence) is not int
-        or type(question_sequence) is not int
-        or latest_question.get("kind") != "learner_question"
-        or question_sequence >= learner_sequence
-        or not isinstance(current_answer, str)
-        or not current_answer.strip()
-        or not isinstance(previous_question, str)
-        or not previous_question.strip()
-    ):
-        return None
-    return previous_question, current_answer
 
 
 __all__ = ["ClarificationRecoveryTutorDecisionPort"]
