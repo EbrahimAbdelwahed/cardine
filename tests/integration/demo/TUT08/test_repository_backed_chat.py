@@ -40,6 +40,7 @@ from study_agent.domain import (
     SourceId,
 )
 from study_agent.domain._validation import JsonObject
+from study_agent.domain.features import FeatureMode
 from study_agent.ports import (
     CancellationToken,
     ModelCapabilities,
@@ -52,7 +53,12 @@ from study_agent.ports import (
     ModelStreamEvent,
     ModelStreamEventKind,
 )
-from study_agent.repository_config import LocalRepositoryConfig, ModelAdapterConfig
+from study_agent.repository_config import (
+    JudgementAdapterConfig,
+    LocalRepositoryConfig,
+    ModelAdapterConfig,
+    SemanticFeaturesConfig,
+)
 from tests.receipt_assertions import without_transient_activity
 
 COURSE = CourseId("cardine-course")
@@ -260,13 +266,22 @@ def _repository(
     explain_error: ModelError | None = None,
     explain_output: JsonObject | None = None,
     credential_env: str | None = None,
+    judgement: JudgementAdapterConfig | None = None,
     source_content: bytes = b"The aortic valve has three cusps.",
     source_title: str = "Valve notes",
 ) -> tuple[Path, ModelAdapterRegistry, _FixtureModel]:
     root = tmp_path / "repository"
     initialize_local_repository(
         root,
-        LocalRepositoryConfig(ModelAdapterConfig("fixture", {}, credential_env)),
+        LocalRepositoryConfig(
+            ModelAdapterConfig("fixture", {}, credential_env),
+            judgement=judgement,
+            features=(
+                SemanticFeaturesConfig(tutor_routing_mode=FeatureMode.SHADOW)
+                if judgement is not None
+                else SemanticFeaturesConfig()
+            ),
+        ),
     )
     calls: list[ModelRequest] = []
     model = _FixtureModel(
@@ -1252,6 +1267,29 @@ def test_missing_runtime_key_has_a_configuration_diagnostic_not_a_generic_503(
 
     assert rejected.value.status_code == 503
     assert rejected.value.diagnostic_code == "tutor_configuration"
+
+
+def test_missing_judgement_key_is_distinguished_from_the_model_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, adapters, _model = _repository(
+        tmp_path, judgement=JudgementAdapterConfig(credential_env="CARDINE_TEST_MISSING_JUDGE")
+    )
+    monkeypatch.delenv("CARDINE_TEST_MISSING_JUDGE", raising=False)
+    app = RepositoryUiApplication(
+        root, COURSE, SESSION, model_adapters=adapters, environment={}
+    )
+    sequence = cast(int, app.get("/api/v1/bootstrap")["high_water_sequence"])
+
+    with pytest.raises(UiRequestError) as rejected:
+        app.post(
+            "/api/v1/session/turns",
+            _command("missing-judgement-key", sequence, "Spiegami biochimica"),
+        )
+
+    assert rejected.value.status_code == 503
+    assert rejected.value.diagnostic_code == "judgement_configuration"
+    assert "judgement" in str(rejected.value)
 
 
 def test_source_grounding_provider_rejection_returns_a_visible_safe_fallback(

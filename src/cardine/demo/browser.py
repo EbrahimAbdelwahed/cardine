@@ -224,6 +224,8 @@ class BrowserSurface:
             "source_content_unavailable",
             "stale_sequence",
             "tutor_execution_failed",
+            "tutor_configuration",
+            "judgement_configuration",
             "tutor_authentication",
             "tutor_model_unavailable",
             "tutor_endpoint_incompatible",

@@ -60,6 +60,7 @@
     tutor_protocol_error: "Il provider ha restituito una risposta non compatibile.",
     tutor_unavailable: "Il provider del modello non è disponibile in questo momento.",
     tutor_configuration: "Configura una chiave API valida in Impostazioni prima di inviare messaggi.",
+    judgement_configuration: "Manca la chiave del servizio di routing (Jev). Imposta OPENROUTER_API_KEY nell'ambiente del server e riavvialo; la chiave OpenAI non c'entra.",
     tutor_execution_failed: "Il tutor non ha prodotto una risposta valida. Apri Diagnostica e riprova; la chiave non è necessariamente la causa.",
     tutor_internal_error: "La chat ha riscontrato un errore interno. Riprova; consulta Diagnostica se persiste.",
   });

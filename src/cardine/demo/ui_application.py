@@ -27,6 +27,7 @@ from cardine.application.artifact_decisions import (
 )
 from cardine.application.indexing import IndexingRecord
 from cardine.cli.repository import (
+    JudgementCredentialUnavailableError,
     LocalRepository,
     LocalRepositoryError,
     ModelAdapterConfigurationError,
@@ -910,6 +911,14 @@ class RepositoryUiApplication(UiApplicationPort):
                     status_code=404,
                     trace_id=trace_id,
                 ) from error
+            except JudgementCredentialUnavailableError as error:
+                activity_status = "failed"
+                raise UiRequestError(
+                    "configured judgement credential is unavailable",
+                    status_code=503,
+                    diagnostic_code="judgement_configuration",
+                    trace_id=trace_id,
+                ) from error
             except ModelAdapterConfigurationError as error:
                 activity_status = "failed"
                 raise UiRequestError(
@@ -1019,6 +1028,12 @@ class RepositoryUiApplication(UiApplicationPort):
             except ProviderConsentRequiredError as error:
                 raise UiRequestError(
                     "provider consent is required before tutor execution", status_code=403
+                ) from error
+            except JudgementCredentialUnavailableError as error:
+                raise UiRequestError(
+                    "configured judgement credential is unavailable",
+                    status_code=503,
+                    diagnostic_code="judgement_configuration",
                 ) from error
             except ModelAdapterConfigurationError as error:
                 raise UiRequestError(
@@ -1795,13 +1810,18 @@ class RepositoryUiApplication(UiApplicationPort):
                 "reason": reason,
                 "message": _model_check_message(reason),
             }
-        except ModelAdapterConfigurationError:
+        except ModelAdapterConfigurationError as error:
             return {
                 "schema_version": 1,
                 "request_id": request_id,
                 "status": "error",
                 "reason": "configuration",
-                "message": "Configura una chiave API valida per il modello selezionato.",
+                "message": (
+                    "Manca la chiave del servizio di routing (Jev): imposta "
+                    "OPENROUTER_API_KEY nell'ambiente del server."
+                    if isinstance(error, JudgementCredentialUnavailableError)
+                    else "Configura una chiave API valida per il modello selezionato."
+                ),
             }
         except (OSError, RuntimeError, ValueError) as error:
             reason = _model_check_reason(getattr(error, "failure_reason", None))
