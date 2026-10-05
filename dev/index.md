@@ -9,6 +9,8 @@ archive and must not be treated as Cardine's current state.
 
 ## Start here
 
+- [UI/UX redesign phase 1](logs/2026-10-05--cardine--ui-ux-redesign-phase-1--log.md) and [five-phase plan](../specs/ui-ux-redesign/README.md) — two-group rail, one page frame, architecture copy removed, calmer Libreria/Piano/Da approvare; frontend only, full suite green.
+
 - [Closed Jev flashcard scope](logs/2026-10-04--cardine--jev-flashcard-scope--log.md) — ON scope/profile choices replace downstream language scans; canonical evidence, turn binding and HUMAN decisions remain authoritative.
 
 - [Page-load regression budgets](logs/2026-10-04--cardine--page-load-latency--log.md) — browser thresholds pinned to measured real-course desktop/mobile startup and page results; API ceiling and deterministic work guards retained.

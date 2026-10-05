@@ -119,15 +119,12 @@ class _RouteParser(HTMLParser):
         self.route_labels: dict[str, list[str]] = {}
         self.current_route: str | None = None
         self.current_text: list[str] = []
-        self.details_open = False
         self.ids: dict[str, dict[str, str]] = {}
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         values = {key: value or "" for key, value in attrs}
         if values.get("id"):
             self.ids[values["id"]] = values
-        if tag == "details" and "open" in values:
-            self.details_open = True
         if tag in {"button", "a"} and values.get("data-route"):
             self.current_route = values["data-route"]
             self.current_text = []
@@ -289,9 +286,10 @@ def test_navigation_sidebar_is_expanded_and_accessible() -> None:
     parser = _RouteParser()
     parser.feed(page)
 
-    assert parser.details_open
+    # Every destination is always visible: two labelled groups, no disclosure.
+    assert page.count('class="rail-group"') == 2
     assert set(ROUTES).issubset(parser.route_labels)
-    assert any("Nuova domanda" in label for label in parser.route_labels["oggi"])
+    assert any("Nuova chat" in label for label in parser.route_labels["oggi"])
     assert parser.ids["rail"].get("aria-label") == "Navigazione del corso"
     assert parser.ids["navigation"].get("aria-label") == "Sezioni"
     assert '.rail {\n' in css

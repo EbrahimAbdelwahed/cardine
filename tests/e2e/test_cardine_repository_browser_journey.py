@@ -854,7 +854,7 @@ def test_sources_remain_readable_and_keep_canonical_actions_across_viewports(
         browser.evaluate("document.querySelector('[data-route=fonti]').click()")
         browser.wait_for("document.querySelectorAll('.source-row').length === 2")
         browser.wait_for(
-            "document.querySelector('#material-jobs').textContent.includes('Nessuna generazione')"
+            "document.querySelector('#material-jobs').textContent.includes('Nessuna nota ancora')"
         )
         assert browser.evaluate("document.querySelector('.notes-upload').open") is False
         assert browser.evaluate(
@@ -942,7 +942,7 @@ def test_sources_empty_library_is_distinct_from_unavailable_state(tmp_path: Path
         browser.wait_for("Boolean(document.querySelector('.sources-page .empty-state'))")
         assert browser.evaluate("document.querySelectorAll('.source-list').length") == 0
         browser.wait_for(
-            "document.querySelector('#material-jobs').textContent.includes('Nessuna generazione')"
+            "document.querySelector('#material-jobs').textContent.includes('Nessuna nota ancora')"
         )
         browser.call("Network.setBlockedURLs", urls=[f"{url}/api/v1/material-generations"])
         browser.evaluate("document.querySelector('[data-route=fonti]').click()")

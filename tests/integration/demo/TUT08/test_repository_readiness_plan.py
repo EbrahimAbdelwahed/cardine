@@ -133,9 +133,9 @@ def test_browser_plan_uses_server_values_without_date_math() -> None:
         "function renderConflitti(payload)", 1
     )[0]
     assert "new Date(" not in render_plan
-    assert "readiness score" in javascript
-    assert "function sourceRef(value)" in javascript
-    assert 'aria-label="Lavoro aperto oggi"' in javascript
+    # The browser formats the configured date; it never computes a schedule.
+    assert "Data d\u2019esame non impostata" in javascript
+    assert 'aria-label="Da fare oggi"' in javascript
 
 
 def test_session_read_uses_captured_presentations_not_live_view(tmp_path: Path) -> None:
