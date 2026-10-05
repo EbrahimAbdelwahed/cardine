@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import tempfile
 from collections.abc import Mapping
@@ -60,6 +61,8 @@ class _DocumentUiApplication(Protocol):
     ) -> JsonObject: ...
 
     def read_source_document(self, source_id: str, revision_id: str) -> SourceDocumentView: ...
+
+    def read_source_pdf(self, source_id: str, revision_id: str) -> SourceDocumentView: ...
 
 
 DEFAULT_BROWSER_HOST = "127.0.0.1"
@@ -407,6 +410,21 @@ class BrowserSurface:
             raise UiRequestError("authentication required", status_code=401)
         return cast(_DocumentUiApplication, self._ui).read_source_document(source_id, revision_id)
 
+    def api_source_pdf(
+        self,
+        source_id: str,
+        revision_id: str,
+        *,
+        session_token: str | None = None,
+    ) -> SourceDocumentView:
+        """Return one authenticated revision as a printable PDF."""
+
+        if self._private_access is not None and not self._private_access.authenticate(
+            session_token
+        ):
+            raise UiRequestError("authentication required", status_code=401)
+        return cast(_DocumentUiApplication, self._ui).read_source_pdf(source_id, revision_id)
+
 
 class _BrowserServer(ThreadingHTTPServer):
     allow_reuse_address = True
@@ -519,6 +537,24 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
             self._send_json(
                 HTTPStatus.OK,
                 {"status": "ok", "mode": mode, "runtime_id": PREVIEW_RUNTIME_ID},
+            )
+            return
+        source_pdf = _source_document_route(path, suffix="pdf")
+        if source_pdf is not None:
+            try:
+                document = self.server.surface.api_source_pdf(
+                    *source_pdf,
+                    session_token=self._session_token(),
+                )
+            except UiRequestError as error:
+                self.server.surface.diagnostic(path, error.status_code, _diagnostic_category(error))
+                self._send_json(HTTPStatus(error.status_code), _ui_error_payload(error))
+                return
+            self._send(
+                HTTPStatus.OK,
+                document.media_type,
+                document.content,
+                disposition=f'attachment; filename="{_download_name(document.title)}"',
             )
             return
         source_document = _source_document_route(path)
@@ -820,9 +856,12 @@ class _BrowserRequestHandler(BaseHTTPRequestHandler):
         body: bytes,
         *,
         frame_options: str = "DENY",
+        disposition: str | None = None,
     ) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
+        if disposition is not None:
+            self.send_header("Content-Disposition", disposition)
         self.send_header("Content-Length", str(len(body)))
         pending_cookie = getattr(self, "_pending_cookie", None)
         if isinstance(pending_cookie, str):
@@ -1087,7 +1126,7 @@ def _is_json_content_type(value: str | None) -> bool:
     return media_type.strip().lower() == "application/json"
 
 
-def _source_document_route(path: str) -> tuple[str, str] | None:
+def _source_document_route(path: str, *, suffix: str = "content") -> tuple[str, str] | None:
     prefix = "/api/v1/materials/"
     if not path.startswith(prefix):
         return None
@@ -1097,10 +1136,16 @@ def _source_document_route(path: str) -> tuple[str, str] | None:
         or not parts[0]
         or parts[1] != "revisions"
         or not parts[2]
-        or parts[3] != "content"
+        or parts[3] != suffix
     ):
         return None
     return parts[0], parts[2]
+
+
+def _download_name(title: str) -> str:
+    """An ASCII file name for a download header; the title stays in the PDF."""
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", title).strip("-").lower()[:80]
+    return f"{slug or 'note'}.pdf"
 
 
 def _is_private_endpoint(path: str) -> bool:

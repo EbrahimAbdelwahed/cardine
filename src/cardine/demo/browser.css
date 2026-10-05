@@ -1520,6 +1520,29 @@
   .plan-source .lesson-list { padding-inline-start: var(--space-1); }
 
   /* ---- Library ----------------------------------------------------------- */
+  .note-row {
+    display: grid;
+    grid-template-columns: var(--icon-size) minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    transition: background-color var(--duration-fast) var(--ease-out);
+  }
+  .note-row + .note-row { box-shadow: inset 0 1px 0 var(--line); }
+  .note-row:hover { background: var(--surface-hover); }
+  .note-row.is-selected { background: var(--accent-soft); }
+  .note-row__icon { color: var(--accent-text); }
+  .note-row__text { min-width: 0; }
+  .note-row__title { font-family: var(--font-body); font-size: var(--text-base); font-weight: var(--weight-semibold); letter-spacing: 0; line-height: var(--leading-snug); overflow-wrap: anywhere; }
+  .note-row__meta { margin-top: var(--space-1); color: var(--muted); font-size: var(--text-sm); }
+  .note-row__actions { display: flex; align-items: center; gap: var(--space-2); }
+  .note-list + #material-jobs { margin-top: var(--space-2); }
+  a.button { text-decoration: none; }
+  .materials-viewer__header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
+  .materials-viewer__heading { min-width: 0; }
+  .materials-viewer__actions { display: flex; flex: none; gap: var(--space-2); }
+  .materials-viewer__actions:empty { display: none; }
+
   .library {
     display: grid;
     grid-template-columns: minmax(300px, 420px) minmax(0, 1fr);
@@ -1565,7 +1588,6 @@
   .sources-reader-empty h3 { font-family: var(--font-body); font-size: var(--text-lg); font-weight: var(--weight-medium); letter-spacing: 0; }
   .sources-reader-empty p { max-width: var(--measure-tight); color: var(--muted); font-size: var(--text-md); }
   .sources-notes { display: grid; gap: var(--space-3); }
-  .sources-notes > header { display: grid; gap: var(--space-2); }
   .sources-notes #material-jobs { display: grid; gap: var(--space-3); }
   .source-viewer__error { display: grid; gap: var(--space-4); justify-items: start; }
   .checksum { font-family: var(--font-mono); font-size: var(--text-xs); }
@@ -2058,8 +2080,10 @@
 }
 
 /* Source-scoped study notes use the existing library and review surface. */
-.notes-job { min-width: 0; padding: var(--space-5); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); overflow-wrap: anywhere; }
-.notes-job h2 { font-family: var(--font-body); font-weight: var(--weight-semibold); letter-spacing: 0; font-size: var(--text-lg); margin-block: 0 var(--space-3); }
+.notes-job { min-width: 0; padding: var(--space-4) var(--space-5); background: var(--surface); border-radius: var(--radius-md); box-shadow: var(--elevation-1); overflow-wrap: anywhere; }
+.notes-job h2 { font-family: var(--font-body); font-weight: var(--weight-semibold); letter-spacing: 0; font-size: var(--text-base); margin-block: 0 var(--space-2); }
+.notes-job [role=status] { color: var(--ink-soft); font-size: var(--text-md); }
+.notes-job [role=status]:empty { display: none; }
 .notes-job textarea { width: 100%; min-height: 10rem; margin-block: var(--space-3); }
 .notes-progress { display: block; width: 100%; height: var(--space-2); border: 0; border-radius: var(--radius-full); overflow: hidden; background: var(--line); }
 .notes-progress::-webkit-progress-bar { background: var(--line); border-radius: var(--radius-full); }
