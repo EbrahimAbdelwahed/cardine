@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "decision": "ADR-0026--three-second-page-load-budget",
+  "rows": [
+    {
+      "path": "src/cardine/adapters/pageindex/coordinator.py",
+      "sha256": "438629c898aab5c766fcafce726f8c06aa1dd1210334a025b4f14c2c1dcdfa3f"
+    },
+    {
+      "path": "src/cardine/demo/ui_application.py",
+      "sha256": "3a1da7e5da06ebab09c0811bacdcc580c387f4c653ece83b630bdb506f7ef876"
+    },
+    {
+      "path": "src/study_agent/ingestion/events.py",
+      "sha256": "72265fa5f3a5e76931027460cef4fd4a210c545e6368a837d98955ae25c13c7b"
+    }
+  ]
+}

@@ -500,6 +500,10 @@ def _decode_source_revision_event_v1(
     source = decoded.source
     original = _verified_blob(load_blob, source.blob, "source.blob")
     normalized_bytes = _verified_blob(load_blob, source.normalized_blob, "source.normalized_blob")
+    # _verified_blob has just checked these digests against the actual bytes.
+    # Reuse that result for provenance and both historical identity formats.
+    original_sha256 = source.blob.checksum_sha256
+    normalized_sha256 = source.normalized_blob.checksum_sha256
     try:
         normalized_text = normalized_bytes.decode("utf-8", errors="strict")
     except UnicodeDecodeError as error:
@@ -524,9 +528,9 @@ def _decode_source_revision_event_v1(
             provenance = source.conversion_provenance
             if provenance is None:
                 raise ValueError("extracted source lacks conversion provenance")
-            if provenance.pdf_sha256 != sha256(original).hexdigest():
+            if provenance.pdf_sha256 != original_sha256:
                 raise ValueError("PDF provenance does not match original blob")
-            if provenance.markdown_sha256 != sha256(normalized_bytes).hexdigest():
+            if provenance.markdown_sha256 != normalized_sha256:
                 raise ValueError("Markdown provenance does not match normalized blob")
     else:
         raise ValueError("ingested source content origin is unsupported")
@@ -544,7 +548,7 @@ def _decode_source_revision_event_v1(
     if source.created_at != event.occurred_at:
         raise ValueError("source.created_at must equal event.occurred_at")
     expected_revision = revision_id_for(
-        original_sha256=sha256(original).hexdigest(),
+        original_sha256=original_sha256,
         source_id=source.source_id,
         kind=source.kind,
         title=source.title,
@@ -555,7 +559,7 @@ def _decode_source_revision_event_v1(
         max_characters=decoded.chunking.max_characters,
     )
     legacy_revision = legacy_revision_id_for(
-        original_sha256=sha256(original).hexdigest(),
+        original_sha256=original_sha256,
         source_id=source.source_id,
         kind=source.kind,
         normalization_version=source.normalization_version,

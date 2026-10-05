@@ -549,6 +549,10 @@ class RepositoryUiApplication(UiApplicationPort):
                 presentations = ProjectionTutorPresentationView(captured).presentations(
                     self._course_id, self._session_id
                 )
+                pageindex = (
+                    repository.pageindex_summary(self._course_id)
+                    if path == "/api/v1/bootstrap" else {}
+                )
                 return route(
                     snapshot,
                     {
@@ -583,12 +587,9 @@ class RepositoryUiApplication(UiApplicationPort):
                             if path in {"/api/v1/materials", "/api/v1/session"}
                             else ()
                         ),
-                        "pageindex": (
-                            repository.pageindex_summary(self._course_id)
-                            if path == "/api/v1/bootstrap" else {}
-                        ),
+                        "pageindex": pageindex,
                         "indexing": self._indexing_record_payload(
-                            repository, repository.indexing_status()
+                            repository, repository.indexing_status(), pageindex=pageindex,
                         ) if path == "/api/v1/bootstrap" else {},
                         "provider_consent": repository.provider_consent.get(self._course_id),
                         "retired_source_ids": repository.source_lifetime.retired_source_ids(
@@ -1740,9 +1741,11 @@ class RepositoryUiApplication(UiApplicationPort):
         }
 
     def _indexing_record_payload(
-        self, repository: LocalRepository, record: IndexingRecord | None
+        self, repository: LocalRepository, record: IndexingRecord | None,
+        *, pageindex: Mapping[str, object] | None = None,
     ) -> JsonObject:
-        pageindex = repository.pageindex_summary(self._course_id)
+        if pageindex is None:
+            pageindex = repository.pageindex_summary(self._course_id)
         raw_rows = pageindex.get("items", ())
         rows = tuple(
             item
@@ -2444,8 +2447,8 @@ class RepositoryUiApplication(UiApplicationPort):
         raise AssertionError("repository open retry is unreachable")
 
     def _snapshot(self, repository: LocalRepository) -> TutorSnapshotV1:
-        repository.courses.get(self._course_id)
-        repository.sessions.get_session(self._course_id, self._session_id)
+        # The snapshot reader validates both selected identifiers from its
+        # coherent capture; pre-reading them repeats projection work.
         return repository.tutor_snapshots.get(self._course_id, self._session_id)
 
     def _captured_state(self, repository: LocalRepository) -> tuple[Projection, TutorSnapshotV1]:

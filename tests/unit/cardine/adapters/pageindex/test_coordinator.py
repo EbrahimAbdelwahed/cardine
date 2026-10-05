@@ -106,6 +106,31 @@ def test_schema2_persists_one_shared_index_and_cache_identity(tmp_path: Path) ->
     assert payload["document_index"]["fingerprint"] == projection.document_index.fingerprint
 
 
+def test_each_status_read_hashes_original_once_and_revalidates_storage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import cardine.adapters.pageindex.coordinator as module
+
+    revision = _revision()
+    coordinator = PageIndexCoordinator(SQLiteRunStore(tmp_path / "runs.sqlite3"))
+    expected = coordinator.process(revision)
+    original = revision.content.encode()
+    digest = sha256
+    hashes = 0
+
+    def counted(data: bytes = b"") -> object:
+        nonlocal hashes
+        if data == original:
+            hashes += 1
+        return digest(data)
+
+    monkeypatch.setattr(module, "sha256", counted)
+    assert coordinator.load(revision) == expected
+    assert hashes == 1, "status hashed the same immutable source twice"
+    assert coordinator.load(revision) == expected
+    assert hashes == 2, "a later read must still validate its source binding"
+
+
 def test_schema1_ready_cache_is_readable_but_rebuilt_without_legacy_text_mapping(
     tmp_path: Path,
 ) -> None:

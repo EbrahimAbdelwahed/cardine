@@ -79,3 +79,8 @@ Second/final review correction: explicit unpinned lesson names remain factual
 completed topics; only the pinned transport label is omitted. The unpinned
 production-path memory assertion failed before this narrower guard.
 No third semantic review requested.
+
+Merge dependency: integrate PR #25 at e82c7bb so final CI covers all four
+owner-requested open PR outcomes together. Merge #25 before #26; its page-load
+changes leave #26 diff after the dependency lands. Only dev/index.md conflicted;
+preserve both entries. No additional semantic review cycle.
