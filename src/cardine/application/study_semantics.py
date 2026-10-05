@@ -169,17 +169,14 @@ class FlashcardSemanticPreprocessor:
                     return original
                 raise ValueError(f"document_index_unavailable:{projection.status.value}")
             validate_document_index(index, context)
+            canonical_chunks = {chunk.chunk_id: chunk for chunk in record.chunks}
+            if any(canonical_chunks.get(chunk.chunk_id) != chunk for chunk in selected.chunks):
+                raise ValueError("selected chunks are not canonical")
             lesson_key = original.unit_key + ":" + str(record.source.revision_id)
-            candidates = tuple(
-                item
-                for item in candidates_for_canonical_chunks(index, context, record.chunks)
-                if any(
-                    item.span.start_offset == chunk.start_offset
-                    and item.span.end_offset == chunk.end_offset
-                    for chunk in selected.chunks
-                )
-            )
             if self._features.flashcard_semantic_mode is FeatureMode.OFF:
+                candidates = candidates_for_canonical_chunks(
+                    index, context, record.chunks, selected_chunks=selected.chunks
+                )
                 analysis = SemanticLessonAnalysis(
                     lesson_key,
                     index,

@@ -19,7 +19,7 @@ from study_agent.knowledge.document_index import (
     DocumentIndexContext,
     LocatorReconciliationError,
     candidate_nodes,
-    resolve_locator,
+    verified_node_spans,
 )
 
 
@@ -136,6 +136,8 @@ def candidates_for_canonical_chunks(
     index: DocumentIndex,
     context: DocumentIndexContext,
     chunks: tuple[SourceChunk, ...],
+    *,
+    selected_chunks: tuple[SourceChunk, ...] | None = None,
 ) -> tuple[DocumentCandidate, ...]:
     """Classify each existing whole chunk once, using PageIndex navigation only.
 
@@ -145,10 +147,15 @@ def candidates_for_canonical_chunks(
     """
     from study_agent.flashcards.planning import CanonicalSourceSpan
 
-    candidate_nodes(index, context)  # Validates complete coverage and all node spans.
+    spans = verified_node_spans(index, context)
     _validate_canonical_chunks(context, chunks)
+    if selected_chunks is not None:
+        canonical = {chunk.chunk_id: chunk for chunk in chunks}
+        if any(canonical.get(chunk.chunk_id) != chunk for chunk in selected_chunks):
+            raise LocatorReconciliationError("selected chunks are not canonical")
+        selected_ids = {chunk.chunk_id for chunk in selected_chunks}
+        chunks = tuple(chunk for chunk in chunks if chunk.chunk_id in selected_ids)
     by_key = {node.node_key: node for node in index.nodes}
-    spans = {node.node_key: resolve_locator(node.locator, context) for node in index.nodes}
     paths: dict[str, tuple[str, ...]] = {}
     for node in index.nodes:
         path = [node.node_key]
