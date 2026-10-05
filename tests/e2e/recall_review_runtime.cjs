@@ -13,6 +13,7 @@ function fixture() {
  const calls=[];let html='',renders=0,identities=0,refreshes=0;
  const context={SCHEMA_VERSION:1,state,root:{},Set,Object,Number,Boolean,JSON,encodeURIComponent,
   ROUTES:{ripasso:{endpoint:'/api/v1/recall/due',heading:'Ripasso'},oggi:{endpoint:'/api/v1/bootstrap'}},requestId:()=>`key-${++identities}`,
+  page:({body})=>body,
   $:()=>({focus:()=>{}}),setView:(_route,value)=>{html=value;renders++;},
   renderUnavailable:()=>{html='generic unavailable';},renderLoading:()=>{},renderCourse:()=>{},updateCounts:()=>{},updateContinuation:()=>{},renderOggi:()=>{state.route='oggi';},statusLabel:s=>s,
   emptyState:(title,detail)=>`<h2>${title}</h2><p>${detail}</p>`,
@@ -38,14 +39,14 @@ function fixture() {
  assert.deepEqual(JSON.parse(JSON.stringify(f.calls[0].command.payload.review_scope)),{course_id:'course',session_id:'session'});
  f.rate('r1','easy');assert.equal(f.calls.length,1);
  f.rate('r2','hard');f.rate('r3','easy');assert.equal(f.calls.length,1);
- assert.match(f.html,/Salvataggio in corso/);assert.doesNotMatch(f.html,/Nessun ripasso dovuto/);
+ assert.match(f.html,/Salvataggio in corso/);assert.doesNotMatch(f.html,/Nessuna card per oggi/);
  assert.equal(f.state.review.pending.length,3);
  f.calls[0].resolve(f.receipt(12,f.items.slice(1)));await tick();
  assert.equal(f.calls[1].command.expected_sequence,12);assert.equal(f.calls[1].command.payload.rating,'hard');
  f.calls[1].resolve(f.receipt(14,f.items.slice(2)));await tick();
  assert.equal(f.calls[2].command.expected_sequence,14);assert.equal(f.calls[2].command.payload.rating,'easy');
  f.calls[2].resolve(f.receipt(16,[]));await tick();
- assert.match(f.html,/Nessun ripasso dovuto/);assert.equal(f.state.review.pending.length,0);assert.equal(f.refreshes,1);
+ assert.match(f.html,/Nessuna card per oggi/);assert.equal(f.state.review.pending.length,0);assert.equal(f.refreshes,1);
 
  for(const status of [409,503]){
   const f=fixture();f.rate('r1','again');f.rate('r2');

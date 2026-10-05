@@ -8,14 +8,14 @@
      palette and every reference read from it, so a section can never be
      called two different things in two different places. */
   const ROUTES = Object.freeze({
-    oggi: { label: "Nuova domanda", heading: "Oggi", icon: "icon--plus", endpoint: "/api/v1/bootstrap" },
-    sessione: { label: "Chat", heading: "Sessione", icon: "icon--chat-circle", endpoint: "/api/v1/session" },
-    fonti: { label: "Fonti", heading: "Fonti del corso", icon: "icon--book-open", endpoint: "/api/v1/materials" },
-    proposte: { label: "Proposte", heading: "Proposte", icon: "icon--note-pencil", endpoint: "/api/v1/artifacts" },
+    oggi: { label: "Nuova chat", heading: "Oggi", icon: "icon--plus", endpoint: "/api/v1/bootstrap" },
+    sessione: { label: "Chat", heading: "Chat", icon: "icon--chat-circle", endpoint: "/api/v1/session" },
+    fonti: { label: "Libreria", heading: "Libreria", icon: "icon--book-open", endpoint: "/api/v1/materials" },
+    proposte: { label: "Da approvare", heading: "Da approvare", icon: "icon--note-pencil", endpoint: "/api/v1/artifacts" },
     verifiche: { label: "Verifiche", heading: "Verifiche", icon: "icon--exam", endpoint: "/api/v1/assessments" },
-    percorso: { label: "Percorso", heading: "Il tuo percorso", icon: "icon--chart-line-up", endpoint: "/api/v1/student-state" },
+    percorso: { label: "Progressi", heading: "Progressi", icon: "icon--chart-line-up", endpoint: "/api/v1/student-state" },
     ripasso: { label: "Ripasso", heading: "Ripasso", icon: "icon--cards", endpoint: "/api/v1/recall/due" },
-    piano: { label: "Piano", heading: "Piano verso l’esame", icon: "icon--calendar-blank", endpoint: "/api/v1/plan" },
+    piano: { label: "Piano", heading: "Piano d’esame", icon: "icon--calendar-blank", endpoint: "/api/v1/plan" },
     impostazioni: { label: "Impostazioni", heading: "Impostazioni", icon: "icon--gear", endpoint: "/api/v1/settings", private: true },
     login: { label: "Accedi", heading: "Accedi a Cardine", icon: "icon--gear", endpoint: null, private: true },
   });
@@ -23,14 +23,14 @@
   /* A description earns its place by adding something the title does not
      already say. "Fonti · Apri Fonti" is noise, so it does not exist. */
   const ROUTE_DESCRIPTIONS = Object.freeze({
-    oggi: "Apri una nuova conversazione con il tutor",
+    oggi: "Inizia una nuova conversazione con il tutor",
     sessione: "Riprendi la conversazione in corso",
-    fonti: "Materiali del corso, revisioni e provenienza",
-    proposte: "Revisioni generate in attesa di una tua decisione",
+    fonti: "Fonti del corso e note di studio",
+    proposte: "Flashcard e note generate da rivedere",
     verifiche: "Domande da svolgere e valutazioni registrate",
-    percorso: "Argomenti trattati e difficoltà incontrate",
+    percorso: "Argomenti studiati e punti difficili",
     ripasso: "La coda di ripasso dovuta oggi",
-    piano: "Vincoli, obiettivi e lavoro aperto verso l’esame",
+    piano: "Data d’esame, obiettivi e lavoro aperto",
     impostazioni: "Accesso, modello e dati locali",
   });
 
@@ -89,23 +89,17 @@
     private: "area privata",
   });
 
-  /* Internal projection identifiers never reach the screen. Anything the
-     service adds that is not listed here is shown as a generic label
-     instead of leaking its enum name. */
-  const PROJECTION_LABELS = Object.freeze({
-    injected_clock: "orologio del servizio",
-    course: "scheda del corso",
-    study_context: "contesto di studio",
-    configured_date: "data configurata",
-    as_of_date: "data di riferimento",
-    days_remaining: "giorni rimanenti",
-  });
 
   const ARTIFACT_LABELS = Object.freeze({
     flashcard: "Flashcard",
     assessment_item: "Domande di verifica",
     exam_blueprint: "Struttura d’esame",
     study_brief: "Scheda di studio",
+  });
+  const ASSESSMENT_FORMAT_LABELS = Object.freeze({
+    single_choice: "Scelta singola",
+    multiple_choice: "Scelta multipla",
+    free_response: "Risposta aperta",
   });
   const TRANSIENT_TUTOR_ERROR_CODES = Object.freeze(new Set([
     "tutor_rate_limited",
@@ -135,7 +129,7 @@
     loading: false,
     pendingTurn: null,
     navigationVersion: 0,
-    sidebarCollapsed: true,
+    sidebarCollapsed: false,
     auth: { status: "unknown", authenticated: false, mode: "local_repository", csrfToken: "", account: null },
     continuation: null,
     continuationDraft: "",
@@ -151,6 +145,7 @@
     diagnosticTraceId: "",
     sourceViewerVersion: 0,
     lesson: { query: "", candidates: [], pin: null, answer: null },
+    sourceTitles: new Map(),
   };
 
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -237,42 +232,11 @@
     return body.length > keep ? `${body.slice(0, keep)}…` : body;
   }
 
-  function sourceLabel(value) {
-    const source = object(first(object(value), ["source"], value));
-    const projection = text(source.projection);
-    if (!projection) return "";
-    return PROJECTION_LABELS[projection] || "proiezione del corso";
-  }
 
-  function sourceRef(value) {
-    const label = sourceLabel(value);
-    return label ? `<span class="source-ref">fonte: ${esc(label)}</span>` : "";
-  }
 
-  /* Several provenance chips on one line used to be concatenated without a
-     separator, producing an unreadable run-on string. */
-  function sourceRefs(...values) {
-    const labels = [...new Set(values.map(sourceLabel).filter(Boolean))];
-    return labels.length ? `<span class="source-ref">fonti: ${esc(labels.join(", "))}</span>` : "";
-  }
 
-  /* One fact in the aside: a label, an optional value, and its provenance. */
-  function sideItem(label, value, meta = "") {
-    return `<li><span class="side-list__label">${esc(label)}</span>${value ? `<span class="side-list__value">${esc(value)}</span>` : ""}${meta ? `<span class="side-list__meta">${meta}</span>` : ""}</li>`;
-  }
 
-  /* One panel, several groups. Six stacked cards for five short lists made
-     the aside twice as tall as the column it was meant to balance, and a
-     card that only says "nessuno" is not worth a card. */
-  function specGroup(label, rows) {
-    if (!rows) return "";
-    return `<div class="spec-group"><p class="spec-group__label">${esc(label)}</p><ul class="side-list">${rows}</ul></div>`;
-  }
 
-  function specPanel(kicker, title, groups, empty) {
-    const body = groups.filter(Boolean).join("");
-    return `<section class="side-card"><p class="section-kicker">${esc(kicker)}</p><h2 class="side-card__title">${esc(title)}</h2>${body || `<p class="side-card__copy">${esc(empty)}</p>`}</section>`;
-  }
 
   function emptyState(title, copy, kind = "empty", actions = []) {
     const className = kind === "error" ? "error-state" : kind === "unavailable" ? "unavailable-state" : kind === "loading" ? "loading-state" : "empty-state";
@@ -286,6 +250,31 @@
     return `<button class="${className}" type="button" data-route="${esc(route)}">${esc(label)}</button>`;
   }
 
+  /* One frame for every content page: a title, an optional lede and
+     actions, then a single reading column. The service's own rules live in
+     the specs; the student's page carries only the student's work. */
+  function page({ headingId, title, lede = "", actions = "", body = "", className = "" }) {
+    return `<section class="page${className ? ` ${className}` : ""}" aria-labelledby="${esc(headingId)}"><header class="page__header"><div class="page__heading"><h1 class="page__title" id="${esc(headingId)}" tabindex="-1">${esc(title)}</h1>${lede ? `<p class="page__lede">${lede}</p>` : ""}</div>${actions ? `<div class="page__actions">${actions}</div>` : ""}</header>${body}</section>`;
+  }
+
+  function routeHeadingId(route) {
+    return `${route}-route-heading`;
+  }
+
+  /* Titles the student recognises, never an opaque identifier. */
+  function sourceTitle(sourceId) {
+    return text(state.sourceTitles.get(text(sourceId)));
+  }
+
+  const SOURCE_KIND_LABELS = Object.freeze({
+    markdown: "Testo",
+    text: "Testo",
+    pdf: "PDF",
+    audio: "Audio",
+    transcript: "Trascrizione",
+    study_notes: "Note di studio",
+  });
+
   // Named adapters keep the browser integration explicit and easy to audit.
   const aiLoading = (options) => typeof CardineAI.loading === "function" ? CardineAI.loading(options || {}) : "";
   const aiThinking = (options) => typeof CardineAI.thinking === "function" ? CardineAI.thinking(options || {}) : "";
@@ -293,14 +282,7 @@
   const aiApproval = (options) => typeof CardineAI.approval === "function" ? CardineAI.approval(options || {}) : "";
   const aiToolStack = (options) => typeof CardineAI.toolStack === "function" ? CardineAI.toolStack(options || {}) : "";
   const aiToolChips = (options) => typeof CardineAI.toolChips === "function" ? CardineAI.toolChips(options || {}) : "";
-  const aiTaskList = (options) => typeof CardineAI.taskList === "function" ? CardineAI.taskList(options || {}) : "";
   const aiChatPanel = (options) => typeof CardineAI.chatPanel === "function" ? CardineAI.chatPanel(options || {}) : "";
-  const aiRecommendation = (options) => typeof CardineAI.recommendation === "function" ? CardineAI.recommendation(options || {}) : "";
-  const aiContextGrid = (options) => typeof CardineAI.contextGrid === "function" ? CardineAI.contextGrid(options || {}) : "";
-  const aiDiffTable = (options) => typeof CardineAI.diffTable === "function" ? CardineAI.diffTable(options || {}) : "";
-  const aiFilterTable = (options) => typeof CardineAI.filterTable === "function" ? CardineAI.filterTable(options || {}) : "";
-  const aiSidebarSearch = (options) => typeof CardineAI.sidebarSearch === "function" ? CardineAI.sidebarSearch(options || {}) : "";
-  const aiInsightDeck = (options) => typeof CardineAI.insightDeck === "function" ? CardineAI.insightDeck(options || {}) : "";
   const aiCodeBlock = (options) => typeof CardineAI.codeBlock === "function" ? CardineAI.codeBlock(options || {}) : "";
   const aiFineTune = (options) => typeof CardineAI.fineTune === "function" ? CardineAI.fineTune(options || {}) : "";
 
@@ -991,7 +973,7 @@
     const mode = MODE_LABELS[text(first(bootstrap, ["mode"], "local_repository"))] || "repository locale";
     const consent = object(bootstrap.provider_consent);
     const granted = consent.granted === true;
-    patch($("#trust-copy"), `<p>Corso <strong>${esc(text(course.title, "non dichiarato"))}</strong>, sessione <code>${esc(trustSessionId)}</code>. Modalità: <strong>${esc(mode)}</strong>. Il browser riceve dal servizio locale solo i dati consentiti e non apre SQLite, file di corso, runtime del provider o credenziali.</p><section aria-labelledby="provider-consent-heading"><h3 id="provider-consent-heading">Uso di ${esc(activeModelLabel())}</h3><p>Consenso: <strong>${granted ? "concesso" : "non concesso"}</strong>. Nessuna richiesta al provider parte senza consenso.</p><button class="button button--quiet" type="button" data-provider-consent="${granted ? "revoke" : "grant"}">${granted ? "Revoca consenso" : "Concedi consenso"}</button><span class="settings-card__status" data-provider-consent-status role="status"></span></section><ul><li>Le mutazioni usano un identificativo di richiesta e la sequenza osservata (attuale: ${esc(state.highWaterSequence || "—")}).</li><li>Il Piano mostra solo fatti attribuiti e non calcola un punteggio.</li></ul>`);
+    patch($("#trust-copy"), `<p>Corso <strong>${esc(text(course.title, "non dichiarato"))}</strong>, sessione <code>${esc(trustSessionId)}</code>. Modalità: <strong>${esc(mode)}</strong>. I tuoi dati restano nel repository locale del corso; la pagina riceve solo ciò che serve a mostrarli.</p><section aria-labelledby="provider-consent-heading"><h3 id="provider-consent-heading">Uso di ${esc(activeModelLabel())}</h3><p>Consenso: <strong>${granted ? "concesso" : "non concesso"}</strong>. Nessuna richiesta al provider parte senza consenso.</p><button class="button button--quiet" type="button" data-provider-consent="${granted ? "revoke" : "grant"}">${granted ? "Revoca consenso" : "Concedi consenso"}</button><span class="settings-card__status" data-provider-consent-status role="status"></span></section>`);
     const runtime = $("#runtime-label");
     if (runtime) runtime.textContent = `ambiente locale · ${mode}`;
   }
@@ -1423,25 +1405,28 @@
     $$("[data-entry-form] textarea", root).forEach((textarea) => resizeComposer(textarea));
   }
 
-  /* Refreshing the section you are already reading must not blank it. The
-     placeholder is for the first paint only; a refresh marks the existing
-     view busy and leaves the reader's scroll, focus and draft alone. */
   function renderLoading(route) {
     if (state.route === route && root.firstElementChild) {
       root.setAttribute("aria-busy", "true");
       return;
     }
-    const loading = aiLoading({
-      label: `Carico ${ROUTES[route]?.heading || "la sezione"}`,
-      detail: "Sto leggendo lo stato canonico dal servizio locale.",
-    }, emptyState("Caricamento", "Sto leggendo lo stato canonico dal servizio locale.", "loading"));
-    setView(route, `<section class="section-grid"><div class="section-grid__main"><p class="section-kicker">in caricamento</p><h1 class="section-title">${esc(ROUTES[route]?.heading || "Cardine")}</h1><div class="loading-state">${loading}</div></div><aside class="section-grid__side"><div class="skeleton-stack" aria-hidden="true"><span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span></div></aside></section>`);
+    const loading = aiLoading({ label: `Carico ${ROUTES[route]?.heading || "la sezione"}`, detail: "" },
+      emptyState("Caricamento", "Un momento…", "loading"));
+    setView(route, page({
+      headingId: routeHeadingId(route),
+      title: ROUTES[route]?.heading || "Cardine",
+      body: `<div class="loading-state">${loading}</div><div class="skeleton-stack" aria-hidden="true"><span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span></div>`,
+    }));
   }
 
   function renderError(route, error) {
     const message = error && error.message ? error.message : "Il servizio locale non ha risposto.";
     setStatus("error", "La sezione non è disponibile");
-    setView(route, `<section class="section-grid"><div class="section-grid__main"><p class="section-kicker">stato della sezione</p><h1 class="section-title">${esc(ROUTES[route]?.heading || "Cardine")}</h1>${emptyState("Stato non disponibile", message, "error")}<div class="state-actions"><button class="button" type="button" data-retry-route="${esc(route)}">Riprova</button>${button("Torna a oggi", "oggi")}</div></div><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">stato</p><h2 class="side-card__title">Nessun dato è stato perso</h2><p class="side-card__copy">L'ultimo stato canonico resta nel repository: Cardine non lo sostituisce con dati inventati.</p></div></aside></section>`);
+    setView(route, page({
+      headingId: routeHeadingId(route),
+      title: ROUTES[route]?.heading || "Cardine",
+      body: `${emptyState("Non riesco a caricare questa sezione", `${message} I tuoi dati sono al sicuro.`, "error")}<div class="state-actions"><button class="button" type="button" data-retry-route="${esc(route)}">Riprova</button>${button("Torna alla home", "oggi")}</div>`,
+    }));
   }
 
   async function loadBootstrap() {
@@ -1527,7 +1512,11 @@
   }
 
   function renderUnavailable(route) {
-    setView(route, `<section class="section-grid"><section class="section-grid__main"><p class="section-kicker">sezione opzionale</p><h1 class="section-title">${esc(ROUTES[route]?.heading || "Cardine")}</h1>${emptyState("Questa sezione non è ancora attiva", "Il corso collegato non fornisce ancora dati per questa sezione. Tutto il resto continua a funzionare.", "unavailable", [{ label: "Vedi le fonti del corso", route: "fonti", primary: true }, { label: "Torna a Oggi", route: "oggi" }])}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">stato</p><h2 class="side-card__title">Il resto del corso funziona</h2><p class="side-card__copy">Questa sezione è opzionale e non incide sulla sessione principale.</p></div></aside></section>`);
+    setView(route, page({
+      headingId: routeHeadingId(route),
+      title: ROUTES[route]?.heading || "Cardine",
+      body: emptyState("Questa sezione non è ancora attiva", "Il corso non fornisce ancora dati per questa sezione. Il resto del corso funziona normalmente.", "unavailable", [{ label: "Apri la libreria", route: "fonti", primary: true }, { label: "Torna alla home", route: "oggi" }]),
+    }));
   }
 
   function renderOggi(payload) {
@@ -1548,30 +1537,34 @@
     }
     const status = text(first(payload, ["shell_status", "status"], state.bootstrap?.shell_status), "ready");
     const suspended = status === "suspended" || status === "needs_learner_input";
-    const counts = object(payload.counts);
-    const readiness = object(payload.readiness);
-    const pageindex = object(payload.pageindex);
-    const recall = object(readiness.recall);
-    const due = first(counts, ["due_reviews"], first(recall, ["due_count"], 0));
-    const pending = first(counts, ["pending_proposals"], 0);
-    const openWork = Number(due) + Number(pending);
-    const today = openWork > 0
-      ? `<div class="today-strip" aria-label="Lavoro aperto oggi"><button type="button" data-route="ripasso"><strong>${esc(due)}</strong><span>ripassi dovuti</span></button><button type="button" data-route="proposte"><strong>${esc(pending)}</strong><span>proposte</span></button></div>`
-      : `<p class="today-clear">Non hai ripassi o proposte in sospeso. Puoi iniziare con una domanda.</p>`;
-    const taskItems = [
-      { label: `${due} ripassi dovuti`, detail: "Ripassi già programmati dal corso.", status: Number(due) > 0 ? "open" : "clear", status_label: Number(due) > 0 ? "da fare" : "in pari" },
-      { label: `${pending} proposte`, detail: "Revisioni che attendono una decisione esplicita.", status: Number(pending) > 0 ? "open" : "clear", status_label: Number(pending) > 0 ? "da decidere" : "in pari" },
-    ];
-    const insights = [{ title: "Stato della sessione", detail: `La sessione è ${statusLabel(status)}.`, source: "sessione" }];
-    const pageindexStatus = text(pageindex.status, "empty");
-    const pageindexDetail = pageindexStatus === "empty"
-      ? "Nessuna revisione Markdown attiva."
-      : `${text(pageindex.active_revisions, "0")} revisioni Markdown · ${statusLabel(pageindexStatus)}.`;
-    const support = `<details class="chat-home__support"><summary>Panoramica di studio</summary><div class="chat-home__support-grid"><div class="ai-home-card">${aiTaskList({ title: "Lavoro aperto", tasks: taskItems })}</div><div class="ai-home-card">${aiRecommendation({ title: openWork > 0 ? "Un passo alla volta" : "Pronto per una domanda", detail: openWork > 0 ? "Scegli una coda già dichiarata dal corso e continua senza cambiare stato dal browser." : "Scrivi al tutor e mantieni la sessione al centro.", prompt: openWork > 0 ? "Aiutami a scegliere il prossimo ripasso" : "Fammi una domanda di ripasso sulle fonti disponibili", actionLabel: openWork > 0 ? "Chiedimi cosa fare" : "Prepara una domanda" })}</div><div class="ai-home-card">${aiInsightDeck({ title: "Segnali utili", insights })}</div></div><p class="field-note" data-pageindex-status>Struttura delle lezioni: ${esc(pageindexDetail)} Il testo resta ricercabile anche se la struttura è ridotta.</p></details>`;
     const createCourse = state.auth.authenticated
       ? `<button class="chat-home__course-action" type="button" data-open-course-creation>Crea un corso</button>`
       : "";
-    setView("oggi", `<section class="chat-home" aria-labelledby="home-heading"><div class="chat-home__center"><p class="eyebrow">${esc(text(course.title, "corso locale"))}</p><h1 id="home-heading">${suspended ? "Riprendiamo da dove eravamo?" : "Come vuoi studiare oggi?"}</h1>${lessonPinAttachment()}${entryForm("hero-entry", "Scrivi al tutor", "Chiedi qualsiasi cosa sul corso…")}${renderLessonStudy()}${createCourse}${renderChatCourseCreation()}${suspended ? `<button class="resume-chat" type="button" data-route="sessione">Riprendi la sessione in corso</button>` : ""}${today}</div>${support}</section>`);
+    setView("oggi", `<section class="chat-home" aria-labelledby="home-heading"><div class="chat-home__center"><p class="chat-home__course">${esc(text(course.title, "Il tuo corso"))}</p><h1 id="home-heading">${suspended ? "Riprendiamo da dove eravamo?" : "Come vuoi studiare oggi?"}</h1>${lessonPinAttachment()}${entryForm("hero-entry", "Scrivi al tutor", "Chiedi qualsiasi cosa sulle tue fonti…")}${renderLessonStudy()}${suspended ? `<button class="resume-chat" type="button" data-route="sessione">Riprendi la conversazione</button>` : ""}${homeAgenda(payload)}${createCourse}${renderChatCourseCreation()}</div></section>`);
+  }
+
+  /* Today's work as one quiet list: only what actually needs attention,
+     each row a door to the place where that work is done. */
+  function homeAgenda(payload) {
+    const counts = object(payload.counts);
+    const readiness = object(payload.readiness);
+    const exam = object(readiness.exam);
+    const due = Number(first(counts, ["due_reviews"], first(object(readiness.recall), ["due_count"], 0))) || 0;
+    const pending = Number(first(counts, ["pending_proposals"], 0)) || 0;
+    const days = first(exam, ["days_remaining"], null);
+    const rows = [];
+    if (Number.isInteger(days) && days >= 0) {
+      rows.push({ route: "piano", label: days === 0 ? "L’esame è oggi" : `${days} ${days === 1 ? "giorno" : "giorni"} all’esame`, detail: text(exam.date), icon: "icon--calendar-blank" });
+    }
+    if (due > 0) rows.push({ route: "ripasso", label: `${due} card da ripassare`, detail: "Ripasso di oggi", icon: "icon--cards" });
+    if (pending > 0) rows.push({ route: "proposte", label: `${pending} ${pending === 1 ? "proposta da approvare" : "proposte da approvare"}`, detail: "Flashcard e note generate", icon: "icon--note-pencil" });
+    const pageindex = object(payload.pageindex);
+    const pageindexStatus = text(pageindex.status, "empty");
+    const structureNote = ["empty", "ready"].includes(pageindexStatus)
+      ? ""
+      : `<p class="field-note home-agenda__note" data-pageindex-status>Struttura delle lezioni: ${esc(statusLabel(pageindexStatus))}. Il testo resta ricercabile anche se la struttura è ridotta.</p>`;
+    if (!rows.length) return `<p class="home-agenda__clear">Sei in pari. Fai una domanda o apri la <button class="text-button" type="button" data-route="fonti">libreria</button>.</p>${structureNote}`;
+    return `<nav class="home-agenda" aria-label="Da fare oggi"><ul class="home-agenda__list">${rows.map((row) => `<li><button class="home-agenda__item" type="button" data-route="${esc(row.route)}"><span class="icon ${esc(row.icon)}" aria-hidden="true"></span><span class="home-agenda__label">${esc(row.label)}</span><span class="home-agenda__detail">${esc(row.detail)}</span></button></li>`).join("")}</ul></nav>${structureNote}`;
   }
 
   /* The lesson picker is a disclosure, not a second hero: the composer stays
@@ -1586,14 +1579,15 @@
       ? `<ul class="lesson-results">${candidates.map((candidate) => {
         const item = object(candidate);
         const selected = pinnedId && text(item.revision_id) === pinnedId;
-        return `<li class="lesson-results__item"><button class="lesson-results__pick" type="button" data-lesson-select="${esc(text(item.candidate_id))}"${selected ? ' aria-current="true"' : ""}><span class="lesson-results__title">${esc(text(item.section_title, "Lezione"))}</span><span class="lesson-results__meta">${esc(shortId(item.source_id, 12))} · ${esc(text(item.revision_id))}</span></button></li>`;
+        const origin = sourceTitle(item.source_id);
+        return `<li class="lesson-results__item"><button class="lesson-results__pick" type="button" data-lesson-select="${esc(text(item.candidate_id))}"${selected ? ' aria-current="true"' : ""}><span class="lesson-results__title">${esc(text(item.section_title, "Lezione"))}</span>${origin ? `<span class="lesson-results__meta">${esc(origin)}</span>` : ""}</button></li>`;
       }).join("")}</ul>`
       : "";
     const empty = !candidates.length && text(lesson.query)
-      ? `<p class="field-note lesson-study__empty">Nessuna lezione trovata per «${esc(text(lesson.query))}». Prova con il titolo esatto o un argomento della lezione.</p>`
+      ? `<p class="field-note lesson-study__empty">Nessuna lezione trovata per «${esc(text(lesson.query))}». Prova con il titolo della lezione o con un argomento.</p>`
       : "";
     const open = Boolean(candidates.length || pin || text(lesson.query));
-    return `<details class="lesson-study"${open ? " open" : ""}><summary class="lesson-study__summary">Studia una lezione specifica</summary><div class="lesson-study__body"><div class="lesson-study__intro"><p class="section-kicker">selezione esplicita · grounding</p><p class="field-note">La lezione scelta resta allegata alla chat: le domande e le flashcard usano solo quella fonte e falliscono se è cambiata.</p></div><form class="lesson-study__form" data-lesson-search novalidate><div class="field"><label for="lesson-query">Titolo o argomento</label><div class="lesson-study__row"><input id="lesson-query" name="query" type="search" value="${esc(text(lesson.query))}" required maxlength="512" placeholder="es. Lezione 1"><button class="button" type="submit">Cerca</button></div></div></form>${rows}${empty}</div></details>`;
+    return `<details class="lesson-study"${open ? " open" : ""}><summary class="lesson-study__summary">Studia una lezione specifica</summary><div class="lesson-study__body"><p class="field-note">La lezione scelta resta allegata alla chat: le domande e le flashcard usano solo quella fonte.</p><form class="lesson-study__form" data-lesson-search novalidate><div class="field"><label for="lesson-query">Titolo o argomento</label><div class="lesson-study__row"><input id="lesson-query" name="query" type="search" value="${esc(text(lesson.query))}" required maxlength="512" placeholder="es. Lezione 1"><button class="button" type="submit">Cerca</button></div></div></form>${rows}${empty}</div></details>`;
   }
 
   function lessonPin() {
@@ -1606,7 +1600,8 @@
   function lessonPinAttachment() {
     const pin = lessonPin();
     if (!pin) return "";
-    return `<div class="composer-attachment" aria-live="polite"><span class="composer-attachment__label">Fonte allegata</span><span class="composer-attachment__title">${esc(text(pin.section_title, "Lezione"))}</span><span class="composer-attachment__meta">${esc(shortId(pin.source_id, 12))} · ${esc(text(pin.revision_id))}</span><button class="composer-attachment__remove" type="button" data-lesson-unpin aria-label="Rimuovi la fonte allegata" data-tooltip="Rimuovi la fonte allegata">Rimuovi</button></div>`;
+    const origin = sourceTitle(pin.source_id);
+    return `<div class="composer-attachment" aria-live="polite"><span class="composer-attachment__label">Lezione allegata</span><span class="composer-attachment__title">${esc(text(pin.section_title, "Lezione"))}</span>${origin ? `<span class="composer-attachment__meta">${esc(origin)}</span>` : ""}<button class="composer-attachment__remove" type="button" data-lesson-unpin aria-label="Rimuovi la lezione allegata" data-tooltip="Rimuovi la lezione allegata">Rimuovi</button></div>`;
   }
 
   /* A three-step setup shows where you are and lets you go back. The frame
@@ -1802,7 +1797,7 @@
       subtitle: statusLabel(status),
       thread,
       extras: continuationHtml,
-      actions: `${createCourse}${tutorStatus}<button class="text-button" type="button" data-route="fonti">Fonti</button>`,
+      actions: `${createCourse}${tutorStatus}<button class="text-button" type="button" data-route="fonti">Libreria</button>`,
       placeholder: "Rispondi al tutor…",
     }));
     updateContinuation(snapshot);
@@ -1854,53 +1849,35 @@
 
   function renderFonti(payload) {
     const materials = array(payload);
+    state.sourceTitles = new Map(materials.map(object).map((item) => [text(item.source_id), text(first(item, ["title", "name", "label"], ""))]));
     const rows = materials.map((item) => renderSource(item)).join("");
-    const contextCards = materials.slice(0, 6).map((item) => {
-      const source = object(item);
-      const chunks = first(source, ["chunk_count", "chunks", "fragment_count"], null);
-      // Each card says something about its own source instead of repeating
-      // the same sentence word for word next to itself.
-      const fallback = chunks === null
-        ? "Fonte indicizzata: apri la provenienza per leggerne un estratto."
-        : `Fonte indicizzata in ${chunks} ${Number(chunks) === 1 ? "frammento" : "frammenti"}.`;
-      return {
-        title: first(source, ["title", "name", "label"], "Fonte senza titolo"),
-        detail: first(source, ["excerpt", "quote", "description"], fallback),
-        source: `revisione ${first(source, ["revision", "revision_id", "version"], "non dichiarata")}`,
-      };
-    });
-    const recordRows = materials.map((item) => {
-      const source = object(item);
-      return {
-        title: first(source, ["title", "name", "label"], "Fonte senza titolo"),
-        revision: first(source, ["revision", "revision_id", "version"], "non dichiarata"),
-        type: first(source, ["type", "kind", "role"], "materiale"),
-        chunks: first(source, ["chunk_count", "chunks", "fragment_count"], "—"),
-      };
-    });
-    const contextView = aiContextGrid({ title: "Estratti delle fonti", cards: contextCards });
-    // One register, one table. The filter view already contains the records,
-    // so rendering both would nest an identical card inside itself.
-    const registerView = aiFilterTable({
-      title: "Registro delle revisioni",
-      columns: [{ key: "title", label: "Fonte" }, { key: "revision", label: "Revisione" }, { key: "type", label: "Tipo" }, { key: "chunks", label: "Frammenti" }],
-      records: recordRows,
-    });
-    const searchView = aiSidebarSearch({ placeholder: "Cerca in Cardine", shortcut: "/" });
-    const upload = ["local_repository", "private"].includes(text(first(state.bootstrap, ["mode"], "local_repository"))) ? `<details class="notes-upload sources-disclosure"><summary><span class="icon icon--plus" aria-hidden="true"></span>Aggiungi fonte</summary><form data-source-upload class="source-upload-form"><div class="source-upload-form__field"><label for="notes-source-file">PDF, testo o audio</label><input id="notes-source-file" name="file" type="file" accept=".pdf,.txt,.md,.mp3,.wav,.m4a,.mp4,.ogg,.webm,.flac,.aac"></div><div class="source-upload-form__field"><label for="notes-source-title">Titolo</label><input id="notes-source-title" name="title" maxlength="240" placeholder="Un titolo per riconoscere la fonte"></div><div class="source-upload-form__field"><label for="notes-source-text">Oppure incolla la sbobina</label><textarea id="notes-source-text" name="content" rows="4" maxlength="196608"></textarea></div><p class="field-note">Gli audio vengono trascritti con Groq e poi rielaborati in note. Richiede consenso al provider e configurazione del server.</p><button class="button" type="submit">Aggiungi fonte / trascrivi e genera note</button><p data-source-upload-status role="status"></p></form></details>` : "";
+    const canUpload = ["local_repository", "private"].includes(text(first(state.bootstrap, ["mode"], "local_repository")));
+    const upload = canUpload ? `<details class="notes-upload sources-disclosure"><summary><span class="icon icon--plus" aria-hidden="true"></span>Aggiungi fonte</summary><form data-source-upload class="source-upload-form"><div class="source-upload-form__field"><label for="notes-source-file">PDF, testo o audio</label><input id="notes-source-file" name="file" type="file" accept=".pdf,.txt,.md,.mp3,.wav,.m4a,.mp4,.ogg,.webm,.flac,.aac"></div><div class="source-upload-form__field"><label for="notes-source-title">Titolo <span class="field-optional">(facoltativo)</span></label><input id="notes-source-title" name="title" maxlength="240" placeholder="es. Lezione 3 · Emodinamica"></div><div class="source-upload-form__field"><label for="notes-source-text">Oppure incolla il testo</label><textarea id="notes-source-text" name="content" rows="4" maxlength="196608"></textarea></div><p class="field-note">I PDF devono avere testo selezionabile. Gli audio vengono trascritti e poi trasformati in note.</p><div class="state-actions"><button class="button" type="submit">Aggiungi</button></div><p class="field-note" data-source-upload-status role="status"></p></form></details>` : "";
     const catalogue = materials.length
       ? `<ul class="source-list" aria-label="Fonti disponibili">${rows}</ul>`
-      : emptyState("La tua libreria è vuota", "Aggiungi un PDF, una sbobina o una registrazione per iniziare a studiare dalle tue fonti.");
-    const details = materials.length ? `<section class="sources-details" aria-label="Dettagli delle fonti"><details class="ai-fonts-records"><summary>Estratti delle fonti</summary><div class="ai-fonts-context">${contextView}</div></details><details class="ai-fonts-records"><summary>Registro delle revisioni</summary>${registerView}</details></section>` : "";
-    setView("fonti", `<section class="sources-page" aria-labelledby="material-heading"><header class="sources-page__header"><div><p class="section-kicker">libreria del corso</p><h1 class="section-title" id="material-heading">Fonti del corso</h1><p class="section-copy">I tuoi materiali, un documento alla volta.</p></div><div class="ai-fonts-search">${searchView}</div></header><div class="section-grid section-grid--materials sources-workspace"><section class="sources-library" aria-labelledby="sources-library-heading"><header class="sources-library__header"><h2 id="sources-library-heading" tabindex="-1">Libreria</h2><span class="sources-library__count">${materials.length} ${materials.length === 1 ? "fonte" : "fonti"}</span></header>${upload}${catalogue}${details}</section><aside class="section-grid__side materials-pane"><section class="materials-viewer" id="materials-viewer" aria-labelledby="materials-viewer-title"><header class="materials-viewer__header"><div><p class="eyebrow" id="materials-viewer-kind">lettura</p><h2 id="materials-viewer-title" tabindex="-1">Il tuo documento</h2></div></header><div class="source-viewer__content" id="materials-viewer-content"><div class="sources-reader-empty"><span class="icon icon--book-open" aria-hidden="true"></span><h3>Apri una fonte</h3><p>Scegli «Apri fonte» nella libreria per leggere il documento qui.</p></div></div><footer class="materials-viewer__footer">Fonte del corso · sola lettura</footer></section></aside></div><section class="sources-notes" aria-labelledby="sources-notes-heading"><header><h2 id="sources-notes-heading">Note di studio</h2><p class="section-copy">Genera note da una fonte e rivedile qui. Diventano materiali di studio dopo la tua approvazione.</p><details class="ai-fonts-records"><summary>Come funziona la generazione</summary><p class="section-copy">Segmenta la lezione, rielabora i passaggi e li unisce in una sbobina completa. Le note diventano fonti di studio dopo la tua approvazione.</p></details></header><div id="material-jobs" aria-label="Note di studio" aria-live="polite"><p class="field-note" data-material-jobs-status role="status">Caricamento delle generazioni…</p></div></section></section>`);
+      : emptyState("La libreria è vuota", "Aggiungi un PDF, una sbobina o una registrazione per iniziare a studiare dalle tue fonti.");
+    // A refresh of the library (for example when background indexing ends)
+    // puts the same job nodes back instead of flashing a placeholder and
+    // rebuilding progress the reader is watching. The next job refresh
+    // reconciles them as usual.
+    const keptJobs = state.route === "fonti" && $("#material-jobs") ? $$(".notes-job[data-key]", $("#material-jobs")) : [];
+    const body = `<div class="library"><div class="library__index"><section class="sources-library" aria-labelledby="sources-library-heading"><header class="library__section-header"><h2 id="sources-library-heading" tabindex="-1">Fonti</h2><span class="library__count">${materials.length}</span></header>${upload}${catalogue}</section><section class="sources-notes" aria-labelledby="sources-notes-heading"><header class="library__section-header"><h2 id="sources-notes-heading">Note di studio</h2></header><div id="material-jobs" aria-label="Note di studio" aria-live="polite"><p class="field-note" data-material-jobs-status role="status">Caricamento…</p></div></section></div><aside class="materials-pane" aria-label="Lettura"><section class="materials-viewer" id="materials-viewer" aria-labelledby="materials-viewer-title"><header class="materials-viewer__header"><div><p class="eyebrow" id="materials-viewer-kind">Lettura</p><h2 id="materials-viewer-title" tabindex="-1">Nessun documento aperto</h2></div></header><div class="source-viewer__content" id="materials-viewer-content"><div class="sources-reader-empty"><span class="icon icon--book-open" aria-hidden="true"></span><h3>Apri una fonte</h3><p>Scegli «Apri» su una fonte o su una nota per leggerla qui.</p></div></div></section></aside></div>`;
+    setView("fonti", page({
+      headingId: "material-heading",
+      title: "Libreria",
+      lede: "Le fonti del corso e le note di studio generate da esse.",
+      className: "sources-page page--wide",
+      body,
+    }));
+    if (keptJobs.length) $("#material-jobs").replaceChildren(...keptJobs);
   }
 
   function renderSource(item) {
     const source = object(item);
     const title = first(source, ["title", "name", "label"], "Fonte senza titolo");
-    const revision = first(source, ["revision", "revision_id", "version"], "revisione non indicata");
-    const checksum = first(source, ["checksum_sha256", "checksum", "sha256"], "checksum non dichiarato");
-    const type = first(source, ["type", "kind", "role"], "materiale");
+    const revision = first(source, ["revision", "revision_id", "version"], "non indicata");
+    const checksum = first(source, ["checksum_sha256", "checksum", "sha256"], "non dichiarato");
+    const type = text(first(source, ["type", "kind", "role"], "materiale"));
     const chunks = first(source, ["chunk_count", "chunks", "fragment_count"], "—");
     const viewer = object(source.viewer);
     const viewerKind = text(viewer.kind);
@@ -1912,22 +1889,22 @@
         page: null,
       }
       : null;
-    // Opaque identifiers belong in the provenance sheet, not as the loudest
-    // thing in the row: 64 monospaced characters wrapping mid-token used to
-    // outrank the title of the source itself.
+    // Identifiers and checksums live in the details sheet, one click away,
+    // never in the row the student scans to find a lesson.
     const provenance = esc(JSON.stringify({
-      title, revision, checksum, type,
+      title, revision, checksum, type, fragments: String(chunks),
       source_role: first(source, ["source_role", "role"], "non dichiarato"),
       trust_level: first(source, ["trust_level", "trust"], "non dichiarato"),
       excerpt: first(source, ["excerpt", "quote"], ""),
     }));
+    const kindLabel = SOURCE_KIND_LABELS[viewerKind] || SOURCE_KIND_LABELS[type] || "Documento";
     let sourceAction = viewerReference
-      ? `<button class="button button--quiet" type="button" aria-pressed="false" data-source-viewer-mode="page" data-source-viewer='${esc(JSON.stringify({ ...viewerReference, title }))}'>Apri fonte</button>`
-      : `<button class="button button--quiet" type="button" data-provenance='${provenance}'>Provenienza</button>`;
+      ? `<button class="button button--quiet button--sm" type="button" aria-pressed="false" data-source-viewer-mode="page" data-source-viewer='${esc(JSON.stringify({ ...viewerReference, title }))}'>Apri</button>`
+      : "";
     if (source.can_generate_notes && ["local_repository", "private"].includes(text(first(state.bootstrap, ["mode"], "local_repository")))) {
-      sourceAction += `<button class="button button--quiet" type="button" data-generate-notes='${esc(JSON.stringify({source_id: source.source_id, revision_id: source.revision_id}))}'>Genera note di studio</button>`;
+      sourceAction += `<button class="button button--quiet button--sm" type="button" data-generate-notes='${esc(JSON.stringify({source_id: source.source_id, revision_id: source.revision_id}))}'>Genera note</button>`;
     }
-    return `<li class="source-row" data-source-id="${esc(text(source.source_id))}" data-revision-id="${esc(text(source.revision_id))}"><div class="source-row__document"><span class="source-row__icon icon icon--book-open" aria-hidden="true"></span><div><h3 class="source-row__title">${esc(title)}</h3><p class="source-row__meta"><span>${esc(type)}</span><span>${esc(chunks)} ${Number(chunks) === 1 ? "frammento" : "frammenti"}</span></p></div></div><div class="source-row__button">${sourceAction}${viewerReference ? `<button class="source-row__provenance" type="button" data-provenance='${provenance}'>Provenienza</button>` : ""}</div></li>`;
+    return `<li class="source-row" data-source-id="${esc(text(source.source_id))}" data-revision-id="${esc(text(source.revision_id))}"><div class="source-row__document"><span class="source-row__icon icon icon--book-open" aria-hidden="true"></span><div class="source-row__text"><h3 class="source-row__title">${esc(title)}</h3><p class="source-row__meta">${esc(kindLabel)}</p></div></div><div class="source-row__button">${sourceAction}<button class="source-row__provenance" type="button" data-provenance='${provenance}' aria-label="Dettagli di ${esc(title)}">Dettagli</button></div></li>`;
   }
 
   function renderProposte(payload) {
@@ -1935,28 +1912,26 @@
     const isPending = (item) => ["pending", "proposed"].includes(text(first(object(item), ["status", "state"], "pending"), "pending"));
     const pending = proposals.filter(isPending);
     const decided = proposals.filter((item) => !isPending(item));
-    const rows = pending.length ? pending.map(renderProposal).join("") : emptyState("Nessuna proposta da decidere", "Le proposte generate non vengono considerate accettate finché non esiste una decisione esplicita.");
-    const decidedView = decided.length ? `<details class="decided-proposals"><summary>Già decise (${decided.length})</summary><div class="card-list">${decided.map(renderProposal).join("")}</div></details>` : "";
     const bulkCount = pending.filter((item) => object(item).reviewable === true).length;
-    const bulkView = bulkCount ? `<form data-artifact-bulk novalidate><p class="field-note">Seleziona una o più flashcard e assegna a ciascuna una decisione. L'invio è un'unica operazione atomica.</p><button class="button button--quiet" type="submit">Applica decisioni selezionate (<span data-bulk-count>${bulkCount}</span> disponibili)</button></form>` : "";
-    const diffRows = pending.slice(0, 12).map((item) => {
-      const proposal = object(item);
-      const status = text(first(proposal, ["status", "state"], "pending"), "pending");
-      const revisionId = first(proposal, ["revision_id", "id"], "non dichiarata");
-      return { label: first(proposal, ["kind", "origin"], "Proposta di artefatto"), before: "generata", after: `${status} · revisione ${revisionId}` };
-    });
-    const diffView = aiDiffTable({ title: "Confronto delle proposte", rows: diffRows, status: proposals.length ? "ready" : "neutral" });
-    const approvalView = aiApproval({ title: "Decidi con calma", detail: "La decisione canonica resta nei pulsanti della singola proposta; questo follow-up serve solo a chiedere chiarimenti.", choices: [{ label: "Spiegami cosa cambia", action: "spiega proposta", prompt: "Spiegami cosa cambia nella proposta corrente" }] });
-    const pendingCount = pending.length;
-    const recommendationView = pendingCount ? aiRecommendation({ title: "Rivedi una proposta", detail: `${pendingCount} proposte attendono una decisione esplicita.`, prompt: "Aiutami a rivedere una proposta", actionLabel: "Chiedimi un riepilogo" }) : "";
-    setView("proposte", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="proposal-heading"><p class="section-kicker">proposte · decisione tua</p><h1 class="section-title" id="proposal-heading">Proposte</h1><p class="section-copy">Generato non significa approvato. Ogni decisione è legata a revisione, sequenza e request ID.</p>${bulkView}<div class="card-list">${rows}</div>${decidedView}<div class="ai-proposals-diff">${diffView}</div>${approvalView}${recommendationView}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">regola di stato</p><h2 class="side-card__title">Decisioni esplicite</h2><p class="side-card__copy">Puoi decidere singolarmente oppure inviare una selezione in un'unica operazione atomica.</p></div></aside></section>`);
+    const rows = pending.length
+      ? pending.map((item) => renderProposal(item, bulkCount > 1)).join("")
+      : emptyState("Niente da approvare", "Quando il tutor genera flashcard o note, le trovi qui prima che entrino nel tuo studio.");
+    const decidedView = decided.length ? `<details class="decided-proposals"><summary>Già decise (${decided.length})</summary><div class="card-list">${decided.map((item) => renderProposal(item)).join("")}</div></details>` : "";
+    const bulkView = bulkCount > 1 ? `<form class="bulk-decisions" data-artifact-bulk novalidate><p class="field-note">Seleziona più flashcard e applica le decisioni insieme, in un'unica operazione atomica.</p><button class="button button--quiet" type="submit">Applica alle selezionate (<span data-bulk-count>${bulkCount}</span> disponibili)</button></form>` : "";
+    setView("proposte", page({
+      headingId: "proposal-heading",
+      title: "Da approvare",
+      lede: "Ciò che il tutor genera entra nel tuo studio solo dopo la tua approvazione.",
+      body: `${bulkView}<div class="card-list">${rows}</div>${decidedView}`,
+    }));
   }
 
-  function renderProposal(item) {
+  function renderProposal(item, bulk = false) {
     const proposal = object(item);
     const revisionId = first(proposal, ["revision_id", "id"], "");
     const status = text(first(proposal, ["status", "state"], "pending"), "pending");
-    const title = first(proposal, ["kind", "origin"], "Proposta di artefatto");
+    const kind = text(first(proposal, ["kind", "origin"], ""));
+    const title = ARTIFACT_LABELS[kind] || "Proposta";
     const provenance = object(first(proposal, ["provenance"], {}));
     const commitments = array(first(provenance, ["source_commitments"], []));
     const pending = status === "proposed" || status === "pending";
@@ -1964,27 +1939,33 @@
     const reviewable = text(review.status, "unavailable") === "ready" && proposal.kind === "flashcard";
     const reviewContent = reviewable
       ? `<div class="flashcard-review"><p class="flashcard-review__prompt">${esc(text(review.prompt))}</p>${array(review.answer_blocks).map((block) => { const value = object(block); const points = array(value.key_points); return `<section class="flashcard-review__answer"><h3>${esc(text(value.label))}</h3><p>${esc(text(value.text))}</p>${points.length ? `<ul>${points.map((point) => `<li>${esc(text(point))}</li>`).join("")}</ul>` : ""}</section>`; }).join("")}</div>`
-      : proposal.kind === "flashcard" ? `<p class="card__meta">Contenuto non disponibile per la revisione; decisione e ripasso restano disabilitati.</p>` : "";
-    const bulkControl = pending && reviewable && revisionId
-      ? `<label class="card__meta"><input type="checkbox" data-bulk-revision="${esc(revisionId)}"> Seleziona per decisione atomica <select data-bulk-decision="${esc(revisionId)}" aria-label="Decisione per ${esc(revisionId)}"><option value="accepted">Accetta</option><option value="rejected">Rifiuta</option></select></label>`
+      : proposal.kind === "flashcard" ? `<p class="card__meta">Il contenuto di questa flashcard non è leggibile, quindi non può essere approvata.</p>` : "";
+    const bulkControl = bulk && pending && reviewable && revisionId
+      ? `<label class="bulk-pick"><input type="checkbox" data-bulk-revision="${esc(revisionId)}"> Seleziona <select data-bulk-decision="${esc(revisionId)}" aria-label="Decisione per questa flashcard"><option value="accepted">Accetta</option><option value="rejected">Rifiuta</option></select></label>`
       : "";
     const enrollmentStatus = text(first(proposal, ["enrollment_status"], ""), "");
     const enrollment = status === "accepted" && reviewable && revisionId
       ? enrollmentStatus === "not_enrolled"
-        ? `<button class="button button--quiet" type="button" data-command="enroll" data-revision-id="${esc(revisionId)}">Attiva ripasso</button>`
+        ? `<button class="button button--quiet" type="button" data-command="enroll" data-revision-id="${esc(revisionId)}">Aggiungi al ripasso</button>`
         : enrollmentStatus && enrollmentStatus !== "enrolled"
-          ? `<p class="card__meta">Ripasso: ${esc(enrollmentStatus)}. Puoi riprovare quando il servizio è disponibile.</p>`
-          : enrollmentStatus === "enrolled" ? `<p class="card__meta">Ripasso attivo · la card entrerà nella coda quando sarà dovuta.</p>` : ""
+          ? `<p class="card__meta">Ripasso non attivato (${esc(enrollmentStatus)}). Riprova più tardi.</p>`
+          : enrollmentStatus === "enrolled" ? `<p class="card__meta">Nel ripasso: comparirà quando sarà il momento di rivederla.</p>` : ""
       : "";
-    const actions = pending && reviewable && revisionId ? `<div class="card__actions"><button class="decision-button" type="button" data-command="artifact" data-decision="accepted" data-revision-id="${esc(revisionId)}">Accetta</button><button class="decision-button decision-button--reject" type="button" data-command="artifact" data-decision="rejected" data-revision-id="${esc(revisionId)}">Rifiuta</button></div>` : pending && !reviewable ? "" : pending ? `<p class="card__meta">Decisione non disponibile: manca l’identificativo della revisione.</p>` : "";
+    const actions = pending && reviewable && revisionId ? `<div class="card__actions"><button class="decision-button" type="button" data-command="artifact" data-decision="accepted" data-revision-id="${esc(revisionId)}">Accetta</button><button class="decision-button decision-button--reject" type="button" data-command="artifact" data-decision="rejected" data-revision-id="${esc(revisionId)}">Rifiuta</button>${bulkControl}</div>` : pending && !reviewable ? "" : pending ? `<p class="card__meta">Decisione non disponibile per questa proposta.</p>` : "";
     const enrollmentActions = enrollment ? `<div class="card__actions">${enrollment}</div>` : "";
-    return `<article class="card card--strong"><div class="card__header"><h2 class="card__title">${esc(title)}</h2>${pill(status)}</div><p class="card__body">Revisione ${esc(revisionId || "non dichiarata")} · ${esc(first(proposal, ["session_id"], "sessione non dichiarata"))}</p><p class="card__meta">${esc(commitments.length)} impegni di fonte</p>${reviewContent}${bulkControl}${actions}${enrollmentActions}</article>`;
+    const details = esc(JSON.stringify({ title, revision: revisionId || "non dichiarata", session: first(proposal, ["session_id"], "non dichiarata"), source_commitments: String(commitments.length) }));
+    return `<article class="card proposal-card"><div class="card__header"><h2 class="card__title">${esc(title)}</h2><div class="card__header-meta">${pill(status)}<button class="text-button" type="button" data-provenance='${details}'>Dettagli</button></div></div>${reviewContent}${actions}${enrollmentActions}</article>`;
   }
 
   function renderVerifiche(payload) {
     const assessments = array(payload);
-    const rows = assessments.length ? assessments.map(renderAssessment).join("") : emptyState("Nessuna verifica disponibile", "Il servizio assessment non ha restituito presentazioni per questa sessione.");
-    setView("verifiche", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="assessment-heading"><p class="section-kicker">verifiche · tentativo prima del voto</p><h1 class="section-title" id="assessment-heading">Verifiche</h1><p class="section-copy">Una risposta viene registrata prima della valutazione. Le fonti possono restare nascoste fino alla consegna.</p><div class="card-list">${rows}</div></section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">stato</p><h2 class="side-card__title">Grade separato dal tentativo</h2><p class="side-card__copy">Il browser non crea voti e non corregge risposte: invia solo comandi al servizio assessment.</p></div></aside></section>`);
+    const rows = assessments.length ? assessments.map(renderAssessment).join("") : emptyState("Nessuna verifica", "Le domande di verifica approvate compariranno qui.");
+    setView("verifiche", page({
+      headingId: "assessment-heading",
+      title: "Verifiche",
+      lede: "Rispondi prima, poi chiedi la valutazione.",
+      body: `<div class="card-list">${rows}</div>`,
+    }));
   }
 
   function renderAssessment(item) {
@@ -2035,7 +2016,7 @@
       : !presentationId && revisionId
         ? `<div class="card__actions"><button class="button" type="button" data-command="assessment-present" data-revision-id="${esc(revisionId)}">Presenta verifica</button></div>`
         : !presentationId ? `<p class="card__meta">Azioni non disponibili: manca l’identificativo della presentazione.</p>` : "";
-    return `<article class="assessment-card"><div class="card__header"><p class="section-kicker">${esc(format)}</p>${pill(status)}</div><h2 class="assessment-card__prompt">${esc(question)}</h2>${freeControl}<fieldset class="choice-fieldset"${free || !presentationId || attemptId ? " hidden" : ""}><legend class="visually-hidden">Scegli una risposta</legend><ol class="choice-list">${choices}</ol></fieldset>${grade ? `<p class="assessment-feedback">${esc(typeof grade === "string" ? grade : first(object(grade), ["message", "summary", "label"], "Esito disponibile."))}</p>` : ""}${lifecycleHistory}${attemptAction}</article>`;
+    return `<article class="assessment-card"><div class="card__header"><p class="section-kicker">${esc(ASSESSMENT_FORMAT_LABELS[format] || "Domanda")}</p>${pill(status)}</div><h2 class="assessment-card__prompt">${esc(question)}</h2>${freeControl}<fieldset class="choice-fieldset"${free || !presentationId || attemptId ? " hidden" : ""}><legend class="visually-hidden">Scegli una risposta</legend><ol class="choice-list">${choices}</ol></fieldset>${grade ? `<p class="assessment-feedback">${esc(typeof grade === "string" ? grade : first(object(grade), ["message", "summary", "label"], "Esito disponibile."))}</p>` : ""}${lifecycleHistory}${attemptAction}</article>`;
   }
 
   document.addEventListener("submit", (event) => {
@@ -2055,14 +2036,24 @@
   });
 
   function renderStudentState(payload) {
-    const labels = { topic_covered: "Argomento trattato", learner_signal: "Osservazione", assessment_activity: "Verifica", context_recorded: "Contesto dichiarato" };
-    const writers = { student: "tu", tutor_agent: "tutor", host: "attività di studio" };
+    const labels = { topic_covered: "Argomento studiato", learner_signal: "Punto difficile", assessment_activity: "Verifica", context_recorded: "Contesto" };
+    const writers = { student: "tu", tutor_agent: "tutor", host: "Cardine" };
     const entries = array(payload.entries);
-    const rows = entries.map((entry) => {
-      const item = object(entry);
-      return `<article class="card"><p class="section-kicker">${esc(labels[item.kind] || item.kind)} · ${esc(writers[item.recorded_by] || item.recorded_by)}</p><h2>${esc(item.topic)}</h2>${item.summary ? `<p>${esc(item.summary)}</p>` : ""}<p class="card__meta">${esc(item.occurred_at)}</p></article>`;
-    }).join("") || emptyState("Il percorso è ancora vuoto", "Qui ritroverai gli argomenti trattati e le difficoltà incontrate.");
-    setView("percorso", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="student-state-heading"><h1 class="section-title" id="student-state-heading">Il tuo percorso</h1><p class="section-copy">Una cronologia delle tue attività e osservazioni di studio.</p>${rows}${payload.has_more ? `<p>Mostrate le ultime ${entries.length} attività su ${esc(payload.total_entries)}.</p><button class="button button--quiet" type="button" data-student-state-before="${esc(payload.next_cursor)}">Attività precedenti</button>` : ""}</section><aside class="section-grid__side"><form data-student-state-form class="side-card"><h2>Aggiungi un'osservazione</h2><label>Tipo<select name="kind"><option value="learner_signal">Difficoltà incontrata</option><option value="topic_covered">Argomento trattato</option></select></label><label>Argomento<input name="topic" maxlength="120" required></label><label>Dettaglio<textarea name="summary" maxlength="500" rows="3"></textarea></label><button class="button" type="submit">Aggiungi</button></form><button class="button button--quiet" type="button" data-command="student-state-import">Importa la cronologia precedente</button></aside></section>`);
+    const rows = entries.length
+      ? `<ol class="journal">${entries.map((entry) => {
+        const item = object(entry);
+        return `<li class="journal__entry"><p class="journal__meta">${esc(labels[item.kind] || "Attività")} · ${esc(writers[item.recorded_by] || "Cardine")} · <time>${esc(formatDate(text(item.occurred_at).slice(0, 10)))}</time></p><p class="journal__topic">${esc(item.topic)}</p>${item.summary ? `<p class="journal__summary">${esc(item.summary)}</p>` : ""}</li>`;
+      }).join("")}</ol>`
+      : emptyState("Ancora nessuna attività", "Qui ritroverai gli argomenti studiati e i punti che ti sono sembrati difficili.");
+    const more = payload.has_more ? `<div class="state-actions"><button class="button button--quiet" type="button" data-student-state-before="${esc(payload.next_cursor)}">Mostra attività precedenti</button><span class="field-note">${entries.length} di ${esc(payload.total_entries)}</span></div>` : "";
+    const form = `<details class="journal-add"><summary>Aggiungi una nota</summary><form data-student-state-form class="journal-add__form"><label>Tipo<select name="kind"><option value="learner_signal">Punto difficile</option><option value="topic_covered">Argomento studiato</option></select></label><label>Argomento<input name="topic" maxlength="120" required></label><label>Dettaglio <span class="field-optional">(facoltativo)</span><textarea name="summary" maxlength="500" rows="3"></textarea></label><div class="state-actions"><button class="button" type="submit">Aggiungi</button></div></form></details>`;
+    setView("percorso", page({
+      headingId: "student-state-heading",
+      title: "Progressi",
+      lede: "Cosa hai studiato e dove hai trovato difficoltà.",
+      actions: `<button class="button button--quiet" type="button" data-command="student-state-import">Importa cronologia</button>`,
+      body: `${form}${rows}${more}`,
+    }));
   }
 
   function reviewScope() {
@@ -2187,73 +2178,82 @@
     const availabilityStatus = text(first(payload, ["status"], "empty"), "empty");
     const due = visibleReviewItems(payload);
     const review = state.review;
-    const pendingCopy = review.pending.length ? `<p role="status" data-review-pending>${review.pending.length} ${review.pending.length === 1 ? "valutazione in attesa di salvataggio" : "valutazioni in attesa di salvataggio"}.</p>` : "";
+    const pendingCopy = review.pending.length ? `<p class="field-note" role="status" data-review-pending>${review.pending.length} ${review.pending.length === 1 ? "valutazione in salvataggio" : "valutazioni in salvataggio"}…</p>` : "";
     const rejected = review.error && [400, 404, 409, 422].includes(review.error.status) && !review.error.payload?.commandCommitted;
-    const recovery = review.error ? `<div role="alert" data-review-error><p>Il salvataggio non è confermato. Le valutazioni successive sono in pausa.</p><div class="state-actions"><button class="button" type="button" data-review-retry>Riprova lo stesso salvataggio</button>${rejected ? `<button class="button button--quiet" type="button" data-review-discard>Annulla la valutazione rifiutata e continua</button>` : ""}</div></div>` : "";
+    const recovery = review.error ? `<div class="review-recovery" role="alert" data-review-error><p>Il salvataggio non è confermato. Le valutazioni successive sono in pausa.</p><div class="state-actions"><button class="button" type="button" data-review-retry>Riprova lo stesso salvataggio</button>${rejected ? `<button class="button button--quiet" type="button" data-review-discard>Annulla la valutazione rifiutata e continua</button>` : ""}</div></div>` : "";
+    const frame = (body) => setView("ripasso", page({ headingId: "review-heading", title: "Ripasso", className: "page--review", body }));
     if (availabilityStatus === "not_configured" || availabilityStatus === "unavailable") {
-      setView("ripasso", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="review-heading"><p class="section-kicker">ripasso · coda del giorno</p><h1 class="section-title" id="review-heading">Ripasso</h1>${emptyState("Ripasso non disponibile", first(payload, ["message"], "Il ripasso programmato non è configurato."), "unavailable")}${pendingCopy}${recovery}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">stato</p><h2 class="side-card__title">Configurazione esplicita</h2><p class="side-card__copy">Nessuna data viene calcolata nel browser; configura un adapter scheduler e riprova.</p></div></aside></section>`);
+      frame(`${emptyState("Ripasso non disponibile", first(payload, ["message"], "Il ripasso programmato non è configurato."), "unavailable")}${pendingCopy}${recovery}`);
       return;
     }
     if (!due.length) {
-      setView("ripasso", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="review-heading"><p class="section-kicker">ripasso · coda del giorno</p><h1 class="section-title" id="review-heading">Ripasso</h1>${review.pending.length ? emptyState("Salvataggio in corso", "La coda è terminata; attendo la conferma delle valutazioni.") : emptyState("Nessun ripasso dovuto", "Non ci sono card da ripassare oggi.")}${pendingCopy}${recovery}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">recall</p><h2 class="side-card__title">Stato vuoto</h2><p class="side-card__copy">Un'assenza di card non viene sostituita da una coda inventata.</p></div></aside></section>`);
+      frame(`${review.pending.length ? emptyState("Salvataggio in corso", "Sto salvando le ultime valutazioni.") : emptyState("Nessuna card per oggi", "Hai finito il ripasso di oggi. Le prossime card compariranno quando sarà il momento.", "empty", [{ label: "Torna alla home", route: "oggi" }])}${pendingCopy}${recovery}`);
       return;
     }
     const firstCard = object(due[0]);
     const revisionId = first(firstCard, ["revision_id", "id"], "");
     const revealed = review.error || state.revealedReviews[revisionId] === true;
-    const position = `1 / ${due.length}`;
     const ticks = due.slice(0, 24).map((_, index) => `<span class="review-progress__tick ${index === 0 ? "is-current" : ""}"></span>`).join("");
     const front = first(firstCard, ["front", "question", "prompt"], "Contenuto della card non disponibile.");
-    const back = first(firstCard, ["back", "answer", "response"], "Risposta non disponibile fino alla rivelazione.");
+    const back = first(firstCard, ["back", "answer", "response"], "Risposta non disponibile.");
     const citation = first(firstCard, ["citation", "provenance", "source"], null);
-    const reviewActions = revealed && revisionId ? `<div class="rating-list">${[["again", "Ancora"], ["hard", "Difficile"], ["good", "Bene"], ["easy", "Facile"]].map(([value, label]) => `<button class="rating-button" type="button" data-command="review" data-revision-id="${esc(revisionId)}" data-rating="${value}"${review.error ? " disabled" : ""}>${label}<span class="rating-button__next">registra decisione</span></button>`).join("")}</div>` : revealed ? emptyState("Decisione non disponibile", "Manca l’identificativo della revisione.", "unavailable") : "";
-    setView("ripasso", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="review-heading"><p class="section-kicker">ripasso · coda del giorno</p><h1 class="section-title" id="review-heading">Ripasso</h1><div class="review-card"><div class="review-progress"><span>${esc(position)}</span><span class="review-progress__bar">${ticks}</span></div><div class="review-card__front">${esc(front)}</div>${revealed ? `<div class="review-card__back">${esc(back)}</div>` : revisionId ? `<button class="button" type="button" data-reveal-review="${esc(revisionId)}">Mostra risposta</button>` : emptyState("Card senza identificativo", "La rivelazione è sospesa finché il servizio non restituisce la revisione.", "unavailable")}${citation ? `<button class="provenance-chip" type="button" data-provenance='${esc(JSON.stringify(citation))}'>fonte · ${esc(first(object(citation), ["locator", "title"], typeof citation === "string" ? citation : "metadati"))}</button>` : ""}${reviewActions}${pendingCopy}${recovery}</div></section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">stato</p><h2 class="side-card__title">${esc(text(firstCard.status, "due"))}</h2><p class="side-card__copy">La stessa coda viene usata su desktop e mobile. Il browser non calcola la prossima data.</p></div></aside></section>`);
+    const reviewActions = revealed && revisionId ? `<div class="rating-list" role="group" aria-label="Quanto ricordavi?">${[["again", "Ancora"], ["hard", "Difficile"], ["good", "Bene"], ["easy", "Facile"]].map(([value, label]) => `<button class="rating-button" type="button" data-command="review" data-revision-id="${esc(revisionId)}" data-rating="${value}"${review.error ? " disabled" : ""}>${label}</button>`).join("")}</div>` : revealed ? emptyState("Valutazione non disponibile", "Questa card non può essere valutata.", "unavailable") : "";
+    frame(`<div class="review-card"><div class="review-progress"><span>${due.length === 1 ? "Ultima card" : `${due.length} card rimaste`}</span><span class="review-progress__bar" aria-hidden="true">${ticks}</span></div><div class="review-card__front">${esc(front)}</div>${revealed ? `<div class="review-card__back">${esc(back)}</div>` : revisionId ? `<button class="button review-card__reveal" type="button" data-reveal-review="${esc(revisionId)}">Mostra risposta</button>` : emptyState("Card non disponibile", "Questa card non può essere mostrata ora.", "unavailable")}${citation ? `<button class="provenance-chip" type="button" data-provenance='${esc(JSON.stringify(citation))}'>Fonte · ${esc(first(object(citation), ["locator", "title"], typeof citation === "string" ? citation : "dettagli"))}</button>` : ""}${reviewActions}${pendingCopy}${recovery}</div>`);
   }
 
   function renderPlan(payload) {
     const plan = object(payload);
     const readiness = object(first(plan, ["readiness"], plan));
     if (text(plan.status, "ready") === "unavailable") {
-      setView("piano", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="plan-heading"><p class="section-kicker">progresso · piano</p><h1 class="section-title" id="plan-heading">Piano verso l'esame</h1>${emptyState("Piano non disponibile", first(plan, ["message"], "Non esiste un owner canonico per questa composizione."), "unavailable")}</section><aside class="section-grid__side"><div class="side-card"><p class="section-kicker">stato</p><h2 class="side-card__title">Il resto del corso funziona</h2><p class="side-card__copy">Il piano richiede un owner canonico; le altre sezioni restano disponibili.</p></div></aside></section>`);
+      setView("piano", page({
+        headingId: "plan-heading",
+        title: "Piano d’esame",
+        body: emptyState("Piano non disponibile", first(plan, ["message"], "Questo corso non ha ancora un piano."), "unavailable"),
+      }));
       return;
     }
     const exam = object(first(readiness, ["exam"], plan));
-    const dateValue = first(exam, ["date", "exam_date"], first(readiness, ["exam_date"], "Data non configurata"));
+    const dateValue = text(first(exam, ["date", "exam_date"], first(readiness, ["exam_date"], "")));
     const days = first(exam, ["days_remaining"], first(readiness, ["days_remaining"], null));
-    const constraints = array(readiness.constraints);
-    const blueprints = array(readiness.blueprints);
-    const counts = array(readiness.artifact_counts);
     const recall = object(readiness.recall);
-    /* The declared parameters of the course: read-only facts with their own
-       provenance. They belong beside the page, not in the middle of it. */
-    const goalRows = array(readiness.learning_goals).map((item) =>
-      sideItem(text(first(object(item), ["value"], item)), "", sourceRef(item))).join("");
-    const styleRows = array(readiness.assessment_styles).map((item) =>
-      sideItem(text(first(object(item), ["value"], item)), "", sourceRef(item))).join("");
-    const constraintRows = constraints.map((item) => {
-      const row = object(item);
-      return sideItem(text(row.kind, "vincolo"), text(row.value, "non dichiarato"), `${pill(text(row.status, "active"))}${sourceRef(row)}`);
-    }).join("");
-    const blueprintRows = blueprints.map((item) => {
-      const row = object(item);
-      const observations = [...array(row.observed_topics), ...array(row.observed_formats)].map((value) => text(first(object(value), ["value"], ""))).filter(Boolean);
-      const limitations = array(row.limitations).map((value) => text(value)).filter(Boolean);
-      const detail = [observations.join(", "), limitations.length ? `limiti: ${limitations.join(", ")}` : ""].filter(Boolean).join(" · ");
-      return sideItem(`Campione di ${text(row.sample_size, "—")}`, detail, sourceRef(row));
-    }).join("");
-    // Four kinds all reading "0 proposte · 0 accettati" is noise, not
-    // information: only kinds the course actually produced are listed.
-    const countRows = counts.filter((item) => {
-      const row = object(item);
-      return Number(text(row.pending, "0")) > 0 || Number(text(row.accepted, "0")) > 0;
-    }).map((item) => {
-      const row = object(item);
-      const kind = text(row.kind, "artefatto");
-      return sideItem(ARTIFACT_LABELS[kind] || kind, `${text(row.pending, "0")} proposte · ${text(row.accepted, "0")} accettati`, sourceRef(row));
-    }).join("");
-    const examSources = object(exam.sources);
-    const recallCopy = recall.available ? `${text(recall.due_count, "0")} ripassi dovuti.` : "Ripasso non configurato.";
-    setView("piano", `<section class="section-grid"><section class="section-grid__main" aria-labelledby="plan-heading"><p class="section-kicker">fatti attribuiti · nessuna agenda</p><h1 class="section-title" id="plan-heading">Piano verso l'esame</h1><div class="fact-grid"><div class="side-card"><p class="section-kicker">data configurata</p><h2 class="side-card__title">${esc(text(dateValue, "Data non configurata"))}</h2><p class="side-card__copy">Aggiornata al ${esc(text(first(readiness, ["as_of_date"], "—")))}</p>${sourceRef(examSources.configured_date)}</div><div class="side-card"><p class="section-kicker">giorni di calendario</p><h2 class="side-card__title">${esc(days === null || days === undefined ? "non disponibile" : String(days))}</h2><p class="side-card__copy">Valore derivato dal servizio dalla data configurata.</p>${sourceRefs(object(examSources.days_remaining).as_of_date, object(examSources.days_remaining).configured_date)}</div></div><p class="section-copy">${recallCopy} ${sourceRef(recall)}</p></section><aside class="section-grid__side" aria-label="Come è configurato il corso">${specPanel("come è configurato", "Il corso in breve", [specGroup("Obiettivi", goalRows), specGroup("Come verrai valutato", styleRows), specGroup("I tuoi vincoli", constraintRows), specGroup("Osservazioni sul formato d’esame", blueprintRows), specGroup("Materiali generati", countRows)], "Questo corso non ha ancora obiettivi, vincoli o materiali configurati.")}<section class="side-card"><p class="section-kicker">limite esplicito</p><h2 class="side-card__title">Nessun punteggio o priorità</h2><p class="side-card__copy">Questa vista riporta osservazioni, vincoli e lavoro aperto; non genera agenda, copertura, retention o readiness score.</p></section></aside></section>`);
+    const examBlock = dateValue && Number.isInteger(days)
+      ? `<section class="exam-countdown" aria-label="Data d’esame"><p class="exam-countdown__days"><strong>${esc(String(Math.max(days, 0)))}</strong> ${days === 1 ? "giorno" : "giorni"}</p><p class="exam-countdown__date">all’esame del ${esc(formatDate(dateValue))}</p></section>`
+      : `<section class="exam-countdown exam-countdown--empty" aria-label="Data d’esame"><p class="exam-countdown__title">Data d’esame non impostata</p><p class="exam-countdown__date">Quando la data è configurata, qui vedi i giorni che mancano e il lavoro aperto.</p></section>`;
+    const counts = array(readiness.artifact_counts).map(object)
+      .filter((row) => Number(text(row.pending, "0")) > 0 || Number(text(row.accepted, "0")) > 0);
+    const stats = [
+      recall.available ? { value: text(recall.due_count, "0"), label: "card da ripassare oggi", route: "ripasso" } : null,
+      ...counts.map((row) => ({ value: text(row.accepted, "0"), label: `${(ARTIFACT_LABELS[text(row.kind)] || "Materiali").toLowerCase()} approvate${Number(text(row.pending, "0")) ? ` · ${text(row.pending)} da approvare` : ""}`, route: "proposte" })),
+    ].filter(Boolean);
+    const statsView = stats.length
+      ? `<ul class="plan-stats">${stats.map((stat) => `<li><button type="button" class="plan-stats__item" data-route="${esc(stat.route)}"><strong>${esc(stat.value)}</strong><span>${esc(stat.label)}</span></button></li>`).join("")}</ul>`
+      : "";
+    const listOf = (items) => array(items).map((item) => text(first(object(item), ["value"], item))).filter(Boolean);
+    const constraintItems = array(readiness.constraints).map(object).map((row) => [text(row.kind), text(row.value)].filter(Boolean).join(": ")).filter(Boolean);
+    const formatItems = array(readiness.blueprints).map(object).map((row) => [...array(row.observed_topics), ...array(row.observed_formats)].map((value) => text(first(object(value), ["value"], ""))).filter(Boolean).join(", ")).filter(Boolean);
+    const groups = [
+      ["Obiettivi", listOf(readiness.learning_goals)],
+      ["Come verrai valutato", listOf(readiness.assessment_styles)],
+      ["Vincoli", constraintItems],
+      ["Formato d’esame osservato", formatItems],
+    ].filter(([, items]) => items.length);
+    const details = groups.length
+      ? `<dl class="plan-details">${groups.map(([label, items]) => `<div class="plan-details__group"><dt>${esc(label)}</dt>${items.map((item) => `<dd>${esc(item)}</dd>`).join("")}</div>`).join("")}</dl>`
+      : `<p class="page__note">Obiettivi e vincoli del corso compariranno qui quando saranno configurati.</p>`;
+    setView("piano", page({
+      headingId: "plan-heading",
+      title: "Piano d’esame",
+      body: `${examBlock}${statsView}${details}`,
+    }));
+  }
+
+  const MONTHS = Object.freeze(["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"]);
+
+  /* Presentation only: the service owns the calendar arithmetic. */
+  function formatDate(value) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(text(value));
+    if (!match || !MONTHS[Number(match[2]) - 1]) return text(value);
+    return `${Number(match[3])} ${MONTHS[Number(match[2]) - 1]} ${match[1]}`;
   }
 
   async function submitTurn(form, continuation = false) {
@@ -2452,7 +2452,7 @@
       subtitle: statusLabel("working"),
       thread: outgoing + pending,
       placeholder: "Prepara il prossimo messaggio…",
-      actions: `<button class="text-button" type="button" data-route="fonti">Fonti</button>`,
+      actions: `<button class="text-button" type="button" data-route="fonti">Libreria</button>`,
     }));
   }
 
@@ -2632,7 +2632,7 @@
     const status = text(prepared.structure_status, "absent");
     const waiting = ["queued", "indexing"].includes(status);
     const detail = structure.length
-      ? "Scegli una lezione o una sezione dello scheletro PageIndex. Verrà elaborato solo il suo testo, senza ampliare i confini alle pagine vicine."
+      ? "Scegli una lezione o una sezione: verrà elaborato solo il suo testo."
       : waiting ? "La fonte è salvata. La struttura delle lezioni è ancora in elaborazione: aggiorna fra poco."
       : status === "failed" ? "L’estrazione della struttura non è riuscita. Puoi riprovare dopo aver reindicizzato la fonte."
       : "Non è disponibile una struttura delle lezioni per questa fonte.";
@@ -2789,7 +2789,7 @@
       proposal: "Preparazione anteprima", proposed: "Note pronte da revisionare", retryable: "Interrotto: puoi riprendere",
       stale: "Fonte aggiornata: rigenera", failed_terminal: "Generazione non riuscita"};
     const jobs = array(payload.items);
-    patch($("#material-jobs"), jobs.length ? jobs.map((job) => `<section class="notes-job" data-key="${esc(job.job_id)}"><h2>Note di studio · ${esc(job.title)}</h2><p role="status" aria-atomic="true" data-note-progress>${esc(materialProgress(job, labels))}${job.transcribed_chunks ? ` · ${esc(job.transcribed_chunks)} ${job.transcribed_chunks === 1 ? "blocco trascritto" : "blocchi trascritti"}` : ""}${job.segment_count ? ` · ${esc(job.segment_count)} ${job.segment_count === 1 ? "segmento elaborato" : "segmenti elaborati"}` : ""}</p>${job.segment_total ? `<progress class="notes-progress" value="${esc(job.segment_count)}" max="${esc(job.segment_total)}" aria-label="Segmenti elaborati per ${esc(job.title)}"></progress><p class="field-note">Segmenti completati: ${esc(job.segment_count)} di ${esc(job.segment_total)}</p>` : ""}${job.progress_error ? `<p class="field-note">${esc(job.progress_error)}</p>` : ""}${job.error ? `<p role="status">${esc(job.error)}</p>` : ""}${array(job.outputs).map((output) => `<details class="notes-output" data-key="${esc(output.revision_id)}" data-note-preview-job="${esc(job.job_id)}" data-note-preview-revision="${esc(output.revision_id)}"><summary>${output.variant === "complete" ? "Sbobina completa" : "Materiale studio"} · ${esc(statusLabel(output.status))}</summary><div class="notes-markdown">${materialPreviews.get(output.revision_id) || "Apri per leggere le note."}</div>${array(output.limitations).map((item) => `<p class="field-note">${esc(item)}</p>`).join("")}${output.status === "proposed" ? `<div class="state-actions"><button class="button" data-note-decision="accept" data-note-revision="${esc(output.revision_id)}" data-note-job="${esc(job.job_id)}">Approva</button><button class="button button--quiet" data-note-decision="reject" data-note-revision="${esc(output.revision_id)}" data-note-job="${esc(job.job_id)}">Rifiuta</button></div>` : output.publication === "published" ? `<p>Salvato come fonte di studio.</p><button class="button button--quiet" data-source-viewer-mode="page" data-source-viewer='${esc(JSON.stringify({source_id: output.published_source_id, revision_id: output.published_revision_id, viewer_kind: "markdown", title: output.title}))}'>Apri note</button>` : output.status === "accepted" ? `<p>Approvato. La pubblicazione richiede il materiale completo approvato e una fonte ancora valida.</p>` : ""}</details>`).join("")}${["retryable", "publication_retryable"].includes(job.stage) ? `<button class="button button--quiet" data-note-resume="${esc(job.job_id)}">${job.stage === "publication_retryable" ? "Riprova salvataggio" : "Riprendi generazione"}</button>` : ""}<p data-note-error role="status"></p></section>`).join("") : '<p class="field-note">Nessuna generazione in corso. Scegli «Genera note di studio» su una fonte per iniziare.</p>');
+    patch($("#material-jobs"), jobs.length ? jobs.map((job) => `<section class="notes-job" data-key="${esc(job.job_id)}"><h2>${esc(job.title)}</h2><p role="status" aria-atomic="true" data-note-progress>${esc(materialProgress(job, labels))}${job.transcribed_chunks ? ` · ${esc(job.transcribed_chunks)} ${job.transcribed_chunks === 1 ? "blocco trascritto" : "blocchi trascritti"}` : ""}${job.segment_count ? ` · ${esc(job.segment_count)} ${job.segment_count === 1 ? "segmento elaborato" : "segmenti elaborati"}` : ""}</p>${job.segment_total ? `<progress class="notes-progress" value="${esc(job.segment_count)}" max="${esc(job.segment_total)}" aria-label="Segmenti elaborati per ${esc(job.title)}"></progress><p class="field-note">Segmenti completati: ${esc(job.segment_count)} di ${esc(job.segment_total)}</p>` : ""}${job.progress_error ? `<p class="field-note">${esc(job.progress_error)}</p>` : ""}${job.error ? `<p role="status">${esc(job.error)}</p>` : ""}${array(job.outputs).map((output) => `<details class="notes-output" data-key="${esc(output.revision_id)}" data-note-preview-job="${esc(job.job_id)}" data-note-preview-revision="${esc(output.revision_id)}"><summary>${output.variant === "complete" ? "Sbobina completa" : "Materiale studio"} · ${esc(statusLabel(output.status))}</summary><div class="notes-markdown">${materialPreviews.get(output.revision_id) || "Apri per leggere le note."}</div>${array(output.limitations).map((item) => `<p class="field-note">${esc(item)}</p>`).join("")}${output.status === "proposed" ? `<div class="state-actions"><button class="button" data-note-decision="accept" data-note-revision="${esc(output.revision_id)}" data-note-job="${esc(job.job_id)}">Approva</button><button class="button button--quiet" data-note-decision="reject" data-note-revision="${esc(output.revision_id)}" data-note-job="${esc(job.job_id)}">Rifiuta</button></div>` : output.publication === "published" ? `<p>Salvato come fonte di studio.</p><button class="button button--quiet" data-source-viewer-mode="page" data-source-viewer='${esc(JSON.stringify({source_id: output.published_source_id, revision_id: output.published_revision_id, viewer_kind: "markdown", title: output.title}))}'>Apri note</button>` : output.status === "accepted" ? `<p>Approvato. La pubblicazione richiede il materiale completo approvato e una fonte ancora valida.</p>` : ""}</details>`).join("")}${["retryable", "publication_retryable"].includes(job.stage) ? `<button class="button button--quiet" data-note-resume="${esc(job.job_id)}">${job.stage === "publication_retryable" ? "Riprova salvataggio" : "Riprendi generazione"}</button>` : ""}<p data-note-error role="status"></p></section>`).join("") : '<p class="field-note">Nessuna nota ancora. Scegli «Genera note» su una fonte, seleziona le lezioni e rivedi il risultato prima di approvarlo.</p>');
     $$('[data-note-preview-job]').forEach((details) => bindNoteControl(details, "toggle", async () => {
       if (!details.open || materialPreviews.has(details.dataset.notePreviewRevision)) return;
       try {
@@ -3195,7 +3195,7 @@
     const dialog = inline ? null : $("#source-viewer");
     const content = inline ? $("#materials-viewer-content") : $("#source-viewer-content");
     const requestVersion = ++state.sourceViewerVersion;
-    const kindLabel = viewer_kind === "pdf" ? page ? `PDF · pagina ${page}` : "PDF" : viewer_kind === "markdown" ? "Markdown" : "testo";
+    const kindLabel = viewer_kind === "pdf" ? page ? `PDF · pagina ${page}` : "PDF" : "Testo";
     $(inline ? "#materials-viewer-title" : "#source-viewer-title").textContent = title;
     $(inline ? "#materials-viewer-kind" : "#source-viewer-kind").textContent = kindLabel;
     patch(content, '<p class="source-viewer__loading" role="status">Apro la fonte…</p>');

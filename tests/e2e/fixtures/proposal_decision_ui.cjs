@@ -8,7 +8,7 @@ let html;
 const setView = (_, value) => { html = value; };
 const renderProposal = item => `<article data-fixture-id="${item.revision_id}">${item.status}</article>`;
 const emptyState = () => '<p>empty</p>';
-const aiDiffTable = () => ''; const aiApproval = () => ''; const aiRecommendation = () => '';
+const page = ({ body }) => body;
 const state = {navigationVersion: 0, lastCommand: null, highWaterSequence: 10, pendingTurn: null, activityPollToken: 0};
 let statusMessage = '';
 function setStatus(_status, message) { statusMessage = message; }

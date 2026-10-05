@@ -77,13 +77,11 @@ def test_cardine_assets_use_only_approved_v1_routes_and_semantic_markers() -> No
     assert "smoke" not in page
     assert "<template" not in page
     assert ".meta {" not in page
-    for marker in (
-        'aria-labelledby="conversation-heading"',
-        'aria-labelledby="material-heading"',
-        'aria-labelledby="student-state-heading"',
-        'aria-labelledby="review-heading"',
-    ):
-        assert marker in javascript
+    assert 'aria-labelledby="conversation-heading"' in javascript
+    # Content pages share one frame; each names its own heading landmark.
+    assert 'aria-labelledby="${esc(headingId)}"' in javascript
+    for heading in ("material-heading", "student-state-heading", "review-heading"):
+        assert f'headingId: "{heading}"' in javascript
 
     for route in (
         "/api/v1/bootstrap",
@@ -200,8 +198,8 @@ def test_source_viewer_is_lateral_on_sources_and_resizable_from_chat() -> None:
     css = (DEMO_DIR / "browser.css").read_text(encoding="utf-8")
     javascript = (DEMO_DIR / "browser.js").read_text(encoding="utf-8")
 
-    assert 'class="section-grid section-grid--materials sources-workspace"' in javascript
-    assert 'class="section-grid__side materials-pane"' in javascript
+    assert '<div class="library">' in javascript
+    assert '<aside class="materials-pane" aria-label="Lettura">' in javascript
     assert 'class="materials-viewer"' in javascript
     assert 'data-source-viewer-resize' in page
     assert 'aria-label="Ridimensiona il visualizzatore"' in page
@@ -233,7 +231,7 @@ def test_piano_is_explicitly_unavailable_and_source_conflicts_are_read_only() ->
 
     assert "Piano non disponibile" in javascript
     assert "/api/v1/context/conflicts" not in javascript
-    assert "Non esiste un owner canonico" in javascript
+    assert "Data d\u2019esame non impostata" in javascript
 
 
 def test_assessment_surface_renders_safe_lifecycle_history() -> None:
@@ -282,7 +280,7 @@ def test_primary_surface_is_a_chat_workspace_with_secondary_tools() -> None:
     javascript = (DEMO_DIR / "browser.js").read_text(encoding="utf-8")
 
     assert "new-chat-button" in page
-    assert 'class="rail-tools"' in page
+    assert 'class="rail-group"' in page
     assert 'class="chat-home"' in javascript
     assert 'class="chat-session"' in javascript
     assert 'class="conversation-composer-dock"' in javascript

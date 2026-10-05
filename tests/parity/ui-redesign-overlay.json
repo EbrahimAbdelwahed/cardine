@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "decision": "ADR-0027--study-first-ui-redesign",
+  "rows": [
+    {
+      "path": "src/cardine/demo/browser.css",
+      "sha256": "0c4921739c6a4f554a8a5fd2898146b73085f40a8960c0cad87aa6329ebfe02d"
+    },
+    {
+      "path": "src/cardine/demo/browser.html",
+      "sha256": "379c8390e22a7c58f6d3656bce7cd0610ca1f6fd394783af925ea113c5c50967"
+    },
+    {
+      "path": "src/cardine/demo/browser.js",
+      "sha256": "2c1c85cac2fdbf2cd9694930217bfb1932dd1cfcad90c333bcc811e65cb24c83"
+    }
+  ]
+}
