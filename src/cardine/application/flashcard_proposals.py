@@ -7,6 +7,10 @@ from hashlib import sha256
 from typing import NoReturn, cast
 
 from cardine.application.capability_completion import CapabilityCompletionProductReceipt
+from cardine.application.flashcard_grounding import (
+    FlashcardGroundingPolicy,
+    FlashcardGroundingValidator,
+)
 from cardine.application.flashcard_profile_selection import (
     FlashcardProfileSelectionDecision,
     semantic_flashcard_profile,
@@ -57,6 +61,7 @@ from study_agent.domain import (
     SourceId,
 )
 from study_agent.domain._validation import JsonObject, JsonValue, freeze_object
+from study_agent.domain.features import FeatureMode
 from study_agent.flashcards.lesson_worker_contracts import (
     LessonWorkerCheckpoint,
     LessonWorkerRequest,
@@ -99,6 +104,7 @@ from study_agent.playbooks import (
     ValidatorDisposition,
     VerifiedRunRecord,
 )
+from study_agent.playbooks.runtime import ValidatorExecutor
 from study_agent.ports import (
     CancellationToken,
     ClockPort,
@@ -113,6 +119,7 @@ from study_agent.ports import (
     SessionViewPort,
     SourceCommitmentLookupPort,
 )
+from study_agent.ports.judgement import ChoiceJudgementPort
 from study_agent.ports.lesson_worker import FlashcardProfileExecutionBinding
 from study_agent.ports.retrieval import RetrievalDocument, retrieval_catalog_fingerprint
 from study_agent.prompts import CanonicalPromptComposer
@@ -352,6 +359,8 @@ class FlashcardProposalComposition:
         interaction_id: InteractionId | None = None,
         retired_source_ids: Callable[[], frozenset[SourceId]] | frozenset[SourceId] = frozenset(),
         semantic_preprocessor: FlashcardSemanticPreprocessor | None = None,
+        grounding_policy: FlashcardGroundingPolicy | None = None,
+        grounding_judgement: ChoiceJudgementPort | None = None,
     ) -> None:
         self._course_id = course_id
         self._session_id = session_id
@@ -359,7 +368,14 @@ class FlashcardProposalComposition:
         self._course_profile = course_profile
         self._model = model
         self._model_adapter = model_adapter
+        if grounding_policy is not None and grounding_judgement is None:
+            raise ValueError("grounding requires a consent judgement port")
+        self._grounding_policy = grounding_policy
+        self._grounding_judgement = grounding_judgement
         self._runs = runs
+        suffix = ("-" + grounding_policy.fingerprint[:40] if grounding_policy is not None else "")
+        self._execution_runs = (_namespaced(runs, "grounding" + suffix)
+                                if grounding_policy is not None else runs)
         self._clock = clock
         self._artifact_service = artifact_service
         self._source_commitments = source_commitments
@@ -460,6 +476,8 @@ class FlashcardProposalComposition:
             interaction_id=interaction_id,
             retired_source_ids=self._retired_source_ids,
             semantic_preprocessor=self._semantic_preprocessor,
+            grounding_policy=self._grounding_policy,
+            grounding_judgement=self._grounding_judgement,
         )
 
     async def start_for_pin(
@@ -540,6 +558,13 @@ class FlashcardProposalComposition:
                 self._lesson_store.load(str(reference.run_id))
             )
             request = checkpoint.request
+            if (
+                self._grounding_policy is not None
+                and self._grounding_policy.mode is FeatureMode.ON
+                and (request.continuation_summary or {}).get("grounding_policy_fingerprint")
+                != self._grounding_policy.fingerprint
+            ):
+                return None
             worker = self._worker_for_request(request)
             service = LessonWorkerService(
                 store=self._lesson_store,
@@ -637,6 +662,8 @@ class FlashcardProposalComposition:
             str(public["language"]),
             _candidate_ceiling(public["candidate_ceiling"]),
             {
+                **({"grounding_policy_fingerprint": self._grounding_policy.fingerprint}
+                   if self._grounding_policy is not None else {}),
                 "generation_request_fingerprint": sha256(
                     b"cardine-flashcard-generation-request@1\0"
                     + str(interaction_id).encode("utf-8")
@@ -670,11 +697,20 @@ class FlashcardProposalComposition:
         tool = _EnginePlannedFlashcardScopeTool(
             planned_flashcard_scope_tool(request, prepared_scope)
         )
-        validators = (
+        validators: tuple[ValidatorExecutor, ...] = (
             hybrid_flashcards_validators(self._content)
             if binding.profile == HYBRID_MACRO_DETAIL_V1
             else morphology_flashcards_validators(self._content, _UnavailableMedia())
         )
+        if self._grounding_policy is not None and self._grounding_judgement is not None:
+            validators = (
+                validators[0],
+                FlashcardGroundingValidator(
+                    validators[1], content=self._content,
+                    judgement=self._grounding_judgement, policy=self._grounding_policy,
+                    retired_source_ids=self._retired_source_ids,
+                ),
+            )
         engine = PlaybookEngine(
             engine_version=_V1,
             model_adapter=self._model_adapter,
@@ -690,7 +726,7 @@ class FlashcardProposalComposition:
                     ),
                 ),
             ),
-            run_store=self._runs,
+            run_store=self._execution_runs,
             clock=self._clock,
         )
         base = explain_concept_binding(

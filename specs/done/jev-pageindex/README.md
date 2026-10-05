@@ -103,3 +103,18 @@ accepts a free-form scope. See the
 closed-scope continuation in [ADR-0025](../../../docs/decisions/ADR-0025--current-topic-and-context-settlement.md).
 This changes flashcard request interpretation, not retrieval adjacency or the
 indexing and grounding outcomes owned by other tasks.
+
+## Optional post-draft documentary support
+
+Cardine's `application/flashcard_grounding.py` wraps hybrid/morphology integrity
+validation after deterministic checks and before proof or proposal registration.
+`features.flashcard_grounding_mode` defaults to OFF for existing v1/v2 files.
+ON requires complete support for question premises, labels, all answer blocks
+and key points against only that card's canonical cited excerpts; SHADOW keeps
+historical proposal behavior. Configure positive `grounding_probability` (0.9)
+and `grounding_margin` (0.2), plus the resolved judgement model and timeout.
+Whole requests exceeding 64,000 UTF-8 bytes fail closed; sources are never sliced.
+Errors, weak choices, contradiction and insufficient evidence remain unverified.
+This text-only gate rejects media claims. HUMAN acceptance remains separate.
+See the [integration handoff](../../../dev/logs/2026-10-04--cardine--flashcard-grounding-gate--log.md)
+for checkpoint isolation, consent, tests and sibling-task integration seams.

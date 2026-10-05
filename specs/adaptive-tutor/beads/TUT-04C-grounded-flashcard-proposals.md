@@ -53,3 +53,9 @@ one trusted pedagogical profile selected by the host.
 Pinned topic retrieval applies the canonical lesson span before ranking limits,
 including exact-title and bounded relevance paths. Contextual scope labels are
 transport data and must not be recorded as factual topics in the student journal.
+
+## Grounding policy recovery
+
+When documentary grounding is ON, completion recovery must reject a checkpoint
+without the current grounding-policy fingerprint before registering proposals.
+Already recorded proposals remain readable. OFF and SHADOW retain their recovery behavior.

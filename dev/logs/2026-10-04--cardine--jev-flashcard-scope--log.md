@@ -68,3 +68,9 @@ Contextual flashcard labels no longer append factual topic entries. Existing
 explanation memory stays authoritative. Regression tests fail before the fixes.
 Current exact-byte overlay binds repository composition; post-baseline hashes
 bind only the two changed retrieval files. Historical manifests are preserved.
+
+Integrated PR #23: preserve both closed-scope and grounding configuration,
+checkpoint recovery guard, and all profile/gate regressions. The fixture had
+overwritten the resolved grounding model with the default routing config;
+preserving explicit judgement configuration fixes four failing integration
+cases. All 96 combined scope/gate/pin tests pass. No production workaround.

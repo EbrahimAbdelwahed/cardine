@@ -20,6 +20,7 @@ from cardine.application.capability_completion import (
 )
 from cardine.application.conversation_history import ConversationHistoryReader
 from cardine.application.explanation_validation import SourceBoundedExplanationValidator
+from cardine.application.flashcard_grounding import FlashcardGroundingPolicy
 from cardine.application.flashcard_proposals import FlashcardProposalComposition
 from cardine.application.flashcard_scope import FlashcardScope, learner_fingerprint
 from cardine.application.indexing import (
@@ -1707,6 +1708,7 @@ class LocalRepository:
             ),
         )
         self._judgement = judgement
+        self._grounding_judgement = judgement
         self._routing_receipts = RoutingReceiptStore(self.runs)
         self.indexing = IndexingCoordinator(NamespacedSQLiteRunStore(self.runs, "cardine-indexing"))
         self.provider_consent = ProjectionConsentView(self.events.projection)
@@ -1881,6 +1883,24 @@ class LocalRepository:
             )
         return ConsentChoiceJudgementPort(self._judgement, course_id, self.provider_consent)
 
+    def _course_grounding_judgement(self, course_id: CourseId) -> ChoiceJudgementPort:
+        if self._grounding_judgement is None:
+            config = self.config.judgement
+            if config is None:
+                raise ModelAdapterConfigurationError("grounding judgement is not configured")
+            environment = os.environ if self._environment is None else self._environment
+            credential = environment.get(config.credential_env)
+            if not isinstance(credential, str) or not credential.strip():
+                raise ModelAdapterConfigurationError("grounding credential is unavailable")
+            self._grounding_judgement = JevChoiceAdapter(
+                api_key=credential, model_id=config.resolved_model_id,
+                timeout_seconds=config.timeout_seconds, max_retries=config.max_retries,
+                concurrency=config.concurrency,
+            )
+        return ConsentChoiceJudgementPort(
+            self._grounding_judgement, course_id, self.provider_consent,
+        )
+
     def tutor_conversation(
         self,
         course_id: CourseId,
@@ -1955,6 +1975,15 @@ class LocalRepository:
                 source_commitments=self._source_catalog,
                 sessions=self.sessions,
                 retired_source_ids=lambda: self.source_lifetime.retired_source_ids(course_id),
+                grounding_judgement=(self._course_grounding_judgement(course_id)
+                    if features.flashcard_grounding_mode is not FeatureMode.OFF else None),
+                grounding_policy=(FlashcardGroundingPolicy(
+                    features.flashcard_grounding_mode,
+                    self.config.judgement.resolved_model_id,
+                    features.grounding_probability, features.grounding_margin,
+                    timeout_seconds=self.config.judgement.timeout_seconds,
+                ) if features.flashcard_grounding_mode is not FeatureMode.OFF
+                  and self.config.judgement is not None else None),
                 semantic_preprocessor=FlashcardSemanticPreprocessor(
                     content=self.for_course(course_id).content,
                     blobs=self.blobs,

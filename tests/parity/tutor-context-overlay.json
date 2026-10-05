@@ -16,7 +16,7 @@
     },
     {
       "path": "src/cardine/application/flashcard_proposals.py",
-      "sha256": "c2631e071e5fce536f19cf50fe380c07274c6fecead11cb2e0f4cfdca3b51cb9"
+      "sha256": "963861b60bcdae3ae9295d022d411b7d633ab69e392a5d56782c2a989520b610"
     },
     {
       "path": "src/cardine/application/flashcard_scope.py",
@@ -24,7 +24,7 @@
     },
     {
       "path": "src/cardine/cli/repository.py",
-      "sha256": "4a2635290c50e90f8e1fe580c4f4bdcc7ad6050be7959f75af6b92dbd337fe15"
+      "sha256": "f65badf75c557ecdabcb7ea2c4fe2b401ef1094da88035e34bedc7fb40a9f7c7"
     },
     {
       "path": "src/cardine/hosts/flashcard_routing.py",
