@@ -217,7 +217,10 @@ def test_browser_page_loads_within_three_seconds(
                     await new Promise(resolve => setTimeout(resolve, 10));
                   }
                   throw Error('Page did not become usable: ' + route);
-                })()""".replace("ROUTE", json.dumps(route)).replace("CONTENT", json.dumps(content)).replace("SETTINGS_READY", SETTINGS_READY)
+                })()"""
+                expression = (expression.replace("ROUTE", json.dumps(route))
+                              .replace("CONTENT", json.dumps(content))
+                              .replace("SETTINGS_READY", SETTINGS_READY))
                 elapsed = cast(float, browser.evaluate(expression, await_promise=True))
                 print(f"Browser width={width} pass={iteration} {route}: {elapsed:.0f}ms")
                 baseline_ms = PAGE_BUDGET_MS[route]
