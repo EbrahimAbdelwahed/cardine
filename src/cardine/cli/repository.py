@@ -858,7 +858,9 @@ class _RepositoryTutorGateway:
             except ValueError:
                 pass
             else:
-                if contextual.kind in {"latest_explanation", "selected_lesson"}:
+                if contextual.kind == "latest_explanation" or (
+                    contextual.kind == "selected_lesson" and inputs.get("query") == "selected lesson"
+                ):
                     return
         query = inputs.get("query")
         if not isinstance(query, str) or not query.strip():

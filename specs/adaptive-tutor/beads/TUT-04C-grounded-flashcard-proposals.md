@@ -53,6 +53,7 @@ one trusted pedagogical profile selected by the host.
 Pinned topic retrieval applies the canonical lesson span before ranking limits,
 including exact-title and bounded relevance paths. Contextual scope labels are
 transport data and must not be recorded as factual topics in the student journal.
+An unpinned lesson request retains its resolved lesson name as a factual topic.
 
 ## Grounding policy recovery
 

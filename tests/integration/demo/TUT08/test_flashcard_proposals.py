@@ -937,6 +937,11 @@ def test_primary_jev_flashcard_path_owns_scope_without_downstream_language_parse
     prompt = "\n".join(message.content for message in calls[0].messages)
     assert ("Oldmarker" in prompt) == (scope == "explicit_topic")
     assert ("aortic valve has three cusps" in prompt) == (scope != "explicit_topic")
+    if scope == "selected_lesson":
+        with LocalRepository.open(root, model_adapters=adapters) as repo:
+            assert not repo.student_state.search(COURSE, query="selected lesson")
+            if not with_pin:
+                assert repo.student_state.search(COURSE, query="Aortic valve")
     assert [item.metadata["use_case"] for item in judge.requests][:4] == [
         "route", "capability", "flashcard_scope", "flashcard_profile"]
     assert app.get("/api/v1/artifacts")["items"]

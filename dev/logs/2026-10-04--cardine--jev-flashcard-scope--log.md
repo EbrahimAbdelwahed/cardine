@@ -74,3 +74,8 @@ checkpoint recovery guard, and all profile/gate regressions. The fixture had
 overwritten the resolved grounding model with the default routing config;
 preserving explicit judgement configuration fixes four failing integration
 cases. All 96 combined scope/gate/pin tests pass. No production workaround.
+
+Second/final review correction: explicit unpinned lesson names remain factual
+completed topics; only the pinned transport label is omitted. The unpinned
+production-path memory assertion failed before this narrower guard.
+No third semantic review requested.
