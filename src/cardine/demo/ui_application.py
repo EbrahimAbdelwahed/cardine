@@ -59,6 +59,12 @@ from cardine.documents import (
     admit_pdf,
     document_import_policy,
 )
+from cardine.documents.typst_notes import (
+    TypstRenderer,
+    TypstRenderError,
+    TypstUnavailableError,
+    notes_document,
+)
 from cardine.hosts import (
     PendingContinuationDescriptor,
     TutorContinuationRecord,
@@ -379,6 +385,7 @@ class RepositoryUiApplication(UiApplicationPort):
         self._turn_output = TurnOutputStore()
         self._turn_activity = turn_activity if turn_activity is not None else TurnActivityStore()
         self._document_policy = document_policy or document_import_policy()
+        self._typst = TypstRenderer()
         self._indexing_view: JsonObject = {
             "status": "empty",
             "phase": "idle",
@@ -625,6 +632,7 @@ class RepositoryUiApplication(UiApplicationPort):
                             pageindex_statuses,
                         ) if path == "/api/v1/bootstrap" else {},
                         "study_plan": ProjectionCourseView(captured).study_plan(self._course_id),
+                        "pdf_export": self._typst.available(),
                         "flashcards_available": _flashcard_capability_available(
                             repository, self._course_id, self._session_id
                         ) if path in {"/api/v1/bootstrap", "/api/v1/session"} else False,
@@ -669,6 +677,51 @@ class RepositoryUiApplication(UiApplicationPort):
             ) from error
         except (LocalRepositoryError, OSError, ValueError, RuntimeError) as error:
             raise UiRequestError("repository runtime is unavailable", status_code=503) from error
+
+    def read_source_pdf(self, source_id: str, revision_id: str) -> SourceDocumentView:
+        """A printable PDF of one revision: the original PDF, or the text set in Typst."""
+        document = self.read_source_document(source_id, revision_id)
+        if document.viewer_kind == "pdf":
+            return document
+        if not self._typst.available():
+            raise UiRequestError(
+                "PDF export requires Typst on the server",
+                status_code=503,
+                diagnostic_code="typst_unavailable",
+            )
+        try:
+            with self._open() as repository:
+                course = ProjectionCourseView(repository.events.projection).get(self._course_id)
+                today = repository.clock.now().date()
+        except (LocalRepositoryError, RuntimeError) as error:
+            raise UiRequestError("repository runtime is unavailable", status_code=503) from error
+        subtitle = f"{course.title} · {_italian_date(today)}"
+        try:
+            pdf = self._typst.render(
+                notes_document(
+                    title=document.title,
+                    subtitle=subtitle,
+                    markdown=document.content.decode("utf-8"),
+                )
+            )
+        except TypstUnavailableError as error:
+            raise UiRequestError(
+                "PDF export requires Typst on the server",
+                status_code=503,
+                diagnostic_code="typst_unavailable",
+            ) from error
+        except TypstRenderError as error:
+            raise UiRequestError(
+                "this document could not be rendered to PDF",
+                status_code=422,
+                diagnostic_code="typst_render_failed",
+            ) from error
+        return SourceDocumentView(
+            title=document.title,
+            viewer_kind="pdf",
+            media_type="application/pdf",
+            content=pdf,
+        )
 
     def read_source_document(self, source_id: str, revision_id: str) -> SourceDocumentView:
         """Resolve one course-owned immutable revision to verified display bytes."""
@@ -2676,6 +2729,7 @@ class RepositoryUiApplication(UiApplicationPort):
                 "student_state": True,
                 "recall": bool(getattr(recall, "available", False)),
                 "exam_plan": True,
+                "pdf_export": bool(metadata.get("pdf_export", False)),
             },
             "counts": {
                 "pending_proposals": pending_proposals,
@@ -2788,6 +2842,14 @@ class RepositoryUiApplication(UiApplicationPort):
                     "groundable": groundable,
                     "structure_status": structure.get(
                         (str(item.source_id), str(item.current_revision_id)), "absent"
+                    ),
+                    # Study notes are generated sources: the library lists
+                    # them as documents of their own, not as course sources.
+                    "origin": (
+                        records[(str(item.source_id), str(item.current_revision_id))]
+                        .source.content_origin.value
+                        if (str(item.source_id), str(item.current_revision_id)) in records
+                        else "original"
                     ),
                     "can_generate_notes": (
                         records.get((str(item.source_id), str(item.current_revision_id)))
@@ -3966,6 +4028,16 @@ def _unavailable(result: TutorSnapshotV1 | Mapping[str, object], message: str) -
         "items": (),
         "message": message,
     }
+
+
+_ITALIAN_MONTHS = (
+    "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
+    "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre",
+)
+
+
+def _italian_date(value: date) -> str:
+    return f"{value.day} {_ITALIAN_MONTHS[value.month - 1]} {value.year}"
 
 
 def _study_plan_from_payload(payload: Mapping[str, object]) -> StudyPlan:

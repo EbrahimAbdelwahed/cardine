@@ -129,10 +129,24 @@ Frontend only, no API change.
 
 ### Phase 3 — Study notes as documents
 
-- "Note" become their own list inside Libreria: lesson multi-select → generate
-  → review → accept.
-- Typst renderer adapter (server-side `typst compile`, pinned template,
-  no network) producing a PDF per accepted note set; download endpoint.
+- Libreria has two shelves: **Fonti** (original material) and **Note di
+  studio** (published notes, i.e. generated sources) with Apri and PDF; the
+  generation jobs (progress, review, approval) stay below the notes.
+- `GET /api/v1/materials/{source}/revisions/{revision}/pdf` returns a printable
+  PDF: an original PDF as-is, a Markdown/text revision typeset by Typst with
+  the Cardine notes template (title block, course and date, page header and
+  `n / total` footer). The download carries an ASCII file name.
+- `cardine.documents.typst_notes` converts the notes' Markdown (headings,
+  emphasis, code, web links, nested lists, quotes, tables, fenced code, rules).
+  All text is emitted as Typst string literals, so note content cannot inject
+  markup or code. The CLI runs offline in a private temporary root with
+  bundled fonts only, a 60 s timeout and a 64 MiB output bound.
+- Typst is optional: `features.pdf_export` tells the browser whether to offer
+  PDF; without it the endpoint answers 503 `typst_unavailable`.
+  `CARDINE_TYPST_BIN` may point to a specific binary.
+- Selecting several lessons: PDFs keep their checklist; structured sources
+  generate per lesson from the plan outline. The structure picker keeps its
+  tested request identity.
 
 ### Phase 4 — Document + agent workspace
 

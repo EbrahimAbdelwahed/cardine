@@ -37,6 +37,7 @@ UI_REDESIGN_PATHS = {
     "src/cardine/demo/browser.css",
     "src/cardine/demo/browser.html",
     "src/cardine/demo/browser.js",
+    "src/cardine/demo/browser.py",
     "src/cardine/demo/ui_application.py",
 }
 PAGE_LOAD_PATHS = {
