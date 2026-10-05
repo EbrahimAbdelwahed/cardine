@@ -14,11 +14,12 @@ import sys
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
+from datetime import date
 from hashlib import sha256
 from pathlib import Path
 from threading import BoundedSemaphore, Lock, Thread
 from time import sleep
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 
 from cardine.adapters.audio.groq import GroqAudioTranscriber
 from cardine.application.artifact_decisions import (
@@ -26,13 +27,28 @@ from cardine.application.artifact_decisions import (
     decide_artifacts,
 )
 from cardine.application.indexing import IndexingRecord
+from cardine.application.study_schedule import (
+    OutlineSource,
+    OutlineSpan,
+    build_schedule,
+    outline_json,
+    outline_source,
+    studied_keys,
+)
 from cardine.cli.repository import (
     LocalRepository,
     LocalRepositoryError,
     ModelAdapterConfigurationError,
     ModelAdapterRegistry,
 )
-from cardine.courses import ProjectionCourseView
+from cardine.courses import (
+    CourseCommandError,
+    CourseConflictError,
+    ProjectionCourseView,
+    RetryableCourseConflictError,
+    StudyPlan,
+    study_plan_manifest,
+)
 from cardine.demo.turn_output import TurnOutputStore
 from cardine.diagnostics import TurnActivityStore, TurnTraceStore, publish_progress_message
 from cardine.documents import (
@@ -65,6 +81,7 @@ from cardine.integrations.study_agent.course_policy import (
     SourceLifetimeCommandError,
 )
 from cardine.knowledge import LessonCandidate, SourcePin
+from cardine.knowledge.pageindex_projection import PageIndexProjection, PageIndexStatus
 from cardine.materials.product import MaterialProduct
 from study_agent.application import (
     ConversationTurnCommand,
@@ -509,6 +526,8 @@ class RepositoryUiApplication(UiApplicationPort):
             return self._workspace()
         if path == "/api/v1/indexing/status":
             return self._indexing_payload()
+        if path == "/api/v1/plan/schedule":
+            return self._plan_schedule()
         routes: dict[str, Callable[[TutorSnapshotV1, Mapping[str, object]], JsonObject]] = {
             "/api/v1/bootstrap": self._bootstrap,
             "/api/v1/session": self._session,
@@ -549,9 +568,13 @@ class RepositoryUiApplication(UiApplicationPort):
                 presentations = ProjectionTutorPresentationView(captured).presentations(
                     self._course_id, self._session_id
                 )
+                pageindex_statuses = (
+                    repository.pageindex_status(self._course_id)
+                    if path in {"/api/v1/bootstrap", "/api/v1/materials"} else ()
+                )
                 pageindex = (
-                    repository.pageindex_summary(self._course_id)
-                    if path == "/api/v1/bootstrap" else {}
+                    repository.pageindex_summary(self._course_id, pageindex_statuses)
+                    if path in {"/api/v1/bootstrap", "/api/v1/materials"} else {}
                 )
                 return route(
                     snapshot,
@@ -595,6 +618,13 @@ class RepositoryUiApplication(UiApplicationPort):
                         "retired_source_ids": repository.source_lifetime.retired_source_ids(
                             self._course_id
                         ),
+                        "study": _study_plan_payload(
+                            repository,
+                            readiness_projection,
+                            snapshot,
+                            pageindex_statuses,
+                        ) if path == "/api/v1/bootstrap" else {},
+                        "study_plan": ProjectionCourseView(captured).study_plan(self._course_id),
                         "flashcards_available": _flashcard_capability_available(
                             repository, self._course_id, self._session_id
                         ) if path in {"/api/v1/bootstrap", "/api/v1/session"} else False,
@@ -706,6 +736,8 @@ class RepositoryUiApplication(UiApplicationPort):
     def post(self, path: str, command: Mapping[str, object]) -> JsonObject:
         if path in {"/api/v1/student-state", "/api/v1/student-state/import"}:
             return self._post_student_state(path, command)
+        if path == "/api/v1/plan":
+            return self._post_study_plan(command)
         if path == "/api/v1/material-generations" or path.startswith(
             "/api/v1/material-generations/"
         ):
@@ -2181,6 +2213,63 @@ class RepositoryUiApplication(UiApplicationPort):
                     request_id=request_id if committed else None,
                 ) from error
 
+    def _plan_schedule(self) -> JsonObject:
+        """Lesson outline and day-by-day schedule, loaded after the plan header."""
+        try:
+            with self._open() as repository:
+                projection, snapshot = self._captured_state(repository)
+                study = _study_plan_payload(
+                    repository,
+                    projection,
+                    snapshot,
+                    repository.pageindex_status(self._course_id),
+                )
+                return {
+                    "schema_version": 1,
+                    "high_water_sequence": snapshot.high_water_sequence,
+                    "study_plan": study["plan"],
+                    "outline": study["outline"],
+                    "schedule": study["schedule"],
+                }
+        except (LocalRepositoryError, RuntimeError) as error:
+            raise UiRequestError("study plan is unavailable", status_code=503) from error
+
+    def _post_study_plan(self, command: Mapping[str, object]) -> JsonObject:
+        request_id, _sequence, payload = _command(
+            command,
+            payload_key="exam_date",
+            optional_payload_keys={"daily_minutes", "objective"},
+        )
+        try:
+            plan = _study_plan_from_payload(payload)
+        except (TypeError, ValueError) as error:
+            raise UiRequestError("study plan is invalid", status_code=400) from error
+        with self._lock:
+            try:
+                with self._open() as repository:
+                    committed = repository.course_service.set_study_plan(
+                        plan, self._course_policy_context(request_id)
+                    )
+                    return {
+                        "schema_version": 1,
+                        "request_id": request_id,
+                        "status": "committed",
+                        "high_water_sequence": repository.events.projection(
+                            self._course_id
+                        ).sequence,
+                        "result": {"study_plan": study_plan_manifest(committed)},
+                    }
+            except CourseConflictError as error:
+                raise UiRequestError(
+                    "study plan request changed content", status_code=409
+                ) from error
+            except RetryableCourseConflictError as error:
+                raise UiRequestError("course changed; retry the plan", status_code=409) from error
+            except CourseCommandError as error:
+                raise UiRequestError("study plan is not allowed", status_code=403) from error
+            except (LocalRepositoryError, OSError, RuntimeError) as error:
+                raise UiRequestError("study plan is unavailable", status_code=503) from error
+
     def _post_student_state(self, path: str, command: Mapping[str, object]) -> JsonObject:
         request_id, _sequence, payload = _command(
             command,
@@ -2611,9 +2700,12 @@ class RepositoryUiApplication(UiApplicationPort):
                 "items": pageindex_items,
             },
             "indexing": cast(JsonObject, indexing),
+            "today": _today_payload(cast(JsonObject, metadata.get("study", {}))),
+            # A fresh course is walked through exam → sources → plan; a course
+            # already in use is never interrupted, only offered the plan.
             "onboarding": {
-                "needs_study_intent": bool(active_materials)
-                and grounding_status == "available"
+                "needs_study_plan": cast(JsonObject, metadata.get("study", {})).get("plan_set")
+                is False
                 and not any(
                     getattr(getattr(item, "kind", None), "value", None) == "learner"
                     for item in snapshot.timeline
@@ -2674,6 +2766,13 @@ class RepositoryUiApplication(UiApplicationPort):
         retired = {
             str(item) for item in cast(tuple[object, ...], metadata.get("retired_source_ids", ()))
         }
+        structure = {
+            (str(row.get("source_id")), str(row.get("revision_id"))): str(row.get("status"))
+            for row in cast(
+                tuple[Mapping[str, object], ...],
+                cast(Mapping[str, object], metadata.get("pageindex", {})).get("items", ()),
+            )
+        }
         items = cast(
             tuple[JsonObject, ...],
             tuple(
@@ -2687,6 +2786,9 @@ class RepositoryUiApplication(UiApplicationPort):
                     "trust_level": item.trust_level,
                     "chunk_count": item.chunk_count,
                     "groundable": groundable,
+                    "structure_status": structure.get(
+                        (str(item.source_id), str(item.current_revision_id)), "absent"
+                    ),
                     "can_generate_notes": (
                         records.get((str(item.source_id), str(item.current_revision_id)))
                         is not None
@@ -2763,7 +2865,7 @@ class RepositoryUiApplication(UiApplicationPort):
             "shell_status": _readiness_shell_status(snapshot, readiness),
             "high_water_sequence": readiness.sequence,
             "readiness": payload,
-            "message": ("Canonical constraints and observations; no agenda or score is inferred."),
+            "study_plan": study_plan_manifest(cast(StudyPlan, metadata["study_plan"])),
         }
 
 
@@ -3863,6 +3965,136 @@ def _unavailable(result: TutorSnapshotV1 | Mapping[str, object], message: str) -
         ),
         "items": (),
         "message": message,
+    }
+
+
+def _study_plan_from_payload(payload: Mapping[str, object]) -> StudyPlan:
+    raw_date = payload.get("exam_date")
+    if raw_date is not None and not isinstance(raw_date, str):
+        raise TypeError("exam_date must be an ISO date or null")
+    exam_date = None if raw_date is None or raw_date == "" else date.fromisoformat(raw_date)
+    minutes = payload.get("daily_minutes")
+    if minutes is not None and type(minutes) is not int:
+        raise TypeError("daily_minutes must be an integer or null")
+    objective = payload.get("objective")
+    if objective is not None and not isinstance(objective, str):
+        raise TypeError("objective must be text or null")
+    objective = None if objective is None or not objective.strip() else objective.strip()
+    return StudyPlan(exam_date, minutes, objective)
+
+
+def _study_outline(
+    projection: Projection,
+    snapshot: TutorSnapshotV1,
+    statuses: Sequence[PageIndexProjection],
+    retired: set[str],
+) -> tuple[OutlineSource, ...]:
+    """Lessons of every active original source, from verified structure only.
+
+    Reads the canonical projection and the derived structure; no source text
+    is decoded, so the outline costs the same for a page as for a textbook.
+    """
+    by_revision = {(item.source_id, item.revision_id): item for item in statuses}
+    sources_state = cast(Mapping[str, Any], projection.state.get("sources", {}))
+    excluded_origins = {"generated", "extracted", "inferred"}
+    sources: list[OutlineSource] = []
+    for material in snapshot.materials:
+        key = (str(material.source_id), str(material.current_revision_id))
+        revision = cast(
+            Mapping[str, Any],
+            cast(Mapping[str, Any], sources_state.get(key[0], {})).get("revisions", {}),
+        ).get(key[1], {})
+        source = cast(Mapping[str, Any], revision.get("source", {}))
+        length = revision.get("normalized_character_length")
+        if (
+            key[0] in retired
+            or source.get("content_origin") in excluded_origins
+            or type(length) is not int
+        ):
+            continue
+        structure = by_revision.get(key)
+        ready = structure is not None and structure.status is PageIndexStatus.READY
+        spans = (
+            tuple(
+                OutlineSpan(
+                    material.title if item.node_id == "document-root" else item.title,
+                    item.start_offset,
+                    item.end_offset,
+                )
+                for item in structure.candidates
+                if item.content_sha256 == structure.content_sha256
+            )
+            if ready and structure is not None
+            else None
+        )
+        sources.append(
+            outline_source(
+                source_id=key[0],
+                revision_id=key[1],
+                title=material.title,
+                text_length=length,
+                content_sha256=structure.content_sha256 if spans and structure else None,
+                spans=spans,
+                structure_status="absent" if structure is None else structure.status.value,
+            )
+        )
+    return tuple(sources)
+
+
+def _study_plan_payload(
+    repository: LocalRepository,
+    projection: Projection,
+    snapshot: TutorSnapshotV1,
+    statuses: Sequence[PageIndexProjection],
+) -> JsonObject:
+    course_id = projection.course_id
+    plan = ProjectionCourseView(lambda _course_id: projection).study_plan(course_id)
+    retired = {str(item) for item in repository.source_lifetime.retired_source_ids(course_id)}
+    sources = _study_outline(projection, snapshot, statuses, retired)
+    covered = tuple(
+        entry.topic
+        for entry in repository.student_state.get(course_id).entries
+        if entry.kind == "topic_covered"
+    )
+    studied = studied_keys(sources, covered)
+    schedule = build_schedule(
+        today=repository.clock.now().date(),
+        exam_date=plan.exam_date,
+        sources=sources,
+        studied=studied,
+    )
+    return {
+        "plan": study_plan_manifest(plan),
+        "plan_set": plan.exam_date is not None or plan.daily_minutes is not None,
+        "outline": outline_json(sources, studied),
+        "schedule": schedule.to_json(),
+    }
+
+
+def _today_payload(study: Mapping[str, object]) -> JsonObject:
+    """Today's lessons from the schedule, with their titles, for the home page."""
+    schedule = study.get("schedule")
+    if not isinstance(schedule, Mapping):
+        return {"status": "unset", "today": None, "lessons": ()}
+    titles = {
+        str(lesson["key"]): {**lesson, "source_title": source["title"]}
+        for source in cast(tuple[Mapping[str, Any], ...], study.get("outline", ()))
+        for lesson in cast(tuple[Mapping[str, Any], ...], source["lessons"])
+    }
+    days = cast(tuple[Mapping[str, Any], ...], schedule.get("days", ()))
+    first = days[0] if days else None
+    return {
+        "status": schedule.get("status"),
+        "today": schedule.get("today"),
+        "plan": cast(JsonValue, study.get("plan")),
+        "exam_date": schedule.get("exam_date"),
+        "days_remaining": schedule.get("days_remaining"),
+        "kind": None if first is None else first.get("kind"),
+        "lessons": ()
+        if first is None or first.get("date") != schedule.get("today")
+        else tuple(titles[key] for key in first.get("lesson_keys", ()) if key in titles),
+        "lessons_total": schedule.get("lessons_total"),
+        "lessons_studied": schedule.get("lessons_studied"),
     }
 
 

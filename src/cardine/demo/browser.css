@@ -1171,7 +1171,7 @@
   .section-copy { max-width: var(--measure); color: var(--ink-soft); }
 
  /* ---- Cards ----------------------------------------------------------- */
-  .card, .settings-card, .study-setup-card, .chat-course-creation, .review-card, .assessment-card {
+  .card, .settings-card, .chat-course-creation, .review-card, .assessment-card {
     padding: var(--space-4);
     background: var(--surface);
     border-radius: var(--radius-md);
@@ -1274,41 +1274,6 @@
   .home-agenda__clear .text-button:hover { background: transparent; text-decoration-color: currentColor; }
   .home-agenda__note { margin-top: var(--space-3); text-align: center; }
 
-  /* ---- Plan ------------------------------------------------------------ */
-  .exam-countdown { display: grid; gap: var(--space-1); padding-block: var(--space-2) var(--space-5); box-shadow: inset 0 -1px 0 var(--line); }
-  .exam-countdown__days { color: var(--ink-soft); font-size: var(--text-lg); }
-  .exam-countdown__days strong {
-    margin-right: var(--space-1);
-    color: var(--ink);
-    font-family: var(--font-display);
-    font-size: var(--text-4xl);
-    font-weight: var(--weight-regular);
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
-  }
-  .exam-countdown__title { font-size: var(--text-lg); font-weight: var(--weight-semibold); }
-  .exam-countdown__date { max-width: var(--measure); color: var(--muted); }
-  .plan-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-3); }
-  .plan-stats__item {
-    display: grid;
-    width: 100%;
-    gap: var(--space-1);
-    padding: var(--space-4);
-    color: var(--ink);
-    text-align: left;
-    background: var(--surface);
-    border-radius: var(--radius-md);
-    box-shadow: var(--elevation-1);
-    cursor: pointer;
-    transition: box-shadow var(--duration-fast) var(--ease-out);
-  }
-  .plan-stats__item:hover { box-shadow: var(--elevation-2); }
-  .plan-stats__item strong { font-size: var(--text-2xl); font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; line-height: 1; }
-  .plan-stats__item span { color: var(--muted); font-size: var(--text-md); }
-  .plan-details { display: grid; gap: var(--space-5); }
-  .plan-details__group { display: grid; gap: var(--space-2); }
-  .plan-details dt { color: var(--muted); font-size: var(--text-sm); font-weight: var(--weight-medium); }
-  .plan-details dd { max-width: var(--measure); color: var(--ink); }
 
   /* ---- Progress journal ------------------------------------------------- */
   .journal { display: grid; }
@@ -1351,6 +1316,208 @@
   .decision-button:disabled { cursor: default; opacity: .45; }
   .bulk-pick { display: inline-flex; align-items: center; gap: var(--space-2); margin-left: auto; color: var(--muted); font-size: var(--text-sm); }
   .bulk-decisions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
+
+  /* ---- Onboarding ------------------------------------------------------- */
+  .onboarding {
+    display: grid;
+    min-height: 100%;
+    justify-items: center;
+    padding: var(--space-8) var(--layout-inline);
+  }
+  .onboarding__column { display: grid; width: min(560px, 100%); align-content: start; gap: var(--space-4); }
+  .onboarding__steps { display: flex; gap: var(--space-5); margin-bottom: var(--space-4); }
+  .onboarding__step { display: flex; align-items: center; gap: var(--space-2); color: var(--muted); font-size: var(--text-sm); font-weight: var(--weight-medium); }
+  .onboarding__dot {
+    display: grid;
+    width: var(--space-5);
+    height: var(--space-5);
+    place-items: center;
+    color: var(--muted);
+    border-radius: var(--radius-full);
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+  }
+  .onboarding__step[data-state="current"] { color: var(--ink); }
+  .onboarding__step[data-state="current"] .onboarding__dot { color: var(--paper); background: var(--ink); box-shadow: none; }
+  .onboarding__step[data-state="done"] .onboarding__dot { color: var(--on-accent); background: var(--accent); box-shadow: none; }
+  .onboarding__title { font-size: var(--text-4xl); }
+  .onboarding__lede { color: var(--ink-soft); font-size: var(--text-lg); line-height: var(--leading-snug); }
+  .onboarding__next { margin-top: var(--space-2); }
+  .onboarding .plan-form, .onboarding .source-upload-form--drop { margin-top: var(--space-4); }
+
+  /* ---- Plan form -------------------------------------------------------- */
+  .plan-form { display: grid; gap: var(--space-5); }
+  .plan-form .field { display: grid; gap: var(--space-2); }
+  .plan-form label, .plan-form legend { color: var(--ink); font-size: var(--text-md); font-weight: var(--weight-semibold); }
+  .plan-form input[type="date"] { max-width: 280px; min-height: var(--control-height-lg); font-size: var(--text-lg); }
+  .plan-form__rhythm { border: 0; padding: 0; margin: 0; min-width: 0; }
+  .plan-form__rhythm legend { margin-bottom: var(--space-2); }
+  .plan-form [data-plan-status]:empty { display: none; }
+  .choice-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .choice-chip { position: relative; }
+  .choice-chip input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .choice-chip span {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--control-height);
+    padding-inline: var(--space-4);
+    color: var(--ink-soft);
+    border-radius: var(--radius-full);
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+    font-size: var(--text-md);
+    transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+  }
+  .choice-chip:hover span { color: var(--ink); background: var(--surface-hover); }
+  .choice-chip input:checked + span { color: var(--paper); background: var(--ink); box-shadow: none; }
+  .choice-chip input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+  /* ---- Dropzone and source processing ----------------------------------- */
+  .source-upload-form--drop { display: grid; gap: var(--space-3); }
+  .dropzone {
+    position: relative;
+    display: grid;
+    justify-items: center;
+    gap: var(--space-2);
+    padding: var(--space-7) var(--space-5);
+    color: var(--ink);
+    text-align: center;
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+    cursor: pointer;
+    transition: background-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+  }
+  .dropzone:hover, .dropzone:focus-within { background: var(--surface-hover); box-shadow: inset 0 0 0 1px var(--ink); }
+  .dropzone__icon { width: var(--space-6); height: var(--space-6); color: var(--muted); }
+  .dropzone__title { font-size: var(--text-base); font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+  .dropzone__hint { color: var(--muted); font-size: var(--text-sm); }
+  .dropzone__input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+  .source-upload-form .dropzone__input { width: 100%; }
+  .paste-source > summary { width: fit-content; color: var(--muted); cursor: pointer; font-size: var(--text-md); }
+  .paste-source > summary:hover { color: var(--ink); }
+  .paste-source__body { display: grid; gap: var(--space-3); margin-top: var(--space-3); }
+  .onboarding-sources { display: grid; }
+  .onboarding-sources:empty { display: none; }
+  .onboarding-source { display: flex; align-items: center; gap: var(--space-3); min-height: var(--control-height-lg); box-shadow: inset 0 -1px 0 var(--line); }
+  .onboarding-source__icon { color: var(--muted); }
+  .onboarding-source__title { flex: 1; min-width: 0; font-weight: var(--weight-medium); overflow-wrap: anywhere; }
+  .onboarding-source__ready { color: var(--success); font-size: var(--text-sm); font-weight: var(--weight-medium); }
+  .processing-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--muted);
+    font-size: var(--text-sm);
+    white-space: nowrap;
+  }
+  .source-row__meta .processing-chip::before { content: "·"; color: var(--line-strong); }
+  .processing-chip[data-tone="warning"] { color: var(--warning); }
+  .processing-chip__pulse { width: var(--space-2); height: var(--space-2); background: var(--accent); border-radius: var(--radius-full); animation: pulse 1.4s var(--ease-in-out) infinite; }
+
+  /* ---- Lessons ------------------------------------------------------------ */
+  .lesson-list { display: grid; }
+  .lesson-row {
+    display: grid;
+    grid-template-columns: var(--icon-size) minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-3);
+    padding-block: var(--space-3);
+    box-shadow: inset 0 -1px 0 var(--line);
+  }
+  .lesson-row:last-child { box-shadow: none; }
+  .lesson-row__check { width: var(--icon-size); height: var(--icon-size); border-radius: var(--radius-full); box-shadow: inset 0 0 0 1.5px var(--line-strong); }
+  .lesson-row.is-studied .lesson-row__check { position: relative; background: var(--success); box-shadow: none; }
+  .lesson-row.is-studied .lesson-row__check::after {
+    content: "";
+    position: absolute;
+    top: 5px;
+    left: 7px;
+    width: 5px;
+    height: 9px;
+    border-right: 2px solid var(--paper);
+    border-bottom: 2px solid var(--paper);
+    transform: rotate(45deg);
+  }
+  .lesson-row__text { min-width: 0; }
+  .lesson-row__title { color: var(--ink); font-weight: var(--weight-medium); line-height: var(--leading-snug); overflow-wrap: anywhere; }
+  .lesson-row.is-studied .lesson-row__title { color: var(--muted); }
+  .lesson-row__meta { margin-top: var(--space-1); color: var(--muted); font-size: var(--text-sm); }
+  .lesson-row__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+  .lesson-row__done { min-height: var(--space-6); font-size: var(--text-sm); }
+
+  /* ---- Home "Oggi" ---------------------------------------------------------- */
+  .home-today { width: 100%; margin-top: var(--space-6); padding: var(--space-4) var(--space-5); background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--elevation-1); text-align: start; }
+  .home-today__header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+  .home-today__title { font-family: var(--font-body); font-size: var(--text-md); font-weight: var(--weight-semibold); letter-spacing: 0; }
+  .home-today__note { margin-block: var(--space-2) var(--space-3); color: var(--ink-soft); }
+  .home-today + .home-agenda { margin-top: var(--space-4); }
+
+  /* ---- Plan page -------------------------------------------------------------- */
+  .plan-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+    align-items: end;
+    gap: var(--space-6);
+    padding: var(--space-6);
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--elevation-1);
+  }
+  .plan-hero__days { color: var(--ink-soft); font-size: var(--text-lg); }
+  .plan-hero__days strong {
+    margin-right: var(--space-1);
+    color: var(--ink);
+    font-family: var(--font-display);
+    font-size: var(--text-4xl);
+    font-weight: var(--weight-regular);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+  .plan-hero__date { margin-top: var(--space-1); color: var(--muted); }
+  .plan-hero__progress { display: grid; gap: var(--space-2); }
+  .plan-hero__label { color: var(--ink-soft); }
+  .plan-hero__label strong { color: var(--ink); font-weight: var(--weight-semibold); }
+  .plan-hero__pace { color: var(--muted); font-size: var(--text-sm); }
+  .plan-progress { display: block; width: 100%; height: var(--space-2); border: 0; border-radius: var(--radius-full); overflow: hidden; background: var(--paper-deep); appearance: none; }
+  .plan-progress::-webkit-progress-bar { background: var(--paper-deep); border-radius: var(--radius-full); }
+  .plan-progress::-webkit-progress-value { background: var(--accent); border-radius: var(--radius-full); transition: width var(--duration-slow) var(--ease-out); }
+  .plan-progress::-moz-progress-bar { background: var(--accent); border-radius: var(--radius-full); }
+  .plan-section { display: grid; gap: var(--space-2); }
+  .plan-section__title, .plan-editor__title { font-family: var(--font-body); font-size: var(--text-lg); font-weight: var(--weight-semibold); letter-spacing: 0; }
+  .plan-today { display: grid; gap: var(--space-2); }
+  .plan-today__note { color: var(--ink-soft); }
+  .plan-editor { display: grid; gap: var(--space-3); padding: var(--space-5); background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--elevation-1); }
+  .plan-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--space-3); }
+  .plan-summary__item { display: flex; flex-direction: column-reverse; gap: var(--space-1); padding: var(--space-4); background: var(--surface); border-radius: var(--radius-md); box-shadow: var(--elevation-1); }
+  .plan-summary__item dt { color: var(--muted); font-size: var(--text-sm); }
+  .plan-summary__item dd { font-family: var(--font-display); font-size: var(--text-2xl); font-variant-numeric: tabular-nums; line-height: 1; }
+  .plan-timeline { display: grid; }
+  .plan-day {
+    display: grid;
+    grid-template-columns: 10rem minmax(0, 1fr);
+    align-items: baseline;
+    gap: var(--space-4);
+    padding-block: var(--space-3);
+    box-shadow: inset 0 -1px 0 var(--line);
+  }
+  .plan-day__date { color: var(--muted); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
+  .plan-day__body { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); min-width: 0; }
+  .plan-day__lesson { color: var(--ink); overflow-wrap: anywhere; }
+  .plan-day__lesson + .plan-day__lesson::before { content: "·"; margin-right: var(--space-3); color: var(--line-strong); }
+  .plan-day__kind { color: var(--ink-soft); }
+  .plan-day[data-kind="practice"] .plan-day__kind { color: var(--muted); }
+  .plan-day[data-kind="review"] .plan-day__kind { color: var(--accent-text); font-style: normal; font-weight: var(--weight-medium); }
+  .plan-day[data-kind="exam"] { box-shadow: none; }
+  .plan-day[data-kind="exam"] .plan-day__kind { color: var(--ink); font-style: normal; font-weight: var(--weight-semibold); }
+  .plan-more > summary { width: fit-content; margin-top: var(--space-2); color: var(--muted); cursor: pointer; font-size: var(--text-md); }
+  .plan-more > summary:hover { color: var(--ink); }
+  .plan-source { padding-block: var(--space-2); box-shadow: inset 0 -1px 0 var(--line); }
+  .plan-source__summary { display: flex; align-items: center; gap: var(--space-3); min-height: var(--control-height); cursor: pointer; list-style: none; }
+  .plan-source__summary::-webkit-details-marker { display: none; }
+  .plan-source__title { flex: 1; min-width: 0; font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+  .plan-source__count { color: var(--muted); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
+  .plan-source .lesson-list { padding-inline-start: var(--space-1); }
 
   /* ---- Library ----------------------------------------------------------- */
   .library {
@@ -1490,7 +1657,7 @@
   .settings-card { display: grid; gap: var(--space-3); }
   .settings-card h2 { font-size: var(--text-lg); font-family: var(--font-body); font-weight: var(--weight-semibold); letter-spacing: 0; }
   .settings-card p { max-width: var(--measure); color: var(--ink-soft); font-size: var(--text-md); }
-  .settings-card label, .login-surface label, .workspace-form label, .study-setup-form label, .source-upload-form label, .chat-course-creation__form label {
+  .settings-card label, .login-surface label, .workspace-form label, .source-upload-form label, .chat-course-creation__form label {
     display: grid;
     gap: var(--space-2);
     color: var(--ink-soft);
@@ -1516,30 +1683,10 @@
   .password-field input { grid-area: 1 / 1 / 2 / 3; padding-inline-end: calc(var(--space-7) + var(--space-2)); }
   .password-field button { grid-area: 1 / 2; margin-inline-end: var(--space-2); }
 
-  .study-setup-card, .chat-course-creation { display: grid; gap: var(--space-4); margin-top: var(--space-6); text-align: start; }
-  .study-setup-card h2, .chat-course-creation h2 { font-size: var(--text-xl); }
-  .study-setup-card > p, .chat-course-creation p { max-width: var(--measure); color: var(--ink-soft); font-size: var(--text-md); }
-  .source-upload-form, .study-setup-form, .chat-course-creation__form { display: grid; gap: var(--space-4); }
-  .study-setup-form--priority { padding-top: var(--space-4); box-shadow: inset 0 1px 0 var(--line); }
-  .wizard-steps { display: flex; align-items: center; justify-content: center; gap: var(--space-2); margin-bottom: var(--space-4); }
-  .wizard-steps__step {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    color: var(--muted);
-    font-size: var(--text-xs);
-    letter-spacing: var(--tracking-caps);
-    text-transform: uppercase;
-  }
-  .wizard-steps__step::before {
-    width: 24px;
-    height: 4px;
-    background: var(--line-strong);
-    border-radius: var(--radius-full);
-    content: "";
-  }
-  .wizard-steps__step[data-state="current"] { color: var(--ink); }
-  .wizard-steps__step[data-state="current"]::before, .wizard-steps__step[data-state="done"]::before { background: var(--accent); }
+  .chat-course-creation { display: grid; gap: var(--space-4); margin-top: var(--space-6); text-align: start; }
+  .chat-course-creation h2 { font-size: var(--text-xl); }
+  .chat-course-creation p { max-width: var(--measure); color: var(--ink-soft); font-size: var(--text-md); }
+  .source-upload-form, .chat-course-creation__form { display: grid; gap: var(--space-4); }
 
   /* ---- Dialogs --------------------------------------------------------- */
   /* Two patterns, both animated, both on the same scrim: a side sheet for
@@ -1788,6 +1935,12 @@
 
   @layer components {
     .home-agenda__detail { display: none; }
+    .plan-hero { grid-template-columns: minmax(0, 1fr); padding: var(--space-5); }
+    .plan-day { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); }
+    .lesson-row { grid-template-columns: var(--icon-size) minmax(0, 1fr); }
+    .lesson-row__actions { grid-column: 2; justify-content: flex-start; }
+    .onboarding { padding-block: var(--space-6); }
+    .onboarding__title { font-size: var(--text-3xl); }
     /* On a phone the rail is a drawer. `is-collapsed` carries no meaning
        here — the compact rules are scoped to the pointer breakpoint — so
        there is nothing to undo. */

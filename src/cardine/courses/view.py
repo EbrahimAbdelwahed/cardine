@@ -9,7 +9,7 @@ from study_agent.domain.identifiers import CourseId
 from study_agent.ports.course import CourseNotFoundError
 from study_agent.state import Projection
 
-from .events import decode_course_profile
+from .events import StudyPlan, decode_course_profile, decode_study_plan
 
 type ProjectionLoader = Callable[[CourseId], Projection]
 type CourseIdLoader = Callable[[], Sequence[CourseId]]
@@ -32,6 +32,17 @@ class ProjectionCourseView:
         if profile.id != course_id:
             raise ValueError("course projection ownership is corrupt")
         return profile
+
+    def study_plan(self, course_id: CourseId) -> StudyPlan:
+        """The learner's plan; a course without one has the profile's date only."""
+        profile = self.get(course_id)
+        projection = self._load_projection(course_id)
+        raw = projection.state.get("study_plan")
+        if raw is None:
+            return StudyPlan(profile.exam_date, None, None)
+        if not isinstance(raw, Mapping):
+            raise ValueError("study plan projection state is corrupt")
+        return decode_study_plan(raw)
 
 
 class ProjectionCourseCatalog:
