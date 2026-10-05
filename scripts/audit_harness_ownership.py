@@ -27,6 +27,11 @@ TRANSITION_OVERLAY = ROOT / "tests/parity/ca02-transition-overlay.json"
 RECOVERY_OVERLAY = ROOT / "tests/parity/wave-a-recovery-overlay.json"
 STUDENT_JOURNAL_OVERLAY = ROOT / "tests/parity/student-journal-overlay.json"
 TUTOR_CONTEXT_OVERLAY = ROOT / "tests/parity/tutor-context-overlay.json"
+UI_REDESIGN_PATHS = {
+    "src/cardine/demo/browser.css",
+    "src/cardine/demo/browser.html",
+    "src/cardine/demo/browser.js",
+}
 PAGE_LOAD_PATHS = {
     "src/cardine/adapters/pageindex/coordinator.py",
     "src/cardine/demo/ui_application.py",
@@ -934,6 +939,20 @@ def _load_page_load_overlay() -> dict[str, str]:
     return _bound_hashes(raw["rows"], PAGE_LOAD_PATHS, "page load overlay")
 
 
+def _load_ui_redesign_overlay() -> dict[str, str]:
+    """Bind the owner-requested study-first UI redesign to exact bytes."""
+    raw = json.loads((ROOT / "tests/parity/ui-redesign-overlay.json").read_text())
+    if (
+        not isinstance(raw, dict)
+        or set(raw) != {"schema_version", "decision", "rows"}
+        or raw["schema_version"] != 1
+        or raw["decision"] != "ADR-0027--study-first-ui-redesign"
+        or not isinstance(raw["rows"], list)
+    ):
+        raise ValueError("ui redesign overlay fields are invalid")
+    return _bound_hashes(raw["rows"], UI_REDESIGN_PATHS, "ui redesign overlay")
+
+
 def _load_tutor_context_overlay() -> dict[str, str]:
     """Bind the requested product repair, preserving historical core approvals."""
     raw = json.loads(TUTOR_CONTEXT_OVERLAY.read_text(encoding="utf-8"))
@@ -958,6 +977,7 @@ def validate(*, live: bool = False) -> list[str]:
         recovery_hashes.update(_load_study_notes_overlay(progress=True))
         recovery_hashes.update(_load_tutor_context_overlay())
         recovery_hashes.update(_load_page_load_overlay())
+        recovery_hashes.update(_load_ui_redesign_overlay())
         for path in STUDENT_JOURNAL_REMOVED:
             recovery_hashes.pop(path, None)
         reviewed = _load_classification()
