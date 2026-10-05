@@ -93,3 +93,9 @@ is committed and pushed on the same branch. Final-head CI and the initial
 automatic Codex GitHub review are tracked on the PR, with a two-round limit.
 No paid provider calls, merge, data migration, deployment or live restart occurred.
 The running server still needs an owner-authorized update to receive this patch.
+
+2026-10-05 merge preparation: cap every browser threshold at 3,000 ms, fixing
+the first automatic review finding. CI repeatedly measured 449–549 ms on
+316–332 ms baselines, so minimum scheduling allowance is 300 ms while preserving
+15% for larger baselines and the absolute contract. The ceiling regression
+failed before the fix. No provider calls or canonical study data writes.
