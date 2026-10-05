@@ -862,6 +862,8 @@ HISTORICAL_NOTES_OVERLAY_DIGESTS = {
         "bf4aa8cd7763376c885630b9423cfbda4fc82e07bc2b2f43ded66738326e25f4",
     "structure-lesson-notes-overlay.json":
         "66fe5124b67b2832ccbb9b1eef8525362dd79827357fcce542d1bd0bce7fe6d1",
+    "notes-progress-overlay.json":
+        "46ae92817d7d43e6facc60784d1709e78f46e66a6f584f2e12e7e70b607933d6",
 }
 
 
