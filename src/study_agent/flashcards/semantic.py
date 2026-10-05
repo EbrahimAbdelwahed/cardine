@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+from collections import OrderedDict
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import StrEnum
@@ -23,6 +24,8 @@ from study_agent.knowledge.document_index import (
     DocumentCandidate,
     DocumentIndexContext,
     candidate_nodes,
+    validate_document_index,
+    verified_node_spans,
 )
 from study_agent.knowledge.unitizer import candidates_for_canonical_chunks
 from study_agent.ports.judgement import (
@@ -365,6 +368,9 @@ class FlashcardSemanticAnalyzer:
         self._policy = policy
         # Explicit adapter/model/version identity is required for reusable cache keys.
         self._identity = judgement_identity
+        self._preparations: OrderedDict[
+            str, tuple[SemanticLessonAnalysis, tuple[DocumentCandidate, ...]]
+        ] = OrderedDict()
 
     def _prepare(
         self,
@@ -374,10 +380,63 @@ class FlashcardSemanticAnalyzer:
         scope: tuple[CanonicalSourceSpan, ...] | None,
         canonical_chunks: tuple[SourceChunk, ...] | None,
     ) -> tuple[SemanticLessonAnalysis, tuple[DocumentCandidate, ...]]:
+        # Check current source bytes and the full index even on a derived-cache hit.
+        validate_document_index(index, context)
+        preparation_key = _digest(
+            "semantic-preparation@1",
+            {
+                "lesson": lesson_key,
+                "index": index.fingerprint,
+                "source_digest": context.substrate.blob.checksum_sha256,
+                "normalization": context.substrate.normalization_version,
+                "policy": self._policy.fingerprint,
+                "judgement_identity": self._identity,
+                "pages": tuple(
+                    {"page": entry.page, "offset": entry.offset}
+                    for entry in context.substrate.page_map
+                ),
+                "page_count": context.substrate.page_count,
+                "chunks": None
+                if canonical_chunks is None
+                else tuple(
+                    {
+                        "id": str(chunk.chunk_id),
+                        "source": str(chunk.source_id),
+                        "revision": str(chunk.revision_id),
+                        "start": chunk.start_offset,
+                        "end": chunk.end_offset,
+                        "ordinal": chunk.ordinal,
+                        "digest": chunk.checksum_sha256,
+                        "version": chunk.chunker_version,
+                        "path": chunk.section_path,
+                        "metadata": chunk.metadata,
+                    }
+                    for chunk in canonical_chunks
+                ),
+                "scope": None if scope is None else tuple(item.to_json() for item in scope),
+            },
+        )
+        cached = self._preparations.get(preparation_key)
+        if cached is not None:
+            self._preparations.move_to_end(preparation_key)
+            return cached
+        selected_chunks = None
+        if canonical_chunks is not None and scope is not None:
+            selected_chunks = tuple(
+                chunk
+                for chunk in canonical_chunks
+                if any(
+                    allowed.start_offset < chunk.end_offset
+                    and allowed.end_offset > chunk.start_offset
+                    for allowed in scope
+                )
+            )
         candidates = (
             candidate_nodes(index, context)
             if canonical_chunks is None
-            else candidates_for_canonical_chunks(index, context, canonical_chunks)
+            else candidates_for_canonical_chunks(
+                index, context, canonical_chunks, selected_chunks=selected_chunks
+            )
         )
         if scope is not None:
             clipped = _scope_candidates(candidates, scope, index)
@@ -407,9 +466,16 @@ class FlashcardSemanticAnalyzer:
                 "catalog": tuple(_candidate_json(item) for item in candidates),
             },
         )
-        return SemanticLessonAnalysis(
-            lesson_key, index, identity, self._policy.fingerprint, self._identity, ()
-        ), candidates
+        result = (
+            SemanticLessonAnalysis(
+                lesson_key, index, identity, self._policy.fingerprint, self._identity, ()
+            ),
+            candidates,
+        )
+        self._preparations[preparation_key] = result
+        if len(self._preparations) > 4:
+            self._preparations.popitem(last=False)
+        return result
 
     def cache_key_for(
         self,
@@ -622,7 +688,7 @@ def generation_unit(
     context: DocumentIndexContext,
 ) -> LessonGenerationUnit:
     """Project only recall targets; source order and flat anchor runs are preserved."""
-    candidate_nodes(analysis.index, context)  # revalidate immutable source binding
+    verified_node_spans(analysis.index, context)  # revalidate immutable source binding
     nodes = {node.node_key: node for node in analysis.index.nodes}
     topics: list[LessonTopic] = []
     paragraphs: list[LessonParagraph] = []

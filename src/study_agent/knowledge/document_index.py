@@ -7,6 +7,7 @@ Unreconciled indexes fail explicitly, without guessing or dropping source text.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from hashlib import sha256
 
 from study_agent.domain.document_index import (
@@ -24,6 +25,14 @@ class LocatorReconciliationError(ValueError):
     """Derived navigation could not be grounded in the supplied canonical substrate."""
 
 
+@lru_cache(maxsize=4)
+def _text_binding(text: str) -> tuple[str, int, tuple[int, ...]]:
+    """Bounded immutable text cache; changed bytes always get a different key."""
+    encoded = text.encode("utf-8")
+    starts = (0, *(i + 1 for i, char in enumerate(text) if char == "\n" and i + 1 < len(text)))
+    return sha256(encoded).hexdigest(), len(encoded), starts
+
+
 @dataclass(frozen=True, slots=True)
 class DocumentIndexContext:
     source: SourceDocument
@@ -35,12 +44,11 @@ class DocumentIndexContext:
             raise LocatorReconciliationError("context requires canonical source and substrate")
         if not isinstance(self.text, str):
             raise LocatorReconciliationError("substrate text must be Unicode text")
-        encoded = self.text.encode("utf-8")
-        digest = sha256(encoded).hexdigest()
+        digest, byte_length, _ = _text_binding(self.text)
         if (
             self.source.normalized_blob != self.substrate.blob
             or digest != self.substrate.blob.checksum_sha256
-            or len(encoded) != self.substrate.blob.byte_length
+            or byte_length != self.substrate.blob.byte_length
             or len(self.text) != self.substrate.character_length
             or len(self.text) != self.source.normalized_character_length
             or self.source.normalization_version != self.substrate.normalization_version
@@ -114,11 +122,7 @@ def resolve_locator(locator: SourceLocator, context: DocumentIndexContext) -> Ca
     elif locator.kind is LocatorKind.MARKDOWN_LINE_RANGE:
         assert locator.start_line is not None and locator.end_line is not None
         # A trailing newline terminates the final line; it does not create content.
-        starts = [0] + [
-            i + 1
-            for i, char in enumerate(context.text)
-            if char == "\n" and i + 1 < len(context.text)
-        ]
+        _, _, starts = _text_binding(context.text)
         if locator.end_line > len(starts):
             raise LocatorReconciliationError("line locator exceeds substrate bounds")
         start = starts[locator.start_line - 1]
@@ -153,13 +157,8 @@ def candidate_nodes(
     Every covered character is emitted once; ancestor summaries cannot supply local
     source evidence or duplicate the descendants' classification scope.
     """
-    validate_document_index(index, context)
     by_key = {node.node_key: node for node in index.nodes}
-    spans = {node.node_key: resolve_locator(node.locator, context) for node in index.nodes}
-    root = next(node for node in index.nodes if node.parent_key is None)
-    root_span = spans[root.node_key]
-    if root_span.start_offset != 0 or root_span.end_offset != len(context.text):
-        raise LocatorReconciliationError("root must cover the complete substrate")
+    spans = verified_node_spans(index, context)
     portions: list[tuple[DocumentNode, int, int]] = []
     for node in index.nodes:
         parent = spans[node.node_key]
@@ -199,3 +198,33 @@ def candidate_nodes(
             )
         )
     return tuple(result)
+
+
+def verified_node_spans(
+    index: DocumentIndex, context: DocumentIndexContext
+) -> dict[str, CanonicalSourceSpan]:
+    """Resolve and check every node once before any scoped projection."""
+    validate_document_index(index, context)
+    return dict(_verified_node_spans(index, context))
+
+
+@lru_cache(maxsize=4)
+def _verified_node_spans(
+    index: DocumentIndex, context: DocumentIndexContext
+) -> tuple[tuple[str, CanonicalSourceSpan], ...]:
+    spans = {node.node_key: resolve_locator(node.locator, context) for node in index.nodes}
+    root = next(node for node in index.nodes if node.parent_key is None)
+    root_span = spans[root.node_key]
+    if root_span.start_offset != 0 or root_span.end_offset != len(context.text):
+        raise LocatorReconciliationError("root must cover the complete substrate")
+    for node in index.nodes:
+        parent = spans[node.node_key]
+        cursor = parent.start_offset
+        for key in node.children:
+            child = spans[key]
+            if child.start_offset < cursor or child.end_offset > parent.end_offset:
+                raise LocatorReconciliationError(
+                    "child spans overlap, are unordered or escape parent"
+                )
+            cursor = child.end_offset
+    return tuple(spans.items())
