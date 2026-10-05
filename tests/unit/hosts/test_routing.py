@@ -283,7 +283,7 @@ def test_selected_payload_receives_recent_conversation_and_tool_results() -> Non
             ),
         },
     )
-    judge, model = Judge("start_capability"), Model({"topic": "DNA polymerase"})
+    judge, model = Judge("capability:a.capability"), Model({"topic": "DNA polymerase"})
     decide(router(judge, model), ctx)
     payload = json.loads(model.requests[0].messages[1].content)
     assert "DNA polymerase explanation" in json.dumps(payload)
@@ -312,7 +312,7 @@ def test_selected_payload_context_is_bounded_and_excludes_future_or_private_data
             },),
         },
     )
-    judge, model = Judge("start_capability"), Model({"topic": "valves"})
+    judge, model = Judge("capability:a.capability"), Model({"topic": "valves"})
     decide(router(judge, model), ctx)
     payload = json.loads(model.requests[0].messages[1].content)
     assert sum(len(item["content"]) for item in payload["recent_conversation"]) <= 4_000
@@ -331,7 +331,7 @@ def test_tool_observations_include_omission_markers_inside_the_byte_budget() -> 
             "tool_name": "conversation.read", "status": "succeeded", "result": result,
         } for _ in range(4))},
     )
-    judge, model = Judge("start_capability"), Model({"topic": "valves"})
+    judge, model = Judge("capability:a.capability"), Model({"topic": "valves"})
     decide(router(judge, model), ctx)
     payload = json.loads(model.requests[0].messages[1].content)
     observations = payload["tool_observations"]
@@ -340,7 +340,7 @@ def test_tool_observations_include_omission_markers_inside_the_byte_budget() -> 
     assert any(item.get("result_omitted") for item in observations)
 
 def test_capability_options_only_advertised_and_empty_inputs_skip_model() -> None:
-    judge, model = Judge("start_capability", "b.capability"), Model()
+    judge, model = Judge("capability:b.capability"), Model()
     result = decide(
         router(judge, model),
         context(
@@ -351,13 +351,14 @@ def test_capability_options_only_advertised_and_empty_inputs_skip_model() -> Non
         ),
     )
     assert result == StartCapabilityDecision("b.capability", {})
-    assert {item.key for item in judge.requests[1].options} == {"a.capability", "b.capability"}
-    assert not model.requests
+    assert {item.key for item in judge.requests[0].options} >= {
+        "capability:a.capability", "capability:b.capability"}
+    assert len(judge.requests) == 1 and not model.requests
     assert "input_schema" not in json.dumps(dict(cast(JsonObject, judge.requests[0].state)))
 
 
 def test_selected_capability_gets_only_its_input_schema() -> None:
-    judge = Judge("start_capability", "a.capability")
+    judge = Judge("capability:a.capability")
     model = Model({"topic": "valves"})
     result = decide(
         router(judge, model),
@@ -383,7 +384,7 @@ def test_fixed_required_literal_inputs_skip_model() -> None:
             "topic": {"type": "string", "enum": ("valves",)},
         },
     }
-    judge, model = Judge("start_capability"), Model()
+    judge, model = Judge("capability:a.capability"), Model()
     assert decide(router(judge, model), context(capabilities=(capability(schema=fixed),))) == (
         StartCapabilityDecision("a.capability", {"topic": "valves"})
     )
@@ -465,7 +466,7 @@ def test_insufficient_separation_falls_back_before_generation() -> None:
 
 def test_invalid_payload_and_host_authority_injection_fall_back_once() -> None:
     for payload in ({"wrong": 2}, {"topic": "valves", "course_id": "forged"}):
-        judge, model, legacy = Judge("start_capability"), Model(payload), Legacy()
+        judge, model, legacy = Judge("capability:a.capability"), Model(payload), Legacy()
         assert (
             decide(router(judge, model, legacy), context(capabilities=(capability(schema=TOPIC),)))
             == legacy.decision
@@ -495,7 +496,7 @@ def test_disabled_emergency_fallback_surfaces_failure() -> None:
 
 
 def test_shadow_records_candidate_but_returns_legacy_with_no_text_receipt() -> None:
-    judge = Judge("start_capability")
+    judge = Judge("capability:a.capability")
     legacy = Legacy()
     receipts: list[TutorRoutingReceipt] = []
     result = decide(router(judge, Model(), legacy, mode=FeatureMode.SHADOW, receipts=receipts))
@@ -573,7 +574,7 @@ def test_host_validation_failure_uses_one_legacy_fallback(monkeypatch: pytest.Mo
     monkeypatch.setattr(routing_module, "validate_decision", reject_candidate)
     legacy = Legacy()
     receipts: list[TutorRoutingReceipt] = []
-    assert decide(router(Judge("start_capability"), Model(), legacy, receipts=receipts)) == (
+    assert decide(router(Judge("capability:a.capability"), Model(), legacy, receipts=receipts)) == (
         legacy.decision
     )
     assert legacy.calls == 1
@@ -586,7 +587,7 @@ def test_overlong_latest_utterance_is_bounded_before_provider_calls() -> None:
     ctx = replace(
         context(), tutor_snapshot={"timeline": ({"kind": "learner", "content": "x" * 10_000},)}
     )
-    judge = Judge("start_capability")
+    judge = Judge("capability:a.capability")
     configured = replace(policy(), maximum_utterance_characters=100)
     decide(router(judge, Model(), configured=configured), ctx)
     assert cast(JsonObject, judge.requests[0].state)["latest_learner_utterance"] == "x" * 100
@@ -625,7 +626,7 @@ def test_telemetry_failure_cannot_change_the_returned_decision() -> None:
         raise RuntimeError("observer down")
 
     port = RoutingTutorDecisionPort(
-        Judge("start_capability"),
+        Judge("capability:a.capability"),
         cast(ModelPort, Model()),
         policy(),
         record_receipt=fail,
@@ -638,22 +639,22 @@ def tool(name: str, schema: JsonObject = EMPTY) -> JsonObject:
 
 
 def test_tool_route_and_selection_are_only_currently_advertised() -> None:
-    judge, model, legacy = Judge("invoke_tool", "study.read"), Model(), Legacy()
+    judge, model, legacy = Judge("tool:study.read"), Model(), Legacy()
     ctx = context(tools=(tool("study.read"), tool("study.write")))
     assert decide(router(judge, model, legacy), ctx) == InvokeToolDecision("study.read", {})
     assert legacy.calls == 0 and not model.requests
-    assert "invoke_tool" in {item.key for item in judge.requests[0].options}
-    assert {item.key for item in judge.requests[1].options} == {"study.read", "study.write"}
+    keys = {item.key for item in judge.requests[0].options}
+    assert {"tool:study.read", "tool:study.write"} <= keys and len(judge.requests) == 1
     projected = cast(JsonObject, judge.requests[0].state)
-    assert projected["tools"] == ("study.read", "study.write")
+    assert "tools" not in projected
     assert "input_schema" not in repr(judge.requests[0])
-    assert "PRIVATE" not in repr(judge.requests[1])
+    assert "PRIVATE" not in repr(judge.requests[0])
 
 
 def test_no_advertised_tools_means_no_tool_route() -> None:
-    judge = Judge("start_capability")
+    judge = Judge("capability:a.capability")
     decide(router(judge, Model()))
-    assert "invoke_tool" not in {item.key for item in judge.requests[0].options}
+    assert not any(item.key.startswith("tool:") for item in judge.requests[0].options)
 
 
 def test_pending_dialogue_cannot_select_an_advertised_tool() -> None:
@@ -665,7 +666,7 @@ def test_pending_dialogue_cannot_select_an_advertised_tool() -> None:
 
 
 def test_selected_tool_model_sees_only_its_schema_and_minimum_binding_context() -> None:
-    judge, model = Judge("invoke_tool", "study.write"), Model({"topic": "valves"})
+    judge, model = Judge("tool:study.write"), Model({"topic": "valves"})
     ctx = context(tools=(tool("study.read"), tool("study.write", TOPIC)))
     result = decide(router(judge, model), ctx)
     assert result == InvokeToolDecision("study.write", {"topic": "valves"})
@@ -688,14 +689,14 @@ def test_fixed_tool_arguments_require_no_generation_or_second_router() -> None:
             "topic": {"type": "string", "enum": ("valves",)},
         },
     }
-    judge, model, legacy = Judge("invoke_tool"), Model(), Legacy()
+    judge, model, legacy = Judge("tool:study.write"), Model(), Legacy()
     result = decide(router(judge, model, legacy), context(tools=(tool("study.write", fixed),)))
     assert result == InvokeToolDecision("study.write", {"topic": "valves"})
     assert len(judge.requests) == 1 and not model.requests and legacy.calls == 0
 
 
 def test_duplicate_tool_names_preserve_validators_first_descriptor_schema() -> None:
-    judge, model = Judge("invoke_tool"), Model({"topic": "valves"})
+    judge, model = Judge("tool:study.write"), Model({"topic": "valves"})
     ctx = context(tools=(tool("study.write", TOPIC), tool("study.write")))
     result = decide(router(judge, model), ctx)
     assert result == InvokeToolDecision("study.write", {"topic": "valves"})
@@ -708,20 +709,19 @@ def test_duplicate_tool_names_preserve_validators_first_descriptor_schema() -> N
 def test_invalid_tool_descriptors_never_enter_choice_options() -> None:
     invalid_schema: JsonObject = {"type": "unsupported"}
     ctx = context(tools=(tool("bad.schema", invalid_schema), tool(" "), tool("x" * 129)))
-    judge = Judge("start_capability")
+    judge = Judge("capability:a.capability")
     decide(router(judge, Model()), ctx)
-    assert "invoke_tool" not in {item.key for item in judge.requests[0].options}
+    assert not any(item.key.startswith("tool:") for item in judge.requests[0].options)
 
 
 def test_unknown_selected_tool_emergency_fallback_is_exactly_once() -> None:
     class UnknownToolJudge(Judge):
         async def judge(self, request: ChoiceJudgementRequest) -> ChoiceJudgement:
             result = await super().judge(request)
-            if len(self.requests) == 2:
-                object.__setattr__(result, "selected_key", "not.advertised")
+            object.__setattr__(result, "selected_key", "tool:not.advertised")
             return result
 
-    judge, legacy = UnknownToolJudge("invoke_tool", "study.read"), Legacy()
+    judge, legacy = UnknownToolJudge("tool:study.read"), Legacy()
     result = decide(
         router(judge, Model(), legacy),
         context(
@@ -739,7 +739,7 @@ def test_bad_tool_argument_payload_falls_back_only_when_configured() -> None:
     with pytest.raises(RetryableTutorDecisionError, match="routing failed"):
         decide(
             router(
-                Judge("invoke_tool"),
+                Judge("tool:study.write"),
                 Model({"topic": 17}),
                 legacy,
                 configured=replace(policy(), emergency_fallback=False),
@@ -750,7 +750,7 @@ def test_bad_tool_argument_payload_falls_back_only_when_configured() -> None:
     assert (
         decide(
             router(
-                Judge("invoke_tool"),
+                Judge("tool:study.write"),
                 Model({"topic": 17}),
                 legacy,
             ),
@@ -766,7 +766,7 @@ def test_tool_argument_generation_failure_in_shadow_calls_legacy_once() -> None:
     receipts: list[TutorRoutingReceipt] = []
     result = decide(
         router(
-            Judge("invoke_tool"),
+            Judge("tool:study.write"),
             Model(RuntimeError("PRIVATE RAW PAYLOAD")),
             legacy,
             mode=FeatureMode.SHADOW,
@@ -784,7 +784,7 @@ def test_tool_shadow_receipt_records_selection_and_returns_legacy() -> None:
     receipts: list[TutorRoutingReceipt] = []
     result = decide(
         router(
-            Judge("invoke_tool"),
+            Judge("tool:study.read"),
             Model(),
             legacy,
             mode=FeatureMode.SHADOW,
@@ -799,29 +799,12 @@ def test_tool_shadow_receipt_records_selection_and_returns_legacy() -> None:
     assert receipts[0].candidate_validated and receipts[0].disagreement
 
 
-def test_explicit_tool_threshold_controls_selection_and_policy_identity() -> None:
-    strict = replace(policy(), tool=RoutingThreshold(0.99, 0.3))
-    assert strict.fingerprint != policy().fingerprint
-    legacy = Legacy()
-    ctx = context(tools=(tool("study.read"), tool("study.write")))
-    result = decide(
-        router(
-            Judge("invoke_tool", "study.read"),
-            Model(),
-            legacy,
-            configured=strict,
-        ),
-        ctx,
-    )
-    assert result == legacy.decision and legacy.calls == 1
-
-
 def test_tool_generation_cancellation_never_enters_emergency_fallback() -> None:
     legacy = Legacy()
     with pytest.raises(RetryableTutorDecisionError, match="interrupted"):
         decide(
             router(
-                Judge("invoke_tool"),
+                Judge("tool:study.write"),
                 Model(ModelError(ModelErrorCode.CANCELLED, "cancelled")),
                 legacy,
             ),
@@ -837,7 +820,7 @@ def test_existing_host_runner_executes_selected_tool_once_with_host_owned_author
     from study_agent.domain import CourseId, SessionId
 
     ctx = context(tools=(tool("study.write", TOPIC),))
-    judge = Judge("invoke_tool", "assistant_message")
+    judge = Judge("tool:study.write", "assistant_message")
     model = Model({"topic": "valves"}, {"message": "Recorded valves."})
     legacy = Legacy()
     port = router(judge, model, legacy)
@@ -908,9 +891,7 @@ def test_jev_flashcard_scope_is_fixed_before_selected_payload_generation(kind: s
         "query": "latest explanation" if kind == "latest_explanation" else "request label",
         "scope": scope.encode(), "language": "it",
                           "candidate_ceiling": 24, "continuation_summary_json": None}
-    judge = Judge("start_capability", "explicit_topic")
-    # Only one capability: no unnecessary choice call.
-    judge.selections = ["start_capability", kind, "default", "supported"]
+    judge = Judge("capability:propose_flashcards", kind, "default", "supported")
     model = Model(payload)
     legacy = Legacy()
     port = RoutingTutorDecisionPort(judge, cast(ModelPort, model),
@@ -935,7 +916,7 @@ def test_jev_ambiguous_flashcard_request_asks_without_generation(
     from cardine.hosts.contracts import AskLearnerDecision
     from study_agent.capabilities.builtin import PROPOSE_FLASHCARDS_MANIFEST
 
-    judge = Judge("start_capability", scope, *(() if profile is None else (profile,)))
+    judge = Judge("capability:propose_flashcards", scope, *(() if profile is None else (profile,)))
     model = Model()
     legacy = Legacy()
     port = RoutingTutorDecisionPort(judge, cast(ModelPort, model),
@@ -969,7 +950,7 @@ def test_flashcard_choice_distribution_failure_calls_emergency_once(bad: str) ->
                     option.key, 0.2) for option in request.options))
             return result
 
-    judge = ScopeJudge("start_capability", "latest_explanation")
+    judge = ScopeJudge("capability:propose_flashcards", "latest_explanation")
     model = Model()
     legacy = Legacy()
     decision = asyncio.run(router(judge, model, legacy).decide(context(capabilities=(capability(
@@ -989,7 +970,7 @@ def test_cancelled_flashcard_scope_never_enters_emergency_fallback() -> None:
                 token.interrupted = True
             return result
 
-    judge = ScopeJudge("start_capability", "latest_explanation")
+    judge = ScopeJudge("capability:propose_flashcards", "latest_explanation")
     legacy = Legacy()
     model = Model()
     with pytest.raises(RetryableTutorDecisionError):
@@ -1011,7 +992,7 @@ def test_flashcard_payload_cannot_override_semantic_scope_or_invent_topic(bad: s
                                       "interaction_id": "current-human"},)})
     fixed = FlashcardScope(
         "explicit_topic", "default", learner_fingerprint(prompt), "current-human")
-    judge = Judge("start_capability", "explicit_topic", "default", "ambiguous")
+    judge = Judge("capability:propose_flashcards", "explicit_topic", "default", "ambiguous")
     model = Model({"query": "x" * 513 if bad == "overlong" else "inventedtopic",
         "scope": "free-form" if bad == "scope_override" else fixed.encode(),
         "language": "it", "candidate_ceiling": 24, "continuation_summary_json": None})

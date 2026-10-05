@@ -9,6 +9,8 @@ archive and must not be treated as Cardine's current state.
 
 ## Start here
 
+- [Useful Jev routing](logs/2026-10-05--cardine--jev-routing-calibration--log.md) — one flat described action choice, one clarification in a row, ON-fallback flashcards bound through Jev scope, fallback-failure receipts and a read-only calibration report; thresholds unchanged, live calibration pending.
+
 - [Closed Jev flashcard scope](logs/2026-10-04--cardine--jev-flashcard-scope--log.md) — ON scope/profile choices replace downstream language scans; canonical evidence, turn binding and HUMAN decisions remain authoritative.
 
 - [Page-load regression budgets](logs/2026-10-04--cardine--page-load-latency--log.md) — browser thresholds pinned to measured real-course desktop/mobile startup and page results; API ceiling and deterministic work guards retained.

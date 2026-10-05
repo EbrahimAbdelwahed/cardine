@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from study_agent.skills import ArtifactReference, SemanticVersion
 
-VERSION = SemanticVersion.parse("1.7.0")
+VERSION = SemanticVersion.parse("1.8.0")
 TUTOR_DECISION_PROMPT = ArtifactReference("tutor_decision.v1", VERSION)
 
 _BASE_INSTRUCTION = (
@@ -21,7 +21,8 @@ _BASE_INSTRUCTION = (
     "never start_capability.\n"
     "3. Use ask_learner only when one concise answer is required to disambiguate the "
     "learner's goal. Do not ask for clarification when a safe conversational answer is "
-    "already possible.\n"
+    "already possible. Never ask the learner to confirm an explicit request: when the "
+    "learner names an action and its topic, perform it now.\n"
     "4. Use invoke_tool only for an advertised repository read or mutation. The trusted "
     "host supplies identities and authority. Never claim a write succeeded until its tool "
     "result has been recorded.\n"
@@ -73,10 +74,11 @@ _BASE_INSTRUCTION = (
     "Do not repeat, rephrase, or narrow the same question again; choose the study capability "
     "or safe answer now. Example: tutor asks 'in generale o negli istoni?' and learner says "
     "'negli istoni' -> start explain_concept, not ask_learner. If tutor_snapshot contains "
-    "clarification_resolution, this is the one bounded recovery after an attempted repeated "
-    "clarification. Follow its previous_question and current_answer. Ask again only when the "
-    "answer is genuinely unusable, such as 'non ho capito la domanda', never merely because "
-    "the answer is short.\n\n"
+    "clarification_resolution, follow its previous_question and current_answer. After an "
+    "answered clarification ask_learner is absent from decision_schema: a confirmation such "
+    "as 'si' selects the action the question proposed, and a genuinely unusable answer, such "
+    "as 'non ho capito la domanda', receives a brief assistant_message saying what is "
+    "needed.\n\n"
     "RETRIEVAL QUERY POLICY for capability input fields named query:\n"
     "- Generate 1 to 6 informative lexical terms, not a copy of the learner message.\n"
     "- Keep domain concepts, anatomical/scientific terms, and an explicitly named source "
@@ -186,6 +188,18 @@ _TOOL_GUIDANCE = {
 }
 
 
+def capability_routing_guidance(capability_id: str) -> str | None:
+    """Versioned positive/negative routing criterion shared with Jev (ADR-0027)."""
+
+    return _CAPABILITY_GUIDANCE.get(capability_id)
+
+
+def tool_routing_guidance(tool_name: str) -> str | None:
+    """Versioned positive/negative routing criterion shared with Jev (ADR-0027)."""
+
+    return _TOOL_GUIDANCE.get(tool_name)
+
+
 def tutor_decision_instruction(
     capability_ids: tuple[str, ...], tool_names: tuple[str, ...]
 ) -> str:
@@ -219,5 +233,7 @@ __all__ = [
     "TUTOR_DECISION_INSTRUCTION",
     "TUTOR_DECISION_PROMPT",
     "VERSION",
+    "capability_routing_guidance",
+    "tool_routing_guidance",
     "tutor_decision_instruction",
 ]

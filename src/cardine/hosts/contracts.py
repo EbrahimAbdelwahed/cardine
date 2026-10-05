@@ -21,6 +21,8 @@ from study_agent.domain.session import (
 )
 from study_agent.portability import reject_provider_selectors
 
+from .clarification_state import answered_clarification
+
 HOST_CONTEXT_SCHEMA_VERSION = 2
 MAX_HOST_FILES = 16
 MAX_HOST_TEXT = 4_000
@@ -633,19 +635,33 @@ def decision_schema(context: TutorHostContext) -> JsonObject:
 
     Responses structured outputs require an object root.  Every branch is closed
     and is derived solely from the already-redacted context; capability and
-    dialogue branches are emitted only when the context advertises them.
+    dialogue branches are emitted only when the context advertises them.  After an
+    answered clarification another question is not a legal decision (ADR-0027).
     """
 
     branches: list[JsonObject] = [
-        {
-            "type": "object",
-            "properties": {
-                "kind": {"type": "string", "enum": (TutorDecisionKind.ASK_LEARNER.value,)},
-                "question": {"type": "string", "minLength": 1, "maxLength": MAX_QUESTION_TEXT},
-            },
-            "required": ("kind", "question"),
-            "additionalProperties": False,
-        },
+        *(
+            ()
+            if answered_clarification(context) is not None
+            else (
+                {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "type": "string",
+                            "enum": (TutorDecisionKind.ASK_LEARNER.value,),
+                        },
+                        "question": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": MAX_QUESTION_TEXT,
+                        },
+                    },
+                    "required": ("kind", "question"),
+                    "additionalProperties": False,
+                },
+            )
+        ),
         {
             "type": "object",
             "properties": {
@@ -791,6 +807,8 @@ def validate_decision(decision: TutorDecision, context: TutorHostContext) -> Non
         decision, AnswerDialogueDecision
     ):
         raise ValueError("pending continuation requires an exact dialogue answer decision")
+    if isinstance(decision, AskLearnerDecision) and answered_clarification(context) is not None:
+        raise ValueError("an answered clarification cannot be followed by another question")
     if isinstance(decision, StartCapabilityDecision):
         descriptor = next(
             (item for item in context.advertised_capabilities if item.id == decision.capability_id),

@@ -40,6 +40,12 @@ answers through Jev. Generation receives only the chosen payload schema; existin
 validators and runner retain execution authority. General tutor model routing remains confined to OFF/SHADOW and explicitly
 configured emergency fallback; it cannot bypass the flashcard scope contract.
 
+The owner-requested 2026-10-05 repair replaces the route-then-capability cascade
+with one flat Jev choice over concrete actions described by the versioned routing
+guidance, limits the tutor to one clarification in a row, binds ON-fallback
+flashcard routes through Jev's scope contract and records fallback failures. See
+[ADR-0027](../../../docs/decisions/ADR-0027--useful-jev-routing-and-bounded-clarification.md).
+
 ## Configuration and code pointers
 
 The owner-requested 2026-10-04 repair supplies bounded recent conversation and

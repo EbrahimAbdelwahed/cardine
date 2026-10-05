@@ -113,13 +113,15 @@ def test_decision_adapter_sends_canonical_context_and_returns_closed_decision() 
     assert request.structured_output is not None
     assert request.structured_output.schema["additionalProperties"] is False
     assert request.metadata["prompt_id"] == "tutor_decision.v1"
-    assert request.metadata["prompt_version"] == "1.7.0"
+    assert request.metadata["prompt_version"] == "1.8.0"
     system_prompt = request.messages[0].content
     assert "ROUTING ORDER" in system_prompt
     assert "Tutto bene?" in system_prompt
     assert "1 to 6 informative" in system_prompt
     assert "Never promise to start a study workflow later" in system_prompt
     assert "CLARIFICATION FOLLOW-UP RULE" in system_prompt
+    assert "Never ask the learner to confirm an explicit request" in system_prompt
+    assert "ask_learner is absent" in system_prompt
     assert "BOUNDED AGENT LOOP" in system_prompt
     assert "duplicate_skipped" in system_prompt
     assert "negli istoni" in system_prompt

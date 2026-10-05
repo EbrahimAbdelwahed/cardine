@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "decision": "ADR-0027--useful-jev-routing-and-bounded-clarification",
+  "rows": [
+    {
+      "path": "src/cardine/application/routing_calibration.py",
+      "sha256": "1179096ad56b549420b566a42bd7f0dcbbdb21e93bd5a19b232e01a70e50ab3d"
+    },
+    {
+      "path": "src/cardine/hosts/clarification_recovery.py",
+      "sha256": "39811c1b703623656d0aa8b7ab0cd6aaf9bdb9c4e092040e14ce2affb17611d9"
+    },
+    {
+      "path": "src/cardine/hosts/clarification_state.py",
+      "sha256": "4729fcfe5774f0061ac718655eff4d3d1edc626f261fa11ccc909e92981b43ef"
+    },
+    {
+      "path": "src/cardine/hosts/contracts.py",
+      "sha256": "65f5e0977b479e3ddebb4c1891fa8916e60b5212155aa240c2ea59e5da2dae71"
+    },
+    {
+      "path": "src/cardine/hosts/routing.py",
+      "sha256": "9a26921252da572656415faa96cfb740cc74c060da574f7445812675309ec914"
+    },
+    {
+      "path": "src/study_agent/prompts/tutor_decision_v1.py",
+      "sha256": "cee40ce17ae4cd09d24d7873fc07f8144c23320d681927cb5f41ce469333623f"
+    }
+  ]
+}

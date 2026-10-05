@@ -7,8 +7,10 @@ No provider SDK belongs here.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
+import re
 from collections.abc import Callable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -46,8 +48,13 @@ from study_agent.ports.tutor_host import (
     TutorDecisionPort,
     TutorInterruptionToken,
 )
+from study_agent.prompts.tutor_decision_v1 import (
+    capability_routing_guidance,
+    tool_routing_guidance,
+)
 from study_agent.tools.schema import validate_json
 
+from .clarification_state import answered_clarification
 from .contracts import (
     MAX_HOST_TEXT,
     AnswerDialogueDecision,
@@ -161,9 +168,6 @@ class TutorRoutingPolicy:
     emergency_fallback: bool = True
     maximum_utterance_characters: int = MAX_HOST_TEXT
     maximum_output_tokens: int = 1_024
-    # None deliberately shares the explicitly configured advertised-capability
-    # threshold. Callers may configure a separate tool-selection policy.
-    tool: RoutingThreshold | None = None
 
     def __post_init__(self) -> None:
         if not self.version or self.version != self.version.strip():
@@ -173,8 +177,6 @@ class TutorRoutingPolicy:
             for item in (self.route, self.capability, self.boolean_dialogue, self.enum_dialogue)
         ):
             raise TypeError("routing policy thresholds must be immutable RoutingThreshold values")
-        if self.tool is not None and not isinstance(self.tool, RoutingThreshold):
-            raise TypeError("tool threshold must be an immutable RoutingThreshold value")
         if not isinstance(self.mode, FeatureMode):
             raise TypeError("routing mode must be a FeatureMode")
         if not isinstance(self.emergency_fallback, bool):
@@ -196,9 +198,7 @@ class TutorRoutingPolicy:
                 "emergency_fallback": self.emergency_fallback,
                 "maximum_utterance_characters": self.maximum_utterance_characters,
                 "maximum_output_tokens": self.maximum_output_tokens,
-                "tool_threshold": None
-                if self.tool is None
-                else (self.tool.minimum_probability, self.tool.minimum_margin),
+                "action_choice": "flat-v1",
                 "thresholds": tuple(
                     (threshold.minimum_probability, threshold.minimum_margin)
                     for threshold in (
@@ -228,6 +228,8 @@ class RoutingJudgementReceipt:
     producer_version: str | None
     usage: JsonObject
     failure_reason: str | None
+    # Closed adapter/model failure code; never provider or learner text.
+    error_code: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "usage", freeze_object(self.usage))
@@ -252,6 +254,10 @@ class TutorRoutingReceipt:
     legacy_latency_ms: float | None
     fallback_reason: str | None
     selected_tool_name: str | None = None
+    # Closed failure code when the emergency fallback itself failed.
+    legacy_failure: str | None = None
+    # Outcome of binding an ON-fallback flashcard route through Jev's scope contract.
+    fallback_binding: str | None = None
 
 
 @dataclass(slots=True)
@@ -263,6 +269,7 @@ class _Trace:
     tool_name: str | None = None
     candidate_kind: TutorDecisionKind | None = None
     candidate_validated: bool = False
+    fallback_binding: str | None = None
 
 
 class _RoutingFailure(RuntimeError):
@@ -271,6 +278,37 @@ class _RoutingFailure(RuntimeError):
 
 class _RoutingInterrupted(RetryableTutorDecisionError):
     pass
+
+
+_FLASHCARDS = "propose_flashcards"
+_CHOICE_INSTRUCTION = "Select exactly one legal option for this tutor turn."
+_ROUTE_INSTRUCTION = (
+    "Choose the single action the tutor should take now for the learner's latest "
+    "message. Each option states when it applies. When answered_tutor_question is "
+    "present the learner is replying to that question: a confirmation selects the "
+    "action the question proposed."
+)
+# Flat action criteria (ADR-0027). Jev scores each option against its description.
+_ASSISTANT_CRITERION = (
+    "Reply directly in conversation: greetings, thanks, product help, or a short answer "
+    "that needs no course evidence. Never use it to present generated study material, to "
+    "claim that an action was performed, or to promise future work."
+)
+_ASK_CRITERION = (
+    "Ask one concise question only when the learner's goal is genuinely ambiguous and no "
+    "listed action fits. Never ask the learner to confirm a request they already stated "
+    "explicitly."
+)
+_STOP_CRITERION = (
+    "End this tutor turn without a new message, only after an action in this same turn "
+    "already answered the learner."
+)
+_FLASHCARD_TOPIC_GUIDANCE = (
+    "Non riesco a stabilire con sicurezza l'argomento delle flashcard. Scrivi "
+    "l'argomento in una frase, per esempio «flashcard sull'acido grasso sintasi», "
+    "oppure seleziona una lezione."
+)
+_SAFE_CODE = re.compile(r"[a-z][a-z0-9_]{0,63}")
 
 
 class RoutingTutorDecisionPort:
@@ -331,28 +369,88 @@ class RoutingTutorDecisionPort:
                 candidate = None
                 failure = str(error) if isinstance(error, _RoutingFailure) else "provider_failure"
         _check_interruption(interruption)
-        legacy: TutorDecision | None = None
+        if self._policy.mode is FeatureMode.ON and candidate is not None:
+            self._record(context, trace, candidate, None, None, failure)
+            return candidate
+        if self._legacy is None or (
+            self._policy.mode is FeatureMode.ON and not self._policy.emergency_fallback
+        ):
+            self._record(context, trace, candidate, None, None, failure)
+            raise RetryableTutorDecisionError(
+                "bounded tutor routing failed", failure_reason=failure
+            )
+        started = monotonic()
         legacy_latency: float | None = None
-        if self._policy.mode in {FeatureMode.OFF, FeatureMode.SHADOW} or candidate is None:
-            if self._legacy is None or (
-                self._policy.mode is FeatureMode.ON and not self._policy.emergency_fallback
-            ):
-                self._record(context, trace, candidate, None, None, failure)
-                raise RetryableTutorDecisionError(
-                    "bounded tutor routing failed", failure_reason=failure
-                )
-            started = monotonic()
+        try:
             # One call, outside the candidate exception handler: never fallback
             # again when the legacy port itself fails.
             legacy = await self._legacy.decide(context, interruption)
             legacy_latency = (monotonic() - started) * 1_000
             _check_interruption(interruption)
+            if self._policy.mode is FeatureMode.ON:
+                legacy = await self._bind_fallback_flashcards(
+                    legacy, context, interruption, trace
+                )
             validate_decision(legacy, context)
+        except BaseException as error:
+            self._record(
+                context,
+                trace,
+                candidate,
+                None,
+                (monotonic() - started) * 1_000 if legacy_latency is None else legacy_latency,
+                failure,
+                legacy_failure=_legacy_failure_code(error),
+            )
+            raise
         self._record(context, trace, candidate, legacy, legacy_latency, failure)
-        if legacy is not None:
-            return legacy
-        assert candidate is not None
-        return candidate
+        return legacy
+
+    async def _bind_fallback_flashcards(
+        self,
+        decision: TutorDecision,
+        context: TutorHostContext,
+        interruption: TutorInterruptionToken,
+        trace: _Trace,
+    ) -> TutorDecision:
+        """ADR-0027: the fallback may choose the route, never the scope contract."""
+
+        if not (
+            isinstance(decision, StartCapabilityDecision) and decision.capability_id == _FLASHCARDS
+        ):
+            return decision
+        descriptor = next(
+            (item for item in context.advertised_capabilities if item.id == _FLASHCARDS), None
+        )
+        if descriptor is None:
+            return decision
+        bound: TutorDecision | None = None
+        if trace.capability_id == _FLASHCARDS:
+            # Jev's scope steps already ran and failed this turn; never repeat them.
+            trace.fallback_binding = "flashcard_scope_unresolved"
+            return AssistantMessageDecision(_FLASHCARD_TOPIC_GUIDANCE)
+        trace.capability_id = _FLASHCARDS
+        try:
+            bound = await self._flashcard_decision(
+                context, self._route_state(context), descriptor.input_schema, interruption, trace
+            )
+            validate_decision(bound, context)
+        except _RoutingInterrupted:
+            raise
+        except ModelError as error:
+            if error.code is ModelErrorCode.CANCELLED:
+                raise _RoutingInterrupted("tutor routing interrupted") from error
+            bound = None
+        except Exception:
+            _check_interruption(interruption)
+            bound = None
+        if isinstance(bound, StartCapabilityDecision):
+            trace.fallback_binding = "flashcard_scope_bound"
+            return bound
+        trace.fallback_binding = "flashcard_scope_unresolved"
+        return bound if bound is not None else AssistantMessageDecision(
+            _FLASHCARD_TOPIC_GUIDANCE
+        )
 
     def _record(
         self,
@@ -362,6 +460,8 @@ class RoutingTutorDecisionPort:
         legacy: TutorDecision | None,
         legacy_latency: float | None,
         failure: str | None,
+        *,
+        legacy_failure: str | None = None,
     ) -> None:
         if self._record_receipt is None:
             return
@@ -381,20 +481,26 @@ class RoutingTutorDecisionPort:
             legacy_latency,
             failure,
             trace.tool_name,
+            legacy_failure,
+            trace.fallback_binding,
         )
         # Telemetry is derived state and never decision authority.
         with suppress(Exception):
             self._record_receipt(receipt)
 
-    async def _candidate(
-        self, context: TutorHostContext, interruption: TutorInterruptionToken, trace: _Trace
-    ) -> TutorDecision:
-        state: JsonObject = {
+    def _route_state(self, context: TutorHostContext) -> JsonObject:
+        return {
             **_conversation_context(context),
+            **_answered_state(context),
             "latest_learner_utterance": _latest_utterance(
                 context, self._policy.maximum_utterance_characters
             ),
         }
+
+    async def _candidate(
+        self, context: TutorHostContext, interruption: TutorInterruptionToken, trace: _Trace
+    ) -> TutorDecision:
+        state = self._route_state(context)
         pending = context.pending_continuation
         if pending is not None:
             # Existing host validation admits only ANSWER_DIALOGUE here.
@@ -424,90 +530,58 @@ class RoutingTutorDecisionPort:
                 )
                 response = payload["response"]
             return AnswerDialogueDecision(pending.fingerprint, response)
-        routes = [
-            ChoiceOption(TutorDecisionKind.ASK_LEARNER.value, "Ask the learner a clarification"),
-            ChoiceOption(TutorDecisionKind.ASSISTANT_MESSAGE.value, "Give a tutor message"),
-            ChoiceOption(TutorDecisionKind.STOP.value, "Finish this tutor turn"),
-        ]
-        if context.advertised_capabilities:
-            routes.append(
-                ChoiceOption(
-                    TutorDecisionKind.START_CAPABILITY.value, "Start an advertised capability"
-                )
-            )
-            state = {
-                **state,
-                "capabilities": tuple(item.id for item in context.advertised_capabilities),
-            }
         tools = _advertised_tools(context)
-        if tools:
-            routes.append(
-                ChoiceOption(TutorDecisionKind.INVOKE_TOOL.value, "Invoke an advertised study tool")
-            )
-            state = {**state, "tools": tuple(name for name, _ in tools)}
-        route = await self._choose(
-            "route", state, tuple(routes), self._policy.route, interruption, trace
+        options, actions = _action_options(context, tools)
+        # ADR-0027: one flat choice over concrete legal actions, one route threshold.
+        key = await self._choose(
+            "route",
+            state,
+            options,
+            self._policy.route,
+            interruption,
+            trace,
+            instruction=_ROUTE_INSTRUCTION,
         )
-        if route == TutorDecisionKind.START_CAPABILITY.value:
-            capability_id = await self._choose(
-                "capability",
-                state,
-                tuple(ChoiceOption(item.id, item.id) for item in context.advertised_capabilities),
-                self._policy.capability,
-                interruption,
-                trace,
-            )
+        route, name = actions[key]
+        binding_context: JsonObject = {
+            **_conversation_context(context),
+            **_answered_state(context),
+            "latest_learner_utterance": state["latest_learner_utterance"],
+        }
+        if route is TutorDecisionKind.START_CAPABILITY:
             descriptor = next(
-                item for item in context.advertised_capabilities if item.id == capability_id
+                item for item in context.advertised_capabilities if item.id == name
             )
-            trace.capability_id = capability_id
-            if descriptor.id == "propose_flashcards":
-                return await self._flashcard_decision(context, state, descriptor.input_schema,
-                                                      interruption, trace)
+            trace.capability_id = descriptor.id
+            if descriptor.id == _FLASHCARDS:
+                return await self._flashcard_decision(
+                    context, state, descriptor.input_schema, interruption, trace
+                )
             inputs = _fixed_inputs(descriptor.input_schema)
             if inputs is None:
                 # No other capability schema, host snapshot or authority token.
                 inputs = await self._generate(
                     "capability_inputs",
-                    {
-                        **_conversation_context(context),
-                        "latest_learner_utterance": state["latest_learner_utterance"],
-                        "capability_id": descriptor.id,
-                    },
+                    {**binding_context, "capability_id": descriptor.id},
                     descriptor.input_schema,
                     interruption,
                     trace,
                 )
             return StartCapabilityDecision(descriptor.id, inputs)
-        if route == TutorDecisionKind.INVOKE_TOOL.value:
-            tool_name = await self._choose(
-                "tool",
-                {
-                    **_conversation_context(context),
-                    "latest_learner_utterance": state["latest_learner_utterance"],
-                },
-                tuple(ChoiceOption(name, name) for name, _ in tools),
-                self._policy.tool or self._policy.capability,
-                interruption,
-                trace,
-            )
-            schema = next(schema for name, schema in tools if name == tool_name)
-            trace.tool_name = tool_name
+        if route is TutorDecisionKind.INVOKE_TOOL:
+            schema = next(schema for tool_name, schema in tools if tool_name == name)
+            trace.tool_name = name
             arguments = _fixed_inputs(schema)
             if arguments is None:
                 arguments = await self._generate(
                     "tool_arguments",
-                    {
-                        **_conversation_context(context),
-                        "latest_learner_utterance": state["latest_learner_utterance"],
-                        "tool_name": tool_name,
-                    },
+                    {**binding_context, "tool_name": name},
                     schema,
                     interruption,
                     trace,
                 )
-            return InvokeToolDecision(tool_name, arguments)
-        if route == TutorDecisionKind.STOP.value:
+            return InvokeToolDecision(cast(str, name), arguments)
+        if route is TutorDecisionKind.STOP:
             reason = await self._choose(
                 "stop_reason",
                 {"latest_learner_utterance": state["latest_learner_utterance"]},
@@ -517,18 +591,17 @@ class RoutingTutorDecisionPort:
                 trace,
             )
             return StopDecision(TutorStopReason(reason))
-        field_name = "question" if route == TutorDecisionKind.ASK_LEARNER.value else "message"
+        field_name = "question" if route is TutorDecisionKind.ASK_LEARNER else "message"
         # Dataclass constructors enforce the upper text bound; the core schema
         # subset intentionally has no maxLength keyword.
         payload = await self._generate(
             field_name,
             {
-                **_conversation_context(context),
-                "latest_learner_utterance": state["latest_learner_utterance"],
+                **binding_context,
                 "available_capabilities": tuple(
                     item.id for item in context.advertised_capabilities
                 ),
-                "available_tools": tuple(name for name, _ in tools),
+                "available_tools": tuple(tool_name for tool_name, _ in tools),
             },
             _wrapper(field_name, {"type": "string", "minLength": 1}),
             interruption,
@@ -552,14 +625,14 @@ class RoutingTutorDecisionPort:
             self._policy.capability, interruption, trace,
         )
         if kind == "ambiguous":
-            return AskLearnerDecision("Su quale argomento o spiegazione vuoi le flashcard?")
+            return _clarify(context, "Su quale argomento o spiegazione vuoi le flashcard?")
         profile = await self._choose(
             "flashcard_profile", state,
             tuple(ChoiceOption(key, text) for key, text in PROFILE_DESCRIPTIONS.items()),
             self._policy.capability, interruption, trace,
         )
         if profile == "ambiguous":
-            return AskLearnerDecision("Preferisci il profilo hybrid o morphology-first?")
+            return _clarify(context, "Preferisci il profilo hybrid o morphology-first?")
         timeline = context.tutor_snapshot.get("timeline")
         learner = next((item for item in reversed(timeline)
                         if isinstance(item, Mapping) and item.get("kind") == "learner"), None
@@ -578,9 +651,12 @@ class RoutingTutorDecisionPort:
         inputs = await self._generate(
             "capability_inputs", {
                 **_conversation_context(context),
+                **_answered_state(context),
                 "latest_learner_utterance": state["latest_learner_utterance"],
-                "capability_id": "propose_flashcards", "selected_scope": kind,
+                "capability_id": _FLASHCARDS, "selected_scope": kind,
                 "query_instruction": "Extract only the current explicit topic or lesson name. "
+                "When the learner confirms answered_tutor_question, the topic that question "
+                "proposed is the current explicit topic. "
                 "For conversation scope summarize relevant topics, excluding superseded topics. "
                 "For latest_explanation use a short request label; the host resolves evidence. "
                 "Never invent a topic or canonical ID. Query must be at most 512 characters.",
@@ -602,8 +678,8 @@ class RoutingTutorDecisionPort:
                 self._policy.capability, interruption, trace,
             )
             if binding != "supported":
-                return AskLearnerDecision("Quale argomento o lezione vuoi usare per le flashcard?")
-        return StartCapabilityDecision("propose_flashcards", inputs)
+                return _clarify(context, "Quale argomento o lezione vuoi usare per le flashcard?")
+        return StartCapabilityDecision(_FLASHCARDS, inputs)
 
     async def _choose(
         self,
@@ -613,12 +689,14 @@ class RoutingTutorDecisionPort:
         threshold: RoutingThreshold,
         interruption: TutorInterruptionToken,
         trace: _Trace,
+        *,
+        instruction: str = _CHOICE_INSTRUCTION,
     ) -> str:
         _check_interruption(interruption)
         if len(options) == 1:
             return options[0].key
         request = ChoiceJudgementRequest(
-            "Select exactly one legal option for this tutor turn.",
+            instruction,
             state,
             options,
             {"use_case": use_case, "policy_version": self._policy.version},
@@ -666,6 +744,7 @@ class RoutingTutorDecisionPort:
                     None,
                     {},
                     reason,
+                    _failure_code(error),
                 )
             )
             raise _RoutingFailure(reason) from error
@@ -756,6 +835,82 @@ class RoutingTutorDecisionPort:
 def _check_interruption(interruption: TutorInterruptionToken) -> None:
     if interruption.is_interrupted():
         raise _RoutingInterrupted("tutor routing interrupted", failure_reason="interrupted")
+
+
+def _action_options(
+    context: TutorHostContext, tools: tuple[tuple[str, JsonObject], ...]
+) -> tuple[
+    tuple[ChoiceOption, ...], dict[str, tuple[TutorDecisionKind, str | None]]
+]:
+    """Concrete legal actions with their versioned routing criteria (ADR-0027)."""
+
+    entries: list[tuple[str, str, TutorDecisionKind, str | None]] = [
+        (TutorDecisionKind.ASSISTANT_MESSAGE.value, _ASSISTANT_CRITERION,
+         TutorDecisionKind.ASSISTANT_MESSAGE, None),
+        (TutorDecisionKind.STOP.value, _STOP_CRITERION, TutorDecisionKind.STOP, None),
+    ]
+    if answered_clarification(context) is None:
+        entries.append((TutorDecisionKind.ASK_LEARNER.value, _ASK_CRITERION,
+                        TutorDecisionKind.ASK_LEARNER, None))
+    for item in context.advertised_capabilities:
+        entries.append((
+            f"capability:{item.id}",
+            capability_routing_guidance(item.id)
+            or f"Start the advertised study workflow {item.id}.",
+            TutorDecisionKind.START_CAPABILITY,
+            item.id,
+        ))
+    for name, _ in tools:
+        entries.append((
+            f"tool:{name}",
+            tool_routing_guidance(name) or f"Invoke the advertised repository tool {name}.",
+            TutorDecisionKind.INVOKE_TOOL,
+            name,
+        ))
+    options = tuple(ChoiceOption(key, description) for key, description, _, _ in entries)
+    return options, {key: (kind, name) for key, _, kind, name in entries}
+
+
+def _answered_state(context: TutorHostContext) -> JsonObject:
+    exchange = answered_clarification(context)
+    if exchange is None:
+        return {}
+    question, answer = exchange
+    return {
+        "answered_tutor_question": {
+            "question": question[:MAX_HOST_TEXT],
+            "answer": answer[:MAX_HOST_TEXT],
+        }
+    }
+
+
+def _clarify(context: TutorHostContext, question: str) -> TutorDecision:
+    """Ask once; after an answered clarification end with fixed guidance instead."""
+
+    if answered_clarification(context) is None:
+        return AskLearnerDecision(question)
+    return AssistantMessageDecision(_FLASHCARD_TOPIC_GUIDANCE)
+
+
+def _failure_code(error: BaseException) -> str:
+    """Copy only closed, code-shaped adapter or model failure identifiers."""
+
+    for name in ("code", "failure_reason"):
+        value = getattr(error, name, None)
+        value = getattr(value, "value", value)
+        if isinstance(value, str) and _SAFE_CODE.fullmatch(value):
+            return value
+    return "unclassified"
+
+
+def _legacy_failure_code(error: BaseException) -> str:
+    if isinstance(error, (TypeError, ValueError)) and not isinstance(
+        error, RetryableTutorDecisionError
+    ):
+        return "invalid_decision"
+    if isinstance(error, asyncio.CancelledError):
+        return "cancelled"
+    return _failure_code(error)
 
 
 def _advertised_tools(context: TutorHostContext) -> tuple[tuple[str, JsonObject], ...]:
