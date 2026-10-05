@@ -11,20 +11,28 @@
       "sha256": "32b7df01d2798a17402e51b00b8468212cd77a775612c560ad2f5265f2225c6f"
     },
     {
+      "path": "src/cardine/application/flashcard_profile_selection.py",
+      "sha256": "81f5b16733ef4523e1533ab732e2adf3ff757e0241cfc1012d411c5fafe24bf6"
+    },
+    {
       "path": "src/cardine/application/flashcard_proposals.py",
-      "sha256": "ec1ede9f55ed1c9cff1b39d850b6399cceee29e3577d8668d9bbab4781291213"
+      "sha256": "963861b60bcdae3ae9295d022d411b7d633ab69e392a5d56782c2a989520b610"
+    },
+    {
+      "path": "src/cardine/application/flashcard_scope.py",
+      "sha256": "c675dd52e2e0f96667d03c0f80b19d35e8d2d7e7e35ea1267fc3fe08e0b6cf67"
     },
     {
       "path": "src/cardine/cli/repository.py",
-      "sha256": "97fbf83e73f55bba38b5d4a27a46cad9e4c48296778f12e7afcce978c905a05c"
+      "sha256": "71fb4bba97c0f047d32da7f0fa89e228ced0d14f1fcedc624540d10a845e685e"
     },
     {
       "path": "src/cardine/hosts/flashcard_routing.py",
-      "sha256": "c8959d40d235b8434a8c9ebe2d59e236572ff0744b359f4371fe63b39c25bbde"
+      "sha256": "98b1bdb5c08aac85ec8666066f9904db1813861d09e3030b1803b1632833aa18"
     },
     {
       "path": "src/cardine/hosts/routing.py",
-      "sha256": "94cea08b4703a3497d045ee77d1f3bded93439267541a9bf5c9b79190f286d37"
+      "sha256": "675c72aaf236fe3c9d401350f428e688633cfe04edaadb173cb63fd1106000f0"
     },
     {
       "path": "src/study_agent/flashcards/planning.py",

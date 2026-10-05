@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from typing import cast
 
 import pytest
 
@@ -133,67 +132,32 @@ def test_pinned_retrieval_discards_cross_section_and_partial_chunks(tmp_path: Pa
         assert outside.status.value == "insufficient"
 
 
-@pytest.mark.parametrize(
-    ("current", "query"),
-    [
-        ("crea flashcard su questa lezione", "crea flashcard su questa lezione"),
-        (
-            "crea flashcard su questa lezione, intendo lezione 999",
-            "crea flashcard su questa lezione, intendo lezione 999",
-        ),
-        (
-            "Ho difficoltà con glicolisi; crea flashcard su lezione 999",
-            "glicolisi",
-        ),
-    ],
-)
-def test_unresolved_nearest_explicit_lesson_cannot_fall_back(
-    current: str, query: str
+@pytest.mark.parametrize("query", ("valvola aortica", "Molte lezioni", "valvola aortica absent"))
+def test_pinned_topic_is_not_hidden_by_higher_ranked_outside_matches(
+    tmp_path: Path, query: str,
 ) -> None:
-    from types import SimpleNamespace
-
-    from cardine.cli.repository import _RepositoryTutorGateway
-
-    looked_up = []
-
-    def resolve(course: object, text: str) -> object:
-        looked_up.append(text)
-        return object() if text == "lezione 1" else None
-
-    interactions = [
-        SimpleNamespace(kind=SimpleNamespace(value="human"), content=text)
-        for text in ("lezione 1", "lezione 999", current)
-    ]
-    gateway = object.__new__(_RepositoryTutorGateway)
-    gateway._lesson_pin = None
-    gateway._course_id = CourseId("course")
-    from study_agent.domain import SessionId
-
-    gateway._session_id = SessionId("session")
-    gateway._repository = SimpleNamespace(
-        resolve_lesson_scope=resolve,
-        sessions=SimpleNamespace(interactions=lambda *args: interactions),
-    )  # type: ignore[assignment]
-    import asyncio
-
-    from study_agent.capabilities import TutorCapabilityId
-
-    calls: list[str] = []
-
-    async def start(*args: object) -> None:
-        calls.append("unscoped")
-
-    gateway._flashcards = SimpleNamespace(start=start, start_for_pin=start)  # type: ignore[assignment]
-    gateway._require_provider_consent = lambda: None  # type: ignore[method-assign]
-    with pytest.raises(ValueError, match="lesson scope is unavailable"):
-        asyncio.run(
-            gateway.start(
-                TutorCapabilityId.PROPOSE_FLASHCARDS,
-                {"query": query},
-                cast(ExecutionContext, object()),
-            )
+    root, course_id = _repository(tmp_path, [])
+    with LocalRepository.open(root, environment={}) as repository:
+        repository.for_course(course_id).ingestion.ingest(
+            filename="many.md",
+            content=(
+                "# Lezione 3\n"
+                + "\n".join(f"## Tema {i}\nValvola aortica." for i in range(30))
+                + "\n# Lezione 4\nLa valvola aortica ha tre cuspidi. Dettaglio selezionato."
+            ).encode(),
+            source_id=SourceId("source-many"), title="Molte lezioni", trust_level=100,
+            source_role="reference",
+            context=ExecutionContext(PrincipalKind.SERVICE, "fixture", course_id,
+                                     CorrelationId("many-ingest")),
         )
-    assert calls == []
-    assert "lezione 1" not in looked_up
-    if query == "glicolisi":
-        assert current in looked_up
+        repository.rebuild_retrieval()
+        result = repository.search_lessons(course_id, "Lezione 4")
+        pin = repository.select_lesson(course_id, "Lezione 4", result.candidates[0].candidate_id)
+        evidence = _PinnedRetrieval(repository.for_course(course_id).retrieval, pin).search(
+            RetrievalQuery(course_id, query, limit=1)
+        )
+        assert evidence.evidence
+        assert evidence.evidence[0].chunk.start_offset >= pin.start_offset
+        assert evidence.evidence[0].chunk.end_offset <= pin.end_offset
+        if query != "Molte lezioni":
+            assert "Dettaglio selezionato" in evidence.evidence[0].text

@@ -21,8 +21,8 @@ flashcard anchors consume it. The qualified worker indexes admitted normalized
 Markdown/text. For PDF it verifies original bytes and exact page provenance,
 then indexes the admitted Markdown without another extractor. Historical PDFs
 without an exact page map report an unavailable index. Index/cache state remains
-derived and cannot append canonical events. ON has no hidden legacy semantic
-parser fallback; OFF/SHADOW retain historical behavior.
+derived and cannot append canonical events. ON has no hidden legacy semantic parser fallback. Flashcard tutor requests
+require ON; OFF/SHADOW do not advertise that capability.
 
 The optional Jev adapter uses OpenRouter's [Decisions REST protocol](https://openrouter.ai/docs/api/api-reference/alphadecisions/submit-a-decisions-request),
 separate from chat completions. Requests use a configured model alias; semantic
@@ -37,8 +37,8 @@ candidates, provenance and policy, and failures do not permanently poison it.
 
 Tutor ON routes legal decisions, advertised capabilities/tools and closed
 answers through Jev. Generation receives only the chosen payload schema; existing
-validators and runner retain execution authority. Full semantic routing remains
-confined to OFF/SHADOW and explicitly configured emergency fallback.
+validators and runner retain execution authority. General tutor model routing remains confined to OFF/SHADOW and explicitly
+configured emergency fallback; it cannot bypass the flashcard scope contract.
 
 ## Configuration and code pointers
 
@@ -93,6 +93,16 @@ result to RetrievalQuery's 512-character contract while preserving token ends.
 Canonical lifetime filtering precedes index/search limits; a production-path
 retirement regression verifies that stale derived results cannot hide active
 evidence. No additional semantic review or live rollout is implied.
+
+
+The subsequent closed-scope repair supersedes topic extraction by regex/stopwords
+in tutor ON. Jev chooses scope and profile, checks the query against the current
+request, and the host consumes the resulting turn-bound contract without
+reinterpreting learner language. The duplicate flashcard language interpreter is deleted; no compatibility path
+accepts a free-form scope. See the
+closed-scope continuation in [ADR-0025](../../../docs/decisions/ADR-0025--current-topic-and-context-settlement.md).
+This changes flashcard request interpretation, not retrieval adjacency or the
+indexing and grounding outcomes owned by other tasks.
 
 ## Optional post-draft documentary support
 

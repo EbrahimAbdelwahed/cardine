@@ -48,6 +48,13 @@ one trusted pedagogical profile selected by the host.
   fixtures, direct gateway evals, injection, source gaps, parsimony/parent
   overlap, tool parity, and full gates.
 
+## Pinned topic retrieval and memory
+
+Pinned topic retrieval applies the canonical lesson span before ranking limits,
+including exact-title and bounded relevance paths. Contextual scope labels are
+transport data and must not be recorded as factual topics in the student journal.
+An unpinned lesson request retains its resolved lesson name as a factual topic.
+
 ## Grounding policy recovery
 
 When documentary grounding is ON, completion recovery must reject a checkpoint

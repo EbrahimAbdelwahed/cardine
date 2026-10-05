@@ -890,3 +890,134 @@ def test_existing_host_runner_executes_selected_tool_once_with_host_owned_author
     assert legacy.calls == 0 and len(model.requests) == 2
     assert result.presentation_receipt is not None
     assert result.presentation_receipt.observed_host_context_sequence == ctx.tutor_snapshot_sequence
+
+
+@pytest.mark.parametrize("kind", ("explicit_topic", "latest_explanation", "selected_lesson",
+                                   "conversation"))
+def test_jev_flashcard_scope_is_fixed_before_selected_payload_generation(kind: str) -> None:
+    from cardine.application.flashcard_scope import FlashcardScope, learner_fingerprint
+    from study_agent.capabilities.builtin import PROPOSE_FLASHCARDS_MANIFEST
+
+    utterance = "genera una flashcard su quesot"
+    ctx = replace(context(capabilities=(capability(
+        "propose_flashcards", PROPOSE_FLASHCARDS_MANIFEST.input_schema),)),
+        tutor_snapshot={"timeline": ({"kind": "learner", "content": utterance,
+                                      "interaction_id": "current-human"},)})
+    scope = FlashcardScope(kind, "default", learner_fingerprint(utterance), "current-human")
+    payload: JsonObject = {
+        "query": "latest explanation" if kind == "latest_explanation" else "request label",
+        "scope": scope.encode(), "language": "it",
+                          "candidate_ceiling": 24, "continuation_summary_json": None}
+    judge = Judge("start_capability", "explicit_topic")
+    # Only one capability: no unnecessary choice call.
+    judge.selections = ["start_capability", kind, "default", "supported"]
+    model = Model(payload)
+    legacy = Legacy()
+    port = RoutingTutorDecisionPort(judge, cast(ModelPort, model),
+                                    policy(mode=FeatureMode.ON), legacy=legacy)
+    decision = asyncio.run(port.decide(ctx, Token()))
+    assert isinstance(decision, StartCapabilityDecision)
+    assert FlashcardScope.parse(decision.inputs["scope"]) == scope
+    assert [item.metadata["use_case"] for item in judge.requests] == [
+        "route", "flashcard_scope", "flashcard_profile",
+        *(("flashcard_topic_binding",) if kind != "latest_explanation" else ())]
+    constraint = model.requests[0].structured_output
+    assert constraint is not None
+    props = cast(Mapping[str, JsonObject], constraint.schema["properties"])
+    assert props["scope"]["enum"] == (scope.encode(),)
+    assert legacy.calls == 0
+
+
+@pytest.mark.parametrize("scope,profile", (("ambiguous", None), ("explicit_topic", "ambiguous")))
+def test_jev_ambiguous_flashcard_request_asks_without_generation(
+    scope: str, profile: str | None,
+) -> None:
+    from cardine.hosts.contracts import AskLearnerDecision
+    from study_agent.capabilities.builtin import PROPOSE_FLASHCARDS_MANIFEST
+
+    judge = Judge("start_capability", scope, *(() if profile is None else (profile,)))
+    model = Model()
+    legacy = Legacy()
+    port = RoutingTutorDecisionPort(judge, cast(ModelPort, model),
+                                    policy(mode=FeatureMode.ON), legacy=legacy)
+    decision = asyncio.run(port.decide(context(capabilities=(capability(
+        "propose_flashcards", PROPOSE_FLASHCARDS_MANIFEST.input_schema),)), Token()))
+    assert isinstance(decision, AskLearnerDecision)
+    assert model.requests == [] and legacy.calls == 0
+
+
+@pytest.mark.parametrize("bad", ("incomplete", "duplicate", "unnormalized", "infinite", "weak"))
+def test_flashcard_choice_distribution_failure_calls_emergency_once(bad: str) -> None:
+    from study_agent.capabilities.builtin import PROPOSE_FLASHCARDS_MANIFEST
+
+    class ScopeJudge(Judge):
+        async def judge(self, request: ChoiceJudgementRequest) -> ChoiceJudgement:
+            result = await super().judge(request)
+            if request.metadata["use_case"] != "flashcard_scope":
+                return result
+            entries = result.probabilities
+            if bad == "incomplete":
+                object.__setattr__(result, "probabilities", entries[:-1])
+            elif bad == "duplicate":
+                object.__setattr__(result, "probabilities", (*entries[:-1], entries[0]))
+            elif bad == "unnormalized":
+                object.__setattr__(entries[0], "probability", 0.5)
+            elif bad == "infinite":
+                object.__setattr__(entries[0], "probability", float("inf"))
+            else:
+                object.__setattr__(result, "probabilities", tuple(ChoiceProbability(
+                    option.key, 0.2) for option in request.options))
+            return result
+
+    judge = ScopeJudge("start_capability", "latest_explanation")
+    model = Model()
+    legacy = Legacy()
+    decision = asyncio.run(router(judge, model, legacy).decide(context(capabilities=(capability(
+        "propose_flashcards", PROPOSE_FLASHCARDS_MANIFEST.input_schema),)), Token()))
+    assert isinstance(decision, AssistantMessageDecision)
+    assert legacy.calls == 1 and model.requests == []
+
+
+def test_cancelled_flashcard_scope_never_enters_emergency_fallback() -> None:
+    from study_agent.capabilities.builtin import PROPOSE_FLASHCARDS_MANIFEST
+
+    token = Token()
+    class ScopeJudge(Judge):
+        async def judge(self, request: ChoiceJudgementRequest) -> ChoiceJudgement:
+            result = await super().judge(request)
+            if request.metadata["use_case"] == "flashcard_scope":
+                token.interrupted = True
+            return result
+
+    judge = ScopeJudge("start_capability", "latest_explanation")
+    legacy = Legacy()
+    model = Model()
+    with pytest.raises(RetryableTutorDecisionError):
+        asyncio.run(router(judge, model, legacy).decide(context(capabilities=(capability(
+            "propose_flashcards", PROPOSE_FLASHCARDS_MANIFEST.input_schema),)), token))
+    assert legacy.calls == 0 and model.requests == []
+
+
+@pytest.mark.parametrize("bad", ("overlong", "scope_override", "invented_topic"))
+def test_flashcard_payload_cannot_override_semantic_scope_or_invent_topic(bad: str) -> None:
+    from cardine.application.flashcard_scope import FlashcardScope, learner_fingerprint
+    from cardine.hosts.contracts import AskLearnerDecision
+    from study_agent.capabilities.builtin import PROPOSE_FLASHCARDS_MANIFEST
+
+    prompt = "genera una flashcard su mitosi"
+    ctx = replace(context(capabilities=(capability(
+        "propose_flashcards", PROPOSE_FLASHCARDS_MANIFEST.input_schema),)),
+        tutor_snapshot={"timeline": ({"kind": "learner", "content": prompt,
+                                      "interaction_id": "current-human"},)})
+    fixed = FlashcardScope(
+        "explicit_topic", "default", learner_fingerprint(prompt), "current-human")
+    judge = Judge("start_capability", "explicit_topic", "default", "ambiguous")
+    model = Model({"query": "x" * 513 if bad == "overlong" else "inventedtopic",
+        "scope": "free-form" if bad == "scope_override" else fixed.encode(),
+        "language": "it", "candidate_ceiling": 24, "continuation_summary_json": None})
+    legacy = Legacy()
+    decision = asyncio.run(router(judge, model, legacy).decide(ctx, Token()))
+    assert legacy.calls == (0 if bad == "invented_topic" else 1)
+    assert isinstance(decision, AskLearnerDecision if bad == "invented_topic"
+                      else AssistantMessageDecision)
+    assert len(model.requests) == 1

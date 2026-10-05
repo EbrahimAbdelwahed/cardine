@@ -16,6 +16,12 @@ from hashlib import sha256
 from time import monotonic
 from typing import cast
 
+from cardine.application.flashcard_scope import (
+    PROFILE_DESCRIPTIONS,
+    SCOPE_DESCRIPTIONS,
+    FlashcardScope,
+    learner_fingerprint,
+)
 from study_agent.domain._validation import JsonObject, JsonValue, freeze_object
 from study_agent.domain.features import FeatureMode
 from study_agent.ports.judgement import (
@@ -57,6 +63,7 @@ from .contracts import (
     _context_tools,
     validate_decision,
 )
+from .flashcard_routing import flashcard_payload_schema
 
 
 def _conversation_context(context: TutorHostContext) -> JsonObject:
@@ -282,9 +289,13 @@ class RoutingTutorDecisionPort:
         *,
         legacy: TutorDecisionPort | None = None,
         record_receipt: Callable[[TutorRoutingReceipt], None] | None = None,
+        selected_lesson_available: bool = False,
     ) -> None:
         if policy.mode in {FeatureMode.OFF, FeatureMode.SHADOW} and legacy is None:
             raise ValueError("OFF and SHADOW routing require a legacy decision port")
+        if not isinstance(selected_lesson_available, bool):
+            raise TypeError("selected lesson availability must be boolean")
+        self._selected_lesson_available = selected_lesson_available
         self._judgement = judgement
         self._model = model
         self._policy = policy
@@ -450,6 +461,9 @@ class RoutingTutorDecisionPort:
                 item for item in context.advertised_capabilities if item.id == capability_id
             )
             trace.capability_id = capability_id
+            if descriptor.id == "propose_flashcards":
+                return await self._flashcard_decision(context, state, descriptor.input_schema,
+                                                      interruption, trace)
             inputs = _fixed_inputs(descriptor.input_schema)
             if inputs is None:
                 # No other capability schema, host snapshot or authority token.
@@ -526,6 +540,70 @@ class RoutingTutorDecisionPort:
         return (
             AskLearnerDecision(text) if field_name == "question" else AssistantMessageDecision(text)
         )
+
+    async def _flashcard_decision(
+        self, context: TutorHostContext, state: JsonObject, schema: JsonObject,
+        interruption: TutorInterruptionToken, trace: _Trace,
+    ) -> TutorDecision:
+        state = {**state, "selected_lesson_available": self._selected_lesson_available}
+        kind = await self._choose(
+            "flashcard_scope", state,
+            tuple(ChoiceOption(key, text) for key, text in SCOPE_DESCRIPTIONS.items()),
+            self._policy.capability, interruption, trace,
+        )
+        if kind == "ambiguous":
+            return AskLearnerDecision("Su quale argomento o spiegazione vuoi le flashcard?")
+        profile = await self._choose(
+            "flashcard_profile", state,
+            tuple(ChoiceOption(key, text) for key, text in PROFILE_DESCRIPTIONS.items()),
+            self._policy.capability, interruption, trace,
+        )
+        if profile == "ambiguous":
+            return AskLearnerDecision("Preferisci il profilo hybrid o morphology-first?")
+        timeline = context.tutor_snapshot.get("timeline")
+        learner = next((item for item in reversed(timeline)
+                        if isinstance(item, Mapping) and item.get("kind") == "learner"), None
+                       ) if isinstance(timeline, tuple) else None
+        interaction_id = learner.get("interaction_id") if learner is not None else None
+        if not isinstance(interaction_id, str) or not interaction_id:
+            raise _RoutingFailure("missing_flashcard_context")
+        scope = FlashcardScope(kind, profile, learner_fingerprint(_latest_utterance(
+            context, MAX_HOST_TEXT)), interaction_id)
+        contextual_query = (
+            "latest explanation" if kind == "latest_explanation" else
+            "selected lesson" if kind == "selected_lesson" and self._selected_lesson_available
+            else None
+        )
+        selected_schema = flashcard_payload_schema(schema, scope, contextual_query)
+        inputs = await self._generate(
+            "capability_inputs", {
+                **_conversation_context(context),
+                "latest_learner_utterance": state["latest_learner_utterance"],
+                "capability_id": "propose_flashcards", "selected_scope": kind,
+                "query_instruction": "Extract only the current explicit topic or lesson name. "
+                "For conversation scope summarize relevant topics, excluding superseded topics. "
+                "For latest_explanation use a short request label; the host resolves evidence. "
+                "Never invent a topic or canonical ID. Query must be at most 512 characters.",
+            }, selected_schema, interruption, trace,
+        )
+        query = inputs.get("query")
+        if not isinstance(query, str) or not query.strip() or len(query) > 512:
+            raise _RoutingFailure("invalid_flashcard_query")
+        if kind in {"explicit_topic", "conversation"} or (
+            kind == "selected_lesson" and not self._selected_lesson_available
+        ):
+            binding = await self._choose(
+                "flashcard_topic_binding", {**state, "selected_scope": kind, "query": query},
+                (ChoiceOption("supported", "Query expresses only topics or a lesson actually "
+                              "requested in the selected context. The current explicit topic "
+                              "takes precedence over older conversation or tool observations."),
+                 ChoiceOption("ambiguous", "Query invents a topic, changes the current topic, "
+                              "or cannot be resolved from the selected context.")),
+                self._policy.capability, interruption, trace,
+            )
+            if binding != "supported":
+                return AskLearnerDecision("Quale argomento o lezione vuoi usare per le flashcard?")
+        return StartCapabilityDecision("propose_flashcards", inputs)
 
     async def _choose(
         self,
