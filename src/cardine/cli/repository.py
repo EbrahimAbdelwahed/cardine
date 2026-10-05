@@ -859,7 +859,8 @@ class _RepositoryTutorGateway:
                 pass
             else:
                 if contextual.kind == "latest_explanation" or (
-                    contextual.kind == "selected_lesson" and inputs.get("query") == "selected lesson"
+                    contextual.kind == "selected_lesson"
+                    and inputs.get("query") == "selected lesson"
                 ):
                     return
         query = inputs.get("query")
